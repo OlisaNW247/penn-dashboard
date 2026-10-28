@@ -16,6 +16,8 @@ struct AssistantView: View {
     var contextDocument: String = ""
 
     @StateObject private var conversation: AssistantConversation
+    @StateObject private var history: AssistantHistoryStore
+    @State private var showsHistory = false
     @State private var draft = ""
     @State private var sendPulse: Double = 0
     @State private var greetingIndex = 0
@@ -68,7 +70,8 @@ struct AssistantView: View {
         userName: String = "",
         canvasHost: String? = nil,
         allowBackend: Bool = true,
-        preferScripted: Bool = false
+        preferScripted: Bool = false,
+        savesHistory: Bool = false
     ) {
         self.courseCodes = courseCodes
         self.contextDocument = contextDocument
@@ -84,33 +87,25 @@ struct AssistantView: View {
         } else {
             responder = OnDeviceAssistantResponder()
         }
-        _conversation = StateObject(wrappedValue: AssistantConversation(responder: responder))
+        let history = AssistantHistoryStore(scope: savesHistory ? (canvasHost ?? "local") : nil)
+        _history = StateObject(wrappedValue: history)
+        _conversation = StateObject(wrappedValue: AssistantConversation(responder: responder, history: history))
     }
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             Color.v2Bg.ignoresSafeArea()
-
-            if conversation.isFresh && !composerFocused {
-                AssistantShapes()
-                    .padding(.trailing, 22)
-                    .padding(.top, 4)
-            }
-
-            VStack(spacing: 0) {
-                titleBlock
-                    .padding(.horizontal, 22)
-                    .padding(.top, conversation.isFresh ? 100 : 0)
-
-                GeometryReader { geo in
-                    ZStack(alignment: .topLeading) {
-                        if !conversation.isFresh {
-                            transcript
-                                .transition(.opacity)
-                        }
-                    }
-                    .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
-                    .clipped()
+            if conversation.isFresh {
+                VStack(spacing: 22) {
+                    SmoothFormShapes(accent: .smoothTeal, spark: .smoothGrape)
+                    titleBlock
+                }
+                .padding(.horizontal, 24)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                VStack(spacing: 0) {
+                    titleBlock.padding(.horizontal, 22)
+                    transcript
                 }
             }
         }
@@ -134,17 +129,38 @@ struct AssistantView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbar {
-            if !conversation.isFresh {
-                ToolbarItem(placement: .primaryAction) {
-                    Button("New chat") {
-                        withAnimation {
-                            conversation.clear()
-
-                        }
+            ToolbarItem(placement: .primaryAction) {
+                HStack(spacing: 16) {
+                    if !conversation.isFresh {
+                        Button { conversation.clear(); draft = ""; composerFocused = false } label: { Image(systemName: "square.and.pencil") }
+                            .accessibilityLabel("New chat")
                     }
-                    .font(.lhfSans(14, weight: .medium))
-                    .foregroundStyle(Color.v2DateText)
+                    Button {
+                        composerFocused = false
+                        conversation.saveToHistory()
+                        showsHistory = true
+                    } label: { Image(systemName: "clock.arrow.circlepath") }
+                    .accessibilityLabel("Chat history")
                 }
+                .foregroundStyle(Color.v2Ink)
+            }
+        }
+        .sheet(isPresented: $showsHistory) {
+            AssistantHistoryView(store: history, onSelect: { chat in
+                conversation.open(chat)
+                draft = ""
+                showsHistory = false
+            }, onNew: {
+                conversation.clear()
+                draft = ""
+                showsHistory = false
+            })
+        }
+        .onDisappear { conversation.stop() }
+        .safeAreaInset(edge: .top) {
+            if let error = history.errorMessage {
+                Text(error).font(.lhfSans(12)).foregroundStyle(Color.smoothTomatoInk)
+                    .padding(.horizontal, 22)
             }
         }
     }
@@ -152,7 +168,7 @@ struct AssistantView: View {
     // MARK: Title
 
     private var titleBlock: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(spacing: 16) {
             Text(conversation.isFresh ? greeting : "Ask about classes")
                 .font(.lhfSans(conversation.isFresh ? 32 : 22, weight: .regular))
                 .foregroundStyle(Color.v2Ink)
@@ -160,7 +176,8 @@ struct AssistantView: View {
                 .transition(.opacity)
                 .accessibilityAddTraits(.isHeader)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .multilineTextAlignment(conversation.isFresh ? .center : .leading)
+        .frame(maxWidth: .infinity, alignment: conversation.isFresh ? .center : .leading)
         .padding(.top, 12)
         .padding(.bottom, 24)
     }

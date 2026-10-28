@@ -3616,3 +3616,15 @@ AI empty-state refinement: removed suggestion buttons and the top-left logo.
 “What’s due this week?” is placeholder text only; it does not populate the draft.
 The Smooth mark is the send control. A compact noninteractive geometric cluster
 sits in the top-right corner of the empty screen and disappear while typing or reading a conversation.
+
+
+### Centered AI entry and chat history (2026-10-28)
+The empty AI screen centers its regular-weight rotating greeting below the
+exact SmoothFormShapes component shared with Profile. A top-right history
+icon opens locally saved conversations; reopening restores message IDs,
+answers, and citations and allows follow-up questions. New chat archives the
+current transcript. History uses atomic per-chat files in Application Support,
+scoped by Canvas host, and does not participate in app cloud/paired sync.
+Preview/demo sessions stay in memory. Partial answers checkpoint during
+streaming and save on stop/exit; request IDs prevent cancelled streams from
+altering a newly opened chat. Older unsaved conversations cannot be recovered.

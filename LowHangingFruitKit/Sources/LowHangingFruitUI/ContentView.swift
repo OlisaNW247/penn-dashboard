@@ -200,7 +200,8 @@ struct ContentView: View {
                         work: state.assistantWorkItems(),
                         userName: state.userName,
                         canvasHost: state.canvasBaseURL.host,
-                        allowBackend: state.canvasInstallation.id == CanvasInstallation.penn.id
+                        allowBackend: state.canvasInstallation.id == CanvasInstallation.penn.id,
+                        savesHistory: !state.isUsingFixtureData
                     )
                 case .grades:
                     GradeWatcherView(store: state.gradeWatcher)

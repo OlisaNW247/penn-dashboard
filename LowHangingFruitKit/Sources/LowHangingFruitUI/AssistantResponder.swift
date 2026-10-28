@@ -23,7 +23,7 @@ import LowHangingFruitKit
 /// before skipping a third lecture, and an academic assistant that quietly
 /// invents a policy is worse than no assistant. Every scripted answer below
 /// carries its sources for that reason.
-struct AssistantCitation: Identifiable, Hashable, Sendable {
+struct AssistantCitation: Identifiable, Hashable, Sendable, Codable {
     var id: String { "\(course)-\(source)-\(detail ?? "")" }
     var course: String
     var source: String

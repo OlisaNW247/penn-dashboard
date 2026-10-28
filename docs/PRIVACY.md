@@ -1,6 +1,6 @@
 # Privacy Policy — Low Hanging Fruit (LHF)
 
-_Last updated: 2026-10-27_
+_Last updated: 2026-10-28_
 
 Low Hanging Fruit ("LHF", "the app") is a personal academic dashboard that shows
 your Canvas assignments and deadlines in one place. This policy explains what
@@ -16,11 +16,19 @@ iCloud. Course materials — syllabi, course pages, assignment descriptions,
 announcements — are pooled with classmates in the same Canvas course, so
 everyone shares one copy instead of each of you re-fetching it. Questions you
 ask "the tree" are answered by an AI model running on our server. The
-question and the answer are not stored; a small record of each request (when,
+question and the answer are not stored by the server. Chat history is saved
+locally on your device so you can reopen conversations; a small server record of each request (when,
 which model, how long, how many tokens, never the text) is. Deleting the app
 does not remove everything it saved on the phone: see "Deleting your data".
 
 ## What stays on your phone
+
+- **Chat history.** Questions, answers, and their source links are saved locally
+  in the app’s storage, grouped by Canvas school. Opening an old chat lets you
+  continue it. History is not added to Smooth’s iCloud or paired-laptop sync,
+  though local app data may be included in normal device backups. Removing
+  the app removes this local history. Preview conversations stay in memory
+  and are not mixed into your saved history.
 
 - **Your Canvas and Gradescope logins.** You sign in through each service's own
   web page inside the app. Session cookies and your Canvas calendar feed URL
