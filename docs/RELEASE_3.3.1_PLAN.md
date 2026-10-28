@@ -14,6 +14,15 @@ and build number 16 is now taken.** The release is therefore 3.3.1 (17).
 
 ## What is being fixed, in plain words
 
+**A second crash, found on Marco's phone while this plan was being
+carried out (2026-10-27 evening).** Five crash reports on the phone, builds
+12 to 14, all the same: tapping any Smooth notification killed the app,
+because the notification delegate used the `async` form of `didReceive`
+and iOS's completion then ran on a background thread where UIKit asserts.
+Fixed on this branch (completion-handler form, completion on the main
+thread); `docs/LAUNCH_CRASH_2026-10-26.md` has the record. This one *is*
+proven by crash reports; the duplicate-key crash still is not.
+
 **The crash.** Open the app, a few seconds later it quits, every time,
 reinstalling does not help. Cause: a course whose Canvas assignment groups
 have two names that look the same once lowercased ("Homework" and

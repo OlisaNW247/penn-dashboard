@@ -1137,7 +1137,7 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current: 3346 tests / 320 suites on `fix/duplicate-category-ids` (`v8` `e3a57b3` plus the A1 crash fix, Release A, and the hardening groups of 2026-10-27; 2026-10-27, `swift test --no-parallel`, on Marco's Mac, with no other worktree testing at the same time), all green.** Deno: 599 tests, `deno task check` green on Deno 2.9 (`cd backend && deno task test`). The one red test since `aeaf982`, `AskCitationLinkTests` "the encoded request is byte-identical…", was a golden re-typed by hand with `America/New_York` where `JSONEncoder` writes `America\/New_York`; the golden was fixed on 2026-10-27, not the encoder. The new tests since `e3a57b3` are `DuplicateCategoryIDTests` (17, the launch crash, `docs/LAUNCH_CRASH_2026-10-26.md`; run against the original source they die with the production trap), `ReconnectCoverTests` (two suites, the A2 cover, plus two existing tests adjusted), and `SessionCookieLiveSessionTests` (10) with three Keychain tests in `SessionCookieStoreTests` (the A3 gate).  Before that: 2907 / 262 on `v8` `e3a57b3` (2026-10-25, the audit's gate run, same one failure).
+**Current: 3373 tests / 322 suites on `release/3.3.1` (the three-way merge of `fix/duplicate-category-ids`, `origin/v8` and `claude/sharp-newton-qwv18v`, plus the notification-tap crash fix; 2026-10-27, `swift test --no-parallel`, on Marco's Mac), all green.** Deno: 614 tests, `deno task check` green. iOS Simulator and device Debug builds of the same tree succeeded; the device build (3.3.1 (17)) was installed on Marco's phone that evening, launched, refreshed once, and left no crash report. Before that: 3346 tests / 320 suites on `fix/duplicate-category-ids` (`v8` `e3a57b3` plus the A1 crash fix, Release A, and the hardening groups of 2026-10-27; 2026-10-27, `swift test --no-parallel`, on Marco's Mac, with no other worktree testing at the same time), all green.** Deno: 599 tests, `deno task check` green on Deno 2.9 (`cd backend && deno task test`). The one red test since `aeaf982`, `AskCitationLinkTests` "the encoded request is byte-identical…", was a golden re-typed by hand with `America/New_York` where `JSONEncoder` writes `America\/New_York`; the golden was fixed on 2026-10-27, not the encoder. The new tests since `e3a57b3` are `DuplicateCategoryIDTests` (17, the launch crash, `docs/LAUNCH_CRASH_2026-10-26.md`; run against the original source they die with the production trap), `ReconnectCoverTests` (two suites, the A2 cover, plus two existing tests adjusted), and `SessionCookieLiveSessionTests` (10) with three Keychain tests in `SessionCookieStoreTests` (the A3 gate).  Before that: 2907 / 262 on `v8` `e3a57b3` (2026-10-25, the audit's gate run, same one failure).
 
 **Current: 2933 tests / 264 suites, all green, on `v8` at `17ce51f` (2026-10-27, `swift test --no-parallel`, on Olisa's Mac, 15.5 s), first run.** +43 tests and +4 suites over 2890/260: the tree-plan work of 2026-10-25 (`aeaf982`: local dates in the context document and excerpt block, kept excerpt structure, `WebsiteDiscoveryBatches`, the citation contract, the retrieval bench), compiled here for the first time. The Swift tree is unchanged through `6195eae` (later commits touch only the extension, the backend and docs). The iOS build of this tree (`xcodebuild`, which `swift test` does not cover) has not been run yet.
 **Current: 2933 tests / 264 suites, all green, on `claude/sharp-newton-qwv18v` at `3c23d9d` (2026-10-27, `swift test --no-parallel`, on Olisa's Mac, 13.4 s), first run: the feedback card and Profile row of 3.3.0 (16), +19 tests and +2 suites (`FeedbackNoticeTests`), nothing lost. The iOS Debug build of the same tree (widget included) succeeded the same run.**
@@ -2699,6 +2699,22 @@ itself.
   ids. The fix was to pick one of each, and give the survivor what the
   other had that it lacked. The wrong fix is keeping both "for safety".
   Grep the diff of each side for the same noun before merging.
+- **The async `didReceive` delegate form calls iOS's completion on the
+  cooperative thread, and UIKit aborts.** Every tap on a Smooth notification
+  (a reminder, a loud buzz, one of its buttons) killed the app: five crash
+  reports read off Marco's phone on 2026-10-27, dated 2026-10-19 to 10-26,
+  builds 12, 13 and 14. The tell is an `.ips` with `SIGABRT` (not
+  `EXC_BREAKPOINT`) whose triggered thread is
+  `com.apple.root.user-initiated-qos.cooperative`, running `@objc closure #1
+  in NotificationResponseDelegate.userNotificationCenter(_:didReceive:)` into
+  `_updateSnapshotAndStateRestorationWithAction`, which asserts it is on the
+  main thread. The async form's thunk calls the completion handler wherever
+  the async body ends, a cooperative-pool thread. Fixed on `release/3.3.1`
+  with the completion-handler form, calling `completionHandler()` at the end
+  of one `Task { @MainActor in }`. The wrong fixes: marking the method
+  `@MainActor` (iOS calls it off-main, so Swift 6 kills it on entry, the
+  background-refresh trap) and keeping the async form while hopping inside
+  it (the thunk's completion still runs on the cooperative thread).
 
 ## Conventions
 

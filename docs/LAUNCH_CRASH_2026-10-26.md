@@ -255,3 +255,15 @@ CLAUDE.md only, so the binary is the branch tip's.
 
 Still not done: reading one real crash report (step 2), the upload, and
 A4 onward of the hardening plan.
+
+## A second crash, read off Marco's phone (2026-10-27)
+
+Five reports, builds 12 to 14 (2026-10-19 to 10-26): every tap on a
+notification aborted the app (`SIGABRT`). The stack, in one line: the async
+`NotificationResponseDelegate.userNotificationCenter(_:didReceive:)` thunk
+calls iOS's completion handler on a cooperative-pool thread, and
+`_updateSnapshotAndStateRestorationWithAction` asserts it is on the main
+thread. This is unrelated to the duplicate-key trap. It is fixed on
+`release/3.3.1` in `NotificationResponseRouter.swift` (completion-handler
+form, completion called from a `@MainActor` task). The duplicate-key crash is
+still unproven by any report.

@@ -205,6 +205,9 @@ final class NotificationResponseDelegate: NSObject, UNUserNotificationCenterDele
         // A loud buzz landing while the app is open is a Berserk takeover.
         // Pure parsing here, then one `await` hop to the main actor: no
         // main-actor closure is formed in this callback (see `didReceive`).
+        // This one stays the async form: only `didReceive`'s completion reaches
+        // UIKit's snapshot path, which is why `didReceive` is the one with the
+        // completion-handler form.
         let content = notification.request.content
         if let assignmentID = LoudAlertActions.berserkSignalAssignmentID(
             categoryID: content.categoryIdentifier, userInfo: content.userInfo) {
@@ -215,24 +218,44 @@ final class NotificationResponseDelegate: NSObject, UNUserNotificationCenterDele
 
     /// A tap on a notification or one of its buttons.
     ///
-    /// **`nonisolated`, and nothing here touches the main actor until the
-    /// last line.** iOS calls this on its own queue. A main-actor-isolated
-    /// witness, or a closure that inherits main-actor isolation, is checked
-    /// at run time under Swift 6 and kills the process on entry
+    /// **The completion-handler form, not the async one, and the handler is
+    /// called on the main thread.** With the async form, the Swift-generated
+    /// Objective-C thunk calls iOS's completion handler on whatever thread the
+    /// async body finishes on, which is a Swift concurrency cooperative-pool
+    /// thread. That handler runs UIKit's
+    /// `-[UIApplication _updateSnapshotAndStateRestorationWithAction:windowScene:]`,
+    /// which asserts it is on the main thread, throws, and aborts the process.
+    /// Every tap on a Smooth notification (a reminder, a loud buzz, one of its
+    /// buttons) killed the app: five reports off Marco's phone, builds 12 to 14,
+    /// 2026-10-19 to 10-26. The tell is an `.ips` with `SIGABRT` (not
+    /// `EXC_BREAKPOINT`), whose triggered thread is
+    /// `com.apple.root.user-initiated-qos.cooperative`, with
+    /// `@objc closure #1 in NotificationResponseDelegate.userNotificationCenter(_:didReceive:)`
+    /// above `_updateSnapshotAndStateRestorationWithAction`. The wrong fixes:
+    /// marking this method `@MainActor` (iOS calls it off the main thread, so
+    /// Swift 6 kills the process on entry, the trap below), and keeping the
+    /// async form while hopping to the main actor inside it (the thunk's own
+    /// completion still runs on the cooperative thread afterwards). So
+    /// `completionHandler()` is called exactly once on every path, from the
+    /// end of one explicitly isolated `Task { @MainActor in }`.
+    ///
+    /// **`nonisolated`, and nothing here touches the main actor except that one
+    /// task.** iOS calls this on its own queue. A main-actor-isolated witness,
+    /// or a closure that *inherits* main-actor isolation, is checked at run
+    /// time under Swift 6 and kills the process on entry
     /// (`_dispatch_assert_queue_fail`): the same trap that crashed every
     /// background refresh (CLAUDE.md, "Every background refresh has crashed")
-    /// and `GradeCourseCardView.decidedText`. So the response is read into a
-    /// plain `Sendable` value here, with pure `nonisolated` code, and only
-    /// that value crosses to the main actor, by an `await` on a
-    /// `@MainActor` method rather than by any closure written in this
-    /// method. The wrong fix would be to call `NotificationActionInbox`
-    /// directly from here, or to act on the tap (complete the item, reschedule)
-    /// in this callback.
+    /// and `GradeCourseCardView.decidedText`. So the response is read into plain
+    /// `Sendable` values here, with pure `nonisolated` code, and only those
+    /// values (never `response` or `center`) are captured by a task whose
+    /// `@MainActor` isolation is written out. The wrong fix would be to call
+    /// `NotificationActionInbox` directly from here, or to act on the tap
+    /// (complete the item, reschedule) in this callback.
     ///
     /// The default tap and the dismiss action parse to nil and are ignored by
     /// the button handling below: a plain tap opens the app, as it always has.
     /// A default tap on a *loud* buzz additionally raises the Berserk takeover
-    /// (`BerserkTakeoverModel`), through the same single `await` hop.
+    /// (`BerserkTakeoverModel`), in the same task.
     ///
     /// **"turned in" silences the item at the tap itself.** Before anything is
     /// deposited, the item's pending and delivered loud notifications are
@@ -245,32 +268,46 @@ final class NotificationResponseDelegate: NSObject, UNUserNotificationCenterDele
     /// and re-planning still happen only in the dashboard, against a matching
     /// active item. "open" does not do this (`identifiersToSilence`).
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                            didReceive response: UNNotificationResponse) async {
+                                            didReceive response: UNNotificationResponse,
+                                            withCompletionHandler completionHandler: @escaping () -> Void) {
+        // Stamped here, at the tap, not when the main actor gets to it.
+        let arrivedAt = Date()
+        var buzzID: String?
+        var deposit: LoudAlertAction?
+
         // A tap on a loud buzz's body opens the app as it always has, and now
         // also raises the takeover. A tap on one of its buttons does not: the
         // student has already chosen, and the action below carries it out.
         if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
             let content = response.notification.request.content
-            if let assignmentID = LoudAlertActions.berserkSignalAssignmentID(
-                categoryID: content.categoryIdentifier, userInfo: content.userInfo) {
-                await BerserkTakeoverModel.shared.note(.buzz(assignmentID), at: Date())
-            }
-            return
-        }
-
-        guard let action = LoudAlertActions.action(
+            buzzID = LoudAlertActions.berserkSignalAssignmentID(
+                categoryID: content.categoryIdentifier, userInfo: content.userInfo)
+        } else if let action = LoudAlertActions.action(
             actionIdentifier: response.actionIdentifier,
             userInfo: response.notification.request.content.userInfo
-        ) else { return }
-
-        let silenced = LoudAlertActions.identifiersToSilence(for: action)
-        if !silenced.isEmpty {
-            center.removePendingNotificationRequests(withIdentifiers: silenced)
-            center.removeDeliveredNotifications(withIdentifiers: silenced)
+        ) {
+            let silenced = LoudAlertActions.identifiersToSilence(for: action)
+            if !silenced.isEmpty {
+                center.removePendingNotificationRequests(withIdentifiers: silenced)
+                center.removeDeliveredNotifications(withIdentifiers: silenced)
+            }
+            deposit = action
         }
 
-        // Stamped here, at the tap, not when the main actor gets to it.
-        await NotificationActionInbox.shared.deposit(action, arrivedAt: Date())
+        let takeoverID = buzzID
+        let pendingAction = deposit
+        // iOS hands the handler over as non-Sendable; it is documented as
+        // callable once from any thread and is called here exactly once.
+        nonisolated(unsafe) let done = completionHandler
+        Task { @MainActor in
+            if let takeoverID {
+                BerserkTakeoverModel.shared.note(.buzz(takeoverID), at: arrivedAt)
+            }
+            if let pendingAction {
+                NotificationActionInbox.shared.deposit(pendingAction, arrivedAt: arrivedAt)
+            }
+            done()
+        }
     }
 }
 
