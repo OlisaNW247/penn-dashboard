@@ -152,7 +152,6 @@ final class LoginNavigationObserver: NSObject, ObservableObject {
 
     /// Host substring the caller considers signed in once a non-login page
     /// actually renders (for example Canvas or Gradescope's own host).
-    var canvasAuthenticationHost: String?
     var signedInHostMarker: String?
     /// Canvas must leave its host for Penn SSO before returning. Gradescope's
     /// own login stays on gradescope.com, so its pane disables this requirement
@@ -212,7 +211,6 @@ final class LoginNavigationObserver: NSObject, ObservableObject {
     /// True once a page matching `signedInHostMarker` has committed. Both
     /// login panes use this to connect automatically after authentication.
     @Published private(set) var reachedSignedInDestination = false
-    @Published private(set) var isCheckingCanvasPage = false
 
     /// True once any observed navigation hop has landed on a host that
     /// does NOT contain `signedInHostMarker`. The Canvas login pane's very
@@ -338,7 +336,6 @@ final class LoginNavigationObserver: NSObject, ObservableObject {
 extension LoginNavigationObserver: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         loadError = nil
-        if canvasAuthenticationHost != nil { reachedSignedInDestination = false }
         // A new main-frame navigation means the flow has moved past whatever
         // was previously on screen. Penn SSO is a multi-hop redirect chain
         // (Canvas → Shibboleth → Duo → back); if an intermediate page's
@@ -381,7 +378,7 @@ extension LoginNavigationObserver: WKNavigationDelegate {
         // `didReceiveServerRedirectForProvisionalNavigation` and `didCommit`
         // all funnel through here, which is what lets a single check see
         // the whole SSO chain rather than just one callback's slice of it.
-        guard canvasAuthenticationHost == nil, let marker = signedInHostMarker else { return }
+        guard let marker = signedInHostMarker else { return }
         if !host.localizedCaseInsensitiveContains(marker) {
             sawForeignHost = true
         } else if kind == "commit",
@@ -712,8 +709,6 @@ extension LoginNavigationObserver: WKNavigationDelegate {
     private func recordNavigationFailure(_ webView: WKWebView, error: Error, phase: String) {
         let nsError = error as NSError
         if nsError.code != NSURLErrorCancelled {
-            isCheckingCanvasPage = false
-            webView.isHidden = false
             credentialCapture?.clear()
         }
         appendLogEntry(
@@ -773,29 +768,8 @@ extension LoginNavigationObserver: WKNavigationDelegate {
         if let http = navigationResponse.response as? HTTPURLResponse, let url = http.url {
             appendLogEntry(host: url.host ?? "", path: url.path, status: http.statusCode)
         }
-        // Hide candidate Canvas content before it paints. Keep navigation and
-        // the live session running; only verified ENV evidence confirms sign-in.
-        if navigationResponse.isForMainFrame, let host = canvasAuthenticationHost {
-            isCheckingCanvasPage = CanvasLoginEvidence.canInspect(url: navigationResponse.response.url, expectedHost: host)
-            webView.isHidden = isCheckingCanvasPage
-        }
+        // Observe-only: always allow. Never cancel, never redirect.
         decisionHandler(.allow)
-    }
-
-    func detectCanvasAuthentication() async {
-        guard let host = canvasAuthenticationHost, let webView else { return }
-        let inspectedURL = webView.url
-        guard !webView.isLoading, CanvasLoginEvidence.canInspect(url: inspectedURL, expectedHost: host) else {
-            reachedSignedInDestination = false
-            return
-        }
-        let result = try? await webView.evaluateJavaScript(CanvasLoginEvidence.script)
-        // Ignore evidence from a page that navigated away while JS was running.
-        guard !Task.isCancelled, webView.url == inspectedURL, !webView.isLoading else { return }
-        let authenticated = result as? Bool ?? false
-        reachedSignedInDestination = authenticated
-        isCheckingCanvasPage = false
-        webView.isHidden = authenticated
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -821,9 +795,6 @@ extension LoginNavigationObserver: WKNavigationDelegate {
             }
         }
         attemptAutoLoginIfNeeded(webView)
-        if canvasAuthenticationHost != nil {
-            Task { await detectCanvasAuthentication() }
-        }
     }
 
     /// Drives the "stay signed in" visible-pane auto-fill — see

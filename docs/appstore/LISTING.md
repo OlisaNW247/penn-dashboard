@@ -116,9 +116,9 @@ Instructure (Canvas), Turnitin (Gradescope), Ed Discussion, or any university.
 
 _Description: 3,793 characters including line breaks, within the 4,000 limit. The 3.0.0 text said a grades feature and "archive it in a tap" semester rollover; neither is in this build, so both are gone._
 
-## What's New in 3.3.1 (release notes, ≤4000)
+## What's New in 3.4.0 (release notes, ≤4000)
 
-Two crashes fixed.
+Two crashes fixed, and a simpler first run.
 
 • Smooth no longer quits a few seconds after opening when a class has two
   Canvas grading groups with the same name
@@ -126,6 +126,13 @@ Two crashes fixed.
 • Reconnecting Canvas happens over your dashboard, with an X, and never
   sends you back to the first-run screens
 • A sign-in that fails says so and offers to try again
+• Find your school by typing its name (220 universities); a Canvas address
+  still works
+• A short practice run while Canvas syncs the first time
+• Swiping left on a finished assignment brings it back
+• Gradescope is one question, yes or no
+• Shorter, easier-to-read answers from the assistant
+• Canvas links open in the Canvas Student app when it is installed
 
 ## What's New in 3.3.0 (release notes, ≤4000)
 
@@ -319,12 +326,13 @@ unless it is licensed: confirm the licence is in hand before uploading.)
 
 ## Build / version
 
-- Marketing version: **3.3.0** (2026-10-27; before it 3.2.1 (15), 3.2.0
-  (14), 3.1.0 (13))
-- Build: **16** (must exceed every build App Store Connect has seen; the
-  last uploaded was 15. **Before archiving, confirm in App Store Connect →
-  TestFlight → Builds that no build 16 exists**, and pick the next number if
+- Marketing version: **3.4.0** (2026-10-28; 3.3.1 was stamped that morning
+  but never uploaded; before it 3.3.0 (16), 3.2.1 (15), 3.2.0 (14), 3.1.0
+  (13))
+- Build: **17** (must exceed every build App Store Connect has seen; the
+  last uploaded was 16. **Before archiving, confirm in App Store Connect →
+  TestFlight → Builds that no build 17 exists**, and pick the next number if
   one does.)
 - The widget target's `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` must match
   the app's or validation fails. Both are stamped from `project.yml` and are
-  3.3.0 / 16 in `project.yml` and the committed project.
+  3.4.0 / 17 in `project.yml` and the committed project.

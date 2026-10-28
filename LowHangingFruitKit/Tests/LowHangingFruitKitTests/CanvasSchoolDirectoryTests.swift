@@ -1,5 +1,4 @@
 import Foundation
-import JavaScriptCore
 import Testing
 @testable import LowHangingFruitKit
 
@@ -172,31 +171,5 @@ struct CanvasSchoolDirectoryTests {
         #expect(components.queryItems?.first { $0.name == "per_page" }?.value == "100")
         #expect(!request.httpShouldHandleCookies)
         #expect(request.timeoutInterval == 12)
-    }
-
-    @Test("Authentication inspection rejects login pages and lookalike hosts")
-    func inspectionBoundary() {
-        for address in ["https://canvas.example.edu/login/saml", "https://canvas.example.edu/logout",
-                        "https://canvas.example.edu.evil.test/", "https://sso.example.edu/",
-                        "http://canvas.example.edu/"] {
-            #expect(!CanvasLoginEvidence.canInspect(url: URL(string: address), expectedHost: "canvas.example.edu"))
-        }
-        #expect(CanvasLoginEvidence.canInspect(url: URL(string: "https://canvas.example.edu/courses/1"), expectedHost: "canvas.example.edu"))
-    }
-
-    @Test("Real authentication script rejects anonymous pages and accepts signed-in Canvas")
-    func authenticationScript() throws {
-        let context = try #require(JSContext())
-        context.evaluateScript("var window = {};")
-        #expect(context.evaluateScript(CanvasLoginEvidence.script)?.toBool() == false)
-        for value in ["null", "0", "false", "true", "''", "'guest'", "-1", "1.5"] {
-            context.evaluateScript("window.ENV = {current_user_id: \(value)};")
-            #expect(context.evaluateScript(CanvasLoginEvidence.script)?.toBool() == false)
-        }
-        for value in ["123", "'123'"] {
-            context.evaluateScript("window.ENV = {current_user_id: \(value)};")
-            #expect(context.evaluateScript(CanvasLoginEvidence.script)?.toBool() == true)
-        }
-        #expect(context.exception == nil)
     }
 }

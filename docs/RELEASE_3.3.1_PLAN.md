@@ -149,3 +149,40 @@ Nothing has run on a phone yet.
   conflicts in the session code and read every one against the cookie
   rules in CLAUDE.md before taking either side.
 
+
+## Renamed to 3.4.0 (2026-10-28, afternoon)
+
+Marco folded PR #16 ("Simplify Canvas onboarding and add dashboard swipe
+practice", eight commits on `origin/v8` `63125b6`) into the release, so what
+ships is **3.4.0 (17)** from `release/3.4.0`, not 3.3.1. The build number
+stays 17: 14, 15 and 16 are taken in App Store Connect, and 17 has never
+been uploaded. The two crash fixes above ride along unchanged.
+
+The sign-in decision: the PR rewrote Canvas sign-in detection as a
+JavaScript probe of `window.ENV.current_user_id` polled every 2 s and
+deleted `CanvasConnectRetryRule`. That rewrite was not taken. v8's detection
+(the host marker, `signedInRequiresForeignHost`, `CanvasConnectRetryRule`) is
+restored verbatim, because the proven phone behaviour is the standard and the
+rewrite was never verified with a live sign-in. "Stay signed in" (PennKey
+credential capture, cookie renewal) is untouched.
+
+The 3.3.1 Release archive built at 14:20 UTC (`build/Smooth.xcarchive` in the
+3.3.1 worktree) is superseded by this tree and must never be uploaded.
+
+GATES ON THE MERGED TREE (2026-10-28, ~18:00 UTC, Marco's Mac, this tree with the
+sign-in restoration): `swift test --no-parallel` 3396 tests / 326 suites passed in
+123 s, with the one deliberate `withKnownIssue` in `EdFilterParityTests` that v8
+has too (SEC-10, Olisa's extension); Deno 614 tests passed and `deno task check`
+green; the iOS Debug device build (`-destination id=<Marco's iPhone 17 Pro>`,
+`-allowProvisioningUpdates`) succeeded and the product reads 3.4.0 (17), widget
+included. Up from 3373 / 322 on `release/3.3.1`: +23 tests, +4 suites, nothing lost.
+
+Remaining steps, in order:
+
+1. The gates on the merged tree (`swift test --no-parallel`, `deno task
+   test` and `deno task check`, the iOS Debug build to Marco's phone, never the Simulator).
+2. Debug install on Marco's iPhone.
+3. Marco's live PennKey sign-in test on that install.
+4. Archive 3.4.0 (17) from `release/3.4.0` and upload.
+5. Marco submits in App Store Connect with expedited review.
+6. Olisa deploys the backend for the prompt change.
