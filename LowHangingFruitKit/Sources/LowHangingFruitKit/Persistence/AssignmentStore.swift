@@ -437,6 +437,20 @@ public final class AssignmentStore {
     /// considers rows that are gone from the feed, and a row the feed no
     /// longer lists is precisely what the flag says.
     ///
+    /// **A row the student moved the date on is kept too** (`editedDueDates`,
+    /// pushed in by `AppState`). The edit is the student's own work, kept in
+    /// defaults beside the ledger, and it is only ever forgotten when its row
+    /// has left the ledger (`AppState.pruneDueDateEdits`). Deleting an
+    /// unfinished row whose date was edited therefore deleted the edit one
+    /// relaunch later: the finished rows that survive load the Canvas family,
+    /// the pruner sees the edited id missing from it, and forgets the edit. It
+    /// never happened when `purge` left no Canvas rows at all, which is why
+    /// the family check treated "no Canvas rows" as "nothing loaded". Such a
+    /// row stays flagged gone from the feed; the aging rule retires it once
+    /// both its dates are over a fortnight old. The cost is that an edited,
+    /// unfinished item is on the dashboard again after a relaunch, with Canvas
+    /// disconnected.
+    ///
     /// Not `purgeIncomplete(source:)`, which has another job (re-deriving a
     /// source from scratch after an extractor change) and deletes a
     /// completion-only row that is not finished. Returns how many rows were
@@ -446,7 +460,7 @@ public final class AssignmentStore {
         var removed = 0
         var flagged = false
         for row in rows(source: source) {
-            if row.isFinished || row.isCompletionOnly {
+            if row.isFinished || row.isCompletionOnly || editedDueDates[row.id] != nil {
                 if !row.isGoneFromFeed {
                     row.isGoneFromFeed = true
                     flagged = true

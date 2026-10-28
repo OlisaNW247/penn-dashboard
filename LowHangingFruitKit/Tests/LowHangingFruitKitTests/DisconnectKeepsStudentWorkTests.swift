@@ -67,6 +67,51 @@ struct DisconnectKeepsStudentWorkTests {
         #expect(rows["canvas:99"]?.isGoneFromFeed == true)
     }
 
+    @Test("an unfinished row the student moved the date on is kept, flagged gone; an unedited one still goes")
+    func editedDateRowIsKept() throws {
+        let store = try AssignmentStore(inMemory: true)
+        _ = store.reconcile([canvas("1"), canvas("2"), canvas("3")], source: .canvas)
+        store.editedDueDates = ["canvas:2": Self.future.addingTimeInterval(7 * 86_400)]
+
+        let removed = store.purgeKeepingStudentWork(source: .canvas)
+
+        #expect(removed == 2)
+        let rows = rowsByID(store)
+        #expect(Set(rows.keys) == ["canvas:2"])
+        #expect(rows["canvas:2"]?.userCompleted == false)
+        #expect(rows["canvas:2"]?.isGoneFromFeed == true)
+    }
+
+    @Test("after a disconnect and a relaunch the student's edited date is still there, and the other edits with it")
+    func editedDateSurvivesDisconnectAndRelaunch() throws {
+        let suite = "disconnect-edits-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let store = try AssignmentStore(inMemory: true)
+        let finished = canvas("1")
+        let edited = canvas("2")
+        let plain = canvas("3")
+        _ = store.reconcile([finished, edited, plain], source: .canvas)
+        store.setCompleted(ids: [finished.id], at: Self.now)
+        let moved = Self.future.addingTimeInterval(7 * 86_400)
+
+        let state = AppState(assignmentStore: store, dueDateEditsDefaults: defaults)
+        state.forceFixtureDataForTesting(false)
+        state.setDueDateEdit(moved, for: edited)
+        #expect(state.editedDueDate(for: edited) == moved)
+
+        state.disconnectCanvas()
+
+        // The next launch. The finished row loads the Canvas family, which is
+        // what let the pruner decide the edited id had left the ledger.
+        let relaunched = AppState(assignmentStore: store, dueDateEditsDefaults: defaults)
+        #expect(Set(relaunched.canvasItems.map(\.id)) == [finished.id, edited.id])
+        #expect(relaunched.editedDueDate(for: edited) == moved)
+        #expect(DueDateEditStore(defaults: defaults).load()[edited.id] == moved)
+        #expect(!relaunched.canvasItems.contains { $0.id == plain.id })
+    }
+
     @Test("it only touches the named source")
     func otherSourcesAreUntouched() throws {
         let store = try AssignmentStore(inMemory: true)
