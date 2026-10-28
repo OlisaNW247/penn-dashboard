@@ -2,6 +2,9 @@ import SwiftUI
 import WebKit
 import LowHangingFruitKit
 import os
+#if os(iOS)
+import UIKit
+#endif
 
 /// First-run welcome flow. Blocks the dashboard until Canvas is connected. The
 /// Canvas calendar feed URL is captured automatically from the logged-in
@@ -43,9 +46,9 @@ struct OnboardingView: View {
     @EnvironmentObject var scheduler: NotificationScheduler
     @State private var phase: Phase = .schoolSelection
     @State private var canvasConnectionNotice: String?
-    @State private var schoolSearch = ""
-    @State private var customCanvasAddress = ""
-    @State private var customAddressError: String?
+    @State private var isKeyboardVisible = false
+    @State private var showsCompletionGuide = false
+    @State private var completionGuideReady = false
     /// The school the student tapped while a different one was already
     /// chosen, held here until they answer the "switch school?" dialog.
     /// `CanvasInstallation` is `Identifiable`, but the dialog is driven by a
@@ -63,6 +66,7 @@ struct OnboardingView: View {
         case schoolSelection
         case canvasLogin
         case canvasConnected
+        case gradescopeChoice
         case gradescopeLogin
         case reminders
     }
@@ -136,6 +140,12 @@ struct OnboardingView: View {
         let initialPhase: Phase = Self.initialPhase(for: destination, hasChosenSchool: hasChosenSchool)
         #endif
         _phase = State(initialValue: initialPhase)
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-LHFCompletionGuideHarness") {
+            _showsCompletionGuide = State(initialValue: true)
+            _completionGuideReady = State(initialValue: true)
+        }
+        #endif
     }
 
     var body: some View {
@@ -143,8 +153,28 @@ struct OnboardingView: View {
             stepContent
                 .id(phase)
                 .transition(.opacity)
+                .allowsHitTesting(!showsCompletionGuide)
+                .accessibilityHidden(showsCompletionGuide)
+            if showsCompletionGuide {
+                CanvasCompletionGuide(isReady: completionGuideReady, notice: canvasConnectionNotice) {
+                    guard completionGuideReady else { return }
+                    showsCompletionGuide = false
+                    advancePastCanvasStep()
+                }
+            }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: phase)
+        #if os(iOS)
+        // Keyboard notifications cover both native search/address fields and
+        // Canvas's web login fields. Removing the whole inset also frees its
+        // padding, rather than leaving an empty panel above the keyboard.
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            isKeyboardVisible = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            isKeyboardVisible = false
+        }
+        #endif
             // The walk has to declare that it fills. `RootCore` hosts this
             // inside a `ZStack` — it shares that stack with the splash — and a
             // ZStack centres any child that reports back a smaller size than
@@ -186,6 +216,8 @@ struct OnboardingView: View {
                           detail: "Disconnect at any time in Settings",
                           notice: canvasConnectionNotice, onBack: nil,
                           onContinue: advancePastCanvasStep)
+        case .gradescopeChoice:
+            gradescopeChoiceStep
         case .gradescopeLogin:
             gradescopeStep
         case .reminders:
@@ -211,115 +243,19 @@ struct OnboardingView: View {
 
     // MARK: - Connect Canvas (required, not skippable)
 
-    private var matchingSchools: [CanvasInstallation] {
-        let query = schoolSearch.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return CanvasInstallation.verifiedSchools }
-        return CanvasInstallation.verifiedSchools.filter {
-            $0.name.localizedCaseInsensitiveContains(query)
-                || $0.host.localizedCaseInsensitiveContains(query)
-        }
-    }
-
     private var schoolSelectionStep: some View {
         VStack(spacing: 0) {
-            // The picker has no header of its own. While a reconnect cover is
-            // open it gets the shared top bar, whose trailing end carries the
-            // close control (`reconnectCloseButton`), as a row above the
-            // scroll view so it never overlaps the picker's content. A first
-            // run has no cover to close and keeps the bare picker.
-            if state.isReconnecting {
-                topBar(onBack: nil)
-            }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    Text("Where do you use Canvas?")
-                        .font(.lhfSerif(34))
-                        .foregroundStyle(Color.v2Ink)
-
-                    TextField("Search schools", text: $schoolSearch)
-                        .font(.lhfSans(16, weight: .medium))
-                        .textFieldStyle(.plain)
-                        .padding(.horizontal, 16)
-                        .frame(minHeight: 52)
-                        .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-
-                    VStack(spacing: 8) {
-                        ForEach(matchingSchools) { school in
-                            schoolButton(school)
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        SmoothSectionHeader("another school", accent: .smoothTeal)
-                        TextField("canvas.school.edu", text: $customCanvasAddress)
-                            .font(.lhfSans(15, weight: .medium))
-                            .textFieldStyle(.plain)
-                            #if os(iOS)
-                            .textInputAutocapitalization(.never)
-                            .keyboardType(.URL)
-                            #endif
-                            .autocorrectionDisabled()
-                            .padding(.horizontal, 16)
-                            .frame(minHeight: 52)
-                            .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-
-                        if let customAddressError {
-                            Text(customAddressError)
-                                .font(.lhfSans(12))
-                                .foregroundStyle(Color.v2SpineRed)
-                        }
-
-                        Button("Continue with this address", action: chooseCustomCanvas)
-                            .font(.lhfSans(14, weight: .semibold))
-                            .foregroundStyle(Color.v2ToggleActiveTx)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(Capsule().fill(Color.v2Ink))
-                            .buttonStyle(.plain)
-                            .disabled(customCanvasAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 24)
+            if state.isReconnecting { topBar(onBack: nil) }
+            SchoolSelectionView { school in
+                lhfHapticLight()
+                chooseSchool(school)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.v2Bg.ignoresSafeArea())
-    }
-
-    private func schoolButton(_ school: CanvasInstallation) -> some View {
-        Button {
-            lhfHapticLight()
-            chooseSchool(school)
-        } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(school.name)
-                        .font(.lhfSans(15, weight: .semibold))
-                        .foregroundStyle(Color.v2Ink)
-                    Text(school.host)
-                        .font(.lhfSans(11))
-                        .foregroundStyle(Color.v2DateText)
-                }
-                Spacer()
-                Image(systemName: "checkmark.seal.fill")
-                    .foregroundStyle(Color.v2SpineGreen)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !(state.isReconnecting || state.hasCompletedOnboarding) {
+                previewFooter
             }
-            .padding(.horizontal, 16)
-            .frame(minHeight: 58)
-            .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
         }
-        .buttonStyle(.plain)
-        .accessibilityHint("opens this school's Canvas sign-in")
-    }
-
-    private func chooseCustomCanvas() {
-        guard let installation = CanvasInstallation.custom(address: customCanvasAddress) else {
-            customAddressError = "enter a canvas address, like canvas.school.edu"
-            return
-        }
-        customAddressError = nil
-        chooseSchool(installation)
     }
 
     /// The one path from the picker (a listed school or a typed address) to
@@ -350,12 +286,22 @@ struct OnboardingView: View {
     /// The login pane stays mounted until verified connection and credential saving
     /// finish. Confirmation is a separate phase, not a reaction to partial state.
     private var canvasStep: some View {
-        CanvasLoginPane(installation: state.canvasInstallation, onConnected: canvasConnected)
+        CanvasLoginPane(
+            installation: state.canvasInstallation,
+            onConnected: canvasConnected,
+            onSyncStarted: {
+                guard state.onboardingDestination == .full else { return }
+                canvasConnectionNotice = nil
+                completionGuideReady = false
+                showsCompletionGuide = true
+            },
+            onConnectionFailed: { showsCompletionGuide = false }
+        )
             .environmentObject(state)
             .safeAreaInset(edge: .top, spacing: 0) {
                 loginHeader(
                     title: "Sign in to \(state.canvasInstallation.name)",
-                    onBack: { phase = .schoolSelection }
+                    onBack: { if !state.isCanvasDiscoveryLoading { phase = .schoolSelection } }
                 )
             }
             // The reviewer's door, restored here after a regression
@@ -392,44 +338,89 @@ struct OnboardingView: View {
 
     /// Same door as `IntroView.previewLink`, on the screen a reviewer
     /// actually lands on after skipping the intro.
+    @ViewBuilder
     private var previewFooter: some View {
-        Button {
-            lhfHapticLight()
-            state.enterPreviewMode()
-        } label: {
-            VStack(spacing: 3) {
-                Text("just exploring?")
-                    .font(.lhfSans(13))
-                    .foregroundStyle(Color.v2DateText)
-                Text("preview with sample data")
-                    .font(.lhfSans(14, weight: .semibold))
-                    .foregroundStyle(Color.v2Ink)
-                    .underline()
+        if !isKeyboardVisible {
+            HStack {
+                Spacer()
+                Button {
+                    lhfHapticLight()
+                    state.enterPreviewMode()
+                } label: {
+                    Text("Preview")
+                        .font(.lhfSans(14, weight: .semibold))
+                        .foregroundStyle(Color.v2Ink)
+                        .padding(.horizontal, 20)
+                        .frame(minHeight: 44)
+                        .background(Color.v2ToggleBg, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Preview")
+                .accessibilityHint("Explore a demo dashboard without logging in")
             }
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 24)
             .padding(.vertical, 12)
+            .background(Color.v2Bg)
         }
-        .buttonStyle(.plain)
-        .background(Color.v2Card)
-        .accessibilityLabel("preview the app with sample data")
-        .accessibilityHint("explore a demo dashboard without logging in")
     }
 
-    /// Keep the confirmation visible until Continue, including Settings reconnects.
+    /// First-run sync keeps the lesson visible until Continue. Settings
+    /// reconnects keep their existing connection confirmation instead.
     private func canvasConnected(_ notice: String?) {
         canvasConnectionNotice = notice
-        phase = .canvasConnected
+        if showsCompletionGuide {
+            completionGuideReady = true
+        } else {
+            phase = .canvasConnected
+        }
     }
 
     private func advancePastCanvasStep() {
         if state.onboardingDestination == .canvas {
             state.completeOnboarding()
         } else {
-            phase = .gradescopeLogin
+            phase = .gradescopeChoice
         }
     }
 
     // MARK: - Step 2: Connect Gradescope (optional, skippable)
+
+    @ViewBuilder
+    private var gradescopeChoiceStep: some View {
+        if state.isGradescopeConnected && !state.gradescopeNeedsReauth {
+            gradescopeStep
+        } else {
+            gradescopeInvitation
+        }
+    }
+
+    private var gradescopeInvitation: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                Label("Canvas is connected", systemImage: "checkmark.circle.fill")
+                    .font(.headline)
+                    .foregroundStyle(Color.v2SpineGreen)
+                Text("Do you use Gradescope?")
+                    .font(.lhfSerif(34))
+                    .foregroundStyle(Color.v2Ink)
+                Button("Continue with Canvas only", action: gradescopeSkipped)
+                    .font(.headline)
+                    .foregroundStyle(Color.v2ToggleActiveTx)
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .background(Color.v2Ink, in: Capsule())
+                    .buttonStyle(.plain)
+                Button("Connect Gradescope") { phase = .gradescopeLogin }
+                    .font(.headline)
+                    .foregroundStyle(Color.v2Ink)
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .background(Color.v2Card, in: Capsule())
+                    .buttonStyle(.plain)
+            }
+            .padding(24)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.v2Bg.ignoresSafeArea())
+    }
 
     @ViewBuilder
     private var gradescopeStep: some View {
@@ -485,7 +476,7 @@ struct OnboardingView: View {
     /// Profile, so onboarding never creates a second notification preference.
     private var remindersStep: some View {
         VStack(spacing: 0) {
-            topBar(onBack: { phase = .gradescopeLogin })
+            topBar(onBack: { phase = .gradescopeChoice })
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
@@ -903,92 +894,39 @@ struct OnboardingView: View {
 
 // MARK: - Canvas login pane
 
-/// What the Canvas login pane does when a connect attempt comes back
-/// unconnected, as a pure rule so a test can pin it without a WebView.
-///
-/// Two things pull against each other. At Penn, `39b2fff`'s rule is that a
-/// failed connect never calls `LoginNavigationObserver.reset()`: that also
-/// zeroes `autoLoginAttempts`, the counter that holds the saved PennKey
-/// password to one auto-submission per pane appearance, and resetting it with
-/// the pane still mid-Duo lets a re-rendered credential form be filled a
-/// second time. So Penn only ever shows the failure and waits for the student.
-/// Everywhere else the reset is what brings the login page back after a
-/// custom host commits its landing page before a session exists, and it is
-/// also a loop: a single sign-on that bounces straight back to Canvas arrives
-/// "signed in", fails to connect, is reset, bounces back, and so on with a
-/// spinner behind it. Two automatic resets per pane lifetime is enough for
-/// the landing-page case (one is the bounce, the second is a slow cookie
-/// write) and a hard stop for the loop; after that the student has the
-/// "try again" button and the "I've finished signing in" button.
-///
-/// The wrong fix is a longer cap or a timer between resets: a bouncing
-/// sign-on is not a timing problem, and a loop that eventually ends is still
-/// a loop the student sits behind.
-enum CanvasConnectRetryRule {
-
-    /// The most automatic reset-and-retry cycles one pane lifetime gets at a
-    /// school other than Penn.
-    static let maxAutomaticResets = 2
-
-    enum FailedConnectAction: Equatable {
-        /// Leave the observer (and so its auto-login counter) alone: show the
-        /// failure and the retry control. Penn always, and any other school
-        /// once the cap is spent.
-        case showFailureKeepingCounter
-        /// `LoginNavigationObserver.reset()` and let the page come back.
-        case resetAndRetry
-    }
-
-    nonisolated static func failedConnectAction(
-        for installation: CanvasInstallation,
-        automaticResetsSoFar: Int
-    ) -> FailedConnectAction {
-        if installation.id == CanvasInstallation.penn.id { return .showFailureKeepingCounter }
-        return automaticResetsSoFar < maxAutomaticResets ? .resetAndRetry : .showFailureKeepingCounter
-    }
-}
-
 /// Canvas login WebView whose "Connect" action captures the ICS feed URL,
 /// syncs Canvas, and scans for requirements in one step.
 private struct CanvasLoginPane: View {
     @EnvironmentObject private var state: AppState
     let installation: CanvasInstallation
     let onConnected: (String?) -> Void
+    let onSyncStarted: () -> Void
+    let onConnectionFailed: () -> Void
 
     @State private var paneActive = false
     @State private var isReadingCookies = false
     @State private var isPurging = true
     @State private var message: String?
-    /// True once a connect has failed with the observer's
-    /// `reachedSignedInDestination` still latched. That flag is `private(set)`
-    /// and its only clearer, `reset()`, also zeroes the auto-login counter
-    /// (see `CanvasConnectRetryRule`), so the pane keeps its own record that
-    /// the destination no longer means "connecting": without it the body kept
-    /// showing the spinner forever, with no message and no button, because
-    /// `onChange` only fires on a change and the flag never changed back.
+    /// Retry is offered only after authenticated Canvas evidence followed
+    /// by a failed connection. The same web session stays mounted throughout.
     @State private var connectFailed = false
-    /// How many times a failed connect has already reset the observer and
-    /// retried by itself in this pane's lifetime
-    /// (`CanvasConnectRetryRule.maxAutomaticResets`).
-    @State private var automaticResets = 0
     @StateObject private var navObserver: LoginNavigationObserver
 
-    init(installation: CanvasInstallation, onConnected: @escaping (String?) -> Void) {
+    init(installation: CanvasInstallation, onConnected: @escaping (String?) -> Void,
+         onSyncStarted: @escaping () -> Void, onConnectionFailed: @escaping () -> Void) {
         self.installation = installation
         self.onConnected = onConnected
+        self.onSyncStarted = onSyncStarted
+        self.onConnectionFailed = onConnectionFailed
         let observer = LoginNavigationObserver()
         observer.credentialCapture = installation.id == CanvasInstallation.penn.id ? PennKeyLoginCapture() : nil
-        observer.signedInHostMarker = installation.host
+        observer.canvasAuthenticationHost = installation.host
         // Canvas Student can claim universal links for the Canvas host, which
         // hijacks the SAML return hop away from this WebView on a device
         // that has it installed — see `appLinkGuardHost`'s doc comment.
         // Gradescope's pane below leaves this `nil`: no Gradescope iOS app
         // claims those links, so there is nothing to guard against there.
         observer.appLinkGuardHost = installation.host
-        // Avoid treating an institution's public landing page as a completed
-        // login. Normal SSO flows auto-connect after leaving and returning;
-        // Canvas-local/guest logins use the explicit "finished" button below.
-        observer.signedInRequiresForeignHost = true
         _navObserver = StateObject(wrappedValue: observer)
     }
 
@@ -1009,15 +947,8 @@ private struct CanvasLoginPane: View {
     }
 
     var body: some View {
-        Group {
-            if isPurging || isReadingCookies || (navObserver.reachedSignedInDestination && !connectFailed) {
-                VStack {
-                    Spacer()
-                    ProgressView()
-                        .accessibilityLabel(isPurging ? "Preparing Canvas sign-in" : "Connecting Canvas")
-                    Spacer()
-                }
-            } else {
+        ZStack {
+            if !isPurging {
                 VStack(spacing: 0) {
                     if let message {
                         HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -1048,14 +979,21 @@ private struct CanvasLoginPane: View {
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                    Button("I've finished signing in", action: connect)
-                        .font(.lhfSans(14, weight: .semibold))
-                        .foregroundStyle(Color.v2ToggleActiveTx)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 13)
-                        .background(Color.v2Ink)
-                        .buttonStyle(.plain)
+                    if connectFailed && navObserver.reachedSignedInDestination {
+                        Button("I've finished signing in", action: connect)
+                            .font(.lhfSans(14, weight: .semibold))
+                            .foregroundStyle(Color.v2ToggleActiveTx)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .background(Color.v2Ink)
+                            .buttonStyle(.plain)
+                    }
                 }
+            }
+            if isPurging || isReadingCookies {
+                Color.v2Bg
+                ProgressView()
+                    .accessibilityLabel(isPurging ? "Preparing Canvas sign-in" : "Connecting Canvas")
             }
         }
         .background(Color.v2Bg.ignoresSafeArea())
@@ -1078,6 +1016,10 @@ private struct CanvasLoginPane: View {
                 in: LoginDataStores.canvas
             )
             isPurging = false
+            while !Task.isCancelled {
+                await navObserver.detectCanvasAuthentication()
+                try? await Task.sleep(for: .seconds(2))
+            }
         }
         // Session-longevity Layer 2 guard (`CanvasSessionRenewer`): this pane
         // reads from and writes into `LoginDataStores.canvas` the same live,
@@ -1140,9 +1082,15 @@ private struct CanvasLoginPane: View {
     }
 
     private func connect() {
-        guard !isReadingCookies else { return }
+        guard !isReadingCookies, navObserver.reachedSignedInDestination else { return }
         message = nil
         isReadingCookies = true
+        // Keep this pane mounted beneath the guide: it owns credential
+        // capture and finishes secure storage after the Canvas sync returns.
+        #if os(iOS)
+        navObserver.webView?.endEditing(true)
+        #endif
+        onSyncStarted()
         // Must read from the SAME store instance the WebView above was
         // configured with (`LoginDataStores.canvas`), not `.default()` — see
         // that type's doc comment. Reading the wrong store returns an empty
@@ -1168,6 +1116,7 @@ private struct CanvasLoginPane: View {
                 }
             SessionCookieStore.save(canvasCookies, service: .canvas)
             Task { @MainActor in
+                defer { isReadingCookies = false }
                 guard paneActive else { return }
                 let connected = await state.connectCanvas(cookies: canvasCookies)
                 // No `paneActive` guard here, on purpose (review of
@@ -1181,7 +1130,6 @@ private struct CanvasLoginPane: View {
                 // bookkeeping below belongs to the connection, not to the
                 // pane; only the UI hand-off (`onConnected`) still checks the
                 // pane is on screen.
-                isReadingCookies = false
                 if connected {
                     var persistenceNotice: String?
                     if let capture = navObserver.credentialCapture {
@@ -1251,35 +1199,11 @@ private struct CanvasLoginPane: View {
                     // error (`state.error` can be a bare `localizedDescription`;
                     // DashboardSmallFixesTests pins this since 9e1ccae).
                     message = "couldn't sign in. try again."
-                    switch CanvasConnectRetryRule.failedConnectAction(
-                        for: installation,
-                        automaticResetsSoFar: automaticResets
-                    ) {
-                    case .resetAndRetry:
-                        // A custom host can commit its landing page before a
-                        // session exists. Return to the WebView instead of
-                        // leaving the pane behind an endless progress
-                        // spinner, at most twice (`CanvasConnectRetryRule`).
-                        automaticResets += 1
-                        navObserver.reset()
-                    case .showFailureKeepingCounter:
-                        // Penn, or any school whose retries are spent. Never
-                        // `navObserver.reset()` here: at Penn a failed connect
-                        // stays as `39b2fff`, the build that has kept a real
-                        // phone signed in, left it, because `reset()` zeroes
-                        // `autoLoginAttempts`, the counter that holds the
-                        // saved PennKey password to one auto-submission per
-                        // pane appearance, and resetting it while the pane is
-                        // still mid-Duo would let a re-rendered credential
-                        // form be auto-filled a second time. The counter is
-                        // the part of `39b2fff` worth keeping; its spinner is
-                        // not (it had the same dead end, where the destination
-                        // flag stays latched and the spinner never clears). So
-                        // the pane records that the connect failed and shows
-                        // the WebView again, with the message and "try again"
-                        // above it.
-                        connectFailed = true
-                    }
+                    // Keep the signed-in WebView and credential capture alive
+                    // for retry; resetting the observer would permit another
+                    // automatic password submission in the same login pane.
+                    connectFailed = true
+                    onConnectionFailed()
                 }
             }
         }

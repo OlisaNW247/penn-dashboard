@@ -1367,7 +1367,7 @@ final class AppState: ObservableObject {
         // refreshing browser cookies without erasing app data.
         if ProcessInfo.processInfo.arguments.contains("-LHFFullOnboardingReview") {
             hasCompletedOnboarding = false
-            hasSeenIntro = false
+            hasSeenIntro = ProcessInfo.processInfo.arguments.contains("-LHFSkipIntro")
             onboardingDestination = .full
             userName = ""
             canvasICSURL = ""

@@ -38,6 +38,16 @@ dates.
 
 ---
 
+## Onboarding review — 2026-10-28
+
+Work moved to `codex/onboarding-current`, based on current `origin/v8` 4316bba
+(includes release 3.3.1). The old onboarding checkout was based on 3.0.0 and
+must not be installed again. The current Canvas credential capture is retained:
+no post-login vault sheet or second credential entry. Search includes 220
+curated sites with relevance and typo ranking; Preview hides with the keyboard;
+Gradescope is optional with the explanatory paragraph removed. Device login
+and automatic reconnection still require interactive verification.
+
 ## Now: before the next release
 
 These block shipping, or would make shipping risky. The launch-prep
@@ -995,3 +1005,30 @@ Kept so nobody rebuilds them blind.
   - Multi-school sign-in (`fbfc702`).
   - Canvas and Gradescope sessions kept alive until the server rejects them,
     not a local 24-hour clock (`fac110d`..`99609c0`).
+
+2026-10-28 verification on `codex/onboarding-current`: 61 targeted tests in
+8 suites passed (catalog/ranking, credential capture/write, Canvas login
+hardening, failure recovery and reconnect behavior). iOS Debug device build
+succeeded; 3.3.1 (17) installed and launched on the owner's iPhone 17 Pro.
+No Xcode UI or simulator used. Interactive sign-in/renewal is still for device
+review; these tests do not claim a live authentication result.
+
+### Canvas sync lesson and undo gestures — 2026-10-28
+
+Full onboarding now shows one concise completion lesson while Canvas syncs.
+A local practice card teaches swipe-right to mark done and tap/swipe-left in
+`prev` to undo; it never touches real assignments. Continue waits for verified
+connection and credential persistence, then goes to the optional Gradescope
+choice. Fast sync leaves the lesson visible; failure returns to the retained
+login web view. Settings reconnects keep their existing confirmation.
+Completed dashboard cards now support left-swipe undo through the same persisted
+`markActive` path as tapping. Vertical scrolling and short nudges do not undo.
+These actions only change Smooth's completion state, never Canvas submissions.
+
+Final validation on 2026-10-28: `swift test --package-path LowHangingFruitKit
+--jobs 2 --no-parallel` passed 3,388 tests in 324 suites, with the pre-existing
+known `EdFilterParityTests` anonymous-thread issue. The iOS Debug device build
+passed; installed on the owner's iPhone 17 Pro and opened the practice lesson.
+Catalog regeneration is deterministic; `git diff --check` is clean. No Xcode
+UI or simulator used. Live multi-school sign-in remains outside this automated
+coverage. The owner approved the preceding onboarding screens on-device.

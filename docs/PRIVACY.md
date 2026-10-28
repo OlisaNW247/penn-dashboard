@@ -438,3 +438,10 @@ If this policy changes, the updated version will be posted at this page.
 ## Contact
 
 Questions about this policy: **lowhangingfruit.help@gmail.com**
+
+## Finding your school
+
+School search runs on your device against a bundled list of 220 university
+Canvas sites. Search terms are not sent to Instructure or saved as search
+history. You can enter your Canvas address if your school is missing.
+Selecting a result opens that school's sign-in page.

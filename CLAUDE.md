@@ -1,3 +1,8 @@
+<!-- Onboarding work: codex/onboarding-current, based on origin/v8 4316bba (2026-10-28).
+Do not build the abandoned codex/simplify-canvas-onboarding checkout: it is
+based on 3.0.0-era 56ccd01 and reintroduces the old post-login PennKey sheet.
+Before any device install, verify the branch contains the current release tip. -->
+
 # LHF (Low Hanging Fruit), shipped as **Smooth**
 
 ## Start here: every session reads this file, and updates it before it ends
@@ -41,10 +46,11 @@ for macOS from the same source. The user-facing name is **Smooth** (since
 bundle ids, module names, App Group names and defaults keys keep their LHF
 names.
 
-**Schools.** Built for Penn, and since 2026-09-23 it also signs in to the
-Canvas of Brown, Columbia, Cornell, Dartmouth, Harvard, Princeton and Yale,
-or any HTTPS Canvas address a student types in
-(`CanvasInstallation.verifiedSchools` / `.custom(address:)`). Everything
+**Schools.** As of 2026-10-28 onboarding searches 220 curated US university
+Canvas sites locally, ranked by name and aliases with bounded typo matching.
+Specialized live-directory programs are excluded. Any other HTTPS Canvas
+address can be entered manually. Catalog sources and limitations live in
+`docs/canvas-directory/`; authenticated support is not proven for all sites. Everything
 server-side is Penn-only for now: pooled course materials, the server path
 of ask, the announcement AI assist, and "stay signed in" (PennKey).
 Non-Penn installs run fully on-device, because the backend keys course
@@ -242,9 +248,9 @@ Keep this current. It is the fastest way for a new session to know what exists.
 
 - **Onboarding.** A three-beat intro (`MissionIntroView`), then
   `OnboardingView`'s walk:
-  1. school
+  1. university search (220 curated Canvas sites; manual address fallback)
   2. Canvas login (WebKit, the school's own SSO; Penn is PennKey + Duo)
-  3. Gradescope login (optional)
+  3. optional Gradescope choice: Continue with Canvas only / Connect Gradescope
   4. reminders, which since 2026-10-20 ends with a **"smooth sweeper"**
      section under "turned in notifications": a line in ink ("an alarm
      10 minutes before anything you haven't turned in."), a smaller
@@ -259,8 +265,9 @@ Keep this current. It is the fastest way for a new session to know what exists.
      gradescope, reminders); the school picker has none.
   5. a per-course setup walk (`OnboardingCourseSetup`)
 
-  "Just exploring? preview with sample data" on the first pane is preview
-  mode, App Review's only way in (see Known gaps). A reconnect from the
+  The intro preview link and bottom-right "Preview" button in school search
+  and Canvas login open demo mode, App Review's only way in (see Known gaps).
+  The bottom panel hides while the iOS keyboard is open. A reconnect from the
   dashboard banner opens the Canvas login directly; the school picker is
   behind the back chevron, and since 2026-10-09 (blind) picking a
   different school there asks "switch school?" first, because it signs
@@ -274,7 +281,7 @@ Keep this current. It is the fastest way for a new session to know what exists.
   vault-door emblem that clunks shut once as the sheet opens (drawn
   already shut under Reduce Motion), the same one line about the
   Keychain, the two fields. It was a lock icon under "stay signed in to
-  canvas". Only the look changed. **Since 2026-10-23 (never compiled) it is
+  canvas". Only the look changed. **Since 2026-10-23 it is
   no longer offered after the Canvas login**: the login saves the PennKey
   itself ("Stay signed in", below), the onboarding step after a connect is
   a "Canvas connected" page ("Disconnect at any time in Settings") with
@@ -3517,3 +3524,45 @@ Don't accept on trust. Before integrating:
 **A change that has not been compiled is not done.** Say so plainly rather
 than implying otherwise — from a subagent's report, or your own. Both of this
 project's worst days came from resolved-but-uncompiled Swift being pushed.
+
+## Onboarding update — 2026-10-28
+
+`codex/onboarding-current` starts at `origin/v8` 4316bba, including release
+3.3.1. The earlier onboarding branch started at stale 56ccd01 and must not
+be installed or merged as a whole. Only the scoped onboarding changes were
+ported; current credential capture, single Canvas login, token persistence,
+reconnect cover and school-switch safeguards remain in place.
+
+School search uses 220 curated US Canvas sites, ranked by name/alias with
+bounded typo matching. No live-directory program listings or search-term
+network requests. Manual addresses remain available. Preview sits bottom-right
+and hides with the keyboard. Canvas completion requires authenticated page
+evidence. Gradescope is an optional choice with two buttons and no explanatory
+paragraph. The catalog and limitations are in `docs/canvas-directory/`.
+
+2026-10-28 verification on `codex/onboarding-current`: 61 targeted tests in
+8 suites passed (catalog/ranking, credential capture/write, Canvas login
+hardening, failure recovery and reconnect behavior). iOS Debug device build
+succeeded; 3.3.1 (17) installed and launched on the owner's iPhone 17 Pro.
+No Xcode UI or simulator used. Interactive sign-in/renewal is still for device
+review; these tests do not claim a live authentication result.
+
+### Canvas sync lesson and undo gestures — 2026-10-28
+
+Full onboarding now shows one concise completion lesson while Canvas syncs.
+A local practice card teaches swipe-right to mark done and tap/swipe-left in
+`prev` to undo; it never touches real assignments. Continue waits for verified
+connection and credential persistence, then goes to the optional Gradescope
+choice. Fast sync leaves the lesson visible; failure returns to the retained
+login web view. Settings reconnects keep their existing confirmation.
+Completed dashboard cards now support left-swipe undo through the same persisted
+`markActive` path as tapping. Vertical scrolling and short nudges do not undo.
+These actions only change Smooth's completion state, never Canvas submissions.
+
+Final validation on 2026-10-28: `swift test --package-path LowHangingFruitKit
+--jobs 2 --no-parallel` passed 3,388 tests in 324 suites, with the pre-existing
+known `EdFilterParityTests` anonymous-thread issue. The iOS Debug device build
+passed; installed on the owner's iPhone 17 Pro and opened the practice lesson.
+Catalog regeneration is deterministic; `git diff --check` is clean. No Xcode
+UI or simulator used. Live multi-school sign-in remains outside this automated
+coverage. The owner approved the preceding onboarding screens on-device.

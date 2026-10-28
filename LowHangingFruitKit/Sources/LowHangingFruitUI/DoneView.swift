@@ -2,7 +2,7 @@ import SwiftUI
 import LowHangingFruitKit
 
 /// "Done" tab — completed assignments styled as archived: greige surface, muted
-/// grey spine, green check, strikethrough title. Tapping un-completes an item.
+/// grey spine, green check, strikethrough title. Tap or swipe left to undo.
 ///
 /// Leads with the week's count ("4 down this week") rather than ending on it:
 /// with a whole semester of finished work below, the one number worth seeing
@@ -142,43 +142,87 @@ struct DoneCardView: View {
 
     @Environment(\.courseNameOverrides) private var courseNameOverrides
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var dragX: CGFloat = 0
+    @State private var didUndo = false
     private let corner: CGFloat = 18
 
     var body: some View {
-        Button {
-            lhfHapticLight()
-            onTap()
-        } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(item.assignment.displayCourse(overrides: courseNameOverrides).uppercased())
-                        .font(.lhfMono(9.5, weight: .semibold))
-                        .tracking(1.1)
-                        .foregroundStyle(smoothTaskTextAccent(item.due))
-                    Text(item.assignment.title)
-                        .font(.lhfAssignmentTitle(20))
-                        .foregroundStyle(Color.smoothInk)
-                        .strikethrough(true, color: Color.smoothInk)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-
-                Spacer(minLength: 8)
-
-                if let dayLabel {
-                    Text(dayLabel)
-                        .font(.lhfMono(15, weight: .medium))
-                        .foregroundStyle(Color.smoothInk)
-                }
+        ZStack(alignment: .trailing) {
+            if dragX < -18 {
+                Image(systemName: "arrow.uturn.backward")
+                    .foregroundStyle(Color.smoothCobaltInk)
+                    .padding(.trailing, 18)
+                    .accessibilityHidden(true)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(smoothTaskFill(item.due))
-            .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-            .opacity(0.55)
+            card.offset(x: dragX)
         }
-        .buttonStyle(.plain)
+        .contentShape(RoundedRectangle(cornerRadius: corner))
+        .onTapGesture(perform: undo)
+        .gesture(
+            DragGesture(minimumDistance: 18)
+                .onChanged { value in
+                    guard !didUndo, abs(value.translation.width) > abs(value.translation.height) else { return }
+                    dragX = max(-86, min(0, value.translation.width))
+                }
+                .onEnded { value in
+                    if CompletionSwipe.accepts(horizontal: value.translation.width,
+                                               vertical: value.translation.height,
+                                               predicted: value.predictedEndTranslation.width,
+                                               undo: true) {
+                        undo()
+                    } else {
+                        withAnimation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.8)) {
+                            dragX = 0
+                        }
+                    }
+                }
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Tap or swipe left to mark incomplete")
+        .accessibilityAction { undo() }
+        .accessibilityAction(named: "Mark incomplete") { undo() }
+    }
+
+    private func undo() {
+        guard !didUndo else { return }
+        didUndo = true
+        lhfHapticLight()
+        // Persist immediately through the existing onUncomplete path. There
+        // is no delayed animation callback that could lose the user's action.
+        onTap()
+    }
+
+    private var card: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.assignment.displayCourse(overrides: courseNameOverrides).uppercased())
+                    .font(.lhfMono(9.5, weight: .semibold))
+                    .tracking(1.1)
+                    .foregroundStyle(smoothTaskTextAccent(item.due))
+                Text(item.assignment.title)
+                    .font(.lhfAssignmentTitle(20))
+                    .foregroundStyle(Color.smoothInk)
+                    .strikethrough(true, color: Color.smoothInk)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+
+            Spacer(minLength: 8)
+
+            if let dayLabel {
+                Text(dayLabel)
+                    .font(.lhfMono(15, weight: .medium))
+                    .foregroundStyle(Color.smoothInk)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(smoothTaskFill(item.due))
+        .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+        .opacity(0.55)
     }
 }
 
