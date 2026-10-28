@@ -37,6 +37,8 @@ struct VisualStructureTests {
             "ProfileClassesSection",
             "ProfileNotificationsSection",
             "iCloudSyncSection",
+            // Added 2026-10-27: the feedback section is the last one.
+            "SmoothSectionHeader(\"feedback\"",
         ]
         let positions = try markers.map { marker in
             try #require(body.range(of: marker)?.lowerBound)

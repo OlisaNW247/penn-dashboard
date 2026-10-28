@@ -126,6 +126,7 @@ struct BackendClient: Sendable {
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(configuration.anonKey, forHTTPHeaderField: "apikey")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        BackendVersionHeader.apply(to: &request)
 
         let bytes: URLSession.AsyncBytes
         let response: URLResponse
@@ -210,6 +211,7 @@ struct BackendClient: Sendable {
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(configuration.anonKey, forHTTPHeaderField: "apikey")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        BackendVersionHeader.apply(to: &request)
 
         let data: Data
         let response: URLResponse

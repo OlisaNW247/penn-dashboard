@@ -32,6 +32,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
+    @Environment(\.feedbackNoticeContext) private var feedbackNoticeContext
 
     /// Where taps on a loud alert's buttons wait for this view
     /// (`NotificationResponseRouter`); drained by `takeLoudAlertActions()`.
@@ -99,6 +100,18 @@ struct ContentView: View {
                     header
                         .padding(.horizontal, 20)
                         .padding(.top, 18)
+
+                    // One-time feedback card from the update manifest; the
+                    // context exists only when `RootCore` has an unhandled
+                    // notice, and never for preview or demo data.
+                    if let feedback = feedbackNoticeContext, !state.isUsingFixtureData {
+                        FeedbackNoticeCard(
+                            notice: feedback.notice,
+                            open: feedback.open,
+                            dismiss: feedback.dismiss
+                        )
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                    }
 
                     syncErrorBanner
                         .padding(.horizontal, 20)

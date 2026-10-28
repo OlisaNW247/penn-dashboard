@@ -59,7 +59,11 @@ shares completions, due-date edits, their own tasks and the work list
 with their own laptop **end-to-end encrypted** (AES-256-GCM, a key that
 goes from the laptop's screen to the phone's camera and never to the
 server); the server stores ciphertext it cannot read. Name, reminder
-settings and grades are never in it. The
+settings and grades are never in it. Backend requests carry the app's
+marketing version (`X-Smooth-Version`, since 2026-10-27) so the server can
+refuse builds below the update floor; it is the same for every copy of a
+release. The feedback card and Profile row (3.3.0) open a
+Google Form in Safari; the app adds nothing to the link. The
 PennKey password is saved automatically (since 2026-10-23) after a verified
 Penn Canvas sign-in inside the app's own login page, with a one-line
 disclosure above that page; it stays in this phone's Keychain
@@ -189,12 +193,14 @@ a `sync` carrying them is deployed (v14 or later; v13 is the NUL guard
 alone, see below) (`docs/appstore/CHECKLIST.md` → "3.2.0 (14)
 submission"). PR #13 was not yet merged into `v8` at upload time; the
 archived commit is reachable from the branch until it is.
+**3.3.0 (build 16)**, the feedback card and Profile row plus the hardened update lock, was **archived from `11a4381` on `claude/sharp-newton-qwv18v` and uploaded at 12:40 EDT (16:40 UTC) on 2026-10-27** ("Upload succeeded"), after 2933/264 green and the iOS Debug build on the same tree. Olisa created the 3.3.0 version record, attached build 16 and submitted it for review on 2026-10-27, per his word that day; approval and release are not recorded yet. The live manifest has carried the feedback object (`2026-10-smoothie`) since the same day, checked against the sanitizer's rules; builds below 3.3.0 ignore it. The branch is not merged into `v8`.
 3.0.1 (12) was stamped on 2026-10-09 for the sign-out fix alone and never
-archived. The `update-manifest` floor is **3.2.0** since
-2026-10-25 (`feec931`, at Olisa's word, once 3.2.0 was live; it had been
-1.2.1 since 2026-09-09), so every gated build below 3.2.0 shows the update
-wall. Raise it to 3.2.1 only once 3.2.1 is downloadable, and only at
-Olisa's word. Marco's
+archived. The `update-manifest` floor is **3.2.1** since
+2026-10-27 (`9a49cc5`, the first real run of the `update-floor` workflow,
+at Olisa's word; 3.2.1 had been live about 42 hours). It was 3.2.0 from
+2026-10-25 (`feec931`) and 1.2.1 from 2026-09-09. Every gated build below
+3.2.1 shows the update wall. From here the workflow raises it on each
+release (Update gate, below). Marco's
 read of the public iTunes lookup on 2026-10-08
 (`curl -s "https://itunes.apple.com/lookup?id=6783911002"`) put 3.0.0
 (build 11) live since 2026-09-28 at 17:34 UTC, the date `v8`'s notes round to
@@ -623,6 +629,18 @@ Keep this current. It is the fastest way for a new session to know what exists.
     data. Swipe right
     to complete it, with a small paper-scatter animation. A floating
     button opens **ask**.
+  - **Feedback card** (since 3.3.0, 2026-10-27, owner-approved from a
+    mockup): under the header, a one-time card ("how's smooth so far?" /
+    "takes 2 minutes.", grape speech bubble, ×) styled like the update
+    banner (`FeedbackNoticeCard.swift`). Tap opens the form in Safari, ×
+    dismisses; either marks the notice's id handled in `UserDefaults.lhf`
+    (`lhf.feedbackNoticeHandled.<id>`), so it never returns, and a new id
+    shows again. It exists only while the update manifest carries a
+    `feedback` object (`FeedbackNotice`, sanitized: https to
+    `docs.google.com` or `forms.gle` only), never in preview or demo,
+    during onboarding or behind the update wall. Remove the object from
+    `lhf-update.json` to stop it without a release. The link carries
+    nothing about the student.
   - **Turned in** (how a card knows, read from the code on 2026-10-18).
     A card is done when the student swiped it; when Canvas's grades fetch
     reports its assignment submitted (`submittedCanvasAssignmentIDs`,
@@ -909,6 +927,9 @@ Keep this current. It is the fastest way for a new session to know what exists.
      dashboard, items with nothing to submit, the announcement "ai assist"
      opt-out)
   7. sync (iCloud sync, off by default; on macOS, open at login)
+  8. feedback (since 3.3.0, 2026-10-27): one "send feedback ↗" row that
+     opens the Google feedback form in Safari (`FeedbackForm.defaultURL`,
+     or the live notice's link when the manifest carries one)
 
   `ProfileSemesterSection` (semester rollover, "add a class") exists but
   is only reachable from its `#Preview`; `VisualStructureTests` forbids
@@ -1119,6 +1140,8 @@ a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 **Current: 3346 tests / 320 suites on `fix/duplicate-category-ids` (`v8` `e3a57b3` plus the A1 crash fix, Release A, and the hardening groups of 2026-10-27; 2026-10-27, `swift test --no-parallel`, on Marco's Mac, with no other worktree testing at the same time), all green.** Deno: 599 tests, `deno task check` green on Deno 2.9 (`cd backend && deno task test`). The one red test since `aeaf982`, `AskCitationLinkTests` "the encoded request is byte-identical…", was a golden re-typed by hand with `America/New_York` where `JSONEncoder` writes `America\/New_York`; the golden was fixed on 2026-10-27, not the encoder. The new tests since `e3a57b3` are `DuplicateCategoryIDTests` (17, the launch crash, `docs/LAUNCH_CRASH_2026-10-26.md`; run against the original source they die with the production trap), `ReconnectCoverTests` (two suites, the A2 cover, plus two existing tests adjusted), and `SessionCookieLiveSessionTests` (10) with three Keychain tests in `SessionCookieStoreTests` (the A3 gate).  Before that: 2907 / 262 on `v8` `e3a57b3` (2026-10-25, the audit's gate run, same one failure).
 
 **Current: 2933 tests / 264 suites, all green, on `v8` at `17ce51f` (2026-10-27, `swift test --no-parallel`, on Olisa's Mac, 15.5 s), first run.** +43 tests and +4 suites over 2890/260: the tree-plan work of 2026-10-25 (`aeaf982`: local dates in the context document and excerpt block, kept excerpt structure, `WebsiteDiscoveryBatches`, the citation contract, the retrieval bench), compiled here for the first time. The Swift tree is unchanged through `6195eae` (later commits touch only the extension, the backend and docs). The iOS build of this tree (`xcodebuild`, which `swift test` does not cover) has not been run yet.
+**Current: 2933 tests / 264 suites, all green, on `claude/sharp-newton-qwv18v` at `3c23d9d` (2026-10-27, `swift test --no-parallel`, on Olisa's Mac, 13.4 s), first run: the feedback card and Profile row of 3.3.0 (16), +19 tests and +2 suites (`FeedbackNoticeTests`), nothing lost. The iOS Debug build of the same tree (widget included) succeeded the same run.**
+Before it: **2914 tests / 262 suites, all green, on `claude/sharp-newton-qwv18v` at `c6d404b` (2026-10-27, `swift test --no-parallel`, on Olisa's Mac, 15.3 s), second run.** The first run (`99d4006`, 17.7 s) failed one test, `AskCitationLinkTests` "the encoded request is byte-identical…", whose golden string `aeaf982` (2026-10-25, blind) re-typed with a bare `/` where `JSONEncoder` writes `\/`; `c6d404b` fixed the string. These runs are the first compile of the 2026-10-25 tree-plan work and of the update lock (`f89d908`, seven new `UpdateGateStoreTests`). The iOS Debug build of the same tree (`generic/platform=iOS`, `CODE_SIGNING_ALLOWED=NO`, widget included) succeeded on Olisa's Mac the same day.
 Before it: **2890 tests / 260 suites, all green, on `v8` at `04350cf` (2026-10-24, `swift test --no-parallel`, on Olisa's Mac, 12.8 s), first run.** It is the 3.2.0 release line (Marco's `fix/megaphone-every-class`, below) plus Marco's Smooth Sweeper settings (`codex/sweeper-settings`, PR #12) and the takeover fix (`8067691`), stamped 3.2.0 (15): the sweeper's changed `LoudAlertTests` and `BerserkAlarmTests` and the new parameterized takeover test, nothing lost. It is the first full run the sweeper code has had (Marco ran 109 targeted tests). The iOS Debug build of the same tree succeeded on the first try and was installed and launched on Olisa's iPhone 17 at 20:22 local on 2026-10-24, where the Sweeper section showed under reminders as designed (his screenshot). The footer removal (`311eeeb`) built for iOS and was installed at 20:28. A non-default alarm, a class switched off and the defaults ringing are not yet checked there.
 Before it: **2885 tests / 260 suites, all green, on `fix/megaphone-every-class` (PR #13) with `origin/v8` `fb3ed94` merged in (2026-10-23 about 22:10, `swift test --no-parallel`, on Marco's Mac, 29.2 s); the iOS device build of the same tree succeeds.** That is `v8`'s 2736 (Olisa's Marco merge, pushed uncompiled, its one stale structure test fixed here) plus the 149 PR #13 adds: 2755 on the old base `a480eb1`, and `v8` grew by 130 since that base, 2755 + 130 = 2885, so nothing was lost in the merge. Deno: 468 with `--no-check` (Olisa's 428 plus 40).
 
@@ -1591,8 +1614,35 @@ and because GitHub's web UI can edit it from a phone, which is the only way to
 lift a bad block.
 
 `minimumVersion` and `latestVersion` are kept **equal** — every release is
-mandatory, so `UpdateAvailableBanner` never fires in practice. Bump both on each
-release, but **only once the new build is actually downloadable**. A floor above
+mandatory, so `UpdateAvailableBanner` never fires in practice. **Since
+2026-10-27 nobody bumps them by hand.** `.github/workflows/update-floor.yml`
+(script and tests in `scripts/update-floor/`; `node --test
+"scripts/update-floor/*.test.mjs"`) asks Apple's public lookup every 30 minutes
+and raises both to the live version once it has been live six hours. It never
+lowers the floor and writes nothing on an odd lookup. It only runs from the
+default branch, `main`. To pause it (a new build crashes), set the repository
+variable `UPDATE_FLOOR_HOLD` to `true`; set it **before** hand-lowering the
+floor, or the next run raises it straight back. It was written because
+students were still on builds below 3.2.0 after the floor was raised by hand
+on 2026-10-25.
+
+The manifest may also carry an optional `feedback` object (3.3.0+, the
+dashboard's feedback card, What the app does). It is decoded with `try?` so
+a bad one can never cost `minimumVersion`, and older builds ignore the key.
+
+The rest of the lock, in builds after 3.2.1: below the floor `RootCore` renders
+only the wall (not an overlay, so `ContentView`, its sheets and its sync loop
+are gone), the store clears pending and delivered notifications, and writes
+`lhf.updateRequired` so the widget shows "update smooth". Backend functions
+refuse a present `X-Smooth-Version` below the floor with 426
+(`backend/supabase/functions/_shared/version.ts`, fail open);
+`LHF_REQUIRE_VERSION_HEADER=true` also refuses requests with no header, and
+should be set only once the floor is at or above the first build that sends
+it. `delete-account` is never gated, and functions the Chrome extension calls
+never require the header. The macOS menu-bar extra (`LHFScenes`) is outside
+`RootCore` and keeps syncing behind the wall: a known gap.
+
+The floor must never be above what is actually downloadable. A floor above
 what the App Store will serve is the one unrecoverable mistake here: the wall's
 button leads to a version that still fails the check, and everyone is stuck. The
 30-day ceiling in `UpdatePolicyCache` only rescues people who are offline.
@@ -2727,6 +2777,19 @@ none is a ship line.
   `docs/WHAT_CHANGED_3.2.2.md` lists every change with what to look at
   on the phone; the backend commits are not deployed (Olisa's go, with
   the checklist in that file).
+- **The feedback card and Profile row (3.3.0) are compiled but not seen on
+  a phone** (2026-10-27: 2933/264 green and the iOS Debug build succeeded
+  on Olisa's Mac at `3c23d9d`). Not yet watched: the card appearing once
+  the live manifest carries a `feedback` object, × and tap both keeping it
+  away for good, and the Profile row opening the form in Safari.
+- **The hardened update lock (2026-10-27) is compiled but not seen on a
+  phone.** `swift test --no-parallel` (2914/262 green) and the iOS Debug
+  build, widget included, both passed on Olisa's Mac the same day. Not yet
+  watched: the wall replacing the app with a sheet open, notifications
+  cleared, the widget's "update smooth" view (build with
+  `MARKETING_VERSION=1.0.0` to see the wall for real). The `update-floor` workflow has not run against the real App Store
+  lookup yet (the container cannot reach Apple), and the backend version
+  check is not deployed.
 - **A class's Ed posts can vanish from the phone and come back**
   (Marco's phone, 3.1.0 (13), read 2026-10-23 off a debug build installed
   over the store copy). He saw only PHYS 0151 in the megaphone. CIS 2620

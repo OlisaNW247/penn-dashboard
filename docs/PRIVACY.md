@@ -249,7 +249,24 @@ that stops the app from opening again until you update; if a newer version
 simply exists, it shows a dismissible banner instead. If the check fails for
 any reason — no signal, the file is unreachable, anything — the app opens
 normally and relies on the last successful check, kept for up to 30 days, in
-the meantime.
+the meantime. While that notice is up, the app also clears the reminders it
+had scheduled and the Home Screen widget shows "update smooth" instead of your
+work; both come back once you update.
+
+Requests the app makes to its own backend (the Penn features above) also
+carry the app's version number, for example "3.3.0", so the backend can refuse
+a version that is no longer supported. The version number is the same for
+every copy of that release and says nothing about you.
+
+## Feedback form
+
+Smooth may show a card on the dashboard asking how the app is going, and
+Profile has a "send feedback" row. Either one opens a Google Form in
+Safari. The app adds nothing to the link and sends the form nothing about
+you, your device or your coursework; whatever you type is sent to Google by
+the form itself, under Google's privacy policy, and is read by the
+developer. The card's wording and link come from the same public update
+file described above, so checking for it sends nothing new.
 
 ## The Chrome extension (optional, Penn)
 

@@ -1,5 +1,11 @@
 import Foundation
 import LowHangingFruitKit
+#if canImport(UserNotifications)
+import UserNotifications
+#endif
+#if canImport(WidgetKit)
+import WidgetKit
+#endif
 
 /// Where the hosted update manifest lives.
 ///
@@ -75,12 +81,34 @@ final class UpdateGateStore: ObservableObject {
     /// meant to carry it.
     @Published private(set) var appStoreURL: URL?
 
+    /// The manifest's one-time feedback card, from the cached policy at
+    /// launch and from each successful fetch. Same fail-open contract as
+    /// `verdict`: a failed fetch leaves it as it was. Left nil by a forced
+    /// DEBUG verdict, demo mode and an unparseable installed version, which
+    /// are the states that must show nothing extra.
+    @Published private(set) var feedbackNotice: FeedbackNotice?
+
     private let installedVersion: AppVersion?
     private let manifestURL: URL?
     private let session: URLSession
     private let cache: UpdatePolicyCache
     private let now: () -> Date
     private let defaults: UserDefaults
+
+    /// Runs once each time the verdict moves into `.updateRequired` (and once
+    /// at construction when the cached policy already says so). A build below
+    /// the floor must do nothing at all, and notifications are the one thing
+    /// that fires without the app being on screen: removing the scheduled and
+    /// the already-delivered ones means the student is not nudged by a build
+    /// that is not allowed to run. Injected so tests can observe it; the
+    /// default is the real notification-center call. AlarmKit alarms are
+    /// deliberately left alone.
+    ///
+    /// Nothing needs to put them back. Once a newer build (or a relaxed
+    /// floor) lets `ContentView` appear again, its `.task` and its 5-minute
+    /// `refresh()` both call `scheduler.reschedule(from:)`, which rebuilds the
+    /// whole pending set from the ledger.
+    private let clearNotifications: () -> Void
 
     /// True for every state where a network call could only make things
     /// worse: demo/reviewer mode (a wall is an automatic App Review
@@ -134,9 +162,11 @@ final class UpdateGateStore: ObservableObject {
         session: URLSession = .shared,
         cache: UpdatePolicyCache = UpdatePolicyCache(),
         now: @escaping () -> Date = Date.init,
-        defaults: UserDefaults = .lhf
+        defaults: UserDefaults = .lhf,
+        clearNotifications: @escaping () -> Void = UpdateGateStore.clearLocalNotifications
     ) {
         self.installedVersion = installedVersion
+        self.clearNotifications = clearNotifications
         self.manifestURL = manifestURL
         self.session = session
         self.cache = cache
@@ -204,6 +234,7 @@ final class UpdateGateStore: ObservableObject {
             if let cached = cache.load(now: now()) {
                 self.verdict = cached.verdict(forInstalled: installedVersion)
                 self.appStoreURL = cached.appStoreURL
+                self.feedbackNotice = cached.feedback
             }
         } else {
             // Unparseable bundle version: inert rather than guessing. See
@@ -214,6 +245,63 @@ final class UpdateGateStore: ObservableObject {
             self.neverFetches = true
             self.verdict = .ok
         }
+
+        // After every branch above, so a cached verdict gets the same side
+        // effects (widget flag, notification clearing) as a fetched one. The
+        // starting point is the property's `.ok` default. A DEBUG forced
+        // verdict is skipped: `-LHFForceUpdateWall` exists to look at the
+        // screen, and a developer previewing it on their own phone should not
+        // lose their real notifications or flip their real widget for it.
+        if forcedVerdict == nil {
+            verdictDidChange(from: .ok)
+        }
+    }
+
+    /// Removes every pending and delivered local notification. `nonisolated`
+    /// so it can be the default argument above. Skipped in a test runner:
+    /// `UNUserNotificationCenter.current()` traps in an unbundled test binary
+    /// (see `NotificationScheduler.notificationSinkOverride`), and several
+    /// existing tests build a store whose cached policy is already blocking.
+    nonisolated static func clearLocalNotifications() {
+        #if canImport(UserNotifications)
+        guard !SharedDefaults.isTestRunner else { return }
+        let center = UNUserNotificationCenter.current()
+        center.removeAllPendingNotificationRequests()
+        center.removeAllDeliveredNotifications()
+        #endif
+    }
+
+    /// The side effects of a verdict being set, run by `init` and `refresh()`
+    /// right after they assign it. The wall itself is drawn by `RootCore`
+    /// from `verdict`; this covers what the wall cannot reach.
+    ///
+    /// The widget runs in another process and cannot see this store, so the
+    /// verdict is mirrored into the shared defaults as a bool
+    /// (`SharedDefaults.updateRequiredKey`) and the widget is told to
+    /// re-render only when that bool actually changed, to spare the reload
+    /// budget. Written for every verdict, `false` included, so a build that is
+    /// no longer blocked clears it. A failed fetch never gets here, which
+    /// keeps the fail-open contract: it cannot flip the flag either way.
+    private func verdictDidChange(from previous: UpdateVerdict) {
+        let wasRequired = Self.isRequired(previous)
+        let isRequired = Self.isRequired(verdict)
+
+        if isRequired && !wasRequired {
+            clearNotifications()
+        }
+
+        let previousFlag = defaults.bool(forKey: SharedDefaults.updateRequiredKey)
+        defaults.set(isRequired, forKey: SharedDefaults.updateRequiredKey)
+        #if canImport(WidgetKit)
+        if previousFlag != isRequired {
+            WidgetCenter.shared.reloadAllTimelines()
+        }
+        #endif
+    }
+
+    private static func isRequired(_ verdict: UpdateVerdict) -> Bool {
+        if case .updateRequired = verdict { return true }
+        return false
     }
 
     /// Fetches the manifest, and on success saves it to the cache and
@@ -239,8 +327,11 @@ final class UpdateGateStore: ObservableObject {
             let fetchedAt = now()
             cache.save(policy, at: fetchedAt)
             lastFetchDate = fetchedAt
+            let previous = verdict
             verdict = policy.verdict(forInstalled: installedVersion)
             appStoreURL = policy.appStoreURL
+            feedbackNotice = policy.feedback
+            verdictDidChange(from: previous)
         } catch {
             // Fail open: no state changes at all. Deliberately not even
             // updating `lastFetchDate` here — the throttle only ever
@@ -273,5 +364,34 @@ final class UpdateGateStore: ObservableObject {
     var isAvailableBannerDismissed: Bool {
         guard case .updateAvailable(let latest) = verdict else { return false }
         return defaults.bool(forKey: Self.bannerDismissedKey(for: latest))
+    }
+
+    /// Where "the student has dealt with this feedback card" is recorded.
+    /// Keyed by the notice's id, like the banner's per-version key: handling
+    /// one card says nothing about the next, so publishing a new id in the
+    /// manifest shows the card again with no "un-handle" step. Lives in the
+    /// store's `defaults` (`UserDefaults.lhf` in production), never
+    /// `.standard`.
+    private static func feedbackHandledKey(for id: String) -> String {
+        "lhf.feedbackNoticeHandled.\(id)"
+    }
+
+    /// Tapping the card or its x. Never shown again for this id.
+    func markFeedbackNoticeHandled() {
+        guard let feedbackNotice else { return }
+        // Computed `visibleFeedbackNotice` depends on a defaults read, so
+        // there is nothing for Combine to watch; tell SwiftUI explicitly,
+        // as `dismissAvailableBanner` does.
+        objectWillChange.send()
+        defaults.set(true, forKey: Self.feedbackHandledKey(for: feedbackNotice.id))
+    }
+
+    /// The card to draw: a notice the student has not handled, and never on a
+    /// build that is behind the update wall.
+    var visibleFeedbackNotice: FeedbackNotice? {
+        guard let feedbackNotice else { return nil }
+        if case .updateRequired = verdict { return nil }
+        guard !defaults.bool(forKey: Self.feedbackHandledKey(for: feedbackNotice.id)) else { return nil }
+        return feedbackNotice
     }
 }

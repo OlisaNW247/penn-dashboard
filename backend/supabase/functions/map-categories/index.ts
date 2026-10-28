@@ -17,6 +17,7 @@
 // the structure being mapped (a course's own assignment-group names) is
 // the same fact for every student in the course, not a private one.
 import { HttpError, corsHeaders, errorResponse, json, readJSON } from "../_shared/http.ts";
+import { enforceMinimumVersion } from "../_shared/version.ts";
 import { requireUser } from "../_shared/auth.ts";
 import { limitsFromEnv, reserveUsage } from "../_shared/quota.ts";
 import { chatCompletionJSON, UpstreamError } from "../_shared/openrouter.ts";
@@ -40,6 +41,9 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // Second lock behind the app's update wall (_shared/version.ts).
+    await enforceMinimumVersion(req);
+
     const { userId, serviceClient } = await requireUser(req);
     const body = parseMapCategoriesBody(await readJSON<unknown>(req));
     if (!body) {

@@ -5,6 +5,17 @@ import LowHangingFruitKit
 struct NextDueEntry: TimelineEntry {
     let date: Date
     let snapshot: WidgetSnapshot
+    /// True when the app is below the enforced version floor: the widget then
+    /// shows "update smooth" and no assignments.
+    let updateRequired: Bool
+}
+
+/// The flag the app's update gate writes to the shared App Group defaults
+/// (`UpdateGateStore`), which also reloads the timelines when it changes.
+/// `UserDefaults.lhf` is the same accessor the app uses; in this extension it
+/// resolves to the App Group suite without running the migration.
+private func updateRequiredFlag() -> Bool {
+    UserDefaults.lhf.bool(forKey: SharedDefaults.updateRequiredKey)
 }
 
 /// Feeds the widget from the snapshot the app last wrote to the shared App
@@ -14,7 +25,7 @@ struct NextDueEntry: TimelineEntry {
 /// call trigger an earlier refresh whenever the dashboard actually changes.
 struct NextDueProvider: TimelineProvider {
     func placeholder(in context: Context) -> NextDueEntry {
-        NextDueEntry(date: Date(), snapshot: Self.sampleSnapshot)
+        NextDueEntry(date: Date(), snapshot: Self.sampleSnapshot, updateRequired: false)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (NextDueEntry) -> Void) {
@@ -23,12 +34,13 @@ struct NextDueProvider: TimelineProvider {
         // reflects the actual snapshot (or empty, never fake data).
         let now = Date()
         let snapshot: WidgetSnapshot
+        let updateRequired = !context.isPreview && updateRequiredFlag()
         if context.isPreview {
             snapshot = WidgetSnapshotStore.read() ?? Self.sampleSnapshot
         } else {
             snapshot = WidgetSnapshotStore.current(now: now)
         }
-        completion(NextDueEntry(date: now, snapshot: snapshot))
+        completion(NextDueEntry(date: now, snapshot: snapshot, updateRequired: updateRequired))
     }
 
     /// One entry now, then one at each of the next few due times. Every entry
@@ -47,8 +59,9 @@ struct NextDueProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<NextDueEntry>) -> Void) {
         let now = Date()
         let snapshot = WidgetSnapshotStore.current(now: now)
+        let updateRequired = updateRequiredFlag()
         let entries = WidgetTimelinePlanner.steps(for: snapshot, now: now).map {
-            NextDueEntry(date: $0.date, snapshot: $0.snapshot)
+            NextDueEntry(date: $0.date, snapshot: $0.snapshot, updateRequired: updateRequired)
         }
         completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(30 * 60))))
     }

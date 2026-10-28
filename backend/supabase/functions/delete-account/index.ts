@@ -40,6 +40,9 @@ export async function handleDeleteAccount(req: Request): Promise<Response> {
   }
 
   try {
+    // Deliberately NO enforceMinimumVersion here: a student must always be
+    // able to delete their data, whatever app version they run, including
+    // one below the update floor.
     if (req.method !== "POST") {
       throw new HttpError(405, "method_not_allowed", "delete-account only accepts POST");
     }
