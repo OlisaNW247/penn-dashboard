@@ -1101,3 +1101,11 @@ Continue starts the practice dashboard and feature tour for full onboarding;
 Canvas-only reconnect still completes directly. After practice undo, the sample
 card fades and the instruction points to Next. The Sweeper keep-on note sits
 below its toggle. The login pane stays mounted until verified connection.
+
+### Canvas sign-in presentation polish (2026-10-28)
+Candidate Canvas documents are hidden before rendering while authenticated ENV
+evidence is checked. Verified sign-in immediately displays Canvas Connected over
+the still-mounted login pane during sync/credential saving; failures return to
+retry, and Continue stays gated until completion. This confirmation has no dots.
+The optional Gradescope page has its heading near the top and buttons below,
+without the repeated Canvas-connected label.

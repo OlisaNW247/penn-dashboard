@@ -48,6 +48,7 @@ struct OnboardingView: View {
     @State private var canvasConnectionNotice: String?
     @State private var isKeyboardVisible = false
     @State private var showsCompletionGuide = false
+    @State private var showsCanvasConfirmation = false
     @State private var completionGuideReady = false
     /// The school the student tapped while a different one was already
     /// chosen, held here until they answer the "switch school?" dialog.
@@ -153,8 +154,13 @@ struct OnboardingView: View {
             stepContent
                 .id(phase)
                 .transition(.opacity)
-                .allowsHitTesting(!showsCompletionGuide)
-                .accessibilityHidden(showsCompletionGuide)
+                .allowsHitTesting(!showsCompletionGuide && !showsCanvasConfirmation)
+                .accessibilityHidden(showsCompletionGuide || showsCanvasConfirmation)
+            if showsCanvasConfirmation {
+                connectedStep(step: 1, message: "Canvas connected",
+                              detail: "Disconnect at any time in Settings",
+                              isReady: false, onBack: nil, onContinue: {})
+            }
             if showsCompletionGuide {
                 CanvasCompletionGuide(isReady: completionGuideReady, notice: canvasConnectionNotice) {
                     guard completionGuideReady else { return }
@@ -290,11 +296,11 @@ struct OnboardingView: View {
             installation: state.canvasInstallation,
             onConnected: canvasConnected,
             onSyncStarted: {
-                guard state.onboardingDestination == .full else { return }
                 canvasConnectionNotice = nil
                 completionGuideReady = false
+                showsCanvasConfirmation = true
             },
-            onConnectionFailed: { showsCompletionGuide = false }
+            onConnectionFailed: { showsCompletionGuide = false; showsCanvasConfirmation = false }
         )
             .environmentObject(state)
             .safeAreaInset(edge: .top, spacing: 0) {
@@ -373,6 +379,7 @@ struct OnboardingView: View {
         canvasConnectionNotice = notice
         completionGuideReady = true
         phase = .canvasConnected
+        showsCanvasConfirmation = false
     }
 
     private func beginCanvasWalkthrough() {
@@ -406,13 +413,11 @@ struct OnboardingView: View {
         GeometryReader { geometry in
             ScrollView {
                 VStack(spacing: 24) {
-                    Label("Canvas is connected", systemImage: "checkmark.circle.fill")
-                        .font(.headline)
-                        .foregroundStyle(Color.v2SpineGreen)
                     Text("Do you use Gradescope?")
                         .font(.lhfSerif(34))
                         .foregroundStyle(Color.v2Ink)
                         .multilineTextAlignment(.center)
+                    Spacer(minLength: 48)
                     Button(action: gradescopeSkipped) {
                         Text("Continue with Canvas only")
                             .frame(maxWidth: .infinity, minHeight: 52)
@@ -429,8 +434,10 @@ struct OnboardingView: View {
                 .font(.headline)
                 .multilineTextAlignment(.center)
                 .buttonStyle(.plain)
-                .padding(24)
-                .frame(minHeight: geometry.size.height)
+                .frame(minHeight: max(0, geometry.size.height - max(48, geometry.size.height * 0.2) - 48))
+                .padding(.horizontal, 24)
+                .padding(.top, max(48, geometry.size.height * 0.2))
+                .padding(.bottom, 48)
             }
         }
         .background(Color.v2Bg.ignoresSafeArea())
@@ -850,6 +857,7 @@ struct OnboardingView: View {
         message: String,
         detail: String? = nil,
         notice: String? = nil,
+        isReady: Bool = true,
         onBack: (() -> Void)?,
         onContinue: @escaping () -> Void
     ) -> some View {
@@ -883,10 +891,10 @@ struct OnboardingView: View {
             Spacer()
 
             VStack(spacing: 14) {
-                progressDots(current: step)
+                if step != 1 { progressDots(current: step) }
 
                 Button(action: onContinue) {
-                    Text("continue")
+                    Text(isReady ? "continue" : "Syncing Canvas…")
                         .font(.lhfSans(15, weight: .semibold))
                         .foregroundStyle(Color.v2ToggleActiveTx)
                         .frame(maxWidth: .infinity)
@@ -894,6 +902,7 @@ struct OnboardingView: View {
                         .background(Capsule().fill(Color.v2Ink))
                 }
                 .buttonStyle(.plain)
+                .disabled(!isReady)
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 24)
@@ -1001,7 +1010,7 @@ private struct CanvasLoginPane: View {
                     }
                 }
             }
-            if isPurging || isReadingCookies {
+            if isPurging || isReadingCookies || navObserver.isCheckingCanvasPage {
                 Color.v2Bg
                 ProgressView()
                     .accessibilityLabel(isPurging ? "Preparing Canvas sign-in" : "Connecting Canvas")
