@@ -212,7 +212,7 @@ Deno.test("extractProbeOverrides: reasoning keeps effort, enabled and exclude, a
     extractProbeOverrides({ probe: { reasoning: { enabled: false } } }, true)?.reasoning,
     { enabled: false },
   );
-  // null means "no reasoning field", exactly as before.
+  // null sets no override (the request is served as if no reasoning had been sent), exactly as before.
   assert.equal(extractProbeOverrides({ probe: { reasoning: null } }, true)?.reasoning, undefined);
   rejected({ reasoning: { max_tokens: 500_000 } }, "reasoning");
   rejected({ reasoning: { effort: "extreme" } }, "reasoning.effort");

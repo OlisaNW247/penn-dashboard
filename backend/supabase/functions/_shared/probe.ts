@@ -164,8 +164,11 @@ function sanitizeProvider(value: unknown): Record<string, unknown> {
 /** `reasoning` is forwarded to the paid request too, and OpenRouter's own
  *  `reasoning.max_tokens` is a second budget the `maxTokens` clamp does not
  *  see. Keep `effort`, `enabled` and `exclude`, which are what the
- *  2026-09-14 and 2026-09-22 experiments used. `null` is kept as "send
- *  nothing", the shape a harness uses to switch the field off. */
+ *  2026-09-14 and 2026-09-22 experiments used. `null` passes validation
+ *  but is then dropped by `extractProbeOverrides` (it sets no override), so the
+ *  request is served as if no `reasoning` had been sent: the primary model gets
+ *  `reasoningFor(model)`'s automatic choice. It does not mean "send the model
+ *  no reasoning field at all"; there is no probe shape for that. */
 function sanitizeReasoning(value: unknown): unknown {
   if (value === null) return null;
   if (typeof value !== "object" || Array.isArray(value)) {

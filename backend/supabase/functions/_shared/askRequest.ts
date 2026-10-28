@@ -24,9 +24,11 @@ import type { HistoryTurn } from "./prompt.ts";
  *  `AssistantContextDocument`. */
 export const MAX_CONTEXT_DOCUMENT_CHARS = 400_000;
 export const MAX_EXCERPTS_CHARS = 100_000;
-/** The phone caps the question near 2,000 characters; this is the server's
- *  own ceiling, so a client that forgets can't use the question as the
- *  side door the other fields close. */
+/** Nothing on the phone bounds the question it sends: the plan's D8 cap of
+ *  about 2,000 characters applies only to the on-device classifier's input,
+ *  not to the request body. So this server ceiling is the real one, and it is
+ *  what stops the question being the side door the caps on the other fields
+ *  close. It is set far above any real question so it never trims one. */
 export const MAX_QUESTION_CHARS = 20_000;
 /** `prompt.ts` keeps only the last ten turns, but still keeps the final one
  *  whole however long it is, so the turn count alone bounds nothing. */
