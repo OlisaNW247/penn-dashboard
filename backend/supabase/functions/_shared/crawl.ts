@@ -29,6 +29,7 @@ import {
   productionNetGuard,
   readCapped,
   readTextCapped,
+  upgradeToHTTPS,
 } from "./netguard.ts";
 
 export interface CrawlOptions {
@@ -345,7 +346,10 @@ export async function crawlSite(options: CrawlOptions): Promise<CrawlResult> {
     for (const link of links) {
       let linkURL: URL;
       try {
-        linkURL = new URL(link.href);
+        // An absolute `http://` link to a page of this site is the same page
+        // as its `https://` form. Upgrading here, before the visited check,
+        // keeps one page from being crawled twice under two schemes.
+        linkURL = upgradeToHTTPS(new URL(link.href));
       } catch {
         continue;
       }

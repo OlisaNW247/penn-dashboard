@@ -230,3 +230,20 @@ Deno.test("crawlBestSite: with an allow-list set, a site off it is not picked an
     stub.restore();
   }
 });
+
+Deno.test("crawlBestSite: a site stored as an http:// link is crawled over https, not skipped", async () => {
+  const { writes, stub } = install([websiteRow("http://cis1912.org/")]);
+  try {
+    const site = fakeSite({
+      [SITE]: () => html(SITE, "<title>CIS 1912</title><body>hello</body>"),
+      "https://cis1912.org/robots.txt": () => new Response("", { status: 404 }),
+    });
+    const crawled = await crawlBestSite(context(site.fetchImpl, guard()), COURSE, NOW);
+    assert.equal(crawled, true);
+    assert.ok(site.calls.length > 0 && site.calls.every((call) => call.startsWith("https://")), site.calls.join(", "));
+    assert.equal(writes.stats.length, 1);
+    assert.equal(writes.stats[0].page_count, 1);
+  } finally {
+    stub.restore();
+  }
+});

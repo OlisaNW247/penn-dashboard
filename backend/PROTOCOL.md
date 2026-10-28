@@ -741,8 +741,15 @@ Candidate URLs include any link a phone reported from a course page, so the
 function holds every request, from verification and the CIS directory to
 `robots.txt` and each crawled page, to these rules:
 
-- **https only**, on the default port, no credentials in the URL, and the
-  host must be a *name*: never an IP literal, never a name that only means
+- **https only**, on the default port, no credentials in the URL. A URL we
+  were handed that is spelled `http://` on the default port is **upgraded** to
+  `https://` for the same host, path and query before any other rule looks at
+  it (a Canvas link written `http://www.seas.upenn.edu/~cis2400/` is the same
+  page, and most Penn hosts redirect to https anyway), whether it is a stored
+  candidate, a crawl's start URL or an absolute link on a crawled page, so one
+  page is not crawled under two schemes. Only that: a redirect that sends the
+  request *down* to `http://` is still refused, and `http://host:8080/` is
+  still refused by the port rule. The host must be a *name*: never an IP literal, never a name that only means
   something inside a network (`localhost`, a single label, `*.local`,
   `*.internal`, `*.intranet`, `*.lan`, `*.home.arpa`, `*.corp`, and the other
   reserved top-level names). **Any public host is allowed by default**,

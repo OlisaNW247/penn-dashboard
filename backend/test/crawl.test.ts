@@ -289,7 +289,7 @@ Deno.test("crawlSite: a start URL that redirects to a metadata address is never 
 });
 
 Deno.test("crawlSite: a start URL on a host off the allow-list, or not https, is never requested", async () => {
-  for (const startURL of ["https://example.org/course/", "http://www.seas.upenn.edu/~cis2400/", "https://127.0.0.1/"]) {
+  for (const startURL of ["https://example.org/course/", "http://example.org/course/", "http://www.seas.upenn.edu:8080/~cis2400/", "https://127.0.0.1/"]) {
     const site = fakeSite({ [startURL]: () => htmlResponse(startURL, "<title>x</title>") });
     const result = await crawlSite({ fetchImpl: site.fetchImpl, startURL, userAgent: USER_AGENT });
     assert.deepEqual(result, { pages: [], links: [], blockedByRobots: [], refused: true }, startURL);
@@ -374,7 +374,7 @@ Deno.test("crawlSite: with no guard given the scheme, port and address rules sti
   // The default guard is the production one (any public host unless
   // LHF_DISCOVERY_HOSTS is set). These start URLs fail its shape rules before
   // any lookup, so the test never touches DNS.
-  for (const startURL of ["http://www.seas.upenn.edu/~cis2400/", "https://127.0.0.1/", "https://169.254.169.254/latest/", "https://localhost/", "https://svc.internal/"]) {
+  for (const startURL of ["http://www.seas.upenn.edu:8080/~cis2400/", "https://127.0.0.1/", "http://127.0.0.1/", "https://169.254.169.254/latest/", "https://localhost/", "https://svc.internal/"]) {
     const site = fakeSite({ [startURL]: () => htmlResponse(startURL, "<title>x</title>") });
     const result = await crawlSiteWithGuard({ fetchImpl: site.fetchImpl, startURL, userAgent: USER_AGENT });
     assert.deepEqual(result.pages, [], startURL);
@@ -428,4 +428,32 @@ Deno.test("crawlSite: a guard that cannot check addresses reports the start URL 
   assert.equal(result.refused, true);
   assert.deepEqual(result.pages, []);
   assert.deepEqual(site.calls, []);
+});
+
+// A Canvas link spelled `http://` is the same page over https. The crawler
+// requests it as https, and an absolute `http://` link on a crawled page is
+// the same page as its `https://` form, so it is crawled once.
+Deno.test("crawlSite: an http start URL is crawled over https, and an http link to a page already linked as https is not crawled twice", async () => {
+  const start = "https://www.seas.upenn.edu/~cis2400/current/";
+  const schedule = "https://www.seas.upenn.edu/~cis2400/current/schedule/";
+  const site = fakeSite({
+    [start]: () =>
+      htmlResponse(
+        start,
+        `<title>Home</title>
+         <a href="http://www.seas.upenn.edu/~cis2400/current/schedule/">schedule (http)</a>
+         <a href="/~cis2400/current/schedule/">schedule (https)</a>`,
+      ),
+    ["https://www.seas.upenn.edu/robots.txt"]: () => new Response("", { status: 404 }),
+    [schedule]: () => htmlResponse(schedule, "<title>Schedule</title><body>weeks</body>"),
+  });
+  const result = await crawlSite({
+    fetchImpl: site.fetchImpl,
+    startURL: "http://www.seas.upenn.edu/~cis2400/current/",
+    userAgent: USER_AGENT,
+  });
+  assert.deepEqual(result.pages.map((page) => page.title).sort(), ["Home", "Schedule"]);
+  assert.ok(site.calls.every((call) => call.startsWith("https://")), `no http request may be made: ${site.calls.join(", ")}`);
+  assert.equal(site.calls.filter((call) => call === schedule).length, 1, "the schedule page must be fetched once");
+  assert.deepEqual(result.pages.map((page) => page.url).sort(), [schedule, start].sort());
 });

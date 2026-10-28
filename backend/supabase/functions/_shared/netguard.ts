@@ -314,10 +314,30 @@ export function checkURLShape(url: URL, guard: Pick<NetGuard, "allowedHostSuffix
   }
 }
 
-/** `checkURLShape` as a yes/no for a URL held as text. */
+/**
+ * An `http:` URL on the default port becomes the `https:` URL for the same
+ * host, path and query; anything else comes back unchanged. A course page that
+ * a Canvas link spells `http://www.seas.upenn.edu/~cis2400/` is the same page,
+ * and refusing it would drop a site that is perfectly reachable securely
+ * (most Penn hosts redirect http to https anyway). It is applied to a URL we
+ * were handed, before the guard looks at it: to the start of a fetch, to a
+ * candidate being filtered, and to a link found on a crawled page. It is
+ * deliberately NOT applied to a redirect hop: a server that answers an https
+ * request by sending us to `http://` is downgrading us, and that stays
+ * refused. A non-default port is left alone, so `http://host:8080/` still
+ * fails the port rule rather than being quietly moved to `https://host:8080/`.
+ */
+export function upgradeToHTTPS(url: URL): URL {
+  if (url.protocol !== "http:" || url.port !== "") return url;
+  const upgraded = new URL(url.toString());
+  upgraded.protocol = "https:";
+  return upgraded;
+}
+
+/** `checkURLShape` as a yes/no for a URL held as text, after `upgradeToHTTPS`. */
 export function isFetchableURL(raw: string, guard: Pick<NetGuard, "allowedHostSuffixes">): boolean {
   try {
-    checkURLShape(new URL(raw), guard);
+    checkURLShape(upgradeToHTTPS(new URL(raw)), guard);
     return true;
   } catch {
     return false;
@@ -332,7 +352,7 @@ let warnedResolverUnavailable = false;
  *  changes any state, rather than discover the refusal inside a fetch. */
 export async function isSafeToFetch(raw: string, guard: NetGuard): Promise<boolean> {
   try {
-    await assertSafeURL(new URL(raw), guard);
+    await assertSafeURL(upgradeToHTTPS(new URL(raw)), guard);
     return true;
   } catch (err) {
     if (err instanceof BlockedURLError || err instanceof TypeError) return false;
@@ -413,7 +433,8 @@ export async function guardedFetch(
 ): Promise<Response> {
   let current: URL;
   try {
-    current = new URL(startURL);
+    // Only the URL we were handed is upgraded; redirect hops below are not.
+    current = upgradeToHTTPS(new URL(startURL));
   } catch {
     throw new BlockedURLError("not a URL");
   }

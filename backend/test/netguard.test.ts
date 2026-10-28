@@ -10,11 +10,13 @@ import {
   guardedFetch,
   isBlockedAddress,
   isFetchableURL,
+  isSafeToFetch,
   type NetGuard,
   productionNetGuard,
   readCapped,
   readTextCapped,
   ResolverUnavailableError,
+  upgradeToHTTPS,
 } from "../supabase/functions/_shared/netguard.ts";
 
 /** A guard whose "DNS" is a table. Names not in it do not resolve. */
@@ -135,7 +137,9 @@ Deno.test("checkURLShape: https URLs on allow-listed names pass", () => {
 });
 
 Deno.test("checkURLShape: plain http, other schemes, credentials and other ports are refused", () => {
-  blocked("http://www.seas.upenn.edu/");
+  // The shape check itself stays strict. A URL we were handed is upgraded to
+  // https before it gets here (upgradeToHTTPS, below); a redirect hop is not.
+  assert.throws(() => checkURLShape(new URL("http://www.seas.upenn.edu/"), GUARD), BlockedURLError);
   blocked("ftp://www.seas.upenn.edu/");
   blocked("file:///etc/passwd");
   blocked("https://user:pw@www.seas.upenn.edu/");
@@ -211,7 +215,7 @@ Deno.test("productionNetGuard: with LHF_DISCOVERY_HOSTS set, only upenn.edu and 
 Deno.test("with no allow-list, every other rule still holds: scheme, port, credentials, IP literals, internal names", () => {
   for (
     const url of [
-      "http://cis1912.org/",
+      "http://cis1912.org:8080/",
       "https://cis1912.org:8443/",
       "https://user:pw@cis1912.org/",
       "https://127.0.0.1/",
@@ -383,9 +387,49 @@ Deno.test("guardedFetch, no allow-list: follows a redirect to another public hos
   }
 });
 
+// A Canvas link spelled `http://` is the same page over https, and most Penn
+// hosts redirect to it anyway, so a link we were handed is upgraded before the
+// guard looks at it rather than refused.
+Deno.test("upgradeToHTTPS: http on the default port becomes https for the same host, path, query and fragment", () => {
+  assert.equal(upgradeToHTTPS(new URL("http://www.seas.upenn.edu/~cis2400/current/?a=1#top")).toString(), "https://www.seas.upenn.edu/~cis2400/current/?a=1#top");
+  assert.equal(upgradeToHTTPS(new URL("http://www.seas.upenn.edu:80/x")).toString(), "https://www.seas.upenn.edu/x");
+  // Unchanged: already https, another port, another scheme.
+  assert.equal(upgradeToHTTPS(new URL("https://www.seas.upenn.edu/x")).toString(), "https://www.seas.upenn.edu/x");
+  assert.equal(upgradeToHTTPS(new URL("http://www.seas.upenn.edu:8080/x")).toString(), "http://www.seas.upenn.edu:8080/x");
+  assert.equal(upgradeToHTTPS(new URL("ftp://www.seas.upenn.edu/x")).toString(), "ftp://www.seas.upenn.edu/x");
+});
+
+Deno.test("an http link is upgraded and judged as https: fetchable when its https form is, refused when it breaks any other rule", async () => {
+  assert.equal(isFetchableURL("http://www.seas.upenn.edu/~cis2400/", GUARD), true);
+  assert.equal(isFetchableURL("http://cis1912.org/", OPEN_GUARD), true);
+  assert.equal(await isSafeToFetch("http://www.seas.upenn.edu/~cis2400/", GUARD), true);
+  // Upgrading never lets a URL past a rule it would otherwise break.
+  for (const url of ["http://example.org/", "http://127.0.0.1/", "http://169.254.169.254/latest/", "http://localhost/", "http://www.seas.upenn.edu:8080/", "http://user:pw@www.seas.upenn.edu/", "http://rebind.upenn.edu/"]) {
+    assert.equal(isFetchableURL(url, GUARD) && (await isSafeToFetch(url, GUARD)), false, url);
+  }
+});
+
+Deno.test("guardedFetch: an http start URL is requested as https, never as http, and reports the https URL", async () => {
+  const { fetchImpl, calls } = hopFetch({ "https://www.seas.upenn.edu/~cis2400/current/": { status: 200, body: "hello" } });
+  const res = await guardedFetch(fetchImpl, "http://www.seas.upenn.edu/~cis2400/current/", { timeoutMs: 500 }, GUARD);
+  assert.equal(await res.text(), "hello");
+  assert.deepEqual(calls.map((call) => call.url), ["https://www.seas.upenn.edu/~cis2400/current/"]);
+  assert.equal(res.url, "https://www.seas.upenn.edu/~cis2400/current/");
+});
+
+Deno.test("guardedFetch: a redirect DOWN to http is still refused and never requested (only the URL we were handed is upgraded)", async () => {
+  const { fetchImpl, calls } = hopFetch({
+    "https://www.seas.upenn.edu/a": { status: 302, location: "http://www.seas.upenn.edu/b" },
+    "http://www.seas.upenn.edu/b": { status: 200, body: "downgraded" },
+    "https://www.seas.upenn.edu/b": { status: 200, body: "should not be reached by upgrading a hop" },
+  });
+  await assert.rejects(() => guardedFetch(fetchImpl, "https://www.seas.upenn.edu/a", { timeoutMs: 500 }, GUARD), BlockedURLError);
+  assert.deepEqual(calls.map((call) => call.url), ["https://www.seas.upenn.edu/a"]);
+});
+
 Deno.test("guardedFetch: a start URL that breaks the rules is refused before any request", async () => {
   const { fetchImpl, calls } = hopFetch({});
-  for (const url of ["http://www.seas.upenn.edu/", "https://127.0.0.1/", "https://example.org/", "not a url"]) {
+  for (const url of ["http://127.0.0.1/", "https://127.0.0.1/", "https://example.org/", "http://example.org/", "http://www.seas.upenn.edu:8080/", "not a url"]) {
     await assert.rejects(() => guardedFetch(fetchImpl, url, { timeoutMs: 500 }, GUARD), BlockedURLError, url);
   }
   assert.equal(calls.length, 0);
