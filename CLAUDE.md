@@ -3628,3 +3628,10 @@ scoped by Canvas host, and does not participate in app cloud/paired sync.
 Preview/demo sessions stay in memory. Partial answers checkpoint during
 streaming and save on stop/exit; request IDs prevent cancelled streams from
 altering a newly opened chat. Older unsaved conversations cannot be recovered.
+
+### Onboarding review polish (2026-10-28)
+Verified Canvas connection now shows the Canvas Connected confirmation first.
+Continue starts the practice dashboard and feature tour for full onboarding;
+Canvas-only reconnect still completes directly. After practice undo, the sample
+card fades and the instruction points to Next. The Sweeper keep-on note sits
+below its toggle. The login pane stays mounted until verified connection.

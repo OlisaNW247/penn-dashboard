@@ -215,7 +215,7 @@ struct OnboardingView: View {
             connectedStep(step: 1, message: "Canvas connected",
                           detail: "Disconnect at any time in Settings",
                           notice: canvasConnectionNotice, onBack: nil,
-                          onContinue: advancePastCanvasStep)
+                          onContinue: beginCanvasWalkthrough)
         case .gradescopeChoice:
             gradescopeChoiceStep
         case .gradescopeLogin:
@@ -293,7 +293,6 @@ struct OnboardingView: View {
                 guard state.onboardingDestination == .full else { return }
                 canvasConnectionNotice = nil
                 completionGuideReady = false
-                showsCompletionGuide = true
             },
             onConnectionFailed: { showsCompletionGuide = false }
         )
@@ -364,8 +363,7 @@ struct OnboardingView: View {
         }
     }
 
-    /// First-run sync keeps the lesson visible until Continue. Settings
-    /// reconnects keep their existing connection confirmation instead.
+    /// Only the current login can advance to connection confirmation.
     nonisolated static func acceptsCanvasConnection(in phase: Phase, alreadyReady: Bool) -> Bool {
         phase == .canvasLogin && !alreadyReady
     }
@@ -373,10 +371,15 @@ struct OnboardingView: View {
     private func canvasConnected(_ notice: String?) {
         guard Self.acceptsCanvasConnection(in: phase, alreadyReady: completionGuideReady) else { return }
         canvasConnectionNotice = notice
-        if showsCompletionGuide {
-            completionGuideReady = true
+        completionGuideReady = true
+        phase = .canvasConnected
+    }
+
+    private func beginCanvasWalkthrough() {
+        if state.onboardingDestination == .full {
+            showsCompletionGuide = true
         } else {
-            phase = .canvasConnected
+            advancePastCanvasStep()
         }
     }
 
@@ -601,18 +604,11 @@ struct OnboardingView: View {
     private var sweeperSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             SmoothSectionHeader("smooth sweeper", accent: .smoothTomato)
-            // Two lines, not one (owner, 2026-10-20, from the phone): the
-            // description is the first sentence alone, larger and in ink,
-            // and the nudge sits under it in parentheses at the smaller
-            // secondary size, so the page says what the sweeper is before
-            // it says what to do about it.
+            // Explain the alarm above the control; keep the optional
+            // keep-on note below the toggle.
             Text("an alarm 10 minutes before anything you haven't turned in.")
                 .font(.lhfSans(17))
                 .foregroundStyle(Color.v2Ink)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("(if you actually never want to miss an assignment, keep this on.)")
-                .font(.lhfSans(14))
-                .foregroundStyle(Color.v2DateText)
                 .fixedSize(horizontal: false, vertical: true)
             notificationOption(
                 title: "Smooth Sweeper",
@@ -624,6 +620,10 @@ struct OnboardingView: View {
                     }
                 )
             )
+            Text("(if you actually never want to miss an assignment, keep this on.)")
+                .font(.lhfSans(14))
+                .foregroundStyle(Color.v2DateText)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

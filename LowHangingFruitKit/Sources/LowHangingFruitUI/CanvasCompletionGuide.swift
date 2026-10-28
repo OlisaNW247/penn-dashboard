@@ -110,7 +110,7 @@ struct CanvasCompletionGuide: View {
                             .font(.lhfSerif(26))
                             .accessibilityAddTraits(.isHeader)
                             .accessibilityFocused($instructionFocused)
-                        Label(feature?.detail ?? (practiced ? "Your assignment is back in todo." : inPrevious ? "Swipe left or tap to undo." : "Swipe right to mark this done."),
+                        Label(feature?.detail ?? (practiced ? "Back in todo. Tap Next to explore the app." : inPrevious ? "Swipe left or tap to undo." : "Swipe right to mark this done."),
                               systemImage: feature != nil ? "info.circle" : inPrevious ? "arrow.left" : practiced ? "checkmark" : "arrow.right")
                             .font(.lhfSans(15, weight: .medium))
                             .fixedSize(horizontal: false, vertical: true)
@@ -122,7 +122,7 @@ struct CanvasCompletionGuide: View {
                             AssignmentCardView(item: item, onComplete: complete, onEdit: {})
                                 .id(practiced)
                                 .allowsHitTesting(!practiced)
-                                .opacity(feature == nil ? 1 : 0.25)
+                                .opacity(practiced ? 0.25 : 1)
                                 .accessibilityAction(named: "Mark complete", complete)
                         }
                     }
