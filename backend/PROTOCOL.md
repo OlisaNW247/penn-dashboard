@@ -827,7 +827,21 @@ to 20 profiles, one model call after another, and now has a 40 second budget
 model call in flight is aborted. A course not reached, or whose call was cut
 off, keeps `profile_stale` set and is simply absent from `updated`, the same
 outcome as an upstream failure, so the next sync's call picks it up. The wire
-shape is unchanged. Still charged once per call, not per course: charging per
+shape is unchanged.
+
+**Cool-down for a course that always overruns** (migration
+`20261027120000_profile_budget_cooldown.sql`, column
+`courses.profile_budget_aborted_at`). Retrying a course whose build always
+runs past the budget cost a unit of the student's quota and 40 seconds on
+every sync, for nothing. When the budget cuts a course's model call off, the
+course is stamped; for the next 24 hours calls skip it (it stays
+`profile_stale`) and a call whose every stale course is cooling down makes no
+model call and gives its reserved unit back. A successful build clears the
+stamp, and the course is tried again once 24 hours have passed. A course that
+was never reached because the budget was already spent is not stamped, only
+the one whose call was aborted. The stamp is read and written best-effort: if
+the column does not exist yet, nothing is cooling down and builds proceed as
+before, so the function and the migration can be deployed in either order. Still charged once per call, not per course: charging per
 course would let a sync of several courses spend several of the student's 40
 daily requests, and `profile_stale` is re-set whenever a page's content
 changes, so that is a product decision, not part of this change.

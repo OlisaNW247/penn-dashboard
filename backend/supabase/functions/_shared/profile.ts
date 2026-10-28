@@ -497,3 +497,29 @@ export async function profileSourceHash(
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 }
+
+// ---------------------------------------------------------------------
+// The budget cool-down (hardening BE-12 follow-up)
+// ---------------------------------------------------------------------
+
+/** How long a course whose profile build was cut off by `extract-profile`'s
+ *  time budget is left alone before it is tried again. A build that overran
+ *  once is likely to overrun again on the same input, and each attempt costs
+ *  a model call that is paid for even when aborted, a unit of the student's
+ *  quota and 40 seconds; once a day is often enough to notice a provider that
+ *  has recovered. */
+export const PROFILE_BUDGET_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+
+/** Whether a course stamped `abortedAt` (an ISO timestamp, as Postgres
+ *  returns it) is still inside its cool-down at `now`. A missing or
+ *  unparseable stamp is not cooling down. A stamp a few minutes in the future
+ *  (clock skew between the database and the function) counts as just made; one
+ *  further ahead than that is not trusted, so a bad clock cannot park a course
+ *  for longer than the cool-down. */
+export function isCoolingDown(abortedAt: string | null | undefined, now: Date): boolean {
+  if (!abortedAt) return false;
+  const stamped = Date.parse(abortedAt);
+  if (Number.isNaN(stamped)) return false;
+  const age = now.getTime() - stamped;
+  return age > -5 * 60 * 1000 && age < PROFILE_BUDGET_COOLDOWN_MS;
+}

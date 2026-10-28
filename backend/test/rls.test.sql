@@ -766,6 +766,53 @@ begin
   end loop;
 end $$;
 
+-- courses.profile_budget_aborted_at (20261027120000_profile_budget_cooldown.sql):
+-- a nullable timestamp nothing has set yet, written only by the service role.
+set role service_role;
+do $$
+declare
+  stamp timestamptz;
+begin
+  select profile_budget_aborted_at into stamp from public.courses where course_id = '100';
+  if stamp is not null then
+    raise exception 'existing courses must read as never aborted, got %', stamp;
+  end if;
+  update public.courses set profile_budget_aborted_at = now() where course_id = '100';
+  select profile_budget_aborted_at into stamp from public.courses where course_id = '100';
+  if stamp is null then
+    raise exception 'service_role should be able to stamp profile_budget_aborted_at';
+  end if;
+end $$;
+reset role;
+
+-- A signed-in student cannot clear it (there is no UPDATE policy for them: the
+-- statement either errors or touches no row), so a student cannot reset the
+-- cool-down to force another build.
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111"}', true);
+do $$
+begin
+  begin
+    update public.courses set profile_budget_aborted_at = null where course_id = '100';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+commit;
+
+set role service_role;
+do $$
+declare
+  stamp timestamptz;
+begin
+  select profile_budget_aborted_at into stamp from public.courses where course_id = '100';
+  if stamp is null then
+    raise exception 'authenticated was able to clear profile_budget_aborted_at';
+  end if;
+  update public.courses set profile_budget_aborted_at = null where course_id = '100';
+end $$;
+reset role;
+
 -- A catch-all over the catalog, so the next function someone adds cannot
 -- repeat this: apart from is_enrolled, no function in `public` may be
 -- executable by anon or authenticated, whether through the PUBLIC grant or

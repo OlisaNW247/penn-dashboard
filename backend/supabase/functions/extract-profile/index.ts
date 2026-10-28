@@ -4,9 +4,10 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.115.0";
 import { HttpError, corsHeaders, errorResponse, json, readJSON } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
-import { limitsFromEnv, reserveUsage } from "../_shared/quota.ts";
+import { limitsFromEnv, reserveUsage, type UsageLease } from "../_shared/quota.ts";
 import { chatCompletionJSON, UpstreamError } from "../_shared/openrouter.ts";
 import {
+  isCoolingDown,
   PROFILE_INSTRUCTIONS,
   type ProfileSourceDocument,
   parseProfile,
@@ -61,8 +62,9 @@ export async function handleExtractProfile(req: Request): Promise<Response> {
       return errorResponse("bad_request", "malformed extract-profile request", 400);
     }
 
-    const quotaResponse = await checkAndConsumeQuota(serviceClient, userId);
-    if (quotaResponse) return quotaResponse;
+    const quota = await checkAndConsumeQuota(serviceClient, userId);
+    if (quota.response) return quota.response;
+    const lease = quota.lease;
 
     if (body.courseIDs.length === 0) {
       return json(200, { updated: [] });
@@ -70,6 +72,22 @@ export async function handleExtractProfile(req: Request): Promise<Response> {
 
     const staleIDs = await staleEnrolledCourseIDs(serviceClient, userId, body.courseIDs);
     if (staleIDs.length === 0) {
+      return json(200, { updated: [] });
+    }
+
+    // Courses whose last build was cut off by the time budget are left alone
+    // for a day (`profile_budget_aborted_at`; see the migration): a course
+    // that always overruns would otherwise cost a unit of quota and 40
+    // seconds on every sync, for nothing. They stay stale and are tried again
+    // once the cool-down ends.
+    const stamps = await selectBudgetAbortStamps(serviceClient, staleIDs);
+    const now = new Date();
+    const attemptIDs = staleIDs.filter((id) => !isCoolingDown(stamps.get(id), now));
+    if (attemptIDs.length === 0) {
+      // Nothing left to do but courses that are cooling down: no model call
+      // is made, so the unit reserved up front is given back. (Safe to refund:
+      // no model spend happened, unlike a refund after an aborted call.)
+      await lease.release();
       return json(200, { updated: [] });
     }
 
@@ -90,7 +108,7 @@ export async function handleExtractProfile(req: Request): Promise<Response> {
 
     const updated: string[] = [];
     let skipped = 0;
-    for (const courseID of staleIDs) {
+    for (const courseID of attemptIDs) {
       const remaining = deadline - Date.now();
       if (remaining <= 0) {
         skipped += 1;
@@ -111,7 +129,14 @@ export async function handleExtractProfile(req: Request): Promise<Response> {
           provider: providerFromEnv(),
           signal: controller.signal,
         });
-        if (wasUpdated) updated.push(courseID);
+        if (wasUpdated) {
+          updated.push(courseID);
+          // A build that succeeds ends the cool-down it was in.
+          if (stamps.has(courseID)) await setBudgetAbortStamp(serviceClient, courseID, null);
+        } else if (controller.signal.aborted) {
+          // The budget cut this course's model call off: remember it.
+          await setBudgetAbortStamp(serviceClient, courseID, new Date().toISOString());
+        }
       } finally {
         clearTimeout(timer);
       }
@@ -149,9 +174,11 @@ if (import.meta.main) {
  * courses' profiles at once (the sync client fires it once per upload with
  * every `profileStale` id from that run), and metering per course would let
  * one sync spend the quota as fast as several separate calls would. Charged
- * up front and never given back, exactly as before: the work is paid for
- * once started, whatever it finds. A counter that stalls fails open
- * (unmetered), as in `ask`.
+ * up front and kept, exactly as before, once any course is attempted: the work
+ * is paid for once started, whatever it finds. The one exception is a call
+ * with nothing to attempt but courses cooling down after a budget abort, which
+ * makes no model call and gives the unit back (the caller releases the lease).
+ * A counter that stalls fails open (unmetered), as in `ask`.
  *
  * Deliberately not tied to the client's connection: the sync client fires
  * this without awaiting it and a suspended app drops the connection, while
@@ -162,12 +189,53 @@ if (import.meta.main) {
 async function checkAndConsumeQuota(
   serviceClient: SupabaseClient,
   userId: string,
-): Promise<Response | undefined> {
+): Promise<{ response: Response; lease?: undefined } | { response?: undefined; lease: UsageLease }> {
   const reservation = await reserveUsage(serviceClient, userId, limitsFromEnv(Deno.env));
   if (reservation.status === "denied") {
-    return json(429, { error: "quota_exceeded", resetAt: reservation.resetAt.toISOString() });
+    return { response: json(429, { error: "quota_exceeded", resetAt: reservation.resetAt.toISOString() }) };
   }
-  return undefined;
+  return { lease: reservation.lease };
+}
+
+/** `profile_budget_aborted_at` for the given courses, keyed by course id, only
+ *  those that have one. Best-effort on purpose: if the read fails (the
+ *  migration that adds the column has not been applied yet) it reads as "no
+ *  course is cooling down" and the function behaves as it did before, so the
+ *  function and the migration can go out in either order. The stale-course
+ *  read above is a separate query for the same reason: a missing column must
+ *  never be able to stop profiles being built. */
+async function selectBudgetAbortStamps(
+  serviceClient: SupabaseClient,
+  courseIDs: string[],
+): Promise<Map<string, string>> {
+  const stamps = new Map<string, string>();
+  const { data, error } = await serviceClient
+    .from("courses")
+    .select("course_id, profile_budget_aborted_at")
+    .in("course_id", courseIDs);
+  if (error || !data) {
+    console.warn("extract-profile: budget cool-down lookup failed, treating no course as cooling down");
+    return stamps;
+  }
+  for (const row of data as Array<{ course_id: string; profile_budget_aborted_at: string | null }>) {
+    if (row.profile_budget_aborted_at) stamps.set(row.course_id, row.profile_budget_aborted_at);
+  }
+  return stamps;
+}
+
+/** Stamps (or, with `null`, clears) a course's budget-abort marker. Best-effort,
+ *  for the same reason as the read: failing to write it costs one repeated
+ *  attempt, never a lost profile. */
+async function setBudgetAbortStamp(
+  serviceClient: SupabaseClient,
+  courseID: string,
+  stamp: string | null,
+): Promise<void> {
+  const { error } = await serviceClient
+    .from("courses")
+    .update({ profile_budget_aborted_at: stamp })
+    .eq("course_id", courseID);
+  if (error) console.warn("extract-profile: could not record the budget cool-down, it will be retried next call");
 }
 
 /** Intersects `courseIDs` with the caller's actual enrollments, then
