@@ -3608,6 +3608,24 @@ in `LoginNavigationObserver`) was dropped for the same reason: the sign-in
 path is v8's, verbatim, so no ENV-evidence check and no page hiding exist in
 this tree.
 
+**Review notes from the 2026-10-28 verifier pass, to fix in 3.4.1 (none blocks
+3.4.0).** (1) `AssistantView.init` builds the `AssistantHistoryStore` outside
+the `StateObject` autoclosure, so its synchronous directory read and JSON
+decode of every saved chat repeats each time `ContentView` re-renders while
+Ask is open; SwiftUI keeps the first store, so it is a growing main-thread
+hitch, not a bug. Move the construction back inside the autoclosure (the
+conversation needs the same instance; give it a factory or let the
+conversation own the store). (2) The first-run "Syncing Canvas…" overlay has
+no X; it clears only on the pane's success or failure callbacks, which the
+trace shows always fire, but on a dead network the student waits out the
+60 s URLSession timeouts behind a disabled button. (3) The store's
+`errorMessage` is never cleared once set. (4) Opening a saved chat re-saves
+it and bumps `updatedAt`, so viewing reorders the list. (5) The empty
+streaming placeholder is saved at once; a kill before the first token leaves
+an empty answer row. (6) `AssistantSavedChat` has no schema version; a
+non-optional field added later makes old chats undecodable. (7) "Add
+Gradescope" has no back to the choice screen, only Skip.
+
 DEBUG review flags: `-LHFFullOnboardingReview` replays the full first run
 in memory for that launch without touching the saved connections,
 `-LHFSkipIntro` (with it) skips the three-beat intro so the school search is

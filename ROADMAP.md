@@ -1024,5 +1024,10 @@ proven phone behaviour is the standard and the rewrite was never checked with
 a live sign-in; the author's later `isCheckingCanvasPage` page-hiding
 addition was dropped with it. Details in CLAUDE.md → 3.4.0 section.
 
-Open: Marco's live Penn sign-in test on his phone; Olisa's backend deploy for
+Open, from the 2026-10-28 verifier pass (details in CLAUDE.md → 3.4.0 → Review
+notes): the chat-history store is rebuilt on every Ask re-render (move it into
+the `StateObject` autoclosure), the first-run "Syncing Canvas…" overlay has no
+X, the store's error banner never clears, viewing a chat bumps its date, the
+empty streaming row is saved early, saved chats carry no schema version, and
+"Add Gradescope" has no back. Open: Marco's live Penn sign-in test on his phone; Olisa's backend deploy for
 the prompt change; the Canvas app hand-off, unchecked on a device.
