@@ -27,7 +27,10 @@ import LowHangingFruitKit
 /// maintenance page and a vanity-domain redirect are all "I could not tell",
 /// and not telling must never sign anyone out). `.dead` is the one verdict a
 /// caller may act on, and the acting it does is the renewal path that
-/// already exists, not a purge.
+/// already exists, not a purge. (Grade Watcher is not the only thing that
+/// reacts to a 401: `AppState.refreshGradeWatcher` starts a silent renewal on
+/// any store-level 401 before this probe is even asked, which this type does
+/// not change.)
 enum CanvasSessionProbe {
 
     enum Verdict: Equatable, Sendable {

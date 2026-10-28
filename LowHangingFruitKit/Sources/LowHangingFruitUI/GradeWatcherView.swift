@@ -366,13 +366,17 @@ struct GradeWatcherView: View {
                 // The wrong fix is a smarter reading of the 401's wording.
                 // Ask the endpoint that cannot mean "not allowed" instead.
                 //
-                // Only `.dead` acts, and what it does is the recompute the
-                // launch, connect and disconnect sites already run, whose
+                // Only `.dead` acts HERE, and what it does is the recompute
+                // the launch, connect and disconnect sites already run, whose
                 // false-to-true edge starts the silent renewal
                 // (`refreshCanvasSessionExpiredState`). `.alive` and
-                // `.unknown` do nothing at all: a course that is merely
-                // off limits, or a probe that never got an answer, is no
-                // reason to touch the session.
+                // `.unknown` delete nothing and call nothing from this view.
+                // They do not stop a renewal that has already started:
+                // `AppState.refreshGradeWatcher`, which ran just above, starts
+                // a silent renewal on ANY store-level 401, probe or no probe,
+                // so a concluded course on a live session can still cost one
+                // needless renewal attempt. That is unchanged and out of this
+                // fix's scope; what changed is that nothing is deleted.
                 let verdict = await CanvasSessionProbe.probe(baseURL: state.canvasBaseURL, cookies: cookies)
                 if verdict == .dead {
                     state.refreshCanvasSessionExpiredState()

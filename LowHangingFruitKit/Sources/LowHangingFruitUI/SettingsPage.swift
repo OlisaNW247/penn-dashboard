@@ -427,12 +427,20 @@ struct SettingsPage: View {
     /// the student who wants their server rows gone too, and docs/PRIVACY.md
     /// says so. A failure is reported here rather than swallowed, since
     /// the disconnect itself has already happened by then.
+    ///
+    /// The line is the truth about what happens next, and no longer asks the
+    /// student to do anything: a request that did not get through is
+    /// remembered and retried by the app (`PendingBackendDeletion`), so the
+    /// old instruction to reconnect and disconnect again was wrong, and
+    /// following it would have cancelled the retry. It shows only while that
+    /// retry is still pending. A refusal no retry will change drops the
+    /// record, and a line promising a retry would then be false.
     private func deleteServerData() {
         guard BackendServices.client != nil else { return }
         backendDataDeletionError = nil
         Task {
-            if !(await state.deleteBackendData()) {
-                backendDataDeletionError = "couldn't delete your server data. reconnect, then disconnect again."
+            if !(await state.deleteBackendData()), PendingBackendDeletion.isPending() {
+                backendDataDeletionError = "couldn't reach smooth \u{00B7} will retry"
             }
         }
     }

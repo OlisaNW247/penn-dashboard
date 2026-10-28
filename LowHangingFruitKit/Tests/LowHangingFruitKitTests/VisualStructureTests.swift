@@ -73,7 +73,12 @@ struct VisualStructureTests {
         #expect(source.contains("@State private var backendDataDeletionError: String?"))
         #expect(source.contains("if !(await state.deleteBackendData())"))
         #expect(source.contains("if let backendDataDeletionError"))
-        #expect(source.contains("couldn't delete your server data. reconnect, then disconnect again."))
+        // The line says what the app will do (it retries by itself,
+        // `PendingBackendDeletion`), asks nothing of the student, and shows only
+        // while the retry is pending.
+        #expect(source.contains("couldn't reach smooth \\u{00B7} will retry"))
+        #expect(!source.contains("reconnect, then disconnect again"))
+        #expect(source.contains("PendingBackendDeletion.isPending()"))
         #expect(!source.contains("private var courseKnowledgeSummary"))
         #expect(!source.contains("if let notice = state.courseKnowledgeNotice"))
     }
