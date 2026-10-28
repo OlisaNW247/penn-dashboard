@@ -98,7 +98,7 @@ struct AssistantView: View {
                 GeometryReader { geo in
                     ZStack(alignment: .topLeading) {
                         if conversation.isFresh && !composerFocused {
-                            suggestedQuestions
+                            AssistantShapes()
                                 .transition(.opacity.combined(with: .offset(y: -14)))
                         } else if !conversation.isFresh {
                             transcript
@@ -149,7 +149,6 @@ struct AssistantView: View {
 
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if conversation.isFresh { SmoothStarMark(size: 36).accessibilityHidden(true) }
             Text(conversation.isFresh ? greeting : "Ask about classes")
                 .font(.lhfSans(conversation.isFresh ? 32 : 22, weight: .regular))
                 .foregroundStyle(Color.v2Ink)
@@ -164,35 +163,6 @@ struct AssistantView: View {
 
     private var greeting: String {
         AssistantPresentation.greeting(index: greetingIndex, date: Date())
-    }
-
-    private var suggestedQuestions: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(suggestions.prefix(3).enumerated()), id: \.offset) { index, item in
-                    Button { ask(item.prompt) } label: {
-                        HStack(spacing: 14) {
-                            Image(systemName: ["calendar", "clock", "text.book.closed"][index])
-                                .foregroundStyle(Color.smoothCobaltInk)
-                                .frame(width: 24)
-                            Text(item.prompt)
-                                .font(.lhfSans(16, weight: .regular))
-                                .multilineTextAlignment(.leading)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            Image(systemName: "arrow.up.right")
-                                .font(.system(size: 13))
-                                .foregroundStyle(Color.v2DateText)
-                        }
-                        .foregroundStyle(Color.v2Ink)
-                        .padding(.vertical, 20)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    if index < 2 { Divider().overlay(Color.v2Divider) }
-                }
-            }
-            .padding(.horizontal, 22)
-        }
     }
 
     // MARK: Transcript
@@ -380,7 +350,7 @@ struct AssistantView: View {
     private var composer: some View {
         HStack(spacing: 11) {
             HStack(spacing: 8) {
-                TextField("Ask about classes…", text: $draft, axis: .vertical)
+                TextField("What’s due this week?", text: $draft, axis: .vertical)
                     .font(.lhfSans(16, weight: .regular))
                     .foregroundStyle(Color.v2Ink)
                     .lineLimit(1...4)
@@ -481,26 +451,16 @@ struct AssistantView: View {
             }
         } label: {
             ZStack {
-                Circle()
-                    .fill(Color.v2Card)
-                    .overlay(Circle().strokeBorder(Color.v2Divider, lineWidth: 1))
-                    .shadow(color: Color.v2CardShadow.opacity(0.14), radius: 5, y: 2)
-
                 if conversation.isResponding {
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .fill(Color.v2Ink)
                         .frame(width: 13, height: 13)
                 } else {
-                    SmoothStarMark(size: 34)
-                        .overlay {
-                            Image(systemName: "arrow.up")
-                                .font(.system(size: 10, weight: .black))
-                                .foregroundStyle(Color.smoothInk)
-                        }
+                    SmoothStarMark(size: 46)
                         .scaleEffect(sendPulse > 0 ? 0.72 : 1)
                         .rotationEffect(.degrees(sendPulse * 12))
                         .grayscale(canSend ? 0 : 0.35)
-                        .opacity(canSend ? 0.9 : 0.58)
+                        .opacity(canSend ? 1 : 0.72)
                 }
             }
             .frame(width: 48, height: 48)
@@ -546,34 +506,6 @@ struct AssistantView: View {
         }
     }
 
-    // MARK: Suggestions
-
-    struct Suggestion: Identifiable {
-        let id = UUID()
-        var prompt: String
-    }
-
-    /// Built against the student's real classes where possible, because "what's
-    /// my PHYS 0151 attendance policy" is a question they might actually have
-    /// and "what's my attendance policy" is not.
-    ///
-    /// There is no x-position carried here at all — that was this list's job
-    /// back when every chip hung off a branch tip and had to stay in its own
-    /// lane to avoid crossing the chips above it. Now that the backdrop is a
-    /// bundled illustration with no branch tips to hang from, each suggestion
-    /// is simply paired by index with a slot in `TreeGeometry.slots` (see
-    /// `hangingSuggestions`), which docks it flush against a screen edge
-    /// instead of a point on the tree; there is no lane to keep and nothing
-    /// left to tune.
-    private var suggestions: [Suggestion] {
-        let codes = courseCodes.isEmpty ? ScriptedAssistantResponder.placeholderCodes : courseCodes
-        func code(_ index: Int) -> String { codes[index % codes.count].lowercased() }
-        return [
-            Suggestion(prompt: "What’s due this week?"),
-            Suggestion(prompt: "When’s my next exam?"),
-            Suggestion(prompt: "What’s the attendance policy for \(code(0))?"),
-        ]
-    }
 
 }
 

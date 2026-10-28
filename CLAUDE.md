@@ -3595,8 +3595,8 @@ the phone; Mirroring input errors blocked the new feature-step tap-through.
 
 
 ### AI presentation and onboarding routing (2026-10-28)
-AssistantView now uses three aligned suggestions, regular sans text, a rounded
-multiline composer, and idle-only rotating greetings (Ask about classes / How
+AssistantView now uses a single example as the input placeholder, regular sans
+text, a rounded multiline composer, and idle-only rotating greetings (Ask about classes / How
 can I help? / Happy weekday). Rotation pauses for typing or a conversation and
 is disabled by Reduce Motion. Answer formatting preserves paragraphs and source
 links while removing strong emphasis. Backend prompt changes request concise,
@@ -3611,3 +3611,8 @@ Validation: 62 targeted Swift tests / 9 suites, 20 backend prompt tests, and
 iOS Debug build passed. Installed and visually checked AI on iPhone 17 Pro;
 Mirroring input errors prevented completing the live repeat-question check.
 Canvas app handoff remains to be checked on device. Backend is not deployed.
+
+AI empty-state refinement: removed suggestion buttons and the top-left logo.
+“What’s due this week?” is placeholder text only; it does not populate the draft.
+The Smooth mark is the send control. Noninteractive colorful geometric shapes
+fill the empty screen and disappear while typing or reading a conversation.
