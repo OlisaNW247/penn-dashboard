@@ -82,7 +82,10 @@ enum RecurringOccurrenceRekey {
         // ledger stamped completions) is skipped: it can only be on an
         // occurrence long past, which is no longer generated, and recording it
         // here would have to invent a time.
-        let record = assignmentStore.completionRecord()
+        // A ledger that cannot be read (B6: `completionRecord()` is nil on a
+        // read failure, never empty) is left alone, and the flag stays unset,
+        // so the next launch tries again rather than re-keying against nothing.
+        guard let record = assignmentStore.completionRecord() else { return outcome }
         var byDate: [Date: Set<String>] = [:]
         for id in record.ids {
             guard let new = newID(forLegacyID: id, zone: zone), !record.ids.contains(new),
@@ -90,9 +93,15 @@ enum RecurringOccurrenceRekey {
             else { continue }
             byDate[date, default: []].insert(new)
         }
+        // A copy the ledger could not save (B5: `setCompleted` reports it)
+        // leaves the flag unset too, for the same reason as a failed read.
+        var everyCopySaved = true
         for (date, ids) in byDate {
-            assignmentStore.setCompleted(ids: ids, at: date)
-            outcome.completionsCopied += ids.count
+            if assignmentStore.setCompleted(ids: ids, at: date) {
+                outcome.completionsCopied += ids.count
+            } else {
+                everyCopySaved = false
+            }
         }
 
         if let dueDateEditStore {
@@ -108,7 +117,7 @@ enum RecurringOccurrenceRekey {
             }
         }
 
-        defaults.set(true, forKey: doneKey)
+        if everyCopySaved { defaults.set(true, forKey: doneKey) }
         return outcome
     }
 }
