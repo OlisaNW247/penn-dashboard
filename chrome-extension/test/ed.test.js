@@ -17,7 +17,7 @@ function thread(id, o = {}) {
     id, userID: o.user ?? 1, courseID: 101, type: o.type ?? "post", title: o.title ?? "T",
     document: o.document ?? null, content: o.content ?? null, category: o.category ?? null,
     subcategory: o.subcategory ?? null, isPinned: o.pinned ?? false, isPrivate: o.isPrivate ?? false,
-    isEndorsed: false, isAnonymous: false, createdAt: o.createdAt ?? new Date(0),
+    isEndorsed: false, isAnonymous: o.anonymous ?? false, createdAt: o.createdAt ?? new Date(0),
     updatedAt: o.updatedAt ?? null, number: o.number ?? null, replyCount: null,
   };
 }
@@ -186,6 +186,18 @@ test("an HTML-only entity in the document falls back to tag-stripped text with t
 // EdThreadFilterTests.privateDropped
 test("a private announcement is dropped: private beats everything", () => {
   assert.deepEqual(decide(thread(1, { type: "announcement", isPrivate: true }), "admin"), { keep: false, reason: "private" });
+});
+
+// EdThreadFilter's anonymous rule (SEC-10): dropped after private, before
+// every keep rule, so an anonymous announcement, pinned post or staff post
+// never leaves the student's devices.
+test("an anonymous thread is dropped, even an announcement, a pinned post or a staff post", () => {
+  const drop = { keep: false, reason: "anonymous" };
+  assert.deepEqual(decide(thread(1, { type: "announcement", anonymous: true }), "admin"), drop);
+  assert.deepEqual(decide(thread(1, { pinned: true, anonymous: true }), "staff"), drop);
+  assert.deepEqual(decide(thread(1, { anonymous: true }), "instructor"), drop);
+  assert.deepEqual(decide(thread(1, { type: "announcement", isPrivate: true, anonymous: true }), "admin"),
+    { keep: false, reason: "private" });
 });
 
 // EdThreadFilterTests.announcementKept

@@ -206,6 +206,11 @@ export const STAFF_ROLES = new Set(["admin", "staff", "instructor", "ta", "tutor
 export function decide(thread, authorRole) {
   // Private beats everything, announcements included.
   if (thread.isPrivate) return { keep: false, reason: "private" };
+  // Anonymous next, before the announcement and pinned rules, as
+  // EdThreadFilter.decide does: anonymity is the author's request that the
+  // class not know who wrote it, and docs/PRIVACY.md promises such a post
+  // never leaves the student's devices, staff posts and announcements included.
+  if (thread.isAnonymous) return { keep: false, reason: "anonymous" };
   const type = thread.type.toLowerCase();
   if (type === "announcement") return { keep: true, reason: "announcement" };
   if (thread.isPinned) return { keep: true, reason: "pinned" };

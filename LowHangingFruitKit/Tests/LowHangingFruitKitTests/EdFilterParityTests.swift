@@ -247,11 +247,7 @@ struct EdFilterParityTests {
         // answer, so this cannot pass by the app changing its mind.
         for testCase in cases { #expect(try !Self.swiftDecision(testCase).keep, "\(testCase.label)") }
 
-        withKnownIssue(
-            "SEC-10: chrome-extension/src/core/ed.js decide() has no anonymous rule, so the extension keeps anonymous announcements and pinned posts that the app drops. Fix ed.js, then delete this wrapper."
-        ) {
-            #expect(kept.isEmpty, "\(kept.count) anonymous threads kept by the extension, e.g. \(kept.prefix(3))")
-        }
+        #expect(kept.isEmpty, "\(kept.count) anonymous threads kept by the extension, e.g. \(kept.prefix(3))")
     }
     #endif
 }
