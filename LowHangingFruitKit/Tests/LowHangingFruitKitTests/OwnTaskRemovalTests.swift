@@ -340,7 +340,11 @@ struct OwnTaskRemovalTests {
         let shown = try card(vm, titled: task.title)
         #expect(shown.removal == .stopRepeating(taskID: task.id), "the card is offered stop repeating")
         #expect(titles(vm.todoSections()).contains(task.title))
-        #expect(titles(vm.allSections()).filter { $0 == task.title }.count == occurrences.count)
+        // The dashboard stops at the end of the term (`AppState.withinTermCap`),
+        // and ten weeks from late October reaches past it, so the count to
+        // expect is the occurrences inside the term, not all of them.
+        #expect(titles(vm.allSections()).filter { $0 == task.title }.count
+                == occurrences.filter { AppState.withinTermCap($0) }.count)
         #expect(h.state.widgetNextDueItems().contains { $0.title == task.title })
         #expect(reminderIdentifiers(vm).contains { $0.contains(task.id.uuidString) })
         #expect(h.storedRecurringTasks.map(\.id) == [task.id])
@@ -418,7 +422,8 @@ struct OwnTaskRemovalTests {
         #expect(h.state.recurringTasks.map(\.id) == [kept.id])
         #expect(h.storedRecurringTasks.map(\.id) == [kept.id])
         #expect(h.state.manualAssignments.map(\.id) == [single.id])
-        #expect(vm.items.filter { $0.assignment.title == kept.title }.count == kept.upcomingAssignments().count)
+        #expect(vm.items.filter { $0.assignment.title == kept.title }.count
+                == kept.upcomingAssignments().filter { AppState.withinTermCap($0) }.count)
         #expect(vm.items.contains { $0.assignment.title == single.title })
     }
 
