@@ -80,7 +80,7 @@ struct GradescopeReauthRuleTests {
 
     @Test("a second login form inside the hour is the same event")
     func secondInsideTheHour() {
-        let state = run([(.loginForm, 0), (.loginForm, 15 * 60), (.loginForm, hour - 1)])
+        let state = run([(.loginForm, 0), (.loginForm, hour / 4), (.loginForm, hour - 1)])
         #expect(!state.needsReauth)
         #expect(state.firstLoginFormAt == t0, "the first sighting is kept, not moved forward by later ones")
     }
