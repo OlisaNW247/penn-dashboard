@@ -2782,18 +2782,13 @@ none is a ship line.
 
 ## Known gaps
 
-- **Anonymous Ed posts a paired laptop uploaded before `5481543` are still
-  in the pool** (2026-10-29). The extension now drops them, but `ed` is a
-  window kind (`WINDOW_KINDS` in `_shared/manifest.ts`), which no client's
-  complete-set report retires; they leave only by the 120-day age-out on
-  read. `5481543`'s commit message says the next report retires them; that
-  is wrong, and this line replaces it. The server does not store whether a
-  post was anonymous, so finding them means asking Ed again for each
-  `ed` document the extension collected (`collector = 'extension'`) and
-  retiring the anonymous ones; that, or retiring every extension-collected
-  `ed` row and letting the next run re-upload the rest, is a production
-  data change and waits for Olisa's go.
-
+- **No anonymous Ed post reached the pool through the extension**
+  (checked 2026-10-29: every live `ed` row, 622, has `collector =
+  'phone'`). Had one, it would have stayed: `ed` is a window kind
+  (`WINDOW_KINDS` in `_shared/manifest.ts`), which no client's complete-set
+  report retires, so `5481543`'s claim that the next report retires them is
+  wrong. If an extension-collected `ed` row ever predates `5481543`, it
+  leaves only by the 120-day age-out or a deliberate delete.
 - **3.2.1 (15), the live build, crashes a few seconds after every open for
   any student in a course whose Canvas assignment groups have two names
   that slug alike** ("Homework" and "homework", two "Assignments" groups
