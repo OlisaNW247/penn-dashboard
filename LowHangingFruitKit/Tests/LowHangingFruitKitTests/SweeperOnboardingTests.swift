@@ -78,16 +78,15 @@ struct SweeperOnboardingTests {
         #expect(extras.lowerBound < section.lowerBound)
     }
 
-    @Test("The section has its header, its two lines and a switch bound to loudAlertEnabled that re-plans")
+    @Test("The section has its header, its one line and a switch bound to loudAlertEnabled that re-plans")
     func sectionContents() throws {
         let section = try sectionSlice
         #expect(section.contains("SmoothSectionHeader(\"smooth sweeper\""))
-        // Two lines since the owner's second look (2026-10-20): the
-        // description alone, larger, then the nudge in parentheses.
+        // One line since 2026-10-30: the owner cut the parenthetical nudge
+        // that sat under the description from 2026-10-20.
         #expect(section.contains("Text(\"an alarm 10 minutes before anything you haven't turned in.\")"))
-        #expect(section.contains("Text(\"(if you actually never want to miss an assignment, keep this on.)\")"))
+        #expect(!section.contains("keep this on"))
         #expect(section.contains(".lhfSans(17)"))
-        #expect(section.contains(".lhfSans(14)"))
         #expect(section.contains("notificationOption("))
         #expect(section.contains("title: \"Smooth Sweeper\""))
         #expect(section.contains("scheduler.loudAlertEnabled"))

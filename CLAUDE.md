@@ -242,18 +242,19 @@ Screen by screen, as of 2026-10-20 on `v8` (Olisa's `v8` and Marco's
 Test baseline).
 Keep this current. It is the fastest way for a new session to know what exists.
 
-- **Onboarding.** A three-beat intro (`MissionIntroView`), then
-  `OnboardingView`'s walk:
+- **Onboarding.** A three-beat intro (`MissionIntroView`: since 2026-10-30
+  the first pane's scattered chips gather into an ordered list 0.9 s after
+  it appears, replaying on re-entry and skipped under Reduce Motion, and
+  the third pane lists Dashboard, Reminders and Ask only; Grade Watcher
+  was dropped from it). Then `OnboardingView`'s walk:
   1. university search (220 curated Canvas sites; manual address fallback)
   2. Canvas login (WebKit, the school's own SSO; Penn is PennKey + Duo),
      detection unchanged since 3.3.0
   3. optional Gradescope choice: Continue with Canvas only / Connect Gradescope
   4. reminders, which since 2026-10-20 ends with a **"smooth sweeper"**
-     section under "turned in notifications": a line in ink ("an alarm
-     10 minutes before anything you haven't turned in."), a smaller
-     line under it in parentheses ("(if you actually never want to miss
-     an assignment, keep this on.)") and the switch
-     itself (`NotificationScheduler.loudAlertEnabled`, on by default, the
+     section under "turned in notifications": one line in ink ("an alarm
+     10 minutes before anything you haven't turned in.") and the switch
+     itself (a second, parenthetical nudge line was cut 2026-10-30) (`NotificationScheduler.loudAlertEnabled`, on by default, the
      same preference Profile → reminders shows as "Smooth Sweeper"). It
      was a page of its own for a few hours that day; the owner saw the two
      pages on his phone and had them combined. A student who taps "skip
@@ -262,8 +263,12 @@ Keep this current. It is the fastest way for a new session to know what exists.
      gradescope, reminders); the school picker has none.
   5. a per-course setup walk (`OnboardingCourseSetup`)
 
-  The intro preview link and bottom-right "Preview" button in school search
-  and Canvas login open demo mode, App Review's only way in (see Known gaps).
+  The intro's "Preview" link (centred under "Get started" since
+  2026-10-30) and the "preview with sample data" footer on the school
+  search pane open demo mode, App Review's only way in (see Known gaps).
+  The Canvas login pane carries no door since 2026-10-30 (owner's call: a
+  student at the real login sees only the login); Back from it returns to
+  the school pane, which does.
   The bottom panel hides while the iOS keyboard is open. A reconnect from the
   dashboard banner opens the Canvas login directly; the school picker is
   behind the back chevron, and since 2026-10-09 (blind) picking a
@@ -303,7 +308,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
     was seen on two syncs an hour apart, and opens the same cover.
   - **Control row.** A full-width **todo · all · prev** switch
     (`DashViewPicker`), then a **class filter** menu (narrows all three
-    views, with a clearable chip under the row), **+** (the add sheet: a
+    views, with a clearable chip under the row), **+** (a plain `plus`
+    glyph since 2026-10-30, `calendar.badge.plus` before; the add sheet: a
     one-off or weekly assignment, class picked from a grid of per-class
     coloured chips, `CoursePicker`). The **megaphone** used to be a fourth
     control here and moved to the header on 2026-10-18, where its circle
@@ -1145,7 +1151,7 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current: 3399 tests / 327 suites on `v8` at `8b691b6` (2026-10-29, `swift test --no-parallel`, on Olisa's Mac, 61 s): two failures and the SEC-10 known issue.** The first run of `30c4132` did not compile: `GradescopeSessionKeepTests` wrote an offset as `15 * 60` in a tuple array, typed `Int` (fixed in `8b691b6`, `hour / 4`). The two failures were `OwnTaskRemovalTests`' stop-repeating tests counting all ten weekly occurrences where the dashboard's term cap (`AppState.withinTermCap`) keeps nine once ten weeks from late October passes the term's end; the tests now count what the cap keeps (`fbb0296`). SEC-10 is fixed in the extension (`decide()` drops anonymous threads after private, as `EdThreadFilter` does) and its `withKnownIssue` wrapper removed, so `EdFilterParityTests` now asserts parity outright. Both fixes are blind until the next Mac run. The iOS Debug device build of `30c4132` succeeded and was installed on Olisa's iPhone 17 at 13:57 local the same day.
+**Current: 3402 tests / 328 suites on `onboarding-polish-2026-10` (`origin/v8` `019e1a5` plus the 2026-10-30 onboarding polish; 2026-10-30, `swift test --no-parallel`, on Marco's Mac, 109 s), all green after two source-pinning tests were updated to the new intent (`ReconnectCoverTests` now expects the preview door on the school pane and not on the Canvas pane; `SweeperOnboardingTests` expects one line). +3 tests / +1 suite over 3399/327: `DuoPasscodeAutofillTests`. The first run of this tree had exactly those two tests red and nothing else; the practice-guide tests were rewritten with the `.finished` step's removal and stayed green.** The iOS Debug device build (3.4.0 (17)) of the same tree was installed on Marco's iPhone 17 Pro the same afternoon and launched onto the intro. Before that: **Current: 3399 tests / 327 suites on `v8` at `8b691b6` (2026-10-29, `swift test --no-parallel`, on Olisa's Mac, 61 s): two failures and the SEC-10 known issue.** The first run of `30c4132` did not compile: `GradescopeSessionKeepTests` wrote an offset as `15 * 60` in a tuple array, typed `Int` (fixed in `8b691b6`, `hour / 4`). The two failures were `OwnTaskRemovalTests`' stop-repeating tests counting all ten weekly occurrences where the dashboard's term cap (`AppState.withinTermCap`) keeps nine once ten weeks from late October passes the term's end; the tests now count what the cap keeps (`fbb0296`). SEC-10 is fixed in the extension (`decide()` drops anonymous threads after private, as `EdThreadFilter` does) and its `withKnownIssue` wrapper removed, so `EdFilterParityTests` now asserts parity outright. Both fixes are blind until the next Mac run. The iOS Debug device build of `30c4132` succeeded and was installed on Olisa's iPhone 17 at 13:57 local the same day.
 **Current: 3373 tests / 322 suites on `release/3.3.1` (the three-way merge of `fix/duplicate-category-ids`, `origin/v8` and `claude/sharp-newton-qwv18v`, plus the notification-tap crash fix; 2026-10-27, `swift test --no-parallel`, on Marco's Mac), all green.** Deno: 614 tests, `deno task check` green. iOS Simulator and device Debug builds of the same tree succeeded; the device build (3.3.1 (17)) was installed on Marco's phone that evening, launched, refreshed once, and left no crash report. Before that: 3346 tests / 320 suites on `fix/duplicate-category-ids` (`v8` `e3a57b3` plus the A1 crash fix, Release A, and the hardening groups of 2026-10-27; 2026-10-27, `swift test --no-parallel`, on Marco's Mac, with no other worktree testing at the same time), all green.** Deno: 599 tests, `deno task check` green on Deno 2.9 (`cd backend && deno task test`). The one red test since `aeaf982`, `AskCitationLinkTests` "the encoded request is byte-identical…", was a golden re-typed by hand with `America/New_York` where `JSONEncoder` writes `America\/New_York`; the golden was fixed on 2026-10-27, not the encoder. The new tests since `e3a57b3` are `DuplicateCategoryIDTests` (17, the launch crash, `docs/LAUNCH_CRASH_2026-10-26.md`; run against the original source they die with the production trap), `ReconnectCoverTests` (two suites, the A2 cover, plus two existing tests adjusted), and `SessionCookieLiveSessionTests` (10) with three Keychain tests in `SessionCookieStoreTests` (the A3 gate).  Before that: 2907 / 262 on `v8` `e3a57b3` (2026-10-25, the audit's gate run, same one failure).
 
 **Current: 2933 tests / 264 suites, all green, on `v8` at `17ce51f` (2026-10-27, `swift test --no-parallel`, on Olisa's Mac, 15.5 s), first run.** +43 tests and +4 suites over 2890/260: the tree-plan work of 2026-10-25 (`aeaf982`: local dates in the context document and excerpt block, kept excerpt structure, `WebsiteDiscoveryBatches`, the citation contract, the retrieval bench), compiled here for the first time. The Swift tree is unchanged through `6195eae` (later commits touch only the extension, the backend and docs). The iOS build of this tree (`xcodebuild`, which `swift test` does not cover) has not been run yet.
@@ -1854,6 +1860,13 @@ itself.
 - **Failure handling.** One rejected password disables auto-login outright
   rather than retrying, so a typo or a changed password can't lock the
   PennKey account; Profile → accounts then shows "update password".
+- **Duo SMS passcodes can autofill from Messages.** Since 2026-10-30 the
+  login WebView injects `DuoPasscodeAutofill` (a `WKUserScript`, page
+  world, all frames) that, on `duosecurity.com` hosts only, marks passcode
+  inputs `autocomplete="one-time-code"` and `inputmode="numeric"`, so iOS
+  offers the texted code above the keyboard. It sets attributes only,
+  never reads a value; the code goes from Messages to Duo's page through
+  iOS's own autofill. Unverified on a device (Known gaps).
 - **Duo is a hard boundary.** The stored credential only ever reaches the
   IdP's password field, never a Duo prompt. A student enrolled in Duo still
   completes that step themselves whenever Duo asks (with Duo's own "remember
@@ -2782,6 +2795,11 @@ none is a ship line.
 
 ## Known gaps
 
+- **Duo passcode autofill is unverified.** `DuoPasscodeAutofill`
+  (2026-10-30) is tested only as a string; whether Duo's Universal Prompt
+  field gets matched, and whether iOS then offers the SMS code, needs a
+  real Penn login with a texted passcode on a phone.
+
 - **No anonymous Ed post reached the pool through the extension**
   (checked 2026-10-29: every live `ed` row, 622, has `collector =
   'phone'`). Had one, it would have stayed: `ed` is a window kind
@@ -3550,8 +3568,11 @@ The catalog's sources, public HTTP checks and known limits are in
 
 **Practice lesson.** After Continue on the "Canvas connected" page of a full
 first run, `CanvasCompletionGuide` shows a sample dashboard in two steps: swipe right on a card to complete it,
-then tap it or swipe left in "prev" to bring it back. After the practice undo
-the sample card fades and the instruction says to tap Next. The fixtures live
+then tap it or swipe left in "prev" to bring it back. The undo lands
+straight on the first feature card (lists); a "You've got it, tap Next"
+pause sat between them until 2026-10-30, when the owner cut it because it
+did nothing. The `.ready` end state is seen only while the first sync is
+still running ("Almost there."). The fixtures live
 inside the guide; nothing reaches `AppState` or the ledger, and the login
 WebView stays mounted underneath. A failed sync returns to the retained
 login view.

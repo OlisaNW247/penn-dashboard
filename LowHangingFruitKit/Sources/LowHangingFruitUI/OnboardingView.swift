@@ -257,6 +257,9 @@ struct OnboardingView: View {
                 chooseSchool(school)
             }
         }
+        // The reviewer's door lives on this pane only (owner, 2026-10-30): a
+        // student at the real Canvas login should see nothing but the login.
+        // App Review depends on it (2.1(a) rejection, `c999c38`); keep it.
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if !(state.isReconnecting || state.hasCompletedOnboarding) {
                 previewFooter
@@ -308,35 +311,6 @@ struct OnboardingView: View {
                     title: "Sign in to \(state.canvasInstallation.name)",
                     onBack: { if !state.isCanvasDiscoveryLoading { phase = .schoolSelection } }
                 )
-            }
-            // The reviewer's door, restored here after a regression
-            // (`358bc5f`) deleted it along with the old checklist's name
-            // step. `IntroView`'s first screen carries the same link, but
-            // that one is reachable only while `hasSeenIntro` is still
-            // false — Skip sets it permanently, and this Canvas step is
-            // exactly where Skip lands, forever, with no way back to the
-            // intro short of reinstalling. One door is not enough; see
-            // `c999c38`. Pinned to the bottom safe area, below the entire
-            // login pane above it, so it never competes with actually
-            // connecting a real account.
-            //
-            // Not shown to a student who is already signed in and has a real
-            // dashboard underneath (a reconnect cover): the door's job is for
-            // someone who cannot sign in at all. Keyed on `isReconnecting`
-            // *or* `hasCompletedOnboarding`, not on the first alone, because
-            // `completeOnboarding()` clears `isReconnecting` before the
-            // cover's dismiss animation has finished, and the footer would
-            // flash back under the Canvas step as it slid away. A cover leaves
-            // `hasCompletedOnboarding` true throughout (`restartOnboarding`
-            // never clears it on that path), so the pair covers the whole
-            // animation. Neither can hide the door from the reviewer: a true
-            // first run has both false, and the "start over" and preview-exit
-            // path (`.full`, or preview mode) writes `hasCompletedOnboarding`
-            // false, which is what puts a reviewer back on this screen.
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if !(state.isReconnecting || state.hasCompletedOnboarding) {
-                    previewFooter
-                }
             }
             .background(Color.v2Bg.ignoresSafeArea())
     }
@@ -611,8 +585,7 @@ struct OnboardingView: View {
     private var sweeperSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             SmoothSectionHeader("smooth sweeper", accent: .smoothTomato)
-            // Explain the alarm above the control; keep the optional
-            // keep-on note below the toggle.
+            // Owner trimmed this to one line on 2026-10-30.
             Text("an alarm 10 minutes before anything you haven't turned in.")
                 .font(.lhfSans(17))
                 .foregroundStyle(Color.v2Ink)
@@ -627,10 +600,6 @@ struct OnboardingView: View {
                     }
                 )
             )
-            Text("(if you actually never want to miss an assignment, keep this on.)")
-                .font(.lhfSans(14))
-                .foregroundStyle(Color.v2DateText)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -1453,6 +1422,7 @@ private func makeWebView(url: URL, store: WKWebsiteDataStore, navigationObserver
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = store
     navigationObserver.credentialCapture?.install(in: configuration.userContentController)
+    DuoPasscodeAutofill.install(in: configuration.userContentController)
     let webView = WKWebView(frame: .zero, configuration: configuration)
     webView.allowsBackForwardNavigationGestures = false
     // UA experiment concluded 2026-08-22: spoof off changed nothing (0/3,
