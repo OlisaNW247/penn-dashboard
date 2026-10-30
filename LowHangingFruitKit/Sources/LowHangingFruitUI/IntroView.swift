@@ -242,13 +242,15 @@ struct IntroView: View {
             // hit the login wall and reject on Guideline 2.1. This has to sit
             // on the very first screen a reviewer sees, not several pages
             // into the tour (`MissionIntroView`) or only inside the setup
-            // walk (`OnboardingView.canvasStep` carries the same door,
-            // below its own primary action, for the same reason) — Skip
+            // walk (`OnboardingView.schoolSelectionStep` carries the same
+            // door, below the picker, for the same reason) — Skip
             // is the most ordinary thing to do with an intro, and it must not
             // be able to strand anyone. Below "Get started" so it never
             // competes with the primary path of connecting a real account.
+            // Centred under the primary button (owner, 2026-10-30), not
+            // tucked into the trailing corner.
             previewLink
-                .frame(maxWidth: .infinity, alignment: .trailing)
+                .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.horizontal, 24)
                 .opacity(ctaVisible ? 1 : 0)
                 .disabled(!ctaVisible)
