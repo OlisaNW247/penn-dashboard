@@ -313,6 +313,22 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
 
 ## Next: features
 
+- **Agents and Smooth: Smooth submits, the agent only thinks** (owner's
+  request, 2026-10-30; research done, nothing implemented).
+  `docs/AGENT_SUBMISSION_PLAN.md` is the design record and
+  `docs/research/agents-acting-on-canvas-via-smooth.md` the report. The
+  sign-in cannot be lent: what keeps Smooth signed in is the foreground
+  renewal through Penn's identity provider and Duo, not the cookie, and
+  no agent platform (dots, Duet, Muse, Claude or ChatGPT connectors)
+  takes an injected session. So the agent reads the work list over a
+  read-only MCP server on the backend, drafts, and hands the draft back;
+  the phone shows it and the student taps submit, with Smooth doing the
+  cookie-plus-CSRF POST itself. Cheaper first steps that need no Canvas
+  write path: App Intents exposing the work list on-device, and deep
+  links into the student's own signed-in Chrome for Claude in Chrome or
+  the ChatGPT extension. Cookie export and phone-as-proxy are rejected
+  there, with reasons. Needs an explicit opt-in screen and a
+  `docs/PRIVACY.md` change in the same commit (App Review 5.1.2(i)).
 - **Improve the tree (ask)** (owner's request, 2026-10-24; the research
   is done, nothing implemented). `docs/TREE_IMPROVEMENT_PLAN.md` has the
   30-question set with verdicts (19 answerable today, 6 not in the pool,
