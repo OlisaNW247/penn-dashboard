@@ -229,4 +229,15 @@ struct CanvasSessionRenewerTests {
         #expect(CanvasSessionRenewer.timeoutOutcome(finalURL: URL(string: "https://example.com")) == .timedOut)
         #expect(CanvasSessionRenewer.timeoutOutcome(finalURL: nil) == .timedOut)
     }
+
+    @Test("a background timeout is .timedOut on any host; the foreground one keeps its host classification")
+    func timedOutOutcomeByContext() {
+        let login = URL(string: "https://weblogin.pennkey.upenn.edu/idp/profile/SAML2/Redirect/SSO?execution=e1s1")
+        let duo = URL(string: "https://api-abc123.duosecurity.com/frame/web/v1/auth")
+        #expect(CanvasSessionRenewer.timedOutOutcome(finalURL: login, isBackground: true) == .timedOut)
+        #expect(CanvasSessionRenewer.timedOutOutcome(finalURL: duo, isBackground: true) == .timedOut)
+        #expect(CanvasSessionRenewer.timedOutOutcome(finalURL: nil, isBackground: true) == .timedOut)
+        #expect(CanvasSessionRenewer.timedOutOutcome(finalURL: login, isBackground: false) == .landedOnLoginPage)
+        #expect(CanvasSessionRenewer.timedOutOutcome(finalURL: duo, isBackground: false) == .needsDuo)
+    }
 }

@@ -104,6 +104,7 @@ struct MenuBarLabel: View {
         await AutoSyncCoordinator.syncConnectedServices(state: state)
         await AutoSyncCoordinator.refreshCanvasGrades(state: state)
         state.refreshCanvasSessionExpiredState()
+        await state.awaitPendingSessionProbe()
         vm.reload(preservingEdits: true)
         if scheduler.isEnabled { await scheduler.reschedule(from: vm.items) }
         await announceGradeChanges()

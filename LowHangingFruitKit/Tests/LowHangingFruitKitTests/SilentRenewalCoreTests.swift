@@ -108,6 +108,58 @@ struct SilentRenewalCoreTests {
         #expect(renewer.lastCredentialSubmissionAt == later)
     }
 
+    @Test("the renewer keeps separate foreground and background cooldown clocks")
+    func renewerSeparateSlots() {
+        let fg = t0
+        let bg = t0.addingTimeInterval(600)
+        let renewer = CanvasSessionRenewer(
+            isLoginPaneActive: { false }, lastAttemptAt: fg, lastBackgroundAttemptAt: bg
+        )
+        #expect(renewer.attemptClock(isBackground: false) == fg)
+        #expect(renewer.attemptClock(isBackground: true) == bg)
+
+        // A background timestamp alone never gates a foreground attempt.
+        let bgOnly = CanvasSessionRenewer(isLoginPaneActive: { false }, lastBackgroundAttemptAt: bg)
+        let now = bg.addingTimeInterval(60)
+        func gate(_ r: CanvasSessionRenewer, background: Bool) -> CanvasSessionRenewer.Outcome? {
+            CanvasSessionRenewer.gate(
+                now: now, lastAttempt: r.attemptClock(isBackground: background), inFlight: false,
+                paneActive: false, isTestRunner: false, cooldown: CanvasSessionRenewer.cooldown
+            )
+        }
+        #expect(gate(bgOnly, background: false) == nil)
+        #expect(gate(bgOnly, background: true) != nil)
+
+        // A foreground timestamp still gates foreground, and not background.
+        let fgOnly = CanvasSessionRenewer(isLoginPaneActive: { false }, lastAttemptAt: bg)
+        #expect(gate(fgOnly, background: false) != nil)
+        #expect(gate(fgOnly, background: true) == nil)
+    }
+
+    @Test("a background attempt records only the background slot; the foreground inputs stay untouched")
+    func backgroundRecordLeavesForegroundSlot() {
+        let state = makeState()
+        state.renewalContext = .background
+        state.noteRenewalOutcomeForTesting(.landedOnLoginPage)
+        state.noteRenewalOutcomeForTesting(.timedOut)
+        #expect(state.lastBackgroundSilentRenewalAttemptAt != nil)
+        #expect(state.lastSilentRenewalAttemptAt == nil)
+        #expect(state.lastSilentRenewalAttemptOutcome == nil)
+
+        state.renewalContext = .foreground
+        state.noteRenewalOutcomeForTesting(.landedOnLoginPage)
+        #expect(state.lastSilentRenewalAttemptAt != nil)
+        #expect(state.lastSilentRenewalAttemptOutcome == .landedOnLoginPage)
+    }
+
+    @Test("a background .timedOut never latches and keeps the 10-minute retry for the foreground slot")
+    func backgroundTimedOutIsUnknown() {
+        #expect(AppState.confirmedDeadAfterRenewal(
+            current: false, outcome: .timedOut, context: .background, priorConsecutiveLandings: 5
+        ) == false)
+        #expect(AppState.timedOutRetryInterval == 600)
+    }
+
     @Test("abort with nothing in flight is a no-op, on the renewer and on AppState")
     func abortWithNothingInFlight() {
         let renewer = CanvasSessionRenewer(isLoginPaneActive: { false }, lastAttemptAt: t0)
@@ -139,7 +191,8 @@ struct SilentRenewalCoreTests {
 
         // The GET-only landing overwrites the last outcome but not the flag.
         state.noteRenewalOutcomeForTesting(.landedOnLoginPage)
-        #expect(state.lastSilentRenewalAttemptOutcome == .landedOnLoginPage)
+        // A background outcome no longer feeds the foreground retry policy.
+        #expect(state.lastSilentRenewalAttemptOutcome == nil)
         #expect(state.backgroundDuoStandDown == true)
         state.noteRenewalOutcomeForTesting(.timedOut)
         #expect(state.backgroundDuoStandDown == true)

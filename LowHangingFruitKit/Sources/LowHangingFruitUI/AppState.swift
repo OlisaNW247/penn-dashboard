@@ -891,6 +891,12 @@ final class AppState: ObservableObject {
     /// real attempt. Separate from the summary string on purpose, so the
     /// display line can never be what the retry policy reads.
     private static let lastSilentRenewalAttemptOutcomeKey = "lastSilentRenewalAttemptOutcomeV1"
+    /// The BACKGROUND twin of `lastSilentRenewalAttemptAtKey`: when a
+    /// background wake last made a real attempt. `lastSilentRenewalAttemptAtKey`
+    /// stays the FOREGROUND slot (existing installs' values keep their
+    /// meaning). Only a timestamp is kept: no background outcome feeds any
+    /// policy, and the summary line already names the last one.
+    private static let lastBackgroundSilentRenewalAttemptAtKey = "lastBackgroundSilentRenewalAttemptAtV1"
     /// Backs `silentRenewalConsecutiveLandings` -- how many foreground
     /// renewals in a row ended on the login form, which is what it takes
     /// (two) before `.landedOnLoginPage` is believed to mean "dead".
@@ -1039,6 +1045,8 @@ final class AppState: ObservableObject {
             .map { Date(timeIntervalSince1970: $0) }
         self.lastSilentRenewalAttemptOutcome = UserDefaults.lhf.string(forKey: Self.lastSilentRenewalAttemptOutcomeKey)
             .flatMap { RenewalOutcomeKind(rawValue: $0) }
+        self.lastBackgroundSilentRenewalAttemptAt = (UserDefaults.lhf.object(forKey: Self.lastBackgroundSilentRenewalAttemptAtKey) as? Double)
+            .map { Date(timeIntervalSince1970: $0) }
         self.silentRenewalConsecutiveLandings = UserDefaults.lhf.integer(forKey: Self.silentRenewalConsecutiveLandingsKey)
         self.backgroundDuoStandDown = UserDefaults.lhf.bool(forKey: Self.backgroundDuoStandDownKey)
         self.hasOfferedStayLoggedIn = UserDefaults.lhf.bool(forKey: Self.hasOfferedStayLoggedInKey)
@@ -1405,10 +1413,28 @@ final class AppState: ObservableObject {
             // that time restores the old behavior for device verification.
             UserDefaults.lhf.removeObject(forKey: Self.lastSilentRenewalAttemptAtKey)
             lastSilentRenewalAttemptAt = nil
+            UserDefaults.lhf.removeObject(forKey: Self.lastBackgroundSilentRenewalAttemptAtKey)
+            lastBackgroundSilentRenewalAttemptAt = nil
         }
         #endif
 
+        if Self.shouldMigrateSharedRenewalSlot(
+            foregroundAt: self.lastSilentRenewalAttemptAt,
+            summary: self.lastSilentRenewalSummary,
+            backgroundAt: self.lastBackgroundSilentRenewalAttemptAt
+        ) {
+            self.lastBackgroundSilentRenewalAttemptAt = self.lastSilentRenewalAttemptAt
+            self.lastSilentRenewalAttemptAt = nil
+            self.lastSilentRenewalAttemptOutcome = nil
+            if let at = self.lastBackgroundSilentRenewalAttemptAt, !SharedDefaults.isTestRunner {
+                UserDefaults.lhf.set(at.timeIntervalSince1970, forKey: Self.lastBackgroundSilentRenewalAttemptAtKey)
+                UserDefaults.lhf.removeObject(forKey: Self.lastSilentRenewalAttemptAtKey)
+                UserDefaults.lhf.removeObject(forKey: Self.lastSilentRenewalAttemptOutcomeKey)
+            }
+        }
+
         refreshCanvasSessionExpiredState()
+        hasFinishedInit = true
 
         // Seeds Grade Watcher's automatic-exclusion set and shared-syllabus
         // profiles from whatever `courseKnowledge` survived from the
@@ -2494,10 +2520,22 @@ final class AppState: ObservableObject {
     /// rules as `lastAnnouncementSyncSummary`.
     @Published var lastCourseKnowledgeSyncSummary: String?
 
-    /// When the last real (network-touching) silent renewal finished, for
-    /// the retry policy. Not set by `.notAttempted` or `.abortedByLoginPane`.
-    private var lastSilentRenewalAttemptAt: Date?
-    private(set) var lastSilentRenewalAttemptOutcome: RenewalOutcomeKind?
+    /// When the last real (network-touching) FOREGROUND silent renewal
+    /// finished, for the retry policy and the foreground renewer's cooldown.
+    /// Not set by `.notAttempted` or `.abortedByLoginPane`, and never by a
+    /// background wake: a background attempt is the weaker one (short
+    /// budget, no latching), and sharing this slot let one that merely ran
+    /// out of time deny the student's own open an attempt for an hour
+    /// (2026-11-01, docs/SIGNOUT_2026-11-01.md).
+    private(set) var lastSilentRenewalAttemptAt: Date?
+    /// The outcome of that same last FOREGROUND attempt. Only the foreground
+    /// policy (`shouldRetrySilentRenewal`) reads it, so a background outcome
+    /// must not land here.
+    @Published private(set) var lastSilentRenewalAttemptOutcome: RenewalOutcomeKind?
+    /// When the last real BACKGROUND attempt finished; seeds and mirrors the
+    /// renewer's background cooldown slot (`CanvasSessionRenewer.lastBackgroundAttemptAt`).
+    /// Read by no foreground policy.
+    private(set) var lastBackgroundSilentRenewalAttemptAt: Date?
     /// Consecutive foreground `.landedOnLoginPage` outcomes; see
     /// `silentRenewalConsecutiveLandingsKey`.
     private(set) var silentRenewalConsecutiveLandings: Int
@@ -2529,7 +2567,7 @@ final class AppState: ObservableObject {
 
     /// Distinguishes one `startSilentCanvasRenewal()` task from the next, so
     /// an older task finishing can never clear the reference to a newer one.
-    private var silentRenewalGeneration = 0
+    private(set) var silentRenewalGeneration = 0
 
     /// Starts one silent renewal and remembers it. Replaces the bare
     /// `Task { await attemptSilentCanvasRenewal() }` fire-and-forget calls,
@@ -2620,6 +2658,23 @@ final class AppState: ObservableObject {
         case .notAttempted: return .notAttempted
         case .abortedByLoginPane: return .abortedByLoginPane
         }
+    }
+
+    /// One-time upgrade from 3.4.0, which wrote background attempts into the
+    /// single shared slot (`lastSilentRenewalAttemptAtV1`). If the foreground
+    /// timestamp exists, the last summary names a background run, and the
+    /// new background key is absent, that timestamp is a background attempt:
+    /// it moves to the background slot so it cannot deny the student's own
+    /// open an attempt for an hour (2026-11-01). A genuine foreground attempt
+    /// has a summary ending "foreground", so it is never moved. Idempotent:
+    /// once the background key exists the rule is false.
+    nonisolated static func shouldMigrateSharedRenewalSlot(
+        foregroundAt: Date?,
+        summary: String?,
+        backgroundAt: Date?
+    ) -> Bool {
+        guard foregroundAt != nil, backgroundAt == nil, let summary else { return false }
+        return summary.hasSuffix("background")
     }
 
     /// The summary line. Built only from the enum case name, a date and the
@@ -2818,9 +2873,18 @@ final class AppState: ObservableObject {
         if kind != .notAttempted && !(kind == .abortedByLoginPane && context == .background) {
             lastSilentRenewalSummary = Self.renewalSummary(kind: kind, at: now, context: context)
         }
+        // Each context writes only its own slot. The foreground slot's
+        // timestamp and outcome feed `shouldRetrySilentRenewal`; a
+        // background outcome written there would make the foreground policy
+        // wait an hour on the strength of a 20-second wake.
         if kind != .notAttempted && kind != .abortedByLoginPane {
-            lastSilentRenewalAttemptAt = now
-            lastSilentRenewalAttemptOutcome = kind
+            switch context {
+            case .foreground:
+                lastSilentRenewalAttemptAt = now
+                lastSilentRenewalAttemptOutcome = kind
+            case .background:
+                lastBackgroundSilentRenewalAttemptAt = now
+            }
         }
         guard persistsConfirmedDeadFlag else { return }
         let defaults = UserDefaults.lhf
@@ -2830,6 +2894,9 @@ final class AppState: ObservableObject {
         if let at = lastSilentRenewalAttemptAt, let outcome = lastSilentRenewalAttemptOutcome {
             defaults.set(at.timeIntervalSince1970, forKey: Self.lastSilentRenewalAttemptAtKey)
             defaults.set(outcome.rawValue, forKey: Self.lastSilentRenewalAttemptOutcomeKey)
+        }
+        if let at = lastBackgroundSilentRenewalAttemptAt {
+            defaults.set(at.timeIntervalSince1970, forKey: Self.lastBackgroundSilentRenewalAttemptAtKey)
         }
         defaults.set(silentRenewalConsecutiveLandings, forKey: Self.silentRenewalConsecutiveLandingsKey)
         if backgroundDuoStandDown {
@@ -2850,6 +2917,7 @@ final class AppState: ObservableObject {
         lastSilentRenewalSummary = nil
         lastSilentRenewalAttemptAt = nil
         lastSilentRenewalAttemptOutcome = nil
+        lastBackgroundSilentRenewalAttemptAt = nil
         silentRenewalConsecutiveLandings = 0
         backgroundDuoStandDown = false
         let defaults = UserDefaults.lhf
@@ -2857,6 +2925,7 @@ final class AppState: ObservableObject {
         defaults.removeObject(forKey: Self.lastSilentRenewalSummaryKey)
         defaults.removeObject(forKey: Self.lastSilentRenewalAttemptAtKey)
         defaults.removeObject(forKey: Self.lastSilentRenewalAttemptOutcomeKey)
+        defaults.removeObject(forKey: Self.lastBackgroundSilentRenewalAttemptAtKey)
         defaults.removeObject(forKey: Self.silentRenewalConsecutiveLandingsKey)
         defaults.removeObject(forKey: Self.lastCredentialSubmissionAtKey)
     }
@@ -3102,7 +3171,45 @@ final class AppState: ObservableObject {
             canvasSessionExpired = false
         } else {
             let cookieSessionExpired = cookieSessionExpiredOverrideForTesting ?? SessionCookieStore.isExpired(service: .canvas)
-            canvasSessionExpired = cookieSessionExpired || canvasLoginIsMissing || canvasSessionConfirmedDead
+            let loginMissing = canvasLoginIsMissing
+            if !hasFinishedInit,
+               Self.shouldProbeBeforeExpiring(
+                   clockExpired: cookieSessionExpired,
+                   loginMissing: loginMissing,
+                   confirmedDead: canvasSessionConfirmedDead,
+                   canProbe: canProbeSessionOnceInitialized
+               ) {
+                // `init`'s own recompute: `renewalContext` is still the
+                // default `.foreground` here even on a cold background wake
+                // (`beginWake` marks it afterwards), so a probe started now
+                // could run unawaited in the background. Leave the flag
+                // alone and start nothing; the first `ContentView.refresh()`
+                // probes moments later in a real foreground, and a wake's
+                // `run()` recomputes after marking its context.
+                return
+            }
+            if Self.shouldProbeBeforeExpiring(
+                clockExpired: cookieSessionExpired,
+                loginMissing: loginMissing,
+                confirmedDead: canvasSessionConfirmedDead,
+                canProbe: canProbeSession
+            ) {
+                // The clock is the ONLY reason to call this session expired,
+                // and the clock is not evidence (see
+                // `shouldProbeBeforeExpiring`). Leave the flag where it is,
+                // ask Canvas, and let the verdict set it.
+                if let aliveAt = lastSessionProbeAliveAt, now.timeIntervalSince(aliveAt) < Self.sessionProbeAliveReuse {
+                    canvasSessionExpired = false
+                } else if let startedAt = lastSessionProbeAt, now.timeIntervalSince(startedAt) < Self.sessionProbeThrottle {
+                    // A `.dead` or `.unknown` answer is not cached like
+                    // `.alive`, and about a dozen sites recompute: offline,
+                    // each would otherwise fire its own 15 s GET.
+                } else {
+                    startSessionProbe()
+                }
+                return
+            }
+            canvasSessionExpired = cookieSessionExpired || loginMissing || canvasSessionConfirmedDead
         }
         if canvasSessionExpired && !wasExpired {
             #if DEBUG
@@ -3110,6 +3217,262 @@ final class AppState: ObservableObject {
             #endif
             startSilentCanvasRenewal()
         }
+    }
+
+    // MARK: - Ask Canvas before believing the clock
+
+    /// Pure rule: does this recompute need an answer from Canvas before it
+    /// may raise `canvasSessionExpired`? Only when the 24-hour clock is the
+    /// SOLE reason. A deleted session (`loginMissing`) and a session a real
+    /// renewal already proved dead (`confirmedDead`) are server- or
+    /// Keychain-side facts and raise the flag at once, as before.
+    ///
+    /// Why the clock alone is not enough (2026-11-01, Marco's phone,
+    /// docs/SIGNOUT_2026-11-01.md): Canvas's cookie lives a day from the
+    /// last request, the app only re-stamps it when something fetches, so a
+    /// phone left closed for a day reads "expired" while Canvas still
+    /// accepts the cookies. The banner then showed over a live session until
+    /// the next grade fetch rotated the cookie. The wrong fix is to change
+    /// the 24-hour rule in `SessionCookieStore.load`: that rule is what
+    /// starts a renewal on open (CLAUDE.md, the 24-hour trap). It stays;
+    /// what the app does with its answer changes.
+    nonisolated static func shouldProbeBeforeExpiring(
+        clockExpired: Bool,
+        loginMissing: Bool,
+        confirmedDead: Bool,
+        canProbe: Bool
+    ) -> Bool {
+        canProbe && clockExpired && !loginMissing && !confirmedDead
+    }
+
+    /// Which cookies to save back after the probe said `.alive`: the Canvas
+    /// SESSION cookies from the folded jar, with any the probe's own response
+    /// rotated winning. Name-filtered through
+    /// `CanvasSessionRenewer.isCanvasSessionCookie`, so the analytics
+    /// cookies on the same domain (`_ga`, the 2026-10-08 trap) and anything
+    /// from another host never reach the Keychain.
+    static func cookiesToRestamp(
+        folded: [HTTPCookie],
+        rotated: [HTTPCookie],
+        canvasHost: String
+    ) -> [HTTPCookie] {
+        func key(_ c: HTTPCookie) -> String { "\(c.name)|\(c.domain)|\(c.path)" }
+        let rotatedSession = rotated.filter { CanvasSessionRenewer.isCanvasSessionCookie($0, canvasHost: canvasHost) }
+        let rotatedKeys = Set(rotatedSession.map(key))
+        let keptFolded = folded.filter {
+            CanvasSessionRenewer.isCanvasSessionCookie($0, canvasHost: canvasHost) && !rotatedKeys.contains(key($0))
+        }
+        return keptFolded + rotatedSession
+    }
+
+    /// How long an `.alive` answer is reused before the next clock-only
+    /// recompute asks again. The recompute runs from about a dozen sites; one
+    /// GET per five minutes is plenty, and it covers the case where the
+    /// Keychain refused the re-stamp so the clock still reads expired.
+    private static let sessionProbeAliveReuse: TimeInterval = 10 * 60
+
+    /// Foreground only, never from `init`, never against fixtures, and under
+    /// the test runner only when a test injected a probe (so no existing test
+    /// touches the network). Background keeps today's clock-driven
+    /// behaviour: a probe there is not awaited by the wake, which would end
+    /// the process mid-request. Not from `init` because `renewalContext` is
+    /// still the default `.foreground` while `init` runs, even on a cold
+    /// background wake.
+    private var canProbeSession: Bool {
+        hasFinishedInit && canProbeSessionOnceInitialized
+    }
+
+    /// Everything `canProbeSession` needs except "init is done", so `init`'s
+    /// own recompute can tell "would probe, but must wait" from "never
+    /// probes here" (which keeps today's clock behaviour).
+    private var canProbeSessionOnceInitialized: Bool {
+        guard renewalContext == .foreground, !isUsingFixtureData else { return false }
+        if sessionProbeForTesting != nil { return true }
+        return !SharedDefaults.isTestRunner
+    }
+
+    /// False until `init` has run its first recompute; see there.
+    private var hasFinishedInit = false
+
+    /// Minimum gap between probe STARTS when the last answer was not
+    /// `.alive`.
+    private static let sessionProbeThrottle: TimeInterval = 60
+
+    /// Test seam: replaces both the cookie fold and the network call. A
+    /// per-instance closure, like the other `...ForTesting` seams, so no
+    /// shared state is written.
+    /// Receives the jar the real probe would have sent. Because the real
+    /// loader reads the Keychain, `savedCookieLoaderForTesting` stands in for
+    /// `loadIncludingClockStale` and the WebView is not consulted at all.
+    private var sessionProbeForTesting: (([HTTPCookie]) async -> CanvasSessionProbe.Result)?
+    private var savedCookieLoaderForTesting: (() -> [HTTPCookie])?
+
+    func setSessionProbeForTesting(
+        savedCookies: (() -> [HTTPCookie])? = nil,
+        _ probe: (([HTTPCookie]) async -> CanvasSessionProbe.Result)?
+    ) {
+        sessionProbeForTesting = probe
+        savedCookieLoaderForTesting = savedCookies
+    }
+
+    /// The probe's jar: live WebView cookies folded over every saved cookie
+    /// the server has not dated as dead (`loadIncludingClockStale`), live
+    /// winning on name|domain|path, host-filtered. This is the same fold
+    /// `AutoSyncCoordinator.canvasCookies` does, but that helper fetches and
+    /// folds in one step over `load()`, which is exactly what drops the
+    /// cookie being asked about; so the three-line fold is repeated here over
+    /// the other loader.
+    static func probeJar(live: [HTTPCookie], saved: [HTTPCookie], canvasHost: String) -> [HTTPCookie] {
+        let liveKeys = Set(live.map { "\($0.name)|\($0.domain)|\($0.path)" })
+        let merged = saved.filter { !liveKeys.contains("\($0.name)|\($0.domain)|\($0.path)") } + live
+        if canvasHost == CanvasInstallation.penn.host {
+            return merged.filter { $0.domain.localizedCaseInsensitiveContains("canvas") }
+        }
+        return merged.filter { AutoSyncCoordinator.cookie($0, belongsTo: canvasHost) }
+    }
+
+    /// The probe currently running, if any; at most one at a time.
+    private(set) var pendingSessionProbe: Task<Void, Never>?
+    private var lastSessionProbeAliveAt: Date?
+    private var lastSessionProbeAt: Date?
+    /// Distinguishes one probe from the next, like `silentRenewalGeneration`:
+    /// a probe that outlives a disconnect, a school switch or a fresh login
+    /// must not apply its answer (a late `.alive` would re-merge the deleted
+    /// session into the Keychain; a late `.dead` would start a renewal for a
+    /// login that no longer exists).
+    private(set) var sessionProbeGeneration = 0
+    /// In-memory only: the last probe said Canvas rejects the session. The
+    /// banner counts it as a verdict, so a `.dead` followed by a refused
+    /// (`.notAttempted`) renewal still tells the student.
+    @Published private(set) var sessionProbeSaidDead = false
+
+    /// Drops any in-flight probe and everything remembered from earlier
+    /// answers. Called on disconnect, school switch and a fresh login.
+    private func invalidateSessionProbe() {
+        sessionProbeGeneration += 1
+        pendingSessionProbe?.cancel()
+        pendingSessionProbe = nil
+        lastSessionProbeAliveAt = nil
+        lastSessionProbeAt = nil
+        sessionProbeSaidDead = false
+    }
+
+    /// Waits for the probe the last recompute started, if any. Call it right
+    /// after that recompute and before fetching, like
+    /// `awaitPendingSilentRenewal()`.
+    func awaitPendingSessionProbe() async {
+        await pendingSessionProbe?.value
+    }
+
+    private func startSessionProbe() {
+        guard pendingSessionProbe == nil else { return }
+        lastSessionProbeAt = Date()
+        let generation = sessionProbeGeneration
+        let host = canvasInstallation.host
+        let base = canvasBaseURL
+        let injected = sessionProbeForTesting
+        let savedLoader = savedCookieLoaderForTesting
+        pendingSessionProbe = Task { @MainActor [weak self] in
+            let result: CanvasSessionProbe.Result
+            let folded: [HTTPCookie]
+            if let injected {
+                folded = Self.probeJar(live: [], saved: savedLoader?() ?? [], canvasHost: host)
+                result = await injected(folded)
+            } else {
+                let live: [HTTPCookie] = await withCheckedContinuation { continuation in
+                    LoginDataStores.canvas.httpCookieStore.getAllCookies { continuation.resume(returning: $0) }
+                }
+                folded = Self.probeJar(
+                    live: live,
+                    saved: SessionCookieStore.loadIncludingClockStale(service: .canvas),
+                    canvasHost: host
+                )
+                result = await CanvasSessionProbe.probeDetailed(baseURL: base, cookies: folded)
+            }
+            guard let self, self.sessionProbeGeneration == generation else { return }
+            self.applySessionProbeResult(result, folded: folded, canvasHost: host)
+            self.pendingSessionProbe = nil
+        }
+    }
+
+    private func applySessionProbeResult(_ result: CanvasSessionProbe.Result, folded: [HTTPCookie], canvasHost: String) {
+        switch result.verdict {
+        case .alive:
+            let stamp = Self.cookiesToRestamp(folded: folded, rotated: result.rotatedCookies, canvasHost: canvasHost)
+            SessionCookieStore.merge(stamp, service: .canvas)
+            lastSessionProbeAliveAt = Date()
+            sessionProbeSaidDead = false
+            noteCanvasSessionProvenAlive()
+            // Set directly rather than recomputing: with the Keychain write
+            // refused (or the override seam on) the clock may still read
+            // expired, and a recompute would just ask again.
+            canvasSessionExpired = false
+            #if DEBUG
+            DebugRenewalLog.record("session probe: alive, re-stamped \(stamp.count) cookies")
+            #endif
+        case .dead:
+            #if DEBUG
+            DebugRenewalLog.record("session probe: dead")
+            #endif
+            sessionProbeSaidDead = true
+            let wasExpired = canvasSessionExpired
+            canvasSessionExpired = true
+            if !wasExpired {
+                #if DEBUG
+                DebugRenewalLog.record("canvasSessionExpired false -> true, triggering silent renewal")
+                #endif
+                startSilentCanvasRenewal()
+            }
+        case .unknown:
+            // Offline or no answer: no news is not "signed out".
+            #if DEBUG
+            DebugRenewalLog.record("session probe: unknown, flag unchanged")
+            #endif
+        }
+    }
+
+    // MARK: - Banner verdict
+
+    /// Pure rule: has anything other than the clock said this session needs
+    /// the student? The "reconnect canvas" banner needs a yes. On 2026-11-01
+    /// the banner sat over a live session because the 24-hour clock tripped
+    /// and the renewer was refused by a cooldown (`.notAttempted`), so
+    /// nothing had been tried and nothing was in flight (CLAUDE.md: the
+    /// banner "sometimes clears by itself"). The wrong fix is hiding the
+    /// banner for every unproven expiry: a deleted session, a rejected
+    /// password and a Duo wait are all real and actionable. A refused
+    /// (`.notAttempted`) or never-run attempt, or a `.renewed` one, is not
+    /// a verdict. A `.dead` pre-expiry probe (`probeSaidDead`) IS one: Canvas
+    /// itself just rejected the session, and if the renewal that follows is
+    /// refused (cooldown, pane active, already in flight) the student would
+    /// otherwise see nothing over a session known dead.
+    nonisolated static func bannerHasVerdict(
+        confirmedDead: Bool,
+        loginMissing: Bool,
+        passwordRejected: Bool,
+        awaitingDuo: Bool,
+        probeSaidDead: Bool = false,
+        lastForegroundOutcome: RenewalOutcomeKind?
+    ) -> Bool {
+        if confirmedDead || loginMissing || passwordRejected || awaitingDuo || probeSaidDead { return true }
+        switch lastForegroundOutcome {
+        case .landedOnLoginPage, .needsDuo, .passwordRejected, .timedOut: return true
+        default: return false
+        }
+    }
+
+    /// `bannerHasVerdict` over this instance's state; `ContentView` shows the
+    /// reconnect banner only when this is true as well as
+    /// `canvasSessionExpired`.
+    var canvasSessionBannerHasVerdict: Bool {
+        Self.bannerHasVerdict(
+            confirmedDead: canvasSessionConfirmedDead,
+            loginMissing: canvasLoginIsMissing,
+            passwordRejected: autoLoginDisabledReason != nil,
+            awaitingDuo: autoLoginAwaitingDuo,
+            probeSaidDead: sessionProbeSaidDead,
+            lastForegroundOutcome: lastSilentRenewalAttemptOutcome
+        )
     }
 
     /// Pure decision behind the token short-circuit in
@@ -3298,6 +3661,7 @@ final class AppState: ObservableObject {
             },
             lastCredentialSubmissionAt: Self.persistedCredentialSubmissionAt(),
             lastAttemptAt: lastSilentRenewalAttemptAt,
+            lastBackgroundAttemptAt: lastBackgroundSilentRenewalAttemptAt,
             onCredentialSubmission: { date in
                 UserDefaults.lhf.set(date.timeIntervalSince1970, forKey: Self.lastCredentialSubmissionAtKey)
             }
@@ -3314,7 +3678,8 @@ final class AppState: ObservableObject {
             : CanvasSessionRenewer.timeout
         let outcome = await renewer.renewIfNeeded(
             timeout: attemptTimeout,
-            cooldown: cooldown ?? CanvasSessionRenewer.cooldown
+            cooldown: cooldown ?? CanvasSessionRenewer.cooldown,
+            isBackground: renewalContext == .background
         )
         applyRenewalOutcome(outcome)
 
@@ -3338,6 +3703,7 @@ final class AppState: ObservableObject {
         // comment) must reach `canvasSessionExpired` too, not just a
         // successful renewal.
         let context = renewalContext
+        if case .renewed = outcome { sessionProbeSaidDead = false }
         setCanvasSessionConfirmedDead(Self.confirmedDeadAfterRenewal(
             current: canvasSessionConfirmedDead,
             outcome: outcome,
@@ -3516,7 +3882,9 @@ final class AppState: ObservableObject {
         // read. The button means "attempt now", so forget both clocks here
         // too. DEBUG-only, the same clearing `-LHFAgeCanvasSession` does.
         lastSilentRenewalAttemptAt = nil
+        lastBackgroundSilentRenewalAttemptAt = nil
         UserDefaults.lhf.removeObject(forKey: Self.lastSilentRenewalAttemptAtKey)
+        UserDefaults.lhf.removeObject(forKey: Self.lastBackgroundSilentRenewalAttemptAtKey)
         UserDefaults.lhf.removeObject(forKey: Self.lastCredentialSubmissionAtKey)
         // With the cookie item deleted and `canvasLoginEverCaptured` set, this
         // recompute now reads the login as missing, raises the banner and
@@ -3681,6 +4049,7 @@ final class AppState: ObservableObject {
         // record that a login happened (`canvasLoginEverCaptured`). Before
         // the recompute below, which reads it.
         setCanvasLoginEverCaptured(true)
+        invalidateSessionProbe()
         noteCanvasSessionProvenAlive()
         setAutoLoginAwaitingDuo(false)
         // A real login is the human action the background's Duo stand-down
@@ -3709,6 +4078,13 @@ final class AppState: ObservableObject {
     /// The defaults removals honour `persistsConfirmedDeadFlag`, like
     /// `recordSilentRenewal`, so the testing seam stays out of the shared
     /// defaults domain; in production that flag is always true.
+    ///
+    /// This is also why a phone can hold `lastSilentRenewalAttemptAtV1` and
+    /// the summary but no `lastSilentRenewalAttemptOutcomeV1` (found on
+    /// Marco's phone 2026-11-01): `recordSilentRenewal` writes the three
+    /// together, then the launch-time grade fetch succeeded and this method
+    /// removed the outcome on purpose. The timestamp is kept deliberately,
+    /// because it seeds the renewer's cooldown.
     private func noteCanvasSessionProvenAlive() {
         setCanvasSessionConfirmedDead(false)
         silentRenewalConsecutiveLandings = 0
@@ -3722,6 +4098,15 @@ final class AppState: ObservableObject {
     /// token mint writes the Keychain, a Grade Watcher success needs the
     /// network) cannot be driven from `swift test`. Memory-only, same shape
     /// as `noteRenewalOutcomeForTesting(_:)`.
+    /// Test seam for the wiring `disconnectCanvas`, `selectCanvasInstallation`
+    /// and `noteCanvasLoginSessionCaptured` share; those three themselves
+    /// touch the Keychain and shared defaults, so a test cannot call them.
+    func invalidateSessionProbeForTesting() { invalidateSessionProbe() }
+
+    func disablePersistenceForTesting() {
+        persistsConfirmedDeadFlag = false
+    }
+
     func noteCanvasSessionProvenAliveForTesting() {
         persistsConfirmedDeadFlag = false
         defer { persistsConfirmedDeadFlag = true }
@@ -3978,6 +4363,7 @@ final class AppState: ObservableObject {
     /// installation so numeric course ids and cookies can never cross schools.
     func selectCanvasInstallation(_ installation: CanvasInstallation) {
         guard installation != canvasInstallation || !hasChosenCanvasInstallation else { return }
+        invalidateSessionProbe()
         if installation != canvasInstallation,
            (isCanvasConnected || !SessionCookieStore.load(service: .canvas).isEmpty) {
             disconnectCanvas(keepingStudentWork: false)
@@ -4055,6 +4441,7 @@ final class AppState: ObservableObject {
     /// one. Keeping across schools needs rows stamped with the account they
     /// came from (hardening plan B1, second bullet), which does not exist yet.
     func disconnectCanvas(keepingStudentWork: Bool = true) {
+        invalidateSessionProbe()
         let websiteDataHints = canvasInstallation.websiteDataDomainHints
         // Disconnecting Canvas is the student saying "forget my Canvas" —
         // the stored PennKey password goes with it. Called first, ahead of

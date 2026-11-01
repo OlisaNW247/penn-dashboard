@@ -96,6 +96,35 @@ enum CanvasSessionProbe {
 
     // MARK: - The request
 
+    /// The verdict plus whatever cookies Canvas set on the same response.
+    /// `rotatedCookies` is non-empty on a live session: Canvas re-issues
+    /// `canvas_session` (a fresh one-day lifetime) on authenticated
+    /// responses, and the Grade Watcher's merge of that rotation is what
+    /// cleared the banner by itself on Marco's phone (2026-11-01,
+    /// docs/SIGNOUT_2026-11-01.md). The probe hands them back so
+    /// `AppState` can save them without waiting for a grade fetch.
+    struct Result: Sendable {
+        var verdict: Verdict
+        var rotatedCookies: [HTTPCookie]
+
+        init(verdict: Verdict, rotatedCookies: [HTTPCookie] = []) {
+            self.verdict = verdict
+            self.rotatedCookies = rotatedCookies
+        }
+    }
+
+    /// The `Set-Cookie` cookies on `response`, parsed against `url`. Pure,
+    /// so a test can build a response by hand. Parsed for any status; the
+    /// caller decides to use them only on `.alive`, because a 401 may carry
+    /// a cleared or anonymous session cookie that must never be saved over
+    /// a good one.
+    static func rotatedCookies(from response: HTTPURLResponse, url: URL) -> [HTTPCookie] {
+        let fields = response.allHeaderFields.reduce(into: [String: String]()) { acc, pair in
+            if let key = pair.key as? String, let value = pair.value as? String { acc[key] = value }
+        }
+        return HTTPCookie.cookies(withResponseHeaderFields: fields, for: url)
+    }
+
     /// Puts the question to `baseURL`. Never throws, never deletes, never
     /// follows a redirect: the cookies go only to `baseURL`'s own host, and a
     /// redirect to an identity provider is read from its `Location` instead
@@ -108,6 +137,18 @@ enum CanvasSessionProbe {
         session: URLSession = URLSession(configuration: .ephemeral),
         timeout: TimeInterval = 15
     ) async -> Verdict {
+        await probeDetailed(baseURL: baseURL, cookies: cookies, session: session, timeout: timeout).verdict
+    }
+
+    /// `probe`, keeping the response's cookies. Kept separate so
+    /// `GradeWatcherView` and the existing tests still see the plain
+    /// `Verdict` signature.
+    static func probeDetailed(
+        baseURL: URL,
+        cookies: [HTTPCookie],
+        session: URLSession = URLSession(configuration: .ephemeral),
+        timeout: TimeInterval = 15
+    ) async -> Result {
         let url = baseURL.appendingPathComponent("api/v1/users/self")
         var request = URLRequest(url: url, timeoutInterval: timeout)
         // An explicit `Cookie` header below means the system's own cookie
@@ -119,16 +160,17 @@ enum CanvasSessionProbe {
 
         do {
             let (data, response) = try await session.data(for: request, delegate: NoRedirectDelegate())
-            guard let http = response as? HTTPURLResponse else { return .unknown }
+            guard let http = response as? HTTPURLResponse else { return Result(verdict: .unknown) }
             var finalURL = http.url
             if (300..<400).contains(http.statusCode),
                let location = http.value(forHTTPHeaderField: "Location") {
                 finalURL = URL(string: location, relativeTo: url)?.absoluteURL
             }
-            return verdict(statusCode: http.statusCode, finalURL: finalURL, body: data)
+            let v = verdict(statusCode: http.statusCode, finalURL: finalURL, body: data)
+            return Result(verdict: v, rotatedCookies: v == .alive ? rotatedCookies(from: http, url: url) : [])
         } catch {
             // Offline, timed out, cancelled: no answer is not "dead".
-            return .unknown
+            return Result(verdict: .unknown)
         }
     }
 

@@ -127,7 +127,12 @@ struct ContentView: View {
                     // The wrong fix would be to delay setting
                     // `canvasSessionExpired`, which the retry policy and Grade
                     // Watcher read as the truth about the cookie.
-                    if state.canvasSessionExpired && !state.isSilentRenewalInFlight {
+                    // And only with a verdict from somewhere other than the
+                    // clock (`AppState.bannerHasVerdict`): on 2026-11-01 it
+                    // showed over a live session because the 24-hour rule
+                    // tripped and a cooldown refused the renewal.
+                    if state.canvasSessionExpired && !state.isSilentRenewalInFlight
+                        && state.canvasSessionBannerHasVerdict {
                         canvasSessionExpiredBanner
                             .padding(.horizontal, 20)
                             .padding(.top, 10)
@@ -788,6 +793,12 @@ struct ContentView: View {
     /// `fetchSessionSources()` and `settleAfterFetch()` so the launch pass can
     /// reuse the two halves without the calls that belong to this one.
     private func refresh() async {
+        // Recompute and wait for Canvas's answer before fetching: when the
+        // 24-hour clock alone says "expired" this asks Canvas and re-stamps
+        // the live session (or, on a dead one, starts the renewal), so the
+        // fetches below run on the verdict instead of racing it.
+        state.refreshCanvasSessionExpiredState()
+        await state.awaitPendingSessionProbe()
         await state.syncIfConfigured()
         await fetchSessionSources()
         // Encrypted sync with the paired laptop. Before the reload and the
@@ -817,6 +828,9 @@ struct ContentView: View {
         // which is the gap this pass was written to close. So wait for it.
         // On a healthy session nothing is pending and this returns at once;
         // the background wake does the same before telling iOS it is done.
+        // The probe first: a clock-only expiry is settled by asking Canvas,
+        // and only a `.dead` answer starts the renewal waited on next.
+        await state.awaitPendingSessionProbe()
         await state.awaitPendingSilentRenewal()
         await fetchSessionSources()
         await settleAfterFetch()

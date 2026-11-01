@@ -164,4 +164,25 @@ struct SessionCookieLiveSessionTests {
             )
         }
     }
+
+    @Test("loadIncludingClockStale keeps a 25-hour-old no-expiry cookie that load drops, and drops a past expiry")
+    func clockStaleIncluded() {
+        let now = Date()
+        let iso = ISO8601DateFormatter()
+        func entry(_ name: String, captured: Date, expires: Date? = nil) -> [String: String] {
+            var d = ["name": name, "value": "v", "domain": "canvas.upenn.edu", "path": "/",
+                     "capturedAt": iso.string(from: captured)]
+            if let expires { d["expiresDate"] = iso.string(from: expires) }
+            return d
+        }
+        let old = now.addingTimeInterval(-25 * 3600)
+        let entries = [
+            entry("canvas_session", captured: old),
+            entry("dead_by_server", captured: now, expires: now.addingTimeInterval(-60)),
+        ]
+        let included = SessionCookieStore.clockStaleIncluded(entries: entries, now: now)
+        #expect(included.map(\.name) == ["canvas_session"])
+        // `load` applies the clock through the same pure rule on each entry.
+        #expect(SessionCookieStore.isStale(capturedAt: old, now: now, service: .canvas))
+    }
 }

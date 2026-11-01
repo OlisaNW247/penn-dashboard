@@ -229,7 +229,30 @@ final class CanvasSessionRenewer {
     private let onCredentialSubmission: ((Date) -> Void)?
 
     /// `private(set)` only so tests can read the seeded cooldown clocks.
+    ///
+    /// This is the FOREGROUND slot: the one-hour gate a student's own open
+    /// is measured against. Background wakes have their own slot below. They
+    /// used to share this one, and on 2026-11-01 a 20-second background
+    /// attempt that ended parked on a login host stamped it, so the student
+    /// opening the app twenty minutes later got `.notAttempted("within the 1h
+    /// cooldown")` and the "needs a refresh" banner over a session Canvas was
+    /// still accepting (docs/SIGNOUT_2026-11-01.md).
     private(set) var lastAttemptAt: Date?
+    /// The BACKGROUND slot: when a background wake last made a real attempt.
+    /// Gates only background attempts (one hour apart, as before), so the
+    /// weaker attempt (short budget, never latches) can pace itself without
+    /// ever denying the stronger one. The in-flight guard stays shared.
+    ///
+    /// Two clocks inside the renewer, selected by an `isBackground` argument
+    /// on `renewIfNeeded`, rather than one clock that `AppState` re-seeds
+    /// before each call (the shape `refreshCredentialSubmissionClock` has):
+    /// the renewer is created once and reused, and a wake in a live process
+    /// flips `AppState.renewalContext` back and forth. A re-seed would have
+    /// to REPLACE the clock, which would rewind a slot the renewer itself
+    /// just consumed on an attempt that `AppState` never records (an abort
+    /// deliberately leaves its slot consumed). Two clocks cannot be rewound
+    /// by each other.
+    private(set) var lastBackgroundAttemptAt: Date?
     private var isInFlight = false
 
     #if DEBUG
@@ -253,6 +276,7 @@ final class CanvasSessionRenewer {
     /// Release build.
     func resetThrottlesForTesting() {
         lastAttemptAt = nil
+        lastBackgroundAttemptAt = nil
         lastCredentialSubmissionAt = nil
     }
 
@@ -352,6 +376,7 @@ final class CanvasSessionRenewer {
         autoLogin: (() -> (username: String, password: String)?)? = nil,
         lastCredentialSubmissionAt: Date? = nil,
         lastAttemptAt: Date? = nil,
+        lastBackgroundAttemptAt: Date? = nil,
         onCredentialSubmission: ((Date) -> Void)? = nil
     ) {
         self.installation = installation
@@ -367,6 +392,7 @@ final class CanvasSessionRenewer {
         // session recorded two landings and latched the session dead within
         // minutes, and background wakes hit the IdP every 15 minutes.
         self.lastAttemptAt = lastAttemptAt
+        self.lastBackgroundAttemptAt = lastBackgroundAttemptAt
         self.onCredentialSubmission = onCredentialSubmission
     }
 
@@ -377,8 +403,10 @@ final class CanvasSessionRenewer {
     /// state make every call after the first in a given window a cheap,
     /// synchronous no-op.
     ///
-    /// `timeout` is the hard cap for THIS attempt (the background wake passes
-    /// `backgroundTimeout`), and `cooldown` is the spacing this attempt is
+    /// `isBackground` says which cooldown slot this attempt is measured
+    /// against and consumes, and how a timeout is read (see
+    /// `timedOutOutcome`). `timeout` is the hard cap for THIS attempt (the
+    /// background wake passes `backgroundTimeout`), and `cooldown` is the spacing this attempt is
     /// measured against. Both are per-call rather than global so the
     /// foreground default (30 s, one hour) is untouched. `AppState` passes a
     /// shorter `cooldown` only for the retry after a `.timedOut` attempt,
@@ -388,11 +416,12 @@ final class CanvasSessionRenewer {
     func renewIfNeeded(
         now: Date = Date(),
         timeout: TimeInterval = CanvasSessionRenewer.timeout,
-        cooldown: TimeInterval = CanvasSessionRenewer.cooldown
+        cooldown: TimeInterval = CanvasSessionRenewer.cooldown,
+        isBackground: Bool = false
     ) async -> Outcome {
         if let gated = Self.gate(
             now: now,
-            lastAttempt: lastAttemptAt,
+            lastAttempt: attemptClock(isBackground: isBackground),
             inFlight: isInFlight,
             paneActive: isLoginPaneActive(),
             isTestRunner: SharedDefaults.isTestRunner,
@@ -412,11 +441,23 @@ final class CanvasSessionRenewer {
         // so a stuck attempt can't be retried again a second later by the
         // next trigger (e.g. another `refreshCanvasSessionExpiredState()`
         // call a few seconds later in the same launch).
-        lastAttemptAt = now
+        if isBackground {
+            lastBackgroundAttemptAt = now
+        } else {
+            lastAttemptAt = now
+        }
         isInFlight = true
         defer { isInFlight = false }
 
-        return await performAttempt(timeout: timeout)
+        return await performAttempt(timeout: timeout, isBackground: isBackground)
+    }
+
+    /// The cooldown clock an attempt in this context is measured against:
+    /// background reads only the background slot, foreground only the
+    /// foreground one. A separate function so tests can reach the selection
+    /// (`renewIfNeeded` returns at the test-runner guard before using it).
+    func attemptClock(isBackground: Bool) -> Date? {
+        isBackground ? lastBackgroundAttemptAt : lastAttemptAt
     }
 
     /// Pure decision logic behind `renewIfNeeded()`: `nil` means "proceed
@@ -540,6 +581,20 @@ final class CanvasSessionRenewer {
         return .timedOut
     }
 
+    /// What a hit hard timeout means, by context. In the foreground the
+    /// 30-second budget is generous, so a WebView still parked on a login
+    /// host is evidence and `timeoutOutcome(finalURL:)` classifies it. In
+    /// the background the budget is `backgroundTimeout` (20 s) and the wake
+    /// may also be starved of CPU, so being parked on a login host after 20 s
+    /// proves nothing: on 2026-11-01 exactly that was recorded as
+    /// `.landedOnLoginPage` against a session Canvas still accepted. It is
+    /// `.timedOut` regardless of host, which is "unknown": never latched,
+    /// and retried after `AppState.timedOutRetryInterval` instead of an
+    /// hour. The wrong fix is a longer background budget; iOS sets that.
+    static func timedOutOutcome(finalURL: URL?, isBackground: Bool) -> Outcome {
+        isBackground ? .timedOut : timeoutOutcome(finalURL: finalURL)
+    }
+
     /// Pure decision behind the `.failed` settle signal (`didFail` /
     /// `didFailProvisionalNavigation`: offline, a captive portal, a cell
     /// handoff). A failed navigation says nothing about the IdP session, but
@@ -600,7 +655,7 @@ final class CanvasSessionRenewer {
     /// The actual WebKit-touching attempt. Never called directly — only
     /// through `renewIfNeeded()`, which has already recorded the cooldown
     /// timestamp and set the in-flight flag before this runs.
-    private func performAttempt(timeout: TimeInterval) async -> Outcome {
+    private func performAttempt(timeout: TimeInterval, isBackground: Bool) async -> Outcome {
         // Fresh for every attempt — see this flag's own doc comment. Reset
         // here rather than only at declaration so a *reused* renewer
         // (`AppState.canvasSessionRenewer` is created once and kept across
@@ -689,7 +744,7 @@ final class CanvasSessionRenewer {
         #endif
 
         if signal == .timedOut {
-            let outcome = Self.timeoutOutcome(finalURL: webView.url)
+            let outcome = Self.timedOutOutcome(finalURL: webView.url, isBackground: isBackground)
             let status: String
             switch outcome {
             case .needsDuo: status = "timed-out, parked on duo"

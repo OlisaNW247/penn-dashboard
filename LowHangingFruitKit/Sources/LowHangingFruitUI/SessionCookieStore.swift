@@ -169,6 +169,33 @@ enum SessionCookieStore {
         return gatedOnLiveSession(fresh: fresh, persistedNames: entries.compactMap { $0["name"] }, service: service)
     }
 
+    /// Every persisted cookie of `service` whose own `expiresDate` has not
+    /// passed, INCLUDING those the 24-hour clock (`isStale`) would drop, and
+    /// without `gatedOnLiveSession`. A cookie the server itself dated as dead
+    /// stays dropped; one with no expiry stays, however old.
+    ///
+    /// This exists only for the pre-expiry probe (`AppState`'s clock-only
+    /// path): it asks Canvas about exactly the session the clock would
+    /// otherwise call dead, and that session is the very cookie `load`
+    /// withholds. Using this for any request that ACTS on the session
+    /// (a fetch, a sync, a renewal) would replay a cookie of unknown age,
+    /// which is what the 24-hour rule exists to prevent. The wrong fix is
+    /// loosening `load`: that rule is the renew-on-open trigger and stays
+    /// byte for byte.
+    static func loadIncludingClockStale(service: Service) -> [HTTPCookie] {
+        clockStaleIncluded(entries: loadDicts(service: service), now: Date())
+    }
+
+    /// Pure core of `loadIncludingClockStale`, so tests need no Keychain.
+    static func clockStaleIncluded(entries: [[String: String]], now: Date) -> [HTTPCookie] {
+        entries.compactMap { entry -> HTTPCookie? in
+            guard let cookie = cookie(from: entry) else { return nil }
+            if let expiresString = entry["expiresDate"], let expires = isoFormatter.date(from: expiresString),
+               expires <= now { return nil }
+            return cookie
+        }
+    }
+
     /// Canvas's own session cookie names, matched as a case-insensitive
     /// substring of the cookie's `name`: `canvas_session` is Canvas's own
     /// Rails session cookie, `_normandy_session` is Instructure's shared

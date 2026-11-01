@@ -46,6 +46,18 @@ These block shipping, or would make shipping risky. The launch-prep
 work of 2026-10-09/10 is summarised, with the order to take these in,
 in `docs/LAUNCH_PREP_HANDOFF.md`.
 
+- **Prove the probe-before-expired sign-in fix on a phone, then ship it
+  as 3.4.1.** `v9` (2026-11-01, `docs/SIGNOUT_2026-11-01.md`) built for the
+  device (`.claude/worktrees/v9/build/DerivedData/.../Debug-iphoneos/Smooth.app`,
+  3.4.0 (17)) but the phone went offline before it was installed. Checks: launch with
+  `-LHFAgeCanvasSession` and expect a `session probe: alive` line in
+  `debugRenewalLogV1` and no `canvasSessionExpired false -> true`; let a
+  background wake run, open within the hour, and expect a real foreground
+  attempt rather than `within the 1h cooldown`; disconnect while a probe
+  is in flight and confirm nothing comes back. Not yet done: the
+  "keepalive on open" extra from the doc (probe when the cookie is older
+  than 12 hours), and the Mac build has not been run.
+
 - **The launch-day crash (2026-10-26): ship 3.2.2 with the A1 fix.** A
   few hundred people installed 3.2.1 (15) on launch day and some of them
   crash a few seconds after every open. The code says why: two Canvas
@@ -597,6 +609,14 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-01.** Probe before declaring the Canvas session expired
+  (`v9`, `docs/SIGNOUT_2026-11-01.md`): the 24-hour cookie rule now
+  starts a `GET /api/v1/users/self` check instead of the banner; alive
+  re-stamps the cookies, dead renews as before, no answer changes
+  nothing. Background and foreground renewals keep separate cooldown
+  slots, a background timeout is recorded as timed out, and the refresh
+  banner needs a real verdict. 3420/328 green; device build made, not
+  yet installed or proven on a device.
 - **2026-10-23.** Automatic Penn credential saving after verified Canvas login;
   no duplicate password prompt or opt-out sheet. Added connection confirmation,
   pre-login disclosure, origin/lifetime guards, and Keychain error handling.

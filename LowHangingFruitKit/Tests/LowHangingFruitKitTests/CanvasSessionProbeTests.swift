@@ -183,4 +183,17 @@ struct CanvasSessionProbeTests {
         #expect(!code.contains("SessionCookieStore.remove"))
         #expect(code.contains("CanvasSessionProbe.probe"))
     }
+
+    @Test("a live answer's Set-Cookie cookies come back; the plain probe signature still works")
+    func rotatedCookieExtraction() throws {
+        let response = try #require(HTTPURLResponse(
+            url: apiURL, statusCode: 200, httpVersion: "HTTP/1.1",
+            headerFields: ["Set-Cookie": "canvas_session=fresh; path=/; secure; HttpOnly"]
+        ))
+        let cookies = CanvasSessionProbe.rotatedCookies(from: response, url: apiURL)
+        #expect(cookies.map(\.name) == ["canvas_session"])
+        #expect(cookies.first?.value == "fresh")
+        let bare = try #require(HTTPURLResponse(url: apiURL, statusCode: 200, httpVersion: nil, headerFields: [:]))
+        #expect(CanvasSessionProbe.rotatedCookies(from: bare, url: apiURL).isEmpty)
+    }
 }

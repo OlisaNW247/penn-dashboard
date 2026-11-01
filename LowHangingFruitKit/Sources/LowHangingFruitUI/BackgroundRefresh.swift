@@ -183,6 +183,11 @@ public enum LHFBackgroundRefresh {
         // once Duo has asked, 20 s budget). `beginWake` sets it before it
         // returns.
         let wake = LiveAppStateRegistry.shared.beginWake()
+        // `AppState.init` no longer recomputes the clock-only expiry when it
+        // could probe (it cannot know it is a background wake yet); now the
+        // context is marked, recompute so a cold wake still gets its
+        // clock-driven renewal. Background never probes.
+        wake.state.refreshCanvasSessionExpiredState()
         defer { wake.end() }
         let state = wake.state
         let scheduler = NotificationScheduler()
