@@ -43,7 +43,8 @@ struct StayLoggedInTests {
     /// passing alone every time. The fix belongs here, in the polluting
     /// suite, not in that assertion.
     private static let confirmedDeadKey = "canvasSessionConfirmedDeadV1"
-    private static let touchedKeys = [enabledKey, reasonKey, awaitingDuoKey, offeredKey, confirmedDeadKey]
+    private static let awaitingDuoSinceKey = "autoLoginAwaitingDuoSinceV1"
+    private static let touchedKeys = [enabledKey, reasonKey, awaitingDuoKey, awaitingDuoSinceKey, offeredKey, confirmedDeadKey]
 
     /// Mirrors `CloudSyncToggleTests.withCleanFlag` / `AnnouncementWatcherWiringTests
     /// .withRestoredDefaults`: snapshot, run `body`, put everything back
@@ -363,22 +364,69 @@ struct StayLoggedInTests {
         }
     }
 
-    @Test("a .renewed outcome does not clear an existing awaiting-Duo latch")
-    func renewedDoesNotClearAwaitingDuo() {
+    @Test("a foreground .renewed clears the awaiting-Duo latch; a background one does not")
+    func renewedClearsAwaitingDuoInForegroundOnly() {
         withCleanFlags {
             let state = AppState()
             state.enableStayLoggedIn(username: "student", password: "hunter2")
             state.noteRenewalOutcomeForTesting(.needsDuo)
             #expect(state.autoLoginAwaitingDuo == true)
+            #expect(state.autoLoginAwaitingDuoSince != nil)
 
+            state.renewalContext = .background
             state.noteRenewalOutcomeForTesting(.renewed)
-
-            // A plain cookie-only renewal proves the Canvas session is
-            // alive, not that Duo has been answered — see
-            // `applyRenewalOutcome`'s doc comment.
             #expect(state.autoLoginAwaitingDuo == true)
-            #expect(state.canAutoLoginSilently == false)
+
+            state.renewalContext = .foreground
+            state.noteRenewalOutcomeForTesting(.renewed)
+            // The session is proven alive: Duo is waiting on nothing.
+            #expect(state.autoLoginAwaitingDuo == false)
+            #expect(state.autoLoginAwaitingDuoSince == nil)
+            #expect(state.canAutoLoginSilently == true)
         }
+    }
+
+    @Test("the latch time is persisted and survives a relaunch")
+    func awaitingDuoSincePersists() {
+        withCleanFlags {
+            let state = AppState()
+            state.enableStayLoggedIn(username: "student", password: "hunter2")
+            state.noteRenewalOutcomeForTesting(.needsDuo)
+            let since = state.autoLoginAwaitingDuoSince
+            #expect(since != nil)
+            let relaunched = AppState()
+            #expect(relaunched.autoLoginAwaitingDuoSince != nil)
+            #expect(abs((relaunched.autoLoginAwaitingDuoSince ?? .distantPast)
+                .timeIntervalSince(since ?? .distantFuture)) < 1)
+        }
+    }
+
+    @Test("an alive probe clears the awaiting-Duo latch")
+    func aliveProbeClearsAwaitingDuo() async {
+        // Cannot use `withCleanFlags` (synchronous); restore by hand.
+        let defaults = UserDefaults.lhf
+        let saved = Self.touchedKeys.map { ($0, defaults.object(forKey: $0)) }
+        defer {
+            for (key, value) in saved {
+                if let value { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }
+            }
+        }
+        let state = AppState(assignmentStore: try? AssignmentStore(inMemory: true))
+        state.disablePersistenceForTesting()
+        state.forceFixtureDataForTesting(false)
+        state.noteRenewalOutcomeForTesting(.needsDuo)
+        #expect(state.autoLoginAwaitingDuo)
+        // A background .renewed lifts the confirmed-dead latch the .needsDuo
+        // set (so a probe may run) and, being background, leaves the Duo latch.
+        state.renewalContext = .background
+        state.noteRenewalOutcomeForTesting(.renewed)
+        state.renewalContext = .foreground
+        #expect(state.autoLoginAwaitingDuo)
+        state.forceCanvasCookieSessionExpiredForTesting(true)
+        state.setSessionProbeForTesting { _ in CanvasSessionProbe.Result(verdict: .alive) }
+        state.refreshCanvasSessionExpiredState()
+        await state.awaitPendingSessionProbe()
+        #expect(state.autoLoginAwaitingDuo == false)
     }
 
     @Test("stayLoggedInDiagnosticDescription reports the awaiting-Duo state, never a rejection it doesn't have")

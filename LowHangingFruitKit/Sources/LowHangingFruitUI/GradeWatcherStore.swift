@@ -13,6 +13,11 @@ import LowHangingFruitKit
 /// CP4's job. CP3 only makes real per-course data reachable.
 @MainActor
 final class GradeWatcherStore: ObservableObject {
+    /// Set by `AppState` before a refresh: the app is restoring the Canvas
+    /// session itself (saved password, or a renewal or probe pending), so
+    /// the empty-cookie message must not tell the student to reconnect.
+    var reconnectIsAutomatic = false
+
     /// This course's Canvas-only assignment groups (`fetchSnapshot`'s output,
     /// no Gradescope overlay applied). Kept across a failed refresh so a
     /// lapsed session degrades to "stale," never to blank. The overlay is
@@ -223,7 +228,7 @@ final class GradeWatcherStore: ObservableObject {
             // list rides a cookieless ICS feed, while grades need a real Canvas
             // session. An account connected before this app stored Canvas
             // cookies (or a token) has neither, so say what actually fixes it.
-            error = "reconnect canvas for grades"
+            error = reconnectIsAutomatic ? "reconnecting" : "reconnect canvas for grades"
             return
         }
         guard !courseIDs.isEmpty else { return }

@@ -240,4 +240,119 @@ struct CanvasSessionRenewerTests {
         #expect(CanvasSessionRenewer.timedOutOutcome(finalURL: login, isBackground: false) == .landedOnLoginPage)
         #expect(CanvasSessionRenewer.timedOutOutcome(finalURL: duo, isBackground: false) == .needsDuo)
     }
+
+    // MARK: - 2026-11-02: foreground spacing, Duo auto-tap
+
+    @Test("foreground constants: 90 s spacing, 60 s cap, 120 s with a push, 10 min credential spacing")
+    func foregroundConstants() {
+        #expect(CanvasSessionRenewer.foregroundSpacing == 90)
+        #expect(CanvasSessionRenewer.timeout == 60)
+        #expect(CanvasSessionRenewer.duoPushTimeout == 120)
+        #expect(CanvasSessionRenewer.backgroundTimeout == 20)
+        #expect(CanvasSessionRenewer.foregroundCredentialSpacing == 600)
+        #expect(CanvasSessionRenewer.cooldown == 3600)
+        #expect(CanvasSessionRenewer.autoLoginCooldown == 6 * 3600)
+    }
+
+    @Test("credential spacing: foreground 10 minutes, background still six hours")
+    func credentialSpacingByContext() {
+        let now = Date()
+        let tenMinutesAgo = now.addingTimeInterval(-600)
+        let nineMinutesAgo = now.addingTimeInterval(-540)
+        #expect(CanvasSessionRenewer.credentialSubmissionAllowed(lastSubmissionAt: tenMinutesAgo, now: now, isBackground: false))
+        #expect(!CanvasSessionRenewer.credentialSubmissionAllowed(lastSubmissionAt: nineMinutesAgo, now: now, isBackground: false))
+        #expect(!CanvasSessionRenewer.credentialSubmissionAllowed(lastSubmissionAt: tenMinutesAgo, now: now, isBackground: true))
+        #expect(!CanvasSessionRenewer.credentialSubmissionAllowed(lastSubmissionAt: tenMinutesAgo, now: now))
+    }
+
+    @Test("a foreground timeout after a Duo push is needsDuo wherever the page is; the background never is")
+    func timeoutAfterPush() {
+        let other = URL(string: "https://example.com/x")
+        #expect(CanvasSessionRenewer.timedOutOutcome(finalURL: other, isBackground: false, duoPushSent: true) == .needsDuo)
+        #expect(CanvasSessionRenewer.timedOutOutcome(finalURL: nil, isBackground: false, duoPushSent: true) == .needsDuo)
+        #expect(CanvasSessionRenewer.timedOutOutcome(finalURL: other, isBackground: true, duoPushSent: true) == .timedOut)
+        #expect(CanvasSessionRenewer.timedOutOutcome(finalURL: other, isBackground: false) == .timedOut)
+    }
+
+    @Test("Duo auto-tap script is host-guarded, posts only two words, and never reads or writes a value")
+    func duoScriptShape() {
+        let script = DuoPromptAutoTap.script
+        #expect(script.contains("duosecurity"))
+        #expect(script.contains("lhfDuo"))
+        #expect(script.contains("say(\"push\")"))
+        #expect(script.contains("say(\"trusted\")"))
+        #expect(script.contains("MutationObserver"))
+        #expect(!script.contains(".value ="))
+        #expect(!script.contains("passcode"))
+        #expect(!script.contains("password"))
+        #expect(DuoPromptAutoTap.Event(rawValue: "push") == .push)
+        #expect(DuoPromptAutoTap.Event(rawValue: "trusted") == .trusted)
+        #expect(DuoPromptAutoTap.Event(rawValue: "anything else") == nil)
+    }
+
+    @Test("newest session capture ignores analytics cookies and unparseable dates")
+    func newestSessionCapture() {
+        let iso = ISO8601DateFormatter()
+        let old = Date(timeIntervalSince1970: 1_800_000_000)
+        let new = old.addingTimeInterval(3600)
+        let entries: [[String: String]] = [
+            ["name": "canvas_session", "capturedAt": iso.string(from: old)],
+            ["name": "_normandy_session", "capturedAt": iso.string(from: new)],
+            ["name": "_ga", "capturedAt": iso.string(from: new.addingTimeInterval(9999))],
+            ["name": "canvas_session", "capturedAt": "garbage"],
+            ["name": "canvas_session"],
+        ]
+        #expect(SessionCookieStore.newestSessionCapture(entries: entries) == iso.date(from: iso.string(from: new)))
+        #expect(SessionCookieStore.newestSessionCapture(entries: [["name": "_ga", "capturedAt": iso.string(from: new)]]) == nil)
+        #expect(SessionCookieStore.newestSessionCapture(entries: []) == nil)
+    }
+
+    @Test("after a failed foreground submission the next one waits 60 minutes; the background rule is unchanged")
+    func failedSubmissionWait() {
+        let now = Date()
+        let failed = now.addingTimeInterval(-30 * 60)
+        let longAgo = now.addingTimeInterval(-3 * 3600)
+        #expect(CanvasSessionRenewer.failedSubmissionSpacing == 3600)
+        // Plenty past the 10-minute spacing, still inside the 60-minute wait.
+        #expect(!CanvasSessionRenewer.credentialSubmissionAllowed(
+            lastSubmissionAt: longAgo, now: now, isBackground: false, lastFailedSubmissionAt: failed))
+        #expect(CanvasSessionRenewer.credentialSubmissionAllowed(
+            lastSubmissionAt: longAgo, now: now, isBackground: false,
+            lastFailedSubmissionAt: now.addingTimeInterval(-3600)))
+        #expect(CanvasSessionRenewer.credentialSubmissionAllowed(
+            lastSubmissionAt: longAgo, now: now, isBackground: false, lastFailedSubmissionAt: nil))
+        // The background has its own six hours and ignores this clock.
+        #expect(CanvasSessionRenewer.credentialSubmissionAllowed(
+            lastSubmissionAt: now.addingTimeInterval(-7 * 3600), now: now, isBackground: true,
+            lastFailedSubmissionAt: failed))
+    }
+
+    @Test("the failed-submission clock is seeded and never rewinds")
+    func failedClockSeeding() {
+        let t = Date(timeIntervalSince1970: 1_800_000_000)
+        let renewer = CanvasSessionRenewer(isLoginPaneActive: { false }, lastFailedCredentialSubmissionAt: t)
+        #expect(renewer.lastFailedCredentialSubmissionAt == t)
+        renewer.refreshFailedSubmissionClock(t.addingTimeInterval(-100))
+        #expect(renewer.lastFailedCredentialSubmissionAt == t)
+        renewer.refreshFailedSubmissionClock(t.addingTimeInterval(100))
+        #expect(renewer.lastFailedCredentialSubmissionAt == t.addingTimeInterval(100))
+    }
+
+    @Test("a timeout after a push on Canvas itself is an ordinary timeout, not needsDuo")
+    func timeoutOnCanvasAfterPush() {
+        let canvas = URL(string: "https://canvas.upenn.edu/login/saml")
+        let duo = URL(string: "https://api-123.duosecurity.com/frame")
+        #expect(CanvasSessionRenewer.timedOutOutcome(finalURL: canvas, isBackground: false, duoPushSent: true) == .timedOut)
+        #expect(CanvasSessionRenewer.timedOutOutcome(finalURL: duo, isBackground: false, duoPushSent: true) == .needsDuo)
+    }
+
+    @Test("Duo cookie domains match exactly or by subdomain, never by substring")
+    func duoCookieDomain() {
+        #expect(AppState.isDuoCookieDomain("duosecurity.com"))
+        #expect(AppState.isDuoCookieDomain(".duosecurity.com"))
+        #expect(AppState.isDuoCookieDomain("api-123.duosecurity.com"))
+        #expect(!AppState.isDuoCookieDomain("notduosecurity.com"))
+        #expect(!AppState.isDuoCookieDomain("duosecurity.com.evil.example"))
+        #expect(!AppState.isDuoCookieDomain("canvas.upenn.edu"))
+    }
 }

@@ -228,7 +228,7 @@ extension AppState {
         // below), so an empty cookie array alone is no longer "nothing to
         // sync with" — only bail when there's neither.
         guard !cookies.isEmpty || hasCanvasCredentials else {
-            courseKnowledgeNotice = "reconnect canvas to sync course materials."
+            courseKnowledgeNotice = canvasReconnectIsAutomatic ? nil : "reconnect canvas to sync course materials."
             recordCourseKnowledgeSkip(forced: force, reason: "no cookies or token")
             return
         }

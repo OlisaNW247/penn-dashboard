@@ -200,7 +200,7 @@ struct SessionProbeGateTests {
         #expect(counter.n == 1)
     }
 
-    @Test("a dead probe sets the banner verdict input")
+    @Test("a dead probe records the verdict and shows no status line by itself")
     func deadProbeSetsBannerInput() async {
         let state = makeState(verdict: .dead, counter: Counter())
         state.setSessionProbeForTesting { _ in
@@ -210,7 +210,7 @@ struct SessionProbeGateTests {
         state.refreshCanvasSessionExpiredState()
         await state.awaitPendingSessionProbe()
         #expect(state.sessionProbeSaidDead)
-        #expect(state.canvasSessionBannerHasVerdict)
+        #expect(state.canvasSessionStatusLine() == .none)
         await state.awaitPendingSilentRenewal()
     }
 
@@ -278,28 +278,133 @@ struct SessionProbeGateTests {
         #expect(noRotation.map(\.value) == ["old"])
     }
 
-    @Test("banner verdict table")
-    func bannerRule() {
-        typealias K = AppState.RenewalOutcomeKind
-        func v(dead: Bool = false, missing: Bool = false, rejected: Bool = false,
-               duo: Bool = false, last: K? = nil) -> Bool {
-            AppState.bannerHasVerdict(confirmedDead: dead, loginMissing: missing,
-                                      passwordRejected: rejected, awaitingDuo: duo,
-                                      lastForegroundOutcome: last)
+    @Test("status line: every case, in priority order")
+    func statusLineRule() {
+        typealias L = AppState.CanvasSessionStatusLine
+        func line(flight: Bool = false, for secs: TimeInterval = 0, push: Bool = false, duo: Bool = false,
+                  rejected: Bool = false, missing: Bool = false, saved: Bool = true) -> L {
+            AppState.canvasSessionStatusLine(
+                renewalInFlight: flight, inFlightFor: secs, duoPushSent: push, awaitingDuo: duo,
+                passwordRejected: rejected, loginMissing: missing, hasSavedCredentials: saved)
         }
-        #expect(!v())
-        #expect(!v(last: .notAttempted))
-        #expect(!v(last: .renewed))
-        #expect(!v(last: .abortedByLoginPane))
-        #expect(v(dead: true))
-        #expect(v(missing: true))
-        #expect(v(rejected: true))
-        #expect(v(duo: true))
-        #expect(v(last: .landedOnLoginPage))
-        #expect(v(last: .needsDuo))
-        #expect(v(last: .passwordRejected))
-        #expect(v(last: .timedOut))
-        #expect(AppState.bannerHasVerdict(confirmedDead: false, loginMissing: false, passwordRejected: false,
-                                          awaitingDuo: false, probeSaidDead: true, lastForegroundOutcome: .notAttempted))
+        #expect(line() == .none)
+        #expect(line(rejected: true) == .passwordChanged)
+        #expect(line(flight: true, for: 10, push: true, duo: true, rejected: true, missing: true, saved: false) == .passwordChanged)
+        #expect(line(duo: true) == .duoNeedsYou)
+        #expect(line(flight: true, for: 10, duo: true) == .reconnecting)
+        #expect(line(duo: true, missing: true, saved: false) == .duoNeedsYou)
+        #expect(line(missing: true, saved: false) == .signInNeeded)
+        #expect(line(missing: true, saved: true) == .none)
+        #expect(line(flight: true, for: 1, push: true) == .duoPush)
+        #expect(line(flight: true, for: 120, push: true) == .duoPush)
+        #expect(line(flight: true, for: 3) == .reconnecting)
+        #expect(line(flight: true, for: 2.9) == .none)
+        #expect(line(flight: true, for: 0) == .none)
+        // A Duo latch over a session the app believes live says nothing.
+        #expect(AppState.canvasSessionStatusLine(
+            renewalInFlight: false, inFlightFor: 0, duoPushSent: false, awaitingDuo: true,
+            passwordRejected: false, loginMissing: false, hasSavedCredentials: true,
+            sessionExpired: false) == .none)
+        #expect(AppState.canvasSessionStatusLine(
+            renewalInFlight: false, inFlightFor: 0, duoPushSent: false, awaitingDuo: true,
+            passwordRejected: false, loginMissing: false, hasSavedCredentials: true,
+            sessionExpired: true) == .duoNeedsYou)
+        // A push flag left over without an attempt in flight says nothing.
+        #expect(line(push: true) == .none)
+    }
+
+    @Test("the clock alone, a confirmed-dead latch or a dead probe show nothing")
+    func clockAloneShowsNothing() {
+        let state = AppState(assignmentStore: try? AssignmentStore(inMemory: true))
+        state.disablePersistenceForTesting()
+        state.forceCanvasCookieSessionExpiredForTesting(true)
+        state.refreshCanvasSessionExpiredState()
+        #expect(state.canvasSessionExpired)
+        #expect(state.canvasSessionStatusLine() == .none)
+        state.noteRenewalOutcomeForTesting(.landedOnLoginPage)
+        state.noteRenewalOutcomeForTesting(.landedOnLoginPage)
+        #expect(state.canvasSessionStatusLine() == .none)
+    }
+
+    @Test("a failed, timed-out or refused attempt shows nothing")
+    func failedAttemptShowsNothing() {
+        let state = AppState(assignmentStore: try? AssignmentStore(inMemory: true))
+        state.disablePersistenceForTesting()
+        for outcome in [CanvasSessionRenewer.Outcome.timedOut, .landedOnLoginPage, .notAttempted(reason: "x")] {
+            state.noteRenewalOutcomeForTesting(outcome)
+            #expect(state.canvasSessionStatusLine() == .none)
+        }
+    }
+
+    @Test("an installation in preview mode never shows a line")
+    func fixtureShowsNothing() {
+        let state = AppState(assignmentStore: try? AssignmentStore(inMemory: true))
+        state.disablePersistenceForTesting()
+        state.forceFixtureDataForTesting(true)
+        #expect(state.canvasSessionStatusLine() == .none)
+    }
+
+    @Test("keepalive rule: stale capture probes, fresh, absent, future or just-alive do not")
+    func keepAliveRule() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        func rule(captured: TimeInterval?, alive: TimeInterval? = nil, min: TimeInterval = AppState.keepAliveForegroundAge) -> Bool {
+            AppState.shouldKeepAliveProbe(
+                newestCaptureAt: captured.map { now.addingTimeInterval(-$0) },
+                now: now,
+                lastAliveAt: alive.map { now.addingTimeInterval(-$0) },
+                minimumAge: min)
+        }
+        let hour: TimeInterval = 3600
+        #expect(rule(captured: 12 * hour))
+        #expect(rule(captured: 20 * hour))
+        #expect(!rule(captured: 12 * hour - 1))
+        #expect(!rule(captured: nil))
+        #expect(!rule(captured: -hour))
+        #expect(!rule(captured: 13 * hour, alive: 5 * 60))
+        #expect(rule(captured: 13 * hour, alive: 11 * 60))
+        #expect(rule(captured: 6 * hour, min: AppState.keepAliveBackgroundAge))
+        #expect(!rule(captured: 6 * hour - 1, min: AppState.keepAliveBackgroundAge))
+        #expect(AppState.keepAliveForegroundAge == 43_200)
+        #expect(AppState.keepAliveBackgroundAge == 21_600)
+    }
+
+    @Test("a foreground recompute on a clock-live but 13-hour-old session probes once")
+    func keepAliveProbesForeground() async {
+        let counter = Counter()
+        let state = makeState(verdict: .alive, counter: counter)
+        state.forceCanvasCookieSessionExpiredForTesting(false)
+        state.setKeepAliveNewestCaptureForTesting { Date().addingTimeInterval(-13 * 3600) }
+        state.refreshCanvasSessionExpiredState()
+        await state.awaitPendingSessionProbe()
+        #expect(counter.n == 1)
+        #expect(!state.canvasSessionExpired)
+        // The alive answer is reused, so an immediate recompute does not ask again.
+        state.refreshCanvasSessionExpiredState()
+        await state.awaitPendingSessionProbe()
+        #expect(counter.n == 1)
+    }
+
+    @Test("a fresh capture makes no keepalive probe")
+    func keepAliveSkippedWhenFresh() async {
+        let counter = Counter()
+        let state = makeState(verdict: .alive, counter: counter)
+        state.forceCanvasCookieSessionExpiredForTesting(false)
+        state.setKeepAliveNewestCaptureForTesting { Date().addingTimeInterval(-3600) }
+        state.refreshCanvasSessionExpiredState()
+        await state.awaitPendingSessionProbe()
+        #expect(counter.n == 0)
+    }
+
+    @Test("a background wake probes at 6 hours and a dead answer starts no renewal")
+    func backgroundKeepAlive() async {
+        let counter = Counter()
+        let state = makeState(verdict: .dead, counter: counter)
+        state.forceCanvasCookieSessionExpiredForTesting(false)
+        state.setKeepAliveNewestCaptureForTesting { Date().addingTimeInterval(-7 * 3600) }
+        state.renewalContext = .background
+        await state.runBackgroundKeepAliveProbe()
+        #expect(counter.n == 1)
+        #expect(state.sessionProbeSaidDead)
+        #expect(state.pendingSilentRenewal == nil)
     }
 }

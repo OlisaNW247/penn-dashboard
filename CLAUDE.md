@@ -291,14 +291,23 @@ Keep this current. It is the fastest way for a new session to know what exists.
     2026-10-18 the megaphone is here, where the grades button was, and
     always shows (an empty list says "no announcements"); the grades
     button is gone with Grade Watcher (below).
-  - **Banners.** A sync error ("couldn't sync"), a Canvas banner when
-    the session is dead ("reconnect canvas", "duo needs you", or "pennkey
-    password rejected"), and, since 2026-10-10, "not saving on this
-    phone" when the ledger is running in memory or its last save failed
-    (`StorageHealth`; never in preview or demo mode). Since 2026-10-27
-    tapping the Canvas banner opens the sign-in as a cover over the
-    dashboard, with an xmark to close it; it no longer restarts
-    onboarding (the lock-out trap below). A "reconnect gradescope" banner
+  - **Banners.** A sync error ("couldn't sync") and, since 2026-10-10,
+    "not saving on this phone" when the ledger is running in memory or
+    its last save failed (`StorageHealth`; never in preview or demo
+    mode). There is **no Canvas sign-out banner any more** (owner's rule,
+    2026-11-02: the student signs in once and the app fixes what breaks
+    silently). In its place one small status line under the banners, no
+    card (`AppState.canvasSessionStatusLine`): "slow connection ·
+    reconnecting" once a silent renewal has run 3 seconds, "approve the
+    duo push on this phone" while a push waits, and the three the student
+    must act on: "pennkey password changed · update in profile" (opens
+    Profile), "duo needs you · tap to finish" and "sign in to canvas"
+    (no login and no saved password), both opening the sign-in as a cover
+    over the dashboard, with an xmark to close it (it does not restart
+    onboarding; the lock-out trap below). The 24-hour clock,
+    `canvasSessionExpired`, the confirmed-dead latch, a dead probe and a
+    failed, timed-out or landed attempt never produce a line; that is the
+    point. A "reconnect gradescope" banner
     (since 2026-10-27, hardening A4) appears only after a real login page
     was seen on two syncs an hour apart, and opens the same cover.
   - **Control row.** A full-width **todo · all · prev** switch
@@ -1856,10 +1865,51 @@ itself.
 - **Failure handling.** One rejected password disables auto-login outright
   rather than retrying, so a typo or a changed password can't lock the
   PennKey account; Profile → accounts then shows "update password".
-- **Duo is a hard boundary.** The stored credential only ever reaches the
-  IdP's password field, never a Duo prompt. A student enrolled in Duo still
-  completes that step themselves whenever Duo asks (with Duo's own "remember
-  this device" for 30 days, roughly monthly).
+- **Duo: the credential never reaches it; the app taps its buttons.**
+  The stored credential only ever reaches the IdP's password field, never a
+  Duo prompt. Since 2026-11-02, in a FOREGROUND attempt only, the hidden
+  renewer injects `DuoPromptAutoTap` on `duosecurity.com` hosts: it taps
+  "Yes, this is my device" / "Trust browser" (Duo's 30-day trust re-issue)
+  and "Send me a push" (also through "Other options"), once per page load,
+  and reports only the words `push` / `trusted`. It never reads or writes
+  an input and never touches a passcode field. After a push the attempt
+  waits up to 120 s, the status line says "approve the duo push on this
+  phone", and approving it in Duo Mobile is the student's one tap. A push
+  that nobody approves ends `.needsDuo` (latches `autoLoginAwaitingDuo`,
+  the "duo needs you" line). A background attempt never taps push
+  (`backgroundDuoStandDown` and `backgroundMayUseCredentials` unchanged).
+  `-LHFForgetDuoTrust` (DEBUG) deletes Duo's cookies before the check so
+  the push path can be exercised on a phone whose trust has not lapsed.
+- **When it runs (2026-11-02 spacing and keepalive).** Foreground
+  attempts are spaced 90 s apart (`CanvasSessionRenewer.foregroundSpacing`);
+  the one-hour `cooldown` gates the background slot only, which is what
+  stops a background attempt from refusing the student's own open (the
+  2026-11-01 banner). Every expired state retries on each foreground
+  refresh (`shouldRetrySilentRenewal(expired:...)`; the old requirement for
+  a latched verdict and the 10-minute post-timeout interval are gone). The
+  foreground cap is 60 s (120 s once a push is sent; background stays 20 s)
+  and the saved password may be resubmitted after 10 minutes in the
+  foreground (`foregroundCredentialSpacing`) instead of six hours (the
+  background keeps six). Keepalive: a foreground recompute probes
+  (`shouldKeepAliveProbe`) when the newest Canvas session cookie was
+  captured 12+ hours ago, and a background wake makes the same one GET at
+  6+ hours, awaited before its fetches; an `.alive` answer re-stamps the
+  cookies, which resets Canvas's one-day window, and a `.dead` answer from
+  a wake starts no renewal. Push-spam guards: a latched Duo wait
+  (`autoLoginAwaitingDuo`, dated by `autoLoginAwaitingDuoSinceV1`) no longer
+  ends silent recovery for good; the foreground may try again once per cold
+  open or once the latch is over 60 minutes old
+  (`awaitingDuoRetryAllowed`), the background never. After a foreground
+  attempt that submitted the password and did not end `.renewed`, the next
+  foreground submission waits 60 minutes
+  (`CanvasSessionRenewer.failedSubmissionSpacing`, persisted as
+  `lastFailedCredentialSubmissionAtV1`), and the once-per-open try does not
+  override it. A foreground `.renewed` or an alive probe clears the Duo
+  latch, and "duo needs you" shows only over a session believed expired.
+  Reaching a Duo host after submitting counts as a push sent (Duo often
+  pushes by itself): the cap goes to 120 s at once, and the status line
+  follows after 4 s so a remembered device never flashes it. The 24-hour rule itself (`load`, `isStale`,
+  `isExpired`, `gatedOnLiveSession`) is untouched.
 - **When it runs.** Whenever the saved Canvas cookie is more than 24 hours
   past its last save (`SessionCookieStore.load`), on launch or on returning
   to the foreground, on a Grade Watcher 401, and, since `v8` (2026-10-09,
@@ -2822,6 +2872,15 @@ it holds work that exists nowhere else.
 none is a ship line.
 
 ## Known gaps
+
+- **Duo auto-tap and the push wait are unverified on a device**
+  (2026-11-02). The button texts in `DuoPromptAutoTap` are assumptions
+  about Duo's Universal Prompt DOM, the hidden zero-size WebView may lay
+  Duo's page out differently from a visible one, and a Duo that sends its
+  push by itself (no button) is not recognised as a push, so that attempt
+  gets the plain 60 s. Exercise with `-LHFForgetDuoTrust` plus
+  `-LHFAgeCanvasSession` and read `debugRenewalLogV1` for "duo trust
+  tapped", "duo push sent" and "duo push approved".
 
 - **No anonymous Ed post reached the pool through the extension**
   (checked 2026-10-29: every live `ed` row, 622, has `collector =

@@ -115,6 +115,17 @@ final class CanvasSessionRenewer {
     /// stingier with it.
     static let cooldown: TimeInterval = 60 * 60
 
+    /// Minimum spacing between two FOREGROUND attempts (2026-11-02). The
+    /// one-hour `cooldown` now gates the background slot only. On
+    /// 2026-11-01 the one-hour lock-out was the root of the banner over a
+    /// live session: a background attempt burned it and the student's own
+    /// open got `.notAttempted`. Under the owner's rule (the student signs
+    /// in once; anything that breaks is the app's job to fix silently) every
+    /// open that finds the session expired must be allowed to try. 90
+    /// seconds only stops the 5-minute loop, activation and the probe from
+    /// stacking attempts on one another; it is not a lock-out.
+    nonisolated static let foregroundSpacing: TimeInterval = 90
+
     /// A SEPARATE, much longer cooldown that gates only whether a given
     /// attempt is allowed to actually SUBMIT the stored PennKey password —
     /// distinct from `cooldown` above, which gates whether an attempt runs
@@ -140,11 +151,36 @@ final class CanvasSessionRenewer {
     /// resubmit the password and push Duo to the student's phone.
     nonisolated static let autoLoginCooldown: TimeInterval = 6 * 60 * 60
 
+    /// The foreground counterpart of `autoLoginCooldown` (2026-11-02): a
+    /// student with the app open may have the saved password resubmitted
+    /// 10 minutes after the last submission instead of six hours. A rejected
+    /// password still disables auto-login outright
+    /// (`AppState.autoLoginDisabledReason`), so this cannot become a
+    /// wrong-password loop; it only lets a foreground retry after a Duo
+    /// timeout or a slow network fill the form again. The background keeps
+    /// the six hours.
+    nonisolated static let foregroundCredentialSpacing: TimeInterval = 10 * 60
+
+    /// After a FOREGROUND attempt that submitted the saved password and did
+    /// not end `.renewed`, the next foreground submission waits this long
+    /// (2026-11-02 review). Without it the 10-minute spacing above would
+    /// resubmit, and so push Duo to the student's phone, on every other
+    /// 5-minute refresh for as long as the student ignored the first push.
+    /// Persisted by `AppState` so a relaunch honours it; the "one try per
+    /// cold open" allowance for a latched Duo wait does not override it.
+    nonisolated static let failedSubmissionSpacing: TimeInterval = 60 * 60
+
     /// Hard cap on one attempt. Past this the WebView is discarded regardless
     /// of what WebKit is still doing — a hung SSO hop (a stuck Duo prompt
     /// that will never complete without a human, a slow network) must not
     /// leave a silent background attempt running indefinitely.
-    static let timeout: TimeInterval = 30
+    static let timeout: TimeInterval = 60
+
+    /// The foreground cap once a Duo push has been sent (2026-11-02): the
+    /// student has to find Duo Mobile and approve, which takes longer than
+    /// a hands-free renewal. The attempt's total, not an addition to
+    /// `timeout`. A background attempt never sends a push.
+    static let duoPushTimeout: TimeInterval = 120
 
     /// The budget for an attempt made during a background wake
     /// (`AppState.RenewalContext.background`). iOS gives a `BGAppRefreshTask`
@@ -216,6 +252,28 @@ final class CanvasSessionRenewer {
     /// how many more times the login form finishes loading before the
     /// attempt otherwise resolves.
     private var hasSubmittedCredentialsThisAttempt = false
+
+    /// True once the foreground attempt in progress has tapped Duo's "send me
+    /// a push" (`DuoPromptAutoTap`). Reset at the top of every attempt.
+    /// `AppState` mirrors it for the status line through `onDuoPushSent`.
+    private(set) var duoPushSent = false
+
+    /// True once `onDuoPushSent` has actually fired for this attempt (a click
+    /// reported by the script, or the delayed arrival rule). Only then does
+    /// the DEBUG log say a push was approved.
+    private var duoPushAnnounced = false
+
+    /// Wall-clock time of the last foreground submission that did not end
+    /// `.renewed` (see `failedSubmissionSpacing`). `private(set)` for tests.
+    private(set) var lastFailedCredentialSubmissionAt: Date?
+    private let onFailedCredentialSubmission: ((Date) -> Void)?
+
+    /// Called on the main actor the moment a push was sent. A signal only.
+    private let onDuoPushSent: (() -> Void)?
+
+    /// Which cooldown family the attempt in progress belongs to; read by
+    /// `handleNonCanvasFinish` to pick the credential spacing.
+    private var attemptIsBackground = false
 
     /// Wall-clock time of the most recent credential submission across ALL
     /// attempts (unlike `hasSubmittedCredentialsThisAttempt`, this outlives
@@ -370,6 +428,11 @@ final class CanvasSessionRenewer {
         lastCredentialSubmissionAt = [lastCredentialSubmissionAt, persisted].compactMap { $0 }.max()
     }
 
+    /// Same idea for the failed-submission clock persisted by `AppState`.
+    func refreshFailedSubmissionClock(_ persisted: Date?) {
+        lastFailedCredentialSubmissionAt = [lastFailedCredentialSubmissionAt, persisted].compactMap { $0 }.max()
+    }
+
     init(
         installation: CanvasInstallation = .penn,
         isLoginPaneActive: @escaping () -> Bool,
@@ -377,8 +440,14 @@ final class CanvasSessionRenewer {
         lastCredentialSubmissionAt: Date? = nil,
         lastAttemptAt: Date? = nil,
         lastBackgroundAttemptAt: Date? = nil,
-        onCredentialSubmission: ((Date) -> Void)? = nil
+        onCredentialSubmission: ((Date) -> Void)? = nil,
+        onDuoPushSent: (() -> Void)? = nil,
+        lastFailedCredentialSubmissionAt: Date? = nil,
+        onFailedCredentialSubmission: ((Date) -> Void)? = nil
     ) {
+        self.onDuoPushSent = onDuoPushSent
+        self.lastFailedCredentialSubmissionAt = lastFailedCredentialSubmissionAt
+        self.onFailedCredentialSubmission = onFailedCredentialSubmission
         self.installation = installation
         self.isLoginPaneActive = isLoginPaneActive
         self.autoLogin = autoLogin
@@ -406,19 +475,20 @@ final class CanvasSessionRenewer {
     /// `isBackground` says which cooldown slot this attempt is measured
     /// against and consumes, and how a timeout is read (see
     /// `timedOutOutcome`). `timeout` is the hard cap for THIS attempt (the
-    /// background wake passes `backgroundTimeout`), and `cooldown` is the spacing this attempt is
-    /// measured against. Both are per-call rather than global so the
-    /// foreground default (30 s, one hour) is untouched. `AppState` passes a
-    /// shorter `cooldown` only for the retry after a `.timedOut` attempt,
-    /// which is unknown rather than dead and so does not deserve a full hour
-    /// of waiting; the 6-hour `autoLoginCooldown` on resubmitting the stored
-    /// password is separate and unaffected.
+    /// background wake passes `backgroundTimeout`), and `cooldown` is the
+    /// spacing this attempt is measured against; `nil` means this context's
+    /// own: `foregroundSpacing` (90 s) in the foreground, `cooldown` (1 h) in
+    /// the background (2026-11-02; the foreground used to share the hour).
+    /// The foreground timeout default is 60 s, 120 s once a Duo push is sent.
+    /// The credential spacing is separate
+    /// (`autoLoginCooldown` / `foregroundCredentialSpacing`).
     func renewIfNeeded(
         now: Date = Date(),
         timeout: TimeInterval = CanvasSessionRenewer.timeout,
-        cooldown: TimeInterval = CanvasSessionRenewer.cooldown,
+        cooldown: TimeInterval? = nil,
         isBackground: Bool = false
     ) async -> Outcome {
+        let cooldown = cooldown ?? (isBackground ? Self.cooldown : Self.foregroundSpacing)
         if let gated = Self.gate(
             now: now,
             lastAttempt: attemptClock(isBackground: isBackground),
@@ -449,7 +519,17 @@ final class CanvasSessionRenewer {
         isInFlight = true
         defer { isInFlight = false }
 
-        return await performAttempt(timeout: timeout, isBackground: isBackground)
+        let outcome = await performAttempt(timeout: timeout, isBackground: isBackground)
+        // A foreground attempt that submitted the password and did not get a
+        // session starts the 60-minute wait before the next submission. A
+        // login-pane abort is the student taking over, not a failure.
+        if !isBackground, hasSubmittedCredentialsThisAttempt, outcome != .renewed,
+           outcome != .abortedByLoginPane {
+            let failedAt = Date()
+            lastFailedCredentialSubmissionAt = failedAt
+            onFailedCredentialSubmission?(failedAt)
+        }
+        return outcome
     }
 
     /// The cooldown clock an attempt in this context is measured against:
@@ -504,9 +584,19 @@ final class CanvasSessionRenewer {
     /// Pure decision behind `autoLoginCooldown` — testable without
     /// constructing a `CanvasSessionRenewer` at all, same shape as `gate(...)`.
     /// `nil` (no prior submission on record) is always allowed.
-    static func credentialSubmissionAllowed(lastSubmissionAt: Date?, now: Date) -> Bool {
+    static func credentialSubmissionAllowed(
+        lastSubmissionAt: Date?,
+        now: Date,
+        isBackground: Bool = true,
+        lastFailedSubmissionAt: Date? = nil
+    ) -> Bool {
+        if !isBackground, let lastFailedSubmissionAt,
+           now.timeIntervalSince(lastFailedSubmissionAt) < failedSubmissionSpacing {
+            return false
+        }
         guard let lastSubmissionAt else { return true }
-        return now.timeIntervalSince(lastSubmissionAt) >= autoLoginCooldown
+        let spacing = isBackground ? autoLoginCooldown : foregroundCredentialSpacing
+        return now.timeIntervalSince(lastSubmissionAt) >= spacing
     }
 
     /// Penn's order — login-host markers checked BEFORE the exact
@@ -589,10 +679,23 @@ final class CanvasSessionRenewer {
     /// proves nothing: on 2026-11-01 exactly that was recorded as
     /// `.landedOnLoginPage` against a session Canvas still accepted. It is
     /// `.timedOut` regardless of host, which is "unknown": never latched,
-    /// and retried after `AppState.timedOutRetryInterval` instead of an
+    /// and retried at the next foreground spacing instead of an
     /// hour. The wrong fix is a longer background budget; iOS sets that.
-    static func timedOutOutcome(finalURL: URL?, isBackground: Bool) -> Outcome {
-        isBackground ? .timedOut : timeoutOutcome(finalURL: finalURL)
+    static func timedOutOutcome(
+        finalURL: URL?,
+        isBackground: Bool,
+        duoPushSent: Bool = false,
+        canvasHost: String = CanvasInstallation.penn.host
+    ) -> Outcome {
+        // A push the student never approved is Duo waiting for a person,
+        // wherever the page happens to be parked when the cap hits, except
+        // on Canvas itself: the SAML return is then in progress, so Duo was
+        // answered and this is an ordinary slow timeout (unknown, unlatched).
+        if !isBackground && duoPushSent {
+            if classifyFinalHost(finalURL?.host, canvasHost: canvasHost) == .canvas { return .timedOut }
+            return .needsDuo
+        }
+        return isBackground ? .timedOut : timeoutOutcome(finalURL: finalURL)
     }
 
     /// Pure decision behind the `.failed` settle signal (`didFail` /
@@ -662,6 +765,9 @@ final class CanvasSessionRenewer {
         // calls) doesn't carry a stale `true` from an earlier attempt into
         // this one and skip a submission it should actually make.
         hasSubmittedCredentialsThisAttempt = false
+        duoPushSent = false
+        duoPushAnnounced = false
+        attemptIsBackground = isBackground
 
         let configuration = WKWebViewConfiguration()
         // Bound to the SAME persistent, isolated store the visible Canvas
@@ -671,6 +777,20 @@ final class CanvasSessionRenewer {
         // or `.default()` store — either would have no IdP session to ride
         // on and would always land on a login form.
         configuration.websiteDataStore = LoginDataStores.canvas
+        // Duo's own buttons are tapped in the FOREGROUND only: a push needs
+        // a person to approve it, and a background wake has none (see
+        // `DuoPromptAutoTap`). The handler is removed in the `defer` below.
+        let duoHandler: DuoPromptMessageHandler?
+        if isBackground {
+            duoHandler = nil
+        } else {
+            let handler = DuoPromptMessageHandler { [weak self] event in
+                self?.handleDuoEvent(event)
+            }
+            configuration.userContentController.add(handler, name: DuoPromptAutoTap.handlerName)
+            configuration.userContentController.addUserScript(DuoPromptAutoTap.makeUserScript())
+            duoHandler = handler
+        }
         let webView = WKWebView(frame: .zero, configuration: configuration)
         // Mirrors `makeWebView`'s hardening choices (OnboardingView.swift) —
         // duplicated rather than shared, since that function is `private`
@@ -709,6 +829,9 @@ final class CanvasSessionRenewer {
             // Discard the WebView (and its delegate) on every exit path
             // below, including the two early returns — this is the one
             // `defer`, so there's exactly one place that can forget to do it.
+            if duoHandler != nil {
+                configuration.userContentController.removeScriptMessageHandler(forName: DuoPromptAutoTap.handlerName)
+            }
             activeWebView?.navigationDelegate = nil
             activeWebView = nil
             activeDelegate = nil
@@ -731,10 +854,19 @@ final class CanvasSessionRenewer {
         // `Task { @MainActor in ... }` bridge pattern elsewhere in this
         // codebase) makes the isolation explicit rather than relying on
         // inferred inheritance from the enclosing method.
-        let timeoutTask = Task { @MainActor [weak waiter] in
-            try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-            guard !Task.isCancelled else { return }
-            waiter?.signal(.timedOut)
+        // The cap is re-read once a second because a Duo push extends it
+        // (`duoPushTimeout`) while the attempt is already running.
+        let startedAt = Date()
+        let timeoutTask = Task { @MainActor [weak waiter, weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard !Task.isCancelled else { return }
+                let cap = (self?.duoPushSent ?? false) ? max(timeout, Self.duoPushTimeout) : timeout
+                if Date().timeIntervalSince(startedAt) >= cap {
+                    waiter?.signal(.timedOut)
+                    return
+                }
+            }
         }
         let signal = await waiter.wait()
         timeoutTask.cancel()
@@ -744,7 +876,10 @@ final class CanvasSessionRenewer {
         #endif
 
         if signal == .timedOut {
-            let outcome = Self.timedOutOutcome(finalURL: webView.url, isBackground: isBackground)
+            let outcome = Self.timedOutOutcome(
+                finalURL: webView.url, isBackground: isBackground,
+                duoPushSent: duoPushSent, canvasHost: installation.host
+            )
             let status: String
             switch outcome {
             case .needsDuo: status = "timed-out, parked on duo"
@@ -811,6 +946,9 @@ final class CanvasSessionRenewer {
         }
 
         SessionCookieStore.merge(canvasCookies, service: .canvas)
+        #if DEBUG
+        if duoPushAnnounced { DebugRenewalLog.record("duo push approved") }
+        #endif
         Self.logAttempt(host: finalHost, status: "renewed", outcome: .renewed)
         return .renewed
     }
@@ -844,6 +982,21 @@ final class CanvasSessionRenewer {
     /// `performAttempt`'s classification above actually reasons about.
     private func handleNonCanvasFinish(_ webView: WKWebView) async -> Bool {
         if PennKeyLoginForm.isDuo(webView.url) {
+            // Arriving on Duo after this attempt submitted the password means
+            // Duo is (or is about to be) pushing: it often sends the push by
+            // itself with no button to tap, so the click alone cannot be the
+            // only signal (2026-11-02 review). The extension of the cap is
+            // immediate; the status line and the log wait four seconds, so a
+            // remembered device that sails through Duo never flashes
+            // "approve the duo push".
+            if !attemptIsBackground, hasSubmittedCredentialsThisAttempt, !duoPushSent {
+                duoPushSent = true
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: 4_000_000_000)
+                    guard let self, self.isInFlight, self.duoPushSent, !self.duoPushAnnounced else { return }
+                    self.announceDuoPush()
+                }
+            }
             // NEVER settle here — a real device (2026-09-21, round 3) proved
             // this wrong. The original reasoning was: "either a prompt
             // genuinely waiting for a human, or a 'remembered device' page
@@ -915,7 +1068,12 @@ final class CanvasSessionRenewer {
             // `detectFormScript` existed.
             return false
         }
-        guard Self.credentialSubmissionAllowed(lastSubmissionAt: lastCredentialSubmissionAt, now: Date()) else {
+        guard Self.credentialSubmissionAllowed(
+            lastSubmissionAt: lastCredentialSubmissionAt,
+            now: Date(),
+            isBackground: attemptIsBackground,
+            lastFailedSubmissionAt: lastFailedCredentialSubmissionAt
+        ) else {
             // Within `autoLoginCooldown` of a previous submission — treat
             // exactly like "no credentials" rather than resubmitting to
             // Penn's IdP on every renewal attempt.
@@ -933,6 +1091,28 @@ final class CanvasSessionRenewer {
         // attempt, on a LATER call into this same method or the Canvas
         // check above it.
         return false
+    }
+
+    /// What `DuoPromptAutoTap` reported. Words only, never a URL or value.
+    private func handleDuoEvent(_ event: DuoPromptAutoTap.Event) {
+        switch event {
+        case .trusted:
+            #if DEBUG
+            DebugRenewalLog.record("duo trust tapped")
+            #endif
+        case .push:
+            duoPushSent = true
+            announceDuoPush()
+        }
+    }
+
+    private func announceDuoPush() {
+        guard !duoPushAnnounced else { return }
+        duoPushAnnounced = true
+        #if DEBUG
+        DebugRenewalLog.record("duo push sent")
+        #endif
+        onDuoPushSent?()
     }
 
     /// One `LoginDiagnosticsLog` entry per real attempt (rule 6 above) — host

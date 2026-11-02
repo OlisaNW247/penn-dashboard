@@ -106,4 +106,12 @@ struct GradeWatcherRefreshOutcomeTests {
         #expect(!store.isSessionExpired)
         #expect(!store.isRefreshing)
     }
+
+    @Test("when the app is restoring the session itself, the empty-cookie message says reconnecting")
+    func automaticReconnectMessage() async {
+        let store = GradeWatcherStore(historyStore: nil)
+        store.reconnectIsAutomatic = true
+        await store.refresh(courseIDs: ["1": "PHYS 0151"], cookies: [])
+        #expect(store.error == "reconnecting")
+    }
 }

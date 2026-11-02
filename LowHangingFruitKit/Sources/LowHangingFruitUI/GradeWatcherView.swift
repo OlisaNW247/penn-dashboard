@@ -265,7 +265,11 @@ struct GradeWatcherView: View {
             // `isPreviewMode` and drops the tapper into Penn SSO. For an App
             // Store reviewer exploring the demo that's a one-way exit into a
             // login they cannot pass — the opposite of what this button is for.
-            if !state.isPreviewMode {
+            if !state.isPreviewMode && state.canvasReconnectIsAutomatic {
+                Text("reconnecting")
+                    .font(.lhfSans(12))
+                    .foregroundStyle(Color.v2DateText)
+            } else if !state.isPreviewMode {
                 Button {
                     state.restartOnboarding(for: .canvas)
                 } label: {

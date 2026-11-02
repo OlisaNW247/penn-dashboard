@@ -186,7 +186,8 @@ public enum LHFBackgroundRefresh {
         // `AppState.init` no longer recomputes the clock-only expiry when it
         // could probe (it cannot know it is a background wake yet); now the
         // context is marked, recompute so a cold wake still gets its
-        // clock-driven renewal. Background never probes.
+        // clock-driven renewal. The clock-driven pre-expiry probe is still
+        // foreground only; the one probe a wake makes is the keepalive below.
         wake.state.refreshCanvasSessionExpiredState()
         defer { wake.end() }
         let state = wake.state
@@ -197,6 +198,12 @@ public enum LHFBackgroundRefresh {
         // `AppState` methods; made explicit here since this entry point has
         // no `ContentView`/`RootView` wrapping it.
         guard !state.isUsingFixtureData else { return }
+
+        // Keepalive (2026-11-02): one GET, no WebView, when the newest Canvas
+        // session cookie is over 6 hours old, awaited here so the fetches
+        // below ride a freshly stamped session. A `.dead` answer starts no
+        // renewal from a wake (`AppState.runBackgroundKeepAliveProbe`).
+        await state.runBackgroundKeepAliveProbe()
 
         await state.syncIfConfigured()
         await AutoSyncCoordinator.syncConnectedServices(state: state)

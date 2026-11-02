@@ -196,6 +196,26 @@ enum SessionCookieStore {
         }
     }
 
+    /// When the newest saved Canvas SESSION cookie was captured, or `nil`
+    /// when none is on record. Read-only and clock-blind: it does not apply
+    /// `isStale` or `gatedOnLiveSession`, so it answers for a cookie `load`
+    /// has already withheld. Added 2026-11-02 for the keepalive probe, which
+    /// asks "how long since Canvas last saw this session" and so needs the
+    /// capture time of exactly the cookie `load` would drop.
+    static func newestCanvasSessionCaptureAt() -> Date? {
+        guard !SharedDefaults.isTestRunner else { return nil }
+        return newestSessionCapture(entries: loadDicts(service: .canvas))
+    }
+
+    /// Pure core of `newestCanvasSessionCaptureAt`, so tests need no Keychain.
+    static func newestSessionCapture(entries: [[String: String]]) -> Date? {
+        entries.compactMap { entry -> Date? in
+            guard let name = entry["name"], isCanvasSessionCookieName(name),
+                  let captured = entry["capturedAt"] else { return nil }
+            return isoFormatter.date(from: captured)
+        }.max()
+    }
+
     /// Canvas's own session cookie names, matched as a case-insensitive
     /// substring of the cookie's `name`: `canvas_session` is Canvas's own
     /// Rails session cookie, `_normandy_session` is Instructure's shared

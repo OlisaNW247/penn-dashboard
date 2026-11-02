@@ -76,7 +76,7 @@ struct SilentRenewalCoreTests {
         #expect(CanvasSessionRenewer(isLoginPaneActive: { false }).lastAttemptAt == nil)
     }
 
-    @Test("a seeded attempt blocks the hour cooldown but not the shorter post-timeout one")
+    @Test("a seeded attempt blocks the hour cooldown but not the foreground spacing")
     func seededAttemptAndPerCallCooldown() {
         let now = t0.addingTimeInterval(15 * 60)
         func gate(cooldown: TimeInterval) -> CanvasSessionRenewer.Outcome? {
@@ -86,7 +86,7 @@ struct SilentRenewalCoreTests {
             )
         }
         #expect(gate(cooldown: CanvasSessionRenewer.cooldown) != nil)
-        #expect(gate(cooldown: AppState.timedOutRetryInterval) == nil)
+        #expect(gate(cooldown: CanvasSessionRenewer.foregroundSpacing) == nil)
     }
 
     @Test("refreshCredentialSubmissionClock takes the later clock and never rewinds")
@@ -152,12 +152,11 @@ struct SilentRenewalCoreTests {
         #expect(state.lastSilentRenewalAttemptOutcome == .landedOnLoginPage)
     }
 
-    @Test("a background .timedOut never latches and keeps the 10-minute retry for the foreground slot")
+    @Test("a background .timedOut never latches")
     func backgroundTimedOutIsUnknown() {
         #expect(AppState.confirmedDeadAfterRenewal(
             current: false, outcome: .timedOut, context: .background, priorConsecutiveLandings: 5
         ) == false)
-        #expect(AppState.timedOutRetryInterval == 600)
     }
 
     @Test("abort with nothing in flight is a no-op, on the renewer and on AppState")

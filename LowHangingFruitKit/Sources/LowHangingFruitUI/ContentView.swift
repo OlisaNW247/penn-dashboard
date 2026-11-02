@@ -119,24 +119,16 @@ struct ContentView: View {
 
                     notSavingBanner
 
-                    // Hidden while a silent renewal is running: the 24-hour cookie
-                    // rule flips `canvasSessionExpired` before the renewal it
-                    // starts has finished, so a saved-password student would see
-                    // this banner flash for the seconds a good renewal takes, and
-                    // a tap on it aborts the renewal and opens the login pane.
-                    // The wrong fix would be to delay setting
-                    // `canvasSessionExpired`, which the retry policy and Grade
-                    // Watcher read as the truth about the cookie.
-                    // And only with a verdict from somewhere other than the
-                    // clock (`AppState.bannerHasVerdict`): on 2026-11-01 it
-                    // showed over a live session because the 24-hour rule
-                    // tripped and a cooldown refused the renewal.
-                    if state.canvasSessionExpired && !state.isSilentRenewalInFlight
-                        && state.canvasSessionBannerHasVerdict {
-                        canvasSessionExpiredBanner
-                            .padding(.horizontal, 20)
-                            .padding(.top, 10)
-                    }
+                    // The Canvas session's only voice (2026-11-02). Owner's
+                    // rule: the student signs in once and never sees a
+                    // sign-out banner again; the app fixes what breaks
+                    // silently. This line appears only for a slow
+                    // reconnection or for the few things only the student
+                    // can do (`AppState.canvasSessionStatusLine`). The clock,
+                    // `canvasSessionExpired` and a failed attempt never
+                    // produce it: on 2026-11-01 a banner built on those
+                    // showed over a live session.
+                    canvasSessionStatusLineView
 
                     // Gradescope's own line, for a student whose connection the
                     // server stopped recognising on two runs an hour apart
@@ -594,87 +586,62 @@ struct ContentView: View {
 
     // MARK: Canvas session banner
 
-    /// Plain-language reconnect nudge (docs/CANVAS_LOGIN_HARDENING.md item
-    /// 3d) — shown only when `state.canvasSessionExpired`, which is
-    /// deliberately distinct from "Canvas isn't connected": a feed-only
-    /// (paste-link) user, or one whose feed still syncs fine, never sees
-    /// this. It's specifically about the cookie-authed login session behind
-    /// automatic submission tracking and Canvas Scan going stale.
-    ///
-    /// Branches on `state.autoLoginDisabledReason` — "stay signed in"
-    /// (CLAUDE.md's "stay signed in" entry) tried to fix this on its own and
-    /// couldn't, because the stored PennKey password was rejected. Sending
-    /// that student BACK into the same login pane whose auto-fill would
-    /// immediately retry the identical wrong password is pointless (worse:
-    /// it's exactly the repeated-wrong-password shape this feature exists to
-    /// avoid); Profile is where they actually fix it
-    /// (`PennKeyCredentialsSheet` via the "update password" button).
-    ///
-    /// Also branches on `state.autoLoginAwaitingDuo` (checked second, so a
-    /// rejection — the more actionable fact — always wins if both were
-    /// somehow set): the stored password was ACCEPTED and only Duo stands
-    /// between here and a live session, but the silent background path
-    /// stood down rather than push Duo again unattended (see
-    /// `AppState.canAutoLoginSilently`'s doc comment). Unlike the rejected
-    /// case, sending this student back into the login pane is exactly right
-    /// — the visible pane reads the looser `canAutoLogin`, so it fills the
-    /// form and lets Duo push right there, which is the one thing a silent
-    /// background attempt can never do for them.
-    private var canvasSessionExpiredBanner: some View {
-        let rejected = state.autoLoginDisabledReason != nil
-        let awaitingDuo = !rejected && state.autoLoginAwaitingDuo
-        return Button {
-            if rejected {
-                path.append(.profile)
-            } else {
-                state.restartOnboarding(for: .canvas)
+    /// The Canvas status line: small text and a symbol, no card, no chevron.
+    /// While a renewal is running it re-evaluates every second so "slow
+    /// connection" can appear after 3 seconds; otherwise it is a plain read.
+    @ViewBuilder
+    private var canvasSessionStatusLineView: some View {
+        if state.isSilentRenewalInFlight {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                canvasSessionStatusRow(state.canvasSessionStatusLine(at: context.date))
             }
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.system(size: 13, weight: .semibold))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(canvasSessionExpiredBannerTitle(rejected: rejected, awaitingDuo: awaitingDuo))
-                        .font(.lhfSans(12, weight: .semibold))
-                    // Only the two states the student has to act on differently
-                    // get a second line; the plain "reconnect canvas" has none.
-                    if let subtitle = canvasSessionExpiredBannerSubtitle(rejected: rejected, awaitingDuo: awaitingDuo) {
-                        Text(subtitle)
-                            .font(.lhfSans(11))
-                            .foregroundStyle(Color.v2DateText)
-                    }
-                }
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.v2DateText)
-            }
-            .foregroundStyle(Color.v2Ink)
-            .padding(12)
-            .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        } else {
+            canvasSessionStatusRow(state.canvasSessionStatusLine())
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(
-            [canvasSessionExpiredBannerTitle(rejected: rejected, awaitingDuo: awaitingDuo),
-             canvasSessionExpiredBannerSubtitle(rejected: rejected, awaitingDuo: awaitingDuo)]
-                .compactMap { $0 }
-                .joined(separator: ". ")
-        )
     }
 
-    private func canvasSessionExpiredBannerTitle(rejected: Bool, awaitingDuo: Bool) -> String {
-        if rejected { return "pennkey password rejected" }
-        if awaitingDuo { return "duo needs you" }
-        return "reconnect canvas"
+    @ViewBuilder
+    private func canvasSessionStatusRow(_ line: AppState.CanvasSessionStatusLine) -> some View {
+        switch line {
+        case .none:
+            EmptyView()
+        case .reconnecting:
+            statusLineLabel("slow connection \u{00B7} reconnecting")
+        case .duoPush:
+            statusLineLabel("approve the duo push on this phone")
+        case .duoNeedsYou:
+            Button { state.restartOnboarding(for: .canvas) } label: {
+                statusLineLabel("duo needs you \u{00B7} tap to finish")
+            }
+            .buttonStyle(.plain)
+        case .passwordChanged:
+            Button { path.append(.profile) } label: {
+                statusLineLabel("pennkey password changed \u{00B7} update in profile")
+            }
+            .buttonStyle(.plain)
+        case .signInNeeded:
+            Button { state.restartOnboarding(for: .canvas) } label: {
+                statusLineLabel("sign in to canvas")
+            }
+            .buttonStyle(.plain)
+        }
     }
 
-    private func canvasSessionExpiredBannerSubtitle(rejected: Bool, awaitingDuo: Bool) -> String? {
-        if rejected { return "update it in profile." }
-        if awaitingDuo { return "tap yes, this is my device" }
-        return nil
+    private func statusLineLabel(_ text: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.system(size: 13, weight: .semibold))
+            Text(text)
+                .font(.lhfSans(11))
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(Color.v2DateText)
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
+        .accessibilityElement(children: .combine)
     }
 
-    /// The Gradescope counterpart of `canvasSessionExpiredBanner`, without its
+    /// The Gradescope reconnect banner (the Canvas one became a status line on 2026-11-02), without
     /// rejected-password and Duo branches (neither exists for Gradescope).
     /// Opens the same single-service reconnect, which presents as a cover over
     /// this dashboard (`AppState.restartOnboarding(for:)`).

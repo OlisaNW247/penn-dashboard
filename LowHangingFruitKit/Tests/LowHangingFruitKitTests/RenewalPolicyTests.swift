@@ -79,32 +79,31 @@ struct RenewalPolicyTests {
     private let now = Date(timeIntervalSince1970: 1_700_000_000)
     private let hour: TimeInterval = 3600
 
+    private let spacing = CanvasSessionRenewer.foregroundSpacing
+
     private func retry(
-        confirmedDead: Bool = true,
+        expired: Bool = true,
         awaitingDuo: Bool = false,
         disabledReason: String? = nil,
-        lastAttemptAgo: TimeInterval? = nil,
-        lastOutcome: AppState.RenewalOutcomeKind? = nil
+        lastAttemptAgo: TimeInterval? = nil
     ) -> Bool {
         AppState.shouldRetrySilentRenewal(
-            confirmedDead: confirmedDead,
+            expired: expired,
             awaitingDuo: awaitingDuo,
             disabledReason: disabledReason,
             lastAttemptAt: lastAttemptAgo.map { now.addingTimeInterval(-$0) },
-            lastOutcome: lastOutcome,
-            now: now,
-            cooldown: hour
+            now: now
         )
     }
 
     @Test("a live session is never retried")
     func liveSessionNotRetried() {
-        #expect(retry(confirmedDead: false, lastAttemptAgo: 10 * hour) == false)
+        #expect(retry(expired: false, lastAttemptAgo: 10 * hour) == false)
     }
 
     @Test("awaiting Duo is never retried: it would push Duo to the phone")
     func awaitingDuoNotRetried() {
-        #expect(retry(awaitingDuo: true, lastAttemptAgo: 10 * hour, lastOutcome: .needsDuo) == false)
+        #expect(retry(awaitingDuo: true, lastAttemptAgo: 10 * hour) == false)
         #expect(retry(awaitingDuo: true, lastAttemptAgo: nil) == false)
     }
 
@@ -113,11 +112,14 @@ struct RenewalPolicyTests {
         #expect(retry(disabledReason: "rejected", lastAttemptAgo: 10 * hour) == false)
     }
 
-    @Test("within the cooldown is not retried; past it is")
-    func cooldownWindow() {
-        #expect(retry(lastAttemptAgo: hour - 1, lastOutcome: .landedOnLoginPage) == false)
-        #expect(retry(lastAttemptAgo: hour, lastOutcome: .landedOnLoginPage) == true)
-        #expect(retry(lastAttemptAgo: hour + 1, lastOutcome: .landedOnLoginPage) == true)
+    @Test("the foreground spacing is 90 seconds, not an hour")
+    func spacingWindow() {
+        #expect(spacing == 90)
+        #expect(retry(lastAttemptAgo: spacing - 1) == false)
+        #expect(retry(lastAttemptAgo: spacing) == true)
+        #expect(retry(lastAttemptAgo: spacing + 1) == true)
+        // An attempt five minutes ago (yesterday's one-hour lock-out) no longer matters.
+        #expect(retry(lastAttemptAgo: 5 * 60) == true)
     }
 
     @Test("no attempt on record means due")
@@ -125,30 +127,41 @@ struct RenewalPolicyTests {
         #expect(retry(lastAttemptAgo: nil) == true)
     }
 
-    @Test("after a timeout the retry comes at 10 minutes, not an hour")
-    func timedOutRetriesSooner() {
-        #expect(retry(lastAttemptAgo: 5 * 60, lastOutcome: .timedOut) == false)
-        #expect(retry(lastAttemptAgo: 10 * 60, lastOutcome: .timedOut) == true)
-        #expect(retry(lastAttemptAgo: 11 * 60, lastOutcome: .timedOut) == true)
-        // The shorter interval belongs to timeouts only.
-        #expect(retry(lastAttemptAgo: 11 * 60, lastOutcome: .landedOnLoginPage) == false)
+    @Test("awaiting Duo retries only when the pure rule allows it")
+    func awaitingDuoRetryRule() {
+        func allowed(_ agoMinutes: Double?, thisProcess: Bool) -> Bool {
+            AppState.awaitingDuoRetryAllowed(
+                latchedAt: agoMinutes.map { now.addingTimeInterval(-$0 * 60) },
+                now: now, madeForegroundAttemptThisProcess: thisProcess)
+        }
+        // One try per cold open, however fresh the latch.
+        #expect(allowed(1, thisProcess: false))
+        #expect(!allowed(1, thisProcess: true))
+        // After 60 minutes, any time.
+        #expect(!allowed(59, thisProcess: true))
+        #expect(allowed(60, thisProcess: true))
+        // A latch from an older build has no date: old enough.
+        #expect(allowed(nil, thisProcess: true))
+        // And the policy honours it, with every other stop still in force.
+        func policy(duoRetry: Bool, disabled: String? = nil, ago: TimeInterval? = nil) -> Bool {
+            AppState.shouldRetrySilentRenewal(
+                expired: true, awaitingDuo: true, disabledReason: disabled,
+                lastAttemptAt: ago.map { now.addingTimeInterval(-$0) }, now: now, duoRetryAllowed: duoRetry)
+        }
+        #expect(policy(duoRetry: true))
+        #expect(!policy(duoRetry: false))
+        #expect(!policy(duoRetry: true, disabled: "rejected"))
+        #expect(!policy(duoRetry: true, ago: 30))
     }
 
-    @Test("a first landing on the login form is retried even though the session is not yet latched dead")
-    func landedOutcomeRetriesWithoutLatch() {
-        #expect(retry(confirmedDead: false, lastAttemptAgo: hour - 1, lastOutcome: .landedOnLoginPage) == false)
-        #expect(retry(confirmedDead: false, lastAttemptAgo: hour, lastOutcome: .landedOnLoginPage) == true)
-        // The hard stops still win.
-        #expect(retry(confirmedDead: false, awaitingDuo: true, lastAttemptAgo: 10 * hour, lastOutcome: .landedOnLoginPage) == false)
-        #expect(retry(confirmedDead: false, disabledReason: "rejected", lastAttemptAgo: 10 * hour, lastOutcome: .landedOnLoginPage) == false)
-        // Only a landing opens this door: a timeout or a renewal with a live session does not.
-        #expect(retry(confirmedDead: false, lastAttemptAgo: 10 * hour, lastOutcome: .timedOut) == false)
-        #expect(retry(confirmedDead: false, lastAttemptAgo: 10 * hour, lastOutcome: .renewed) == false)
+    @Test("a bare clock expiry retries: no latched verdict or landing is required any more")
+    func bareExpiryRetries() {
+        #expect(retry(expired: true, lastAttemptAgo: 10 * hour) == true)
     }
 
     @Test("a last attempt in the future (clock change) is not due")
     func futureAttemptNotDue() {
-        #expect(retry(lastAttemptAgo: -600, lastOutcome: .timedOut) == false)
+        #expect(retry(lastAttemptAgo: -600) == false)
     }
 
     // MARK: - backgroundMayUseCredentials
