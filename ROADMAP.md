@@ -46,20 +46,20 @@ These block shipping, or would make shipping risky. The launch-prep
 work of 2026-10-09/10 is summarised, with the order to take these in,
 in `docs/LAUNCH_PREP_HANDOFF.md`.
 
-- **Finish proving the probe-before-expired sign-in fix on a phone, then
-  ship it as 3.4.1.** `v9` (2026-11-01, `docs/SIGNOUT_2026-11-01.md`). The
-  main check passed on Marco's phone on 2026-11-02 02:41 UTC: the Debug
-  build launched with `-LHFAgeCanvasSession` logged `session probe:
-  alive, re-stamped 1 cookies` one second after the aging, with no
-  `canvasSessionExpired false -> true` line, `canvasSessionConfirmedDeadV1`
-  still false and no banner. Still to do on a device: let a background
-  wake run, open within the hour, and expect a real foreground attempt
-  rather than `within the 1h cooldown` (the one-time slot migration could
-  not be observed because `-LHFAgeCanvasSession` clears both slots first;
-  it is unit-tested only); disconnect while a probe is in flight and
-  confirm nothing comes back. Not yet done: the "keepalive on open" extra
-  from the doc (probe when the cookie is older than 12 hours), the Mac
-  build, and the push of `v9`.
+- **Prove the no-banner sign-in on a phone, then ship it as 3.4.1.** `v9`
+  (2026-11-02, `ece809b`): the sign-out banner is gone for good, replaced
+  by a quiet status line the clock can never trigger; silent re-login on
+  every open; keepalive probes; the hidden renewer taps Duo's trust and
+  push buttons; Marco's onboarding polish (PR 19) merged in. 3442/329
+  green. On Marco's phone the aged launch (`-LHFAgeCanvasSession`) logged
+  `session probe: alive` with nothing on screen, twice (02:41 and 15:00
+  UTC). Still to run on the phone, with it unlocked and Marco present to
+  approve one Duo push: `-LHFForgetDuoTrust -LHFAgeCanvasSession`, which
+  drops the hidden browser's Canvas session and Duo trust and skips the
+  probe, so the renewer must go through PennKey and Duo; expect
+  "duo push sent" / "duo push approved" / `renewed` in `debugRenewalLogV1`
+  and only the grey "approve the duo push" line on screen. Also pending:
+  a background-wake-then-open check, the Mac build, the push of `v9`.
 
 - **The launch-day crash (2026-10-26): ship 3.2.2 with the A1 fix.** A
   few hundred people installed 3.2.1 (15) on launch day and some of them
