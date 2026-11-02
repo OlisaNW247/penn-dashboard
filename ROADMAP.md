@@ -46,17 +46,20 @@ These block shipping, or would make shipping risky. The launch-prep
 work of 2026-10-09/10 is summarised, with the order to take these in,
 in `docs/LAUNCH_PREP_HANDOFF.md`.
 
-- **Prove the probe-before-expired sign-in fix on a phone, then ship it
-  as 3.4.1.** `v9` (2026-11-01, `docs/SIGNOUT_2026-11-01.md`) built for the
-  device (`.claude/worktrees/v9/build/DerivedData/.../Debug-iphoneos/Smooth.app`,
-  3.4.0 (17)) but the phone went offline before it was installed. Checks: launch with
-  `-LHFAgeCanvasSession` and expect a `session probe: alive` line in
-  `debugRenewalLogV1` and no `canvasSessionExpired false -> true`; let a
-  background wake run, open within the hour, and expect a real foreground
-  attempt rather than `within the 1h cooldown`; disconnect while a probe
-  is in flight and confirm nothing comes back. Not yet done: the
-  "keepalive on open" extra from the doc (probe when the cookie is older
-  than 12 hours), and the Mac build has not been run.
+- **Finish proving the probe-before-expired sign-in fix on a phone, then
+  ship it as 3.4.1.** `v9` (2026-11-01, `docs/SIGNOUT_2026-11-01.md`). The
+  main check passed on Marco's phone on 2026-11-02 02:41 UTC: the Debug
+  build launched with `-LHFAgeCanvasSession` logged `session probe:
+  alive, re-stamped 1 cookies` one second after the aging, with no
+  `canvasSessionExpired false -> true` line, `canvasSessionConfirmedDeadV1`
+  still false and no banner. Still to do on a device: let a background
+  wake run, open within the hour, and expect a real foreground attempt
+  rather than `within the 1h cooldown` (the one-time slot migration could
+  not be observed because `-LHFAgeCanvasSession` clears both slots first;
+  it is unit-tested only); disconnect while a probe is in flight and
+  confirm nothing comes back. Not yet done: the "keepalive on open" extra
+  from the doc (probe when the cookie is older than 12 hours), the Mac
+  build, and the push of `v9`.
 
 - **The launch-day crash (2026-10-26): ship 3.2.2 with the A1 fix.** A
   few hundred people installed 3.2.1 (15) on launch day and some of them
@@ -615,8 +618,8 @@ Kept so nobody rebuilds them blind.
   re-stamps the cookies, dead renews as before, no answer changes
   nothing. Background and foreground renewals keep separate cooldown
   slots, a background timeout is recorded as timed out, and the refresh
-  banner needs a real verdict. 3420/328 green; device build made, not
-  yet installed or proven on a device.
+  banner needs a real verdict. 3420/328 green; proven on Marco's phone
+  2026-11-02 (aged launch: `session probe: alive`, no banner).
 - **2026-10-23.** Automatic Penn credential saving after verified Canvas login;
   no duplicate password prompt or opt-out sheet. Added connection confirmation,
   pre-login disclosure, origin/lifetime guards, and Keychain error handling.
