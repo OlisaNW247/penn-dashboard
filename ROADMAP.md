@@ -341,6 +341,14 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   already preferring the newer post (2/2) and writing a linkable title in
   about half the `<sources>` details. Next: Olisa's compile, the canary
   deploy at his hand, then the three probe commands in the plan.
+  **Status 2026-11-02 (Olisa's go): live.** `ask-canary` v8 from `v8`
+  `dfb9d7f`, 20-run `citations` probe `cite-def`: 20/20 answered, a known
+  title in 20/20 `<sources>` details (baseline 3/6), `ed` kind 15/20,
+  Meyerson in 7/7 midterm answers (baseline 2/2), first word p50 3.3 s.
+  Production `ask` is **v13** from the same tree, carrying the citation
+  contract and the 2026-11-02 recording sentences (`history`, the
+  schedule-is-not-a-cancellation rule). The phone half of the recording
+  fixes is still not on a phone.
 
 - **Merge Marco's branches into `v8`** (plan written 2026-10-23,
   `docs/MERGE_PLAN_MARCO_2026-10-23.md`, owner's request). Seven live

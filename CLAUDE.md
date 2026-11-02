@@ -1721,6 +1721,19 @@ the result. Deploying `ask` itself is a production change and needs a
 person's go. The 2026-09-22 promotion was 55/55 on the canary (first
 word median 1.8 s, p95 3.9 s, max 6.5 s) and 5/5 on production.
 
+**2026-11-02: the citation contract and the recording fixes went live,
+at Olisa's go.** `ask-canary` v8 (deployed with `--also ask` from `v8`
+`dfb9d7f`, so it serves the new `prompt.ts`) answered the 20-run
+`citations` probe (tag `cite-def`) 20/20, first word p50 3.3 s, p95
+6.1 s; `<sources>` block 20/20, a known title in the detail 20/20 (the
+2026-10-25 baseline against the old prompt: 3/6), kind `ed` 15/20, and
+7/7 midterm answers named Meyerson, the newer post's room (baseline 2/2;
+all 7 also mention Towne, the room it replaced). Production `ask` then
+went to **v13** from the same tree. The canary is gated on the
+`LHF_PROBE_SECRET` function secret, which the project did not have until
+that day (every probe was a 404); Olisa holds the value, and the probe
+shell must export the same one. It is never written into the repo.
+
 ### ask: retrieval is on the phone
 
 The server does no searching. `ask` answers from the context document

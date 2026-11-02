@@ -120,3 +120,12 @@ measured ones.
   mode allows a secret write (the overseer session's does not, and it
   could not even relay the instruction). Production `ask` is not gated
   and is unaffected. Step 1 below is amended: set the secret first.
+- 2026-11-02, after that: `ask` is deployed, at Olisa's go. `LHF_PROBE_SECRET`
+  was set on the project (it had none, so the canary answered 404 to
+  every probe; Olisa holds the value). `ask-canary` v8, from `v8`
+  `dfb9d7f` with `--also ask`, passed the 20-run `citations` probe (tag
+  `cite-def`): 20/20 answered, `<sources>` 20/20, known title 20/20
+  (baseline 3/6), `ed` kind 15/20, Meyerson 7/7 (baseline 2/2), first
+  word p50 3.3 s, p95 6.1 s. Production `ask` is v13 from the same tree.
+  What remains is the phone: the recording's two questions on a build of
+  this tree.
