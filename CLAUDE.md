@@ -1805,8 +1805,20 @@ client problem. The pieces, all exercised by tests:
   under a note telling the model a post overrides the schedule and that
   "no post mentions a change" is the honest form of "nothing announced".
   Both compiled green on the GitHub runner the same day (3414/329, Test
-  baseline); neither has been on a phone, and the recording's two
-  questions are the test.
+  baseline). **On a phone 2026-11-02** (Marco's iPhone 17 Pro, the `v8`
+  Debug build at `d434db8`, production `ask` v13, the two questions in
+  one conversation, as Marco reported them in chat): "Do I not have cis
+  2620 class today?" came back "you do have quiz", the content of the
+  2026-11-01 Ed post, where the recording had answered from the weekly
+  schedule; so the `.meeting` kind sent the post. Whether the answer
+  carried the post's chip is not reported. "you should've said that in
+  my original question" came back "wdym, this question doesn't make
+  sense": not the recording's "I don't have the original question", but
+  not an acknowledgement either. Whether `history` reached the server
+  with the earlier turn, or arrived and the model still read the
+  correction as a question, is not known from the phone alone; the next
+  check is the request body in a DEBUG build, or a probe that sends a
+  `history` with that exact pair (see Known gaps).
 - **What the phone holds** is the limit. Canvas Files (slides, readings,
   any PDF not named "syllabus") are not ingested by the phone, only the 40
   newest pages get their bodies, and announcements reach the pool only
@@ -3244,6 +3256,23 @@ none is a ship line.
   answers from the new posts is the next check. This touched the
   course-material sync at the owner's direct request; Marco has not been
   told yet.
+- **The recording fixes, on a phone 2026-11-02: the class-meeting half
+  passes, the follow-up half does not yet.** On Marco's iPhone 17 Pro
+  (`v8` `d434db8` Debug, `ask` v13) "Do I not have cis 2620 class
+  today?" led with the quiz from the 2026-11-01 Ed post (the recording's
+  failure, answering from the schedule, is gone); whether the chip showed
+  is not reported. "you should've said that in my original question" was
+  answered "wdym, this question doesn't make sense": the model neither
+  denied having the earlier question nor acknowledged the correction.
+  Two readings, not yet told apart: `history` was sent and the prompt's
+  "use earlier turns for 'you missed that'" sentence is not strong
+  enough for a correction phrased as a complaint, or `history` did not
+  carry the turn (the phone's `ConversationHistory` and the server's
+  reading of it have only met in tests). To decide: read the `history`
+  field of the request from a DEBUG build, or run `ask-probe.mjs` with a
+  `history` holding that exact pair against `ask-canary`. The evening
+  "what's due tomorrow" check has not been done yet (the phone test ran
+  at 13:12 Eastern).
 - **ask tells the model every date in UTC and never says so** (read
   2026-10-24, `docs/TREE_IMPROVEMENT_PLAN.md` item 1). The context
   document renders due times as `…T03:59:00Z` and the user message's

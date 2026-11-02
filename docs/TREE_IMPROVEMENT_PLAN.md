@@ -658,5 +658,15 @@ cd LowHangingFruitKit && LHF_BENCH_KNOWLEDGE=~/lhf-bench/course-knowledge.json s
   tree of items 1 to 4 plus the recording fixes passed, 3414 tests in 329
   suites, exactly the predicted count, on Xcode 26.6 in 101 s, after the
   one test that pinned the old "no history on the wire" rule was rewritten
-  to the new contract. Still not on a phone, and `ask` is still not
-  deployed: `docs/HANDOFF_2026-11-02_TREE.md` says who runs what next.
+  to the new contract. `ask` went to v13 the same day at Olisa's go;
+  `docs/HANDOFF_2026-11-02_TREE.md` says who runs what next.
+- **2026-11-02, on the phone.** Marco's Mac ran the serial suite alone
+  (3414/329, matching the runner) and put the `v8` Debug build on his
+  iPhone 17 Pro. The recording's first question, "Do I not have cis 2620
+  class today?", now leads with the quiz from the 2026-11-01 Ed post
+  ("you do have quiz"): the `.meeting` kind works on a phone. The second,
+  "you should've said that in my original question", came back "wdym,
+  this question doesn't make sense": no longer "I don't have the original
+  question", but not an acknowledgement. Whether `history` carried the
+  turn is the open question (CLAUDE.md → Known gaps has the two ways to
+  tell). Chip presence on the first answer was not reported.
