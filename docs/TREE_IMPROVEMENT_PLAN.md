@@ -664,9 +664,10 @@ cd LowHangingFruitKit && LHF_BENCH_KNOWLEDGE=~/lhf-bench/course-knowledge.json s
   (3414/329, matching the runner) and put the `v8` Debug build on his
   iPhone 17 Pro. The recording's first question, "Do I not have cis 2620
   class today?", now leads with the quiz from the 2026-11-01 Ed post
-  ("you do have quiz"): the `.meeting` kind works on a phone. The second,
-  "you should've said that in my original question", came back "wdym,
-  this question doesn't make sense": no longer "I don't have the original
-  question", but not an acknowledgement. Whether `history` carried the
-  turn is the open question (CLAUDE.md → Known gaps has the two ways to
-  tell). Chip presence on the first answer was not reported.
+  ("you do have quiz"; the 2nd was the Monday the post named): the
+  `.meeting` kind works on a phone. The second question was not asked, so
+  `history` on a phone is untested (CLAUDE.md → Known gaps has the two
+  ways to tell). Chip presence on the first answer was not reported.
+  Marco's reading of the build: the model still does not weight recent
+  posts by the question's time frame, nor lean on the syllabus for
+  general questions; see `docs/TREE_CONTEXT_RESEARCH_2026-11-02.md`.

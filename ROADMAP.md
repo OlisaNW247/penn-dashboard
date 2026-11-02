@@ -349,9 +349,8 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   contract and the 2026-11-02 recording sentences (`history`, the
   schedule-is-not-a-cancellation rule). On Marco's phone the same day
   (`v8` `d434db8` Debug): the class-meeting question now answers from the
-  Ed post; the "you should've said that" follow-up answers "wdym, this
-  question doesn't make sense", so the history half is unproven (CLAUDE.md
-  → Known gaps).
+  Ed post; the "you should've said that" follow-up was not asked, so the
+  history half is unproven (CLAUDE.md → Known gaps).
 
 - **Merge Marco's branches into `v8`** (plan written 2026-10-23,
   `docs/MERGE_PLAN_MARCO_2026-10-23.md`, owner's request). Seven live
@@ -465,9 +464,9 @@ Roughly in priority order.
   `.meeting` recency kind so "do I have class today" sees the newest
   posts. Compiled green on the GitHub runner the same day (3414/329);
   on Marco's phone 2026-11-02: the class-meeting question passes (answers
-  from the Ed post), the "you should've said that" follow-up gets "wdym,
-  this question doesn't make sense". Next: decide whether `history` is
-  sent (DEBUG request body or a canary probe with a `history` pair).
+  from the Ed post); the "you should've said that" follow-up was not
+  asked. Next: check `history` is sent (DEBUG request body or a canary
+  probe with a `history` pair), and the context research below.
 - **Make ask cite titles, so more source chips link.** The server prompt
   asks for "a few words locating the fact"; a chip only links when the
   model happens to write a document's title. One prompt line, behind an
