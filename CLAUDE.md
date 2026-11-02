@@ -54,7 +54,12 @@ material by numeric Canvas course id, and two schools' ids would collide.
 **Privacy posture; say it this way.** "The student's own data stays
 on-device; course material is pooled server-side; ask has an on-device
 fallback." Grades, completions, submission state, the work list, the
-student's name, and Canvas/Gradescope cookies never leave the phone. The
+student's name, and Canvas/Gradescope cookies never leave the phone. Since
+2026-11-02 (blind) a question to the tree also carries the earlier turns
+of the conversation on screen (the last three exchanges, the student's
+words and the answers shown, dropped when the screen closes, stored by
+nobody), so "you missed that" and "what about that class" mean something
+to the model; `docs/PRIVACY.md` says so. The
 one exception, since 2026-10-22: a student who pairs the Chrome extension
 shares completions, due-date edits, their own tasks and the work list
 with their own laptop **end-to-end encrypted** (AES-256-GCM, a key that
@@ -1747,9 +1752,20 @@ client problem. The pieces, all exercised by tests:
 - **Follow-ups** (`FollowUpRetrieval`). A question that names no course
   searches within the course the nearest earlier question named (up to
   four back), and a question of six words or fewer is searched with the
-  one before it. On the phone only: `history` is still sent empty and
-  `question` is exactly what was typed. Sending earlier turns is a
-  privacy-policy change nobody has approved.
+  one before it. Since 2026-11-02 (blind, the owner's "improve this
+  immediately" on a recording where the tree said "I don't have the
+  original question you asked") `history` carries the conversation's last
+  three exchanges, capped at 6,000 characters (`ConversationHistory`,
+  `AssistantContext.history`), after the cache breakpoint; `question` is
+  still exactly what was typed. The policy sentence changed in the same
+  commit. The same recording showed "do I not have CIS 2620 class today?"
+  answered from the weekly schedule while an Ed post from the day before
+  said "no lectures this week": BM25 shares no word with that post, so
+  `RecencyIntent` now has a `.meeting` kind (class, lecture, lab, office
+  hours beside cancelled, "do I have", today, tomorrow, this week…) that
+  puts the class's newest posts from the last 14 days first, at most four,
+  under a note telling the model a post overrides the schedule and that
+  "no post mentions a change" is the honest form of "nothing announced".
 - **What the phone holds** is the limit. Canvas Files (slides, readings,
   any PDF not named "syllabus") are not ingested by the phone, only the 40
   newest pages get their bodies, and announcements reach the pool only

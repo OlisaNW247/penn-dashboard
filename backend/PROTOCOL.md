@@ -281,7 +281,8 @@ Request:
   "excerpts": string,          -- rendered RETRIEVED EXCERPTS block, may be ""
   "askedAt": ISO8601,
   "courseIDs": [courseID],     -- the courses the student currently has
-  "history": [ { "role": "user" | "assistant", "content": string } ] } -- may be []
+  "history": [ { "role": "user" | "assistant", "content": string } ] } -- [] for a first question;
+  -- since 2026-11-02 the phone sends the earlier turns of the open conversation (last 6 messages, 6,000 characters)
 ```
 
 Size caps (`_shared/askRequest.ts`, since 2026-10-27): `contextDocument` at

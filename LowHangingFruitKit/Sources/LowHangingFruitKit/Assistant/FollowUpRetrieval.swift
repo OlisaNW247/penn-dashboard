@@ -13,11 +13,12 @@ import Foundation
 ///
 /// This type changes only *which passages are chosen*. The question the
 /// student typed is still what is shown, still what is sent to the server as
-/// `question`, and still what the model answers; the earlier question is
-/// never sent anywhere (see `BackendAssistantResponder.makeRequest`, whose
-/// `history` stays empty on purpose: shipping earlier turns to the server is
-/// a privacy-policy change, not a retrieval tweak). It is also kept out of
-/// `AssistantContextDocument`, whose bytes are a prompt-cache prefix.
+/// `question`, and still what the model answers. Since 2026-11-02 the
+/// conversation's recent turns also reach the server as `history`
+/// (`ConversationHistory`, disclosed in `docs/PRIVACY.md`), but that is a
+/// separate channel: this type still decides retrieval from the questions
+/// alone. The earlier question is kept out of `AssistantContextDocument`,
+/// whose bytes are a prompt-cache prefix.
 ///
 /// Two rules, applied independently:
 ///

@@ -184,8 +184,11 @@ on-device alone:
   ids of your classes, and the time of the question and your phone's time zone
   (so that due times and "tomorrow" read correctly) to our server, which
   forwards them to an AI model to generate an answer streamed back to you.
-  Neither the question nor the answer is stored anywhere — see "What we keep
-  and for how long" below.
+  Since 2026-11-02 the app also sends the earlier questions and answers of
+  the conversation you are in (the last few exchanges, and only until you
+  leave the screen) so a follow-up can refer to them. Neither the question
+  nor the answer, and none of the earlier turns, is stored anywhere — see
+  "What we keep and for how long" below.
 
   What the summary holds: for each class, its code, any name you gave it, and
   the grading weights (percentages) from its syllabus or Grade Watcher; and,

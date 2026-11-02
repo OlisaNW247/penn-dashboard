@@ -41,12 +41,34 @@ import Foundation
 ///   week" is 7 days). When it has several time phrases, the one written last
 ///   wins, because `FollowUpRetrieval` puts the earlier question first and
 ///   the student's new words last.
+///
+/// **A second reason to read the newest posts (`.meeting`, 2026-11-02).** A
+/// question about whether or when a class meets or is cancelled ("is there
+/// class tomorrow", "do I have lab this week") is answered by the registrar's
+/// weekly schedule unless a recent post overrides it. It carries a 14-day
+/// window and a smaller pick (`BackendAssistantResponder.recencyPicks`). The
+/// news rule above always wins when it fires.
 public struct RecencyIntent: Sendable, Equatable {
+    /// Why the newest posts are wanted. `.news` is the original reason: the
+    /// student asked what was posted. `.meeting` (2026-11-02) is a question
+    /// about whether or when a class meets, which is answered from the
+    /// registrar's weekly schedule unless a recent post says otherwise.
+    public enum Kind: Sendable, Equatable {
+        case news
+        case meeting
+    }
+
     /// `nil`: "the newest", no window. Otherwise "within the last N days".
     public let windowDays: Int?
 
-    public init(windowDays: Int?) {
+    /// Defaulted to `.news`, so every caller and test written before the
+    /// meeting trigger existed, and every `== RecencyIntent(windowDays: 7)`,
+    /// means exactly what it did.
+    public let kind: Kind
+
+    public init(windowDays: Int?, kind: Kind = .news) {
         self.windowDays = windowDays
+        self.kind = kind
     }
 
     public static func detect(in question: String) -> RecencyIntent? {
@@ -62,7 +84,31 @@ public struct RecencyIntent: Sendable, Equatable {
             return RecencyIntent(windowDays: window)
         }
         if hasRecencyWord { return RecencyIntent(windowDays: nil) }
+
+        // Only after the news rule has had its say: a question that asks what
+        // was posted is news whatever else it mentions ("any announcement
+        // about class today" names a class and a time, and is still news).
+        if isMeetingQuestion(q) {
+            return RecencyIntent(windowDays: meetingWindowDays, kind: .meeting)
+        }
         return nil
+    }
+
+    /// How far back a meeting question looks for a post that cancels or moves
+    /// a meeting: two weeks. A lecture cancelled "this week" is posted days
+    /// before, and a post older than that is rarely about the meeting the
+    /// student is asking after.
+    public static let meetingWindowDays = 14
+
+    /// A class-meeting noun together with either a word about a meeting being
+    /// on, off or moved, or a near time. Both halves are needed: "when is the
+    /// midterm" has neither, and "what is the class policy on late work" names
+    /// a class but no presence word and no time, so it keeps its BM25 hits
+    /// alone.
+    private static func isMeetingQuestion(_ q: String) -> Bool {
+        guard q.range(of: meetingNounPattern, options: .regularExpression) != nil else { return false }
+        return q.range(of: meetingPresencePattern, options: .regularExpression) != nil
+            || q.range(of: nearTimePattern, options: .regularExpression) != nil
     }
 
     // MARK: - Patterns
@@ -72,6 +118,25 @@ public struct RecencyIntent: Sendable, Equatable {
 
     private static let postingNounPattern =
         #"\b(?:post|posts|posted|announcement|announcements|announce|announced|update|updates|news|said|staff|ed|discussion|message|messages|board)\b"#
+
+    /// 2026-11-02: asked "Do I not have cis 2620 class today?", the tree
+    /// answered from the registrar's weekly schedule while an Ed post from the
+    /// day before, "No lectures this week but quiz on Monday", sat in the pool.
+    /// BM25 could not find it (the question and the post share no word) and
+    /// the news rule did not fire (no recency word; "today" counts only beside
+    /// a posting noun). The wrong fix is a synonym table that maps "class" to
+    /// "lecture": the next cancellation is worded differently again. These
+    /// three patterns ask the question that matters, whether the student is
+    /// asking about a meeting happening, and the caller then reads the newest
+    /// posts instead of searching for them.
+    private static let meetingNounPattern =
+        #"\b(?:class|lecture|lectures|lab|recitation|section|office\s+hours)\b"#
+
+    private static let meetingPresencePattern =
+        #"\b(?:cancel|cancelled|canceled|cancellation|no\s+class|no\s+lecture|no\s+lectures|moved|rescheduled|postponed|is\s+there|do\s+i\s+have|do\s+we\s+have|don'?t\s+have|not\s+have|have\s+.{0,20}\btoday|meets?|meeting|happening|still\s+on)\b"#
+
+    private static let nearTimePattern =
+        #"\b(?:today|tomorrow|tonight|this\s+week|next\s+week|this\s+morning|this\s+afternoon|monday|tuesday|wednesday|thursday|friday)\b"#
 
     private struct WindowPhrase: Sendable {
         let pattern: String

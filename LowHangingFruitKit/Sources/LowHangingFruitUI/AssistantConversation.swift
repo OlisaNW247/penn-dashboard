@@ -57,11 +57,24 @@ final class AssistantConversation: ObservableObject {
         // words only, newest first, never an answer, at most as many as
         // retrieval will look back through. They ride along only so
         // retrieval can follow a follow-up into the right course
-        // (`FollowUpRetrieval`); no responder sends them anywhere. Whatever
-        // the caller put in these fields is replaced: a stale value there
-        // would search the wrong course.
+        // (`FollowUpRetrieval`). Whatever the caller put in these fields is
+        // replaced: a stale value there would search the wrong course.
+        //
+        // `history` is built here for the same reason, from the same
+        // transcript and before the new question is appended: since
+        // 2026-11-02 the earlier turns (the last three exchanges, capped by
+        // `ConversationHistory`) are sent to the server so a follow-up can
+        // refer to them. A reply still streaming is skipped there, so the
+        // model is never shown half an answer as its own words.
         let turnContext: AssistantContext = {
             var copy = context
+            copy.history = ConversationHistory.turns(from: messages.map { message in
+                ConversationHistory.Message(
+                    role: message.role == .student ? .student : .assistant,
+                    text: message.text,
+                    isPending: message.isStreaming
+                )
+            })
             let earlier = messages.reversed()
                 .filter { $0.role == .student }
                 .prefix(FollowUpRetrieval.maxEarlierQuestions)

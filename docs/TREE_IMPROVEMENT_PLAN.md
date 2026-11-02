@@ -629,3 +629,27 @@ cd LowHangingFruitKit && LHF_BENCH_KNOWLEDGE=~/lhf-bench/course-knowledge.json s
   kind word, which the phone already accepts. So item 4's effect is
   smaller than section 3 feared; the deploy still earns its place by
   making the title the rule rather than the habit.
+- **2026-11-02.** Olisa sent a screen recording with "this needs to be
+  improved upon immediately": "Do I not have cis 2620 class today?" was
+  answered from the registrar's weekly schedule, with "there is no
+  announcement or note indicating a class cancellation", while an Ed post
+  from the day before ("No lectures this week but quiz on Monday") sat in
+  the pool; told so, the tree found the post; told "you should've said
+  that in my original question", it answered "I don't have the original
+  question you asked" and padded with proof-writing excerpts. Two causes,
+  both already in sections 4 and 7: BM25 shares no word between that
+  question and that post and the recency rule fires only on news wording,
+  so the post was never sent; and `history` was empty by design, so the
+  model could not see its own previous turn. Written blind the same day:
+  a `.meeting` kind on `RecencyIntent` (a class-meeting or cancellation
+  question puts the class's newest posts from the last 14 days first, at
+  most four, under a note that a post overrides the schedule and that "no
+  post mentions a change" is the honest form of "nothing announced"); the
+  last three exchanges sent as `history` (`ConversationHistory`,
+  `docs/PRIVACY.md` and the privacy posture updated in the same commit:
+  this is the policy change section 7 said needed a yes, and the owner's
+  instruction on the recording is that yes); and two prompt sentences in
+  `prompt.ts` (the schedule never says whether a class meets on a day; use
+  earlier turns for "you missed that"), which take effect only when `ask`
+  is deployed. The recording is the test: the same two questions on the
+  phone after the compile.

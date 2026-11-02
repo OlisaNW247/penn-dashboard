@@ -243,11 +243,27 @@ struct BackendAssistantResponderTests {
             #expect(!request.excerpts.contains("RETRIEVED EXCERPTS"))
         }
 
-        @Test("history is always empty")
-        func historyIsEmpty() {
+        @Test("a fresh conversation sends an empty history")
+        func historyIsEmptyForAFreshConversation() {
             let context = AssistantContext(courseCodes: ["PHYS 0151"], contextDocument: "doc")
             let request = BackendAssistantResponder.makeRequest(question: "q", context: context)
             #expect(request.history.isEmpty)
+        }
+
+        @Test("a context with two turns sends them as the request's history, and the question is still the typed text")
+        func historyIsTheContextsTurns() {
+            let turns = [
+                AskTurn(role: "user", content: "do i have cis 2620 today?"),
+                AskTurn(role: "assistant", content: "it meets mondays and wednesdays."),
+            ]
+            var context = AssistantContext(courseCodes: ["PHYS 0151"], contextDocument: "doc")
+            context.history = turns
+            let request = BackendAssistantResponder.makeRequest(question: "you should have said that earlier", context: context)
+            #expect(request.history == turns)
+            #expect(request.question == "you should have said that earlier")
+            #expect(request.contextDocument == "doc")
+            // The conversation never enters the cached document.
+            #expect(!request.contextDocument.contains("mondays"))
         }
     }
 

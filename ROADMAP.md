@@ -448,10 +448,13 @@ Roughly in priority order.
   is a decision before it is code: pooling instructors' files on the
   server changes `docs/PRIVACY.md` and the hosted policy; an on-device
   only store does not, but helps nobody's classmates.
-- **Let a follow-up question carry the conversation.** Follow-ups search
-  better on the phone since 2026-10-10, but the model still sees each
-  question alone (`history: []`). The server already accepts ten turns;
-  sending them is a privacy-policy change that needs a yes.
+- **Let a follow-up question carry the conversation.** Done blind on
+  2026-11-02 at the owner's word (`ConversationHistory`, the last three
+  exchanges sent as `history`, `docs/PRIVACY.md` updated); with it, a
+  `.meeting` recency kind so "do I have class today" sees the newest
+  posts. Not compiled; the recording that prompted it is the test: ask
+  "do I not have cis 2620 class today?" with a "no lectures this week" Ed
+  post in the pool, then "you should've said that".
 - **Make ask cite titles, so more source chips link.** The server prompt
   asks for "a few words locating the fact"; a chip only links when the
   model happens to write a document's title. One prompt line, behind an
