@@ -46,20 +46,19 @@ These block shipping, or would make shipping risky. The launch-prep
 work of 2026-10-09/10 is summarised, with the order to take these in,
 in `docs/LAUNCH_PREP_HANDOFF.md`.
 
-- **Prove the no-banner sign-in on a phone, then ship it as 3.4.1.** `v9`
-  (2026-11-02, `ece809b`): the sign-out banner is gone for good, replaced
-  by a quiet status line the clock can never trigger; silent re-login on
-  every open; keepalive probes; the hidden renewer taps Duo's trust and
-  push buttons; Marco's onboarding polish (PR 19) merged in. 3442/329
-  green. On Marco's phone the aged launch (`-LHFAgeCanvasSession`) logged
-  `session probe: alive` with nothing on screen, twice (02:41 and 15:00
-  UTC). Still to run on the phone, with it unlocked and Marco present to
-  approve one Duo push: `-LHFForgetDuoTrust -LHFAgeCanvasSession`, which
-  drops the hidden browser's Canvas session and Duo trust and skips the
-  probe, so the renewer must go through PennKey and Duo; expect
-  "duo push sent" / "duo push approved" / `renewed` in `debugRenewalLogV1`
-  and only the grey "approve the duo push" line on screen. Also pending:
-  a background-wake-then-open check, the Mac build, the push of `v9`.
+- **Ship the no-banner sign-in as 3.4.1.** `v9` (2026-11-02): the sign-out
+  banner is gone for good, replaced by a quiet status line the clock can
+  never trigger; silent re-login on every open; keepalive probes; the
+  hidden renewer taps Duo's trust and push buttons; Marco's onboarding
+  polish (PR 19) merged in. 3442/329 green. Proven on Marco's phone the
+  same day: the aged launch logged `session probe: alive` with nothing on
+  screen, twice, and `-LHFForgetDuoTrust -LHFAgeCanvasSession` (hidden
+  store emptied of Duo trust and Canvas session) went through PennKey and
+  Duo to `renewed` in 27 s with one push approved. Two failed runs that
+  day were a stale build from another worktree on the phone and the
+  10-minute credential spacing after its submission (CLAUDE.md, Stay
+  signed in). Still pending: a background-wake-then-open check, the Mac
+  build, a second phone (Olisa), then the version bump and upload.
 
 - **The launch-day crash (2026-10-26): ship 3.2.2 with the A1 fix.** A
   few hundred people installed 3.2.1 (15) on launch day and some of them

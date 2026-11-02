@@ -1988,6 +1988,16 @@ itself.
   the same way on its own that afternoon. A renewal during a *background*
   wake has never happened on any phone, because background wakes crash
   first.
+- **Verified again on 2026-11-02 on `v9`, through Duo.** With the hidden
+  store emptied of Duo trust and Canvas session (`-LHFForgetDuoTrust`),
+  the renewer filled the password at +4 s, reached Duo at +9 s, was back
+  on Penn at +13 s and on Canvas at +27 s; `canvasSessionConfirmedDeadV1`
+  and the awaiting-Duo latch both read false afterwards. Two earlier runs
+  that day failed for reasons outside the code: a stale build from another
+  worktree was on the phone, and its own password submission four minutes
+  earlier put v9's run inside the 10-minute credential spacing, so v9
+  refused to type the password and parked on the form for 60 s. Always
+  wait ten minutes between hidden-login tests.
 
 ## Traps that have already bitten
 
@@ -2893,14 +2903,19 @@ none is a ship line.
 
 ## Known gaps
 
-- **Duo auto-tap and the push wait are unverified on a device**
-  (2026-11-02). The button texts in `DuoPromptAutoTap` are assumptions
-  about Duo's Universal Prompt DOM, the hidden zero-size WebView may lay
-  Duo's page out differently from a visible one, and a Duo that sends its
-  push by itself (no button) is not recognised as a push, so that attempt
-  gets the plain 60 s. Exercise with `-LHFForgetDuoTrust` plus
-  `-LHFAgeCanvasSession` and read `debugRenewalLogV1` for "duo trust
-  tapped", "duo push sent" and "duo push approved".
+- **The Duo push path is proven once, on one phone** (2026-11-02, Marco's
+  iPhone, `-LHFForgetDuoTrust -LHFAgeCanvasSession`, Debug build of `v9`):
+  the hidden WebView reached Penn's form, filled and submitted the saved
+  password, landed on Duo's Universal Prompt, was handed back to Penn and
+  then Canvas in 27 seconds, hands-free apart from the push. The hidden
+  store held no Duo trust cookie and no Canvas session cookie at the
+  start, so this was a full password-plus-Duo pass. Not yet seen: a Duo
+  prompt that waits a long time for the push (the 120 s cap), the "duo
+  trust tapped" line (Duo returned in 4 s, so no button was needed or the
+  tap left no log), and the same pass on a second phone. Read
+  `debugRenewalLogV1` for "finished: <host> <path>", "login form check",
+  "credential fill result", "duo push sent" and "duo push approved"; the
+  per-navigation lines are DEBUG-only and were added for this check.
 - **Duo passcode autofill is unverified.** `DuoPasscodeAutofill`
   (2026-10-30) is tested only as a string; whether Duo's Universal Prompt
   field gets matched, and whether iOS then offers the SMS code, needs a

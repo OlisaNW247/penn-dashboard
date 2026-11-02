@@ -504,6 +504,7 @@ final class CanvasSessionRenewer {
         }
         #if DEBUG
         DebugRenewalLog.record("requested, proceeding")
+        DebugRenewalLog.record("attempt: timeout \(Int(timeout))s, \(isBackground ? "background" : "foreground")")
         #endif
 
         // Recorded BEFORE the WebView ever navigates: a crash, a hang, or
@@ -1037,7 +1038,11 @@ final class CanvasSessionRenewer {
                 continuation.resume(returning: value as? String)
             }
         }
-        switch PennKeyLoginForm.presence(from: scriptResult) {
+        let presenceResult = PennKeyLoginForm.presence(from: scriptResult)
+        #if DEBUG
+        DebugRenewalLog.record("login form check: \(presenceResult.rawValue)")
+        #endif
+        switch presenceResult {
         case .noForm, .unknown:
             // The IdP host, but NOT the credential form — the Duo hand-off
             // page or the page Duo hands control back to, most likely (see
@@ -1050,6 +1055,9 @@ final class CanvasSessionRenewer {
         }
 
         if hasSubmittedCredentialsThisAttempt {
+            #if DEBUG
+            DebugRenewalLog.record("login form present again after submission")
+            #endif
             // The credential form is ACTUALLY present a second time after
             // the one submission this attempt is allowed to make —
             // Shibboleth re-rendering its own login form is exactly what a
@@ -1059,6 +1067,9 @@ final class CanvasSessionRenewer {
         }
 
         guard let credentials = autoLogin?() else {
+            #if DEBUG
+            DebugRenewalLog.record("credential fill skipped: no credentials available")
+            #endif
             // No credentials to submit — either "stay signed in" is off, or
             // `AppState.canAutoLoginSilently` is currently false for some
             // other reason (a prior rejection or awaiting-Duo latch not yet
@@ -1074,6 +1085,9 @@ final class CanvasSessionRenewer {
             isBackground: attemptIsBackground,
             lastFailedSubmissionAt: lastFailedCredentialSubmissionAt
         ) else {
+            #if DEBUG
+            DebugRenewalLog.record("credential fill skipped: within credential spacing")
+            #endif
             // Within `autoLoginCooldown` of a previous submission — treat
             // exactly like "no credentials" rather than resubmitting to
             // Penn's IdP on every renewal attempt.
@@ -1085,7 +1099,15 @@ final class CanvasSessionRenewer {
         lastCredentialSubmissionAt = submittedAt
         onCredentialSubmission?(submittedAt)
         let script = PennKeyLoginForm.fillAndSubmitScript(username: credentials.username, password: credentials.password)
+        #if DEBUG
+        webView.evaluateJavaScript(script) { value, _ in
+            // Narrow to `String?` before use; only the outcome word is logged.
+            let text = value as? String
+            DebugRenewalLog.record("credential fill result: \(PennKeyLoginForm.outcome(from: text).rawValue)")
+        }
+        #else
         webView.evaluateJavaScript(script, completionHandler: nil)
+        #endif
         // Keep waiting: the submission's own resulting navigation (Canvas,
         // Duo, or the login form again) is what actually resolves this
         // attempt, on a LATER call into this same method or the Canvas
@@ -1222,6 +1244,17 @@ private final class RenewalNavigationDelegate: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        #if DEBUG
+        // Host, path and Shibboleth's `execution` step id only; never the
+        // rest of the query, a fragment or any cookie.
+        var finishedLine = "finished: \(webView.url?.host ?? "(no host)") \(webView.url?.path ?? "")"
+        if let url = webView.url,
+           let execution = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?.first(where: { $0.name == "execution" })?.value {
+            finishedLine += " execution=\(execution)"
+        }
+        DebugRenewalLog.record(finishedLine)
+        #endif
         // A successful SAML round trip is MORE than one WebKit navigation:
         // Shibboleth's POST binding answers with an IdP-hosted page whose
         // JavaScript auto-submits a form back to the SP, and that submit is a
@@ -1260,14 +1293,27 @@ private final class RenewalNavigationDelegate: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        #if DEBUG
+        Self.logFailure(webView, error)
+        #endif
         guard !Self.isBenignInterruption(error) else { return }
         waiter.signal(.failed)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        #if DEBUG
+        Self.logFailure(webView, error)
+        #endif
         guard !Self.isBenignInterruption(error) else { return }
         waiter.signal(.failed)
     }
+
+    #if DEBUG
+    private static func logFailure(_ webView: WKWebView, _ error: Error) {
+        let nsError = error as NSError
+        DebugRenewalLog.record("navigation failed: \(webView.url?.host ?? "(no host)") \(webView.url?.path ?? "") \(nsError.domain)/\(nsError.code)")
+    }
+    #endif
 
     /// `NSURLErrorCancelled` here almost always means one navigation was
     /// interrupted by the next one starting — routine inside an SSO redirect
