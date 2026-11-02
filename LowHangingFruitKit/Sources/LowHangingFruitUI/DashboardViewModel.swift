@@ -29,6 +29,13 @@ struct DashItem: Identifiable, Equatable {
     /// and preview or demo data must not offer it. Nil by default, so sample
     /// data and every existing construction site offer nothing.
     var removal: OwnTaskRemoval? = nil
+    /// A Canvas assignment that launches McGraw Hill Connect or ALEKS, whose
+    /// finished state Canvas may never record (`AppState.completionNotVisible`).
+    /// Snapshotted at `reload` for `requiresNoSubmission`'s reason. Read only
+    /// by the Smooth Sweeper, which leaves such an item alone; the card is
+    /// drawn exactly as before. False by default, so sample data, previews
+    /// and every existing construction site are untouched.
+    var completionNotVisible: Bool = false
 
     var id: String { assignment.id }
     var due: Date? { dueOverride ?? assignment.dueAt }
@@ -258,7 +265,8 @@ final class DashboardViewModel: ObservableObject {
                                   isCompleted: false,
                                   completedAt: nil,
                                   requiresNoSubmission: state.requiresNoSubmission(a),
-                                  removal: OwnTaskRemoval.offered(for: a, isUsingFixtureData: isFixture)))
+                                  removal: OwnTaskRemoval.offered(for: a, isUsingFixtureData: isFixture),
+                                  completionNotVisible: state.completionNotVisible(a)))
         }
 
         // Completed pool: reconstruct from the source feeds, since the grouped

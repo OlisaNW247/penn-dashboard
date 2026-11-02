@@ -999,6 +999,26 @@ Keep this current. It is the fastest way for a new session to know what exists.
   with "unpair" when paired. Pairing a second laptop unlinks the first.
   Unpairing keeps the change log; disconnecting Canvas clears it and the
   key.
+- **McGraw Hill reader** (2026-11-02, the owners' decision in `ROADMAP.md`
+  → Next; on `feature/mcgraw-hill-reader`, draft PR into `v8`, not
+  merged, never on a phone). Only the parts that need no McGraw Hill
+  endpoint exist; no reader runs, and `FeatureFlags.mcgrawHillReader` is
+  false. What is live in a build from the branch: a Canvas assignment
+  whose `external_tool_tag_attributes.url` host is McGraw Hill's
+  (`McGrawHillTool`; read by `CanvasGradesClient` into
+  `GradeItem.externalToolHost`, host only, cached in
+  `mcgrawHillToolCanvasAssignmentIDsV1`) gets no Smooth Sweeper alarm or
+  loud buzz (`AppState.completionNotVisible`,
+  `DashItem.completionNotVisible`), because Canvas may never record
+  `submitted_at` for finished Connect work and the alarm would ring for
+  work already done; its card and plain reminders are unchanged. Waiting
+  for the reader: the remote switch (`ReaderSwitches`, Update gate below),
+  the enrichment pass (`McGrawHillEnricher`, done-state and the student's
+  own date onto the Canvas row, "in connect"), the `mh-` row predicate the
+  ask document filters out (`McGrawHillRow`), the Keychain service
+  `SessionCookieStore.Service.mcgrawHill` (cleared with Canvas) and
+  `McGrawHillReauthRule`. Recon and phone work for Marco:
+  `docs/mcgraw-hill/MARCO_BRIEFS.md`.
 - **Chrome extension** (`chrome-extension/`, started 2026-10-22; running
   in Olisa's Chrome since 2026-10-23, and by 2026-10-24 20:00 UTC it had
   uploaded 692 documents across 10 courses, 53 of them PDF `file`
@@ -1668,6 +1688,18 @@ on 2026-10-25.
 The manifest may also carry an optional `feedback` object (3.3.0+, the
 dashboard's feedback card, What the app does). It is decoded with `try?` so
 a bad one can never cost `minimumVersion`, and older builds ignore the key.
+
+Since 2026-11-02 (`feature/mcgraw-hill-reader`, not merged) it may also
+carry `"readers": {"mcgrawHill": true}`, the McGraw Hill reader's remote
+kill switch (`ReaderSwitches`). Decoded with `try?` like `feedback`, and
+read the other way round from the floor: **off unless on**. Only the JSON
+literal `true` is on; a missing key, any other value, a fetch that never
+succeeded, or a last successful fetch more than seven days old is off
+(`ReaderSwitchStore`, written by `UpdateGateStore.refresh` on every
+successful fetch, never from the cached policy). Removing the key from
+`lhf-update.json` on GitHub's web UI switches every phone off at its next
+fetch (launch, or foreground at most hourly). Olisa alone turns it on;
+nobody edits `update-manifest` for this but him.
 
 The rest of the lock, in builds after 3.2.1: below the floor `RootCore` renders
 only the wall (not an overlay, so `ContentView`, its sheets and its sync loop
@@ -2816,6 +2848,7 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
+| `feature/mcgraw-hill-reader` | **2026-11-02, off `v8`, draft PR into `v8`; never merge it from a session, the owners do.** The McGraw Hill reader's parts that need no endpoint (What the app does → McGraw Hill reader). Compiled only by the `tests` workflow on the PR. |
 | `v8-merge-marco` | **The merge of seven of Marco's branches into `origin/v8` at `63b228f`, 2026-10-23; not compiled, not pushed, not yet fast-forwarded into `v8` (the plan is `docs/MERGE_PLAN_MARCO_2026-10-23.md`).** In order: `fix/submission-status` (the module-row id veto and the Gradescope title scan), `fix/canvas-signin-bulletproof` (the analytics-cookie diagnosis and `-LHFSessionDiagnostics`; no behaviour), `v8-launch-prep` (its handoff doc only), `parked/missing-login-banner` (the banner and renew-on-open when the cookie item is gone), `parked/gradescope-unverified-submission`, `v8-server-exam-dates` (needs a `sync` deploy from `v8`, v14 or later, before the app sees anything) and `codex/automatic-canvas-login` (the PennKey saved automatically after a verified sign-in; the vault becomes a repair tool; the owner's reversal of 2026-10-23, see Stay signed in). Not merged: `parked/launch-submission-refresh` (would also post turned-in and grade notices at launch on `v8`) and `parked/ask-course-sync-fixes` (conflicts with the 2026-10-23 announcement window). Docs conflicts resolved by keeping both sides with their dates. Deno 428/0 here; Swift predicted 2723, unverified. Safe to delete once it has compiled and been fast-forwarded. |
 | `v8-merge-loud-alert` | **The merge of `origin/v8` (Olisa, 10 commits of 2026-10-19, through `55a9203`) and `origin/v8-loud-alert-actions` (Marco: `75dc7aa`, `e3f9af8`, `5cdb4cc`), 2026-10-20; fast-forwarded into `v8` at `4aab3eb` once it compiled green. Safe to delete.** Decisions made by the overseer: one Ed task pass (Marco's, given Olisa's posting day, twin check, quota stop and a summary), one past-due rule for announcement tasks (Marco's `isHiddenAnnouncementTask`; `isExpired` back to the `.event` rule), Olisa's retry cap, quota stop, back-off and summaries kept in the Canvas loop, Grade Watcher stays hidden, Marco's `project.yml` kept. Rows the brief `announcement-ed:` reading wrote stay as inert `.canvasAnnouncement` rows. |
 | `v8-launch-prep` | **Marco's launch-prep work, on `v8` at `e2672eb`** (2026-10-09/10): source links on cards, the 10-minute reminder, assignment names in reminders, the sign-up backlog rule, the real announcements list with Ed rows, the ask search / excerpt / follow-up / citation work, the copy cut, saved due-date edits, deleting your own tasks, the widget fixes and ten small fixes. It does not change sign-in or the sync: `sync()`, `syncGradescope` and `connectCanvas` are byte-identical to `e2672eb`. Compiled for iOS; only the first four items have been on a phone. Merged into `v8` on 2026-10-10 (pull request 9); kept as a branch because these notes cite it. |
@@ -2851,6 +2884,14 @@ none is a ship line.
 
 ## Known gaps
 
+- **Nothing about McGraw Hill has been seen** (2026-11-02). Neither Olisa
+  nor Marco has a Connect or ALEKS class this term, so the host list in
+  `McGrawHillTool` (`mheducation.com`, `aleks.com`, `mcgraw-hill.com`,
+  `mhcampus.com`) is the research's guess, the Sweeper exemption has
+  never met a real Connect assignment, and no reader client exists. Brief
+  1 in `docs/mcgraw-hill/MARCO_BRIEFS.md` needs a friend's real section.
+  Whether Canvas ever records `submitted_at` for finished Connect work is
+  the open question the exemption hedges.
 - **No anonymous Ed post reached the pool through the extension**
   (checked 2026-10-29: every live `ed` row, 622, has `collector =
   'phone'`). Had one, it would have stayed: `ed` is a window kind

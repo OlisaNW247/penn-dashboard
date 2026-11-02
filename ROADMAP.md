@@ -7,7 +7,8 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-10-28 on `release/3.4.0` (the 3.4.0 release, renamed
+Last updated 2026-11-02 on `feature/mcgraw-hill-reader` (the McGraw Hill
+reader decision and plan, Next). Before that, 2026-10-28 on `release/3.4.0` (the 3.4.0 release, renamed
 from 3.3.1 that afternoon when PR #16 was folded in). Before
 that, 2026-10-24 on `v8` (the tree research plan). Before that,
 2026-10-22, on `v8` (the Chrome extension). Before that,
@@ -337,6 +338,56 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   that session. It covers a remote kill switch in the update manifest
   (off unless turned on), on-device only, recon by Marco before any
   client, and compiling through the GitHub runner on a draft PR.
+
+  **Decision, 2026-11-02 (Olisa, owner): build the direct reader.** He
+  read the research's finding that McGraw Hill's terms appear to bar
+  "robots, scrapers and automatic devices" without written permission,
+  and that Apple 5.2.2 asks for permission under a service's terms, and
+  decided to build it anyway, with the risk kept controllable. Settled;
+  not to be argued again. The conditions that come with it:
+  - **A remote kill switch, off unless on.** `lhf-update.json` may carry
+    `"readers": {"mcgrawHill": true}` (`ReaderSwitches`, decoded with
+    `try?` like `feedback`, so it never costs `minimumVersion`; older
+    builds ignore it). The reader runs only while the last manifest this
+    install fetched said `true` within the last seven days
+    (`ReaderSwitchStore`). A missing key, a failed fetch on a fresh
+    install or any other value is off: the opposite of the floor's
+    fail-open rule, on purpose, so Olisa can switch every phone off from
+    GitHub's web UI with no release. Nobody but Olisa edits
+    `update-manifest`, and he turns it on when he decides.
+  - **A compile-time flag too**, `FeatureFlags.mcgrawHillReader` (false
+    until the client lands).
+  - **On the phone only.** Never uploaded, never pooled, never in the ask
+    context document (`mh-` rows are filtered out of it), no analytics.
+  - `docs/PRIVACY.md` changes in the same commit as the reader itself.
+  - Preview and demo mode never touch it (`ReaderGate`).
+
+  **The plan** (`docs/mcgraw-hill/MARCO_BRIEFS.md` holds the Mac work):
+  0. *Recon.* Neither Olisa nor Marco has a McGraw Hill class this term
+     (Olisa, 2026-11-02); he is asking a friend who does. Until someone
+     with a real section runs brief 1, nothing about McGraw Hill can be
+     verified, and no client is written before `docs/mcgraw-hill/RECON.md`
+     exists. The same friend can answer the Canvas-side question (does
+     Canvas ever record `submitted_at` for finished Connect work?).
+  1. *What needs no endpoint* (branch `feature/mcgraw-hill-reader`, draft
+     PR into `v8`, compiled by the `tests` workflow): the kill switch; a
+     Canvas assignment that launches McGraw Hill recognised by the host of
+     `external_tool_tag_attributes.url` (`McGrawHillTool`) and left out of
+     the Smooth Sweeper until a reader can say it is done (the overdue
+     trap); the enrichment pass (`McGrawHillEnricher`: done-state, the
+     student's own due date, "in connect", onto the Canvas row, no second
+     card, no change to `AssignmentDeduplicator`); a Keychain service and a
+     reauth rule (`McGrawHillReauthRule`: a real sign-in page, seen twice an
+     hour apart, never disconnects).
+  2. *The reader*, after recon: through Canvas (Ed's hidden LTI launch) if
+     the launch works without a new window, else a visible McGraw Hill
+     sign-in (Gradescope's pane). Fail soft; 15-minute cadence; any short
+     token in memory for one sync. Items Canvas does not list become
+     `.canvasAnnouncement` rows with an `mh-` sourceID (Olisa's yes,
+     2026-11-02, "once recon shows such items exist"). ALEKS after Connect
+     works, with its own recon.
+  3. *On a phone* (Marco): a DEBUG build with `-LHFForceMcGrawHillReader`,
+     so the live switch stays off.
 
 - **Improve the tree (ask)** (owner's request, 2026-10-24; the research
   is done, nothing implemented). `docs/TREE_IMPROVEMENT_PLAN.md` has the

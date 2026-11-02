@@ -108,9 +108,19 @@ extension AppState {
         // Minus the sign-up backlog (`SignupBacklog`), so the server path and the
         // on-device path (`assistantWorkItems()`) agree with the dashboard. Past-due
         // announcement finds are left out for the same reason (`isHiddenAnnouncementTask`).
+        //
+        // McGraw Hill rows (`McGrawHillRow`, `mh-`) are left out by name:
+        // the owners' rule of 2026-11-02 is that nothing read from McGraw
+        // Hill reaches the ask server, and this document is sent with every
+        // question. `assistantSourceLabel` below therefore never has to name
+        // McGraw Hill, and its `.canvasAnnouncement` case stays
+        // "announcement": that label is only ever reached by Canvas, Ed and
+        // syllabus rows. For the same rule, `isCompleted` here must never
+        // read a McGraw Hill reader's done-state; when the reader lands, its
+        // enrichment applies to the dashboard, not to this call.
         let pool = droppingSignupBacklog(
             canvasItems + gradescopeItems + moduleReadingItems + announcementItemsStillOpen()
-        )
+        ).filter { !McGrawHillRow.isRow($0) }
         let work = pool.map { assignment in
             AssistantContextDocument.WorkFacts(
                 course: assignment.course,
@@ -230,6 +240,9 @@ extension AppState {
         case .manual:             return "manual"
         case .canvasSuggestion:   return "canvas"
         case .canvasModules:      return "reading"
+        // Decided explicitly for McGraw Hill (2026-11-02): its `mh-` rows
+        // are `.canvasAnnouncement` but never reach this switch, because
+        // `assistantContextDocument` filters them out first.
         case .canvasAnnouncement: return "announcement"
         }
     }

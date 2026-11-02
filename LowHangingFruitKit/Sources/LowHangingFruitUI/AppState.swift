@@ -327,6 +327,17 @@ final class AppState: ObservableObject {
     /// partial refresh didn't cover. Read through `requiresNoSubmission(_:)`.
     @Published private(set) var noSubmissionCanvasAssignmentIDs: Set<String> = []
 
+    /// Canvas assignment ids Grade Watcher has seen launch McGraw Hill
+    /// Connect or ALEKS (`GradeItem.externalToolHost`, recognised by
+    /// `McGrawHillTool`), cached and persisted exactly as
+    /// `noSubmissionCanvasAssignmentIDs` just above is, for the same reason:
+    /// the Smooth Sweeper is planned on the first frame of a cold launch,
+    /// before any grade refresh. Updated per item by
+    /// `Self.updatedMcGrawHillToolIDs`; cleared with the Canvas session.
+    /// Read through `completionNotVisible(_:)`. Device-local, never mirrored
+    /// to iCloud, never sent anywhere.
+    @Published private(set) var mcgrawHillToolCanvasAssignmentIDs: Set<String> = []
+
     /// Settings → "ai assist". Default
     /// **true**, absent-key-means-on, same idiom as
     /// on: it runs under LHF's own
@@ -776,6 +787,9 @@ final class AppState: ObservableObject {
     /// device, not a student preference, so there is nothing here worth
     /// syncing and no harm in two devices disagreeing about it for a while.
     private static let noSubmissionCanvasAssignmentIDsKey = "noSubmissionCanvasAssignmentIDsV1"
+    /// Backs `mcgrawHillToolCanvasAssignmentIDs`. Device-local, never
+    /// mirrored, for `noSubmissionCanvasAssignmentIDsKey`'s reasons.
+    private static let mcgrawHillToolCanvasAssignmentIDsKey = "mcgrawHillToolCanvasAssignmentIDsV1"
     private static let announcementWatcherEnabledKey = "announcementWatcherEnabledV1"
     /// Backs `announcementAIEnabled`. Default-**on** now — see that
     /// property's doc comment — so, like `announcementWatcherEnabledKey`
@@ -1047,6 +1061,11 @@ final class AppState: ObservableObject {
         // cold launch, before any grade refresh has had a chance to run.
         self.noSubmissionCanvasAssignmentIDs = Set(
             UserDefaults.lhf.stringArray(forKey: Self.noSubmissionCanvasAssignmentIDsKey) ?? []
+        )
+        // Seeded for the same first-frame reason: the Sweeper is planned
+        // before any grade refresh has run.
+        self.mcgrawHillToolCanvasAssignmentIDs = Set(
+            UserDefaults.lhf.stringArray(forKey: Self.mcgrawHillToolCanvasAssignmentIDsKey) ?? []
         )
         // Both default to true (absent-key-means-on, per each property's doc
         // comment) but MUST be read back from UserDefaults.lhf rather than
@@ -4120,6 +4139,12 @@ final class AppState: ObservableObject {
         // Canvas account) would otherwise inherit and caveat incorrectly.
         noSubmissionCanvasAssignmentIDs = []
         UserDefaults.lhf.removeObject(forKey: Self.noSubmissionCanvasAssignmentIDsKey)
+        mcgrawHillToolCanvasAssignmentIDs = []
+        UserDefaults.lhf.removeObject(forKey: Self.mcgrawHillToolCanvasAssignmentIDsKey)
+        // McGraw Hill's session exists only beside a Canvas login (the reader
+        // enriches Canvas rows), so it goes with Canvas, as Ed's does.
+        SessionCookieStore.remove(service: .mcgrawHill)
+        McGrawHillReauthStore.reset()
         gradeWatcher.clearAll(keepingHistory: keepingStudentWork)
         // Drop the durable ledger's Canvas rows too, or a disconnected
         // account's unfinished work survives in the store and reappears on
@@ -8399,6 +8424,14 @@ final class AppState: ObservableObject {
                 Array(noSubmissionCanvasAssignmentIDs).sorted(),
                 forKey: Self.noSubmissionCanvasAssignmentIDsKey
             )
+            mcgrawHillToolCanvasAssignmentIDs = Self.updatedMcGrawHillToolIDs(
+                cached: mcgrawHillToolCanvasAssignmentIDs,
+                snapshots: Array(gradeWatcher.snapshots.values)
+            )
+            UserDefaults.lhf.set(
+                Array(mcgrawHillToolCanvasAssignmentIDs).sorted(),
+                forKey: Self.mcgrawHillToolCanvasAssignmentIDsKey
+            )
         }
 
         // Persist onto the ledger so the next cold launch already knows what's
@@ -8524,6 +8557,81 @@ final class AppState: ObservableObject {
             }
         }
         return next
+    }
+
+    /// The update rule for `mcgrawHillToolCanvasAssignmentIDs`: the same
+    /// per-item replace as `updatedNoSubmissionIDs`. Every item a refresh
+    /// observed enters the set when its launch host is McGraw Hill's and
+    /// leaves it otherwise; a course the refresh never touched keeps what the
+    /// cache had. Pure, so it is tested without a network or defaults.
+    static func updatedMcGrawHillToolIDs(
+        cached: Set<String>,
+        snapshots: [CourseGradeSnapshot]
+    ) -> Set<String> {
+        var next = cached
+        for snapshot in snapshots {
+            for category in snapshot.categories {
+                for item in category.items {
+                    if McGrawHillTool.isMcGrawHill(host: item.externalToolHost) {
+                        next.insert(item.id)
+                    } else {
+                        next.remove(item.id)
+                    }
+                }
+            }
+        }
+        return next
+    }
+
+    /// True for a Canvas assignment that launches McGraw Hill Connect or
+    /// ALEKS while no McGraw Hill reader is telling this phone whether it is
+    /// finished. The Smooth Sweeper skips these (`DashItem.completionNotVisible`,
+    /// `NotificationScheduler.loudAlerts`).
+    ///
+    /// **Why.** Canvas learns about Connect work by grade passback, and
+    /// nothing documents that it ever records `submitted_at` for a finished
+    /// Connect set before the due date (`reports/McGraw Hill access for
+    /// Smooth.md`). `CanvasGradesClient.indicatesSubmitted` rightly does not
+    /// count a bare score, so such a card can sit "not turned in" with the
+    /// work done, and the Sweeper would ring its alarm ten minutes before the
+    /// deadline for work the student already finished: the one failure the
+    /// alarm exists to prevent, inverted. The ordinary lead-time reminders
+    /// stay; only the alarm, which claims "you haven't turned this in", is
+    /// held back.
+    ///
+    /// The card itself is unchanged (still listed, still swipeable, still
+    /// overdue if Canvas says so), because hiding it would hide real work a
+    /// student has not done.
+    ///
+    /// When the reader exists and is on and connected for a class, its
+    /// done-state answers the question and this should return false for that
+    /// class's rows; until then (2026-11-02) no reader exists, so membership
+    /// alone decides. The wrong fix is treating the card as done: an
+    /// unfinished Connect set would then vanish into prev.
+    func completionNotVisible(_ assignment: Assignment) -> Bool {
+        guard !isUsingFixtureData,
+              let canvasID = assignment.canvasAssignmentID else { return false }
+        return mcgrawHillToolCanvasAssignmentIDs.contains(canvasID)
+    }
+
+    /// Whether the McGraw Hill reader may run right now (`ReaderGate`): the
+    /// compile-time flag, the manifest's last-known `readers.mcgrawHill`
+    /// (`ReaderSwitchStore`), never on preview or demo data, and in a DEBUG
+    /// build `-LHFForceMcGrawHillReader` in place of the manifest, so a
+    /// developer's phone can run it while the live switch stays off. No
+    /// reader reads it yet (2026-11-02); the client lands after recon.
+    var isMcGrawHillReaderOn: Bool {
+        #if DEBUG
+        let forced = ProcessInfo.processInfo.arguments.contains("-LHFForceMcGrawHillReader")
+        #else
+        let forced = false
+        #endif
+        return ReaderGate.mcgrawHill(
+            compiledIn: FeatureFlags.mcgrawHillReader,
+            switches: ReaderSwitchStore().load(),
+            debugForced: forced,
+            isUsingFixtureData: isUsingFixtureData
+        )
     }
 
     /// Pure planning for "Turned in ✓" notifications — mirrors

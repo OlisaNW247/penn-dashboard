@@ -103,6 +103,28 @@ enum FeatureFlags {
     /// Canvas resync of their course drops them.
     static let edDiscussion = true
 
+    /// **The McGraw Hill reader is compiled out: off until it exists.**
+    /// Owners' decision of 2026-11-02 (`ROADMAP.md`): build a reader of the
+    /// student's own Connect (later ALEKS) assignments, on the phone only,
+    /// although McGraw Hill's terms appear to bar automated access without
+    /// written permission. This flag is the release's hard off; the live,
+    /// no-release switch is the update manifest's `readers.mcgrawHill`
+    /// (`ReaderSwitches`), which is off unless the manifest says `true`. The
+    /// reader runs only when both say on, and never on preview or demo data
+    /// (`ReaderGate.mcgrawHill`).
+    ///
+    /// False today because there is no reader yet: only the pieces that need
+    /// no McGraw Hill endpoint are built (the switch, the Sweeper exemption,
+    /// the enrichment pass, the session store and reauth rule). Flip it to
+    /// true in the commit that lands the client, once `docs/mcgraw-hill/
+    /// RECON.md` exists; the manifest then decides, and Olisa turns it on.
+    ///
+    /// What does not depend on this flag, on purpose: the Sweeper leaving
+    /// recognised McGraw Hill assignments alone (`AppState.completionNotVisible`).
+    /// That protects students from an alarm for finished work whether or
+    /// not any reader ever ships.
+    static let mcgrawHillReader = false
+
     /// Evaluates a token-store read only while the experiment is enabled.
     /// Keeping the guard around the closure (rather than around its result)
     /// is load-bearing: Keychain reads are synchronous and must not happen at
