@@ -302,12 +302,16 @@ struct ReconnectCoverTests {
     @Test("the preview door is hidden for a signed-in install and still wired for everyone else")
     func previewDoorHiddenForSignedInInstall() throws {
         let source = Self.codeOnly(try Self.uiSource("OnboardingView.swift"))
-        let canvas = try Self.body(ofDeclaredWith: "var canvasStep: some View", in: source)
+        // The door lives on the school pane since 2026-10-30 (owner's call:
+        // the real Canvas login shows only the login), with the same gating.
+        let school = try Self.body(ofDeclaredWith: "var schoolSelectionStep: some View", in: source)
         #expect(
-            Self.collapsed(canvas).contains(
+            Self.collapsed(school).contains(
                 "if !(state.isReconnecting || state.hasCompletedOnboarding) { previewFooter }"
             )
         )
+        let canvas = try Self.body(ofDeclaredWith: "var canvasStep: some View", in: source)
+        #expect(!canvas.contains("previewFooter"))
         let footer = try Self.body(ofDeclaredWith: "var previewFooter: some View", in: source)
         #expect(footer.contains("state.enterPreviewMode()"))
     }

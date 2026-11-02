@@ -156,12 +156,6 @@ struct MissionIntroView: View {
                         detail: "Answers grounded in your actual course material.",
                         tint: .smoothGrape
                     )
-                    featureRow(
-                        icon: "chart.line.uptrend.xyaxis",
-                        title: "Grade Watcher",
-                        detail: "See where you stand while there’s time to act.",
-                        tint: .smoothTeal
-                    )
                 }
             }
             .padding(.horizontal, 24)
@@ -270,32 +264,92 @@ struct MissionIntroView: View {
     }
 }
 
+/// Illustrates the pane's headline ("We kept losing points on the easy stuff"):
+/// the chips start tossed around the pane, the way coursework feels, then
+/// settle into one ordered list, which is what Smooth does with it. The
+/// animation plays once per appearance (reset on disappear so paging back
+/// replays it) and is skipped entirely under Reduce Motion, which lands
+/// straight on the organized list rather than hiding the point of the picture.
 private struct MissionScatter: View {
-    private let chips: [(String, Color, CGFloat, CGFloat, Double)] = [
-        ("CIS 1200 · Today", .smoothTomato, 0.18, 0.20, -10),
-        ("PHYS 151 · Fri", .smoothMarigold, 0.72, 0.12, 8),
-        ("ECON 0100 · Mon", .smoothLemon, 0.86, 0.44, -7),
-        ("PSYC 1010 · Tue", .smoothTeal, 0.28, 0.48, 11),
-        ("MATH 1410 · Wed", .smoothCobalt, 0.66, 0.66, -5),
-        ("ENGL 016 · Thu", .smoothGrape, 0.08, 0.77, 7),
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var organized = false
+    @State private var gatherTask: Task<Void, Never>?
+
+    /// label, colour, scattered x/y fraction, scattered rotation, and the
+    /// chip's row in the organized list (due-day order: Today, Tue ... Mon).
+    /// Hard-coded rather than parsed from the label, so copy edits cannot
+    /// silently reorder the list.
+    private let chips: [(String, Color, CGFloat, CGFloat, Double, Int)] = [
+        ("CIS 1200 · Today", .smoothTomato, 0.18, 0.20, -10, 0),
+        ("PHYS 151 · Fri", .smoothMarigold, 0.72, 0.12, 8, 4),
+        ("ECON 0100 · Mon", .smoothLemon, 0.86, 0.44, -7, 5),
+        ("PSYC 1010 · Tue", .smoothTeal, 0.28, 0.48, 11, 1),
+        ("MATH 1410 · Wed", .smoothCobalt, 0.66, 0.66, -5, 2),
+        ("ENGL 016 · Thu", .smoothGrape, 0.08, 0.77, 7, 3),
     ]
+
+    private let verticalInset: CGFloat = 16
 
     var body: some View {
         GeometryReader { proxy in
+            let rowHeight = (proxy.size.height - verticalInset * 2) / CGFloat(chips.count)
             ZStack {
-                ForEach(Array(chips.enumerated()), id: \.offset) { _, chip in
-                    Text(chip.0)
-                        .font(.lhfMono(11, weight: .semibold))
-                        .foregroundStyle(Color.v2Ink)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(chip.1.opacity(0.22), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                        .rotationEffect(.degrees(chip.4))
-                        .position(x: chip.2 * proxy.size.width, y: chip.3 * proxy.size.height)
+                ForEach(Array(chips.enumerated()), id: \.offset) { index, chip in
+                    let parts = chip.0.components(separatedBy: " · ")
+                    let course = parts.first ?? chip.0
+                    let due = parts.count > 1 ? parts[1] : ""
+                    HStack(spacing: 0) {
+                        Text(course)
+                        // Keeps the scattered chip reading "CIS 1200 · Today";
+                        // hidden once the due day is pushed to the right edge.
+                        Text(" · ").opacity(organized ? 0 : 1)
+                        if organized { Spacer(minLength: 8) }
+                        Text(due)
+                    }
+                    .font(.lhfMono(11, weight: .semibold))
+                    .foregroundStyle(Color.v2Ink)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .frame(width: organized ? proxy.size.width * 0.78 : nil)
+                    .background(chip.1.opacity(0.22), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .rotationEffect(.degrees(organized ? 0 : chip.4))
+                    .position(
+                        x: organized ? proxy.size.width * 0.5 : chip.2 * proxy.size.width,
+                        y: organized
+                            ? verticalInset + (CGFloat(chip.5) + 0.5) * rowHeight
+                            : chip.3 * proxy.size.height
+                    )
+                    .animation(
+                        reduceMotion
+                            ? nil
+                            : .spring(response: 0.7, dampingFraction: 0.78).delay(Double(index) * 0.06),
+                        value: organized
+                    )
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .accessibilityHidden(true)
+        .onAppear {
+            gatherTask?.cancel()
+            if reduceMotion {
+                organized = true
+                return
+            }
+            // A cancellable sleeping task, not a Timer: onDisappear cancels it
+            // so nothing outlives the pane.
+            gatherTask = Task {
+                try? await Task.sleep(for: .seconds(0.9))
+                guard !Task.isCancelled else { return }
+                withAnimation(.spring(response: 0.7, dampingFraction: 0.78)) {
+                    organized = true
+                }
+            }
+        }
+        .onDisappear {
+            gatherTask?.cancel()
+            gatherTask = nil
+            organized = false
+        }
     }
 }

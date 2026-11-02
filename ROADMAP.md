@@ -620,6 +620,16 @@ Kept so nobody rebuilds them blind.
   slots, a background timeout is recorded as timed out, and the refresh
   banner needs a real verdict. 3420/328 green; proven on Marco's phone
   2026-11-02 (aged launch: `session probe: alive`, no banner).
+- **2026-10-30.** Onboarding polish (Marco, from the phone,
+  `onboarding-polish-2026-10` off `origin/v8` `019e1a5`): the intro's first
+  pane animates its scattered chips into an ordered list; Grade Watcher
+  dropped from the intro's feature list; the preview door removed from the
+  Canvas login pane (school pane keeps it) and the intro's Preview link
+  centred under Get started; the Sweeper section's parenthetical line cut;
+  the practice lesson's "You've got it" pause removed; the dashboard add
+  button is a plain plus; `DuoPasscodeAutofill` marks Duo passcode fields
+  for iOS one-time-code autofill (unverified on a device). Photos of the
+  founders on the intro were considered and dropped the same day.
 - **2026-10-23.** Automatic Penn credential saving after verified Canvas login;
   no duplicate password prompt or opt-out sheet. Added connection confirmation,
   pre-login disclosure, origin/lifetime guards, and Keychain error handling.
