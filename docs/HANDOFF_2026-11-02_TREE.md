@@ -10,6 +10,10 @@ conversation history, all compiled only on GitHub's macOS runner so far
 
 ## 1. The server prompt: a cloud session with deploys allowed (Olisa)
 
+**Done 2026-11-02 at about 17:13 UTC** (Status, below): the secret exists,
+the canary passed 20/20 and production `ask` is v13. Nothing here is left
+to run; the text stays as the record of what the deploy session was told.
+
 **Amended 2026-11-02 17:30 UTC:** the canary is dark until
 `LHF_PROBE_SECRET` exists (Status, below). Paste this into the deploy
 session first:

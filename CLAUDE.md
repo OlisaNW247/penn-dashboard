@@ -3643,8 +3643,8 @@ multiline, the greetings rotate only when idle (paused while typing or in a
 conversation, off under Reduce Motion), and answer formatting keeps
 paragraphs and source links and drops bold.
 `backend/supabase/functions/_shared/prompt.ts` asks for shorter,
-phone-readable answers without bold, which takes effect only when Olisa
-deploys the backend. `CanvasAppLink` makes assignment-card Canvas links try
+phone-readable answers without bold; live since `ask` v13 (2026-11-02,
+from `dfb9d7f`, which carries it). `CanvasAppLink` makes assignment-card Canvas links try
 the Canvas Student app (`canvas-courses://`, same host/course/item/query)
 before falling back to HTTPS; other providers and macOS keep plain links.
 
@@ -3699,8 +3699,9 @@ directly. None of them touches the update wall.
 
 Validation. The PR reported 3,388 tests / 324 suites and a device install of
 the lesson, not a live sign-in; those are the author's claims, not this
-tree's. Marco's live PennKey sign-in on his phone, the Canvas app hand-off on
-a device, and Olisa's backend deploy are still owed (`ROADMAP.md`).
+tree's. Marco's live PennKey sign-in on his phone and the Canvas app hand-off
+on a device are still owed (`ROADMAP.md`); the backend deploy happened on
+2026-11-02 (`ask` v13).
 GATES ON THE MERGED TREE (2026-10-28, 18:30–19:00 UTC, Marco's Mac, PR #16's final
 head 80079f0 plus the sign-in restoration): `swift test --no-parallel` 3399 tests /
 327 suites (+3 tests, +1 suite over the 9082182 run: `AssistantHistoryTests`), all

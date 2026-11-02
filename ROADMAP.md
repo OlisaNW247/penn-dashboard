@@ -1025,7 +1025,7 @@ control, the shared `SmoothFormShapes` cluster top-right and the rotating
 greeting centred under it. Chats are saved on the device as per-conversation
 files under Application Support, scoped by Canvas host, never synced; a
 history icon reopens them and "New chat" archives the current one. The
-matching backend prompt change takes effect only when Olisa deploys.
+matching backend prompt change is live since `ask` v13 (2026-11-02).
 Assignment-card Canvas links try the Canvas Student app before HTTPS. The
 connect flow confirms first: a "Canvas connected" page with a disabled
 "Syncing Canvas…" button over the still-mounted login pane, then Continue
@@ -1041,5 +1041,5 @@ notes): the chat-history store is rebuilt on every Ask re-render (move it into
 the `StateObject` autoclosure), the first-run "Syncing Canvas…" overlay has no
 X, the store's error banner never clears, viewing a chat bumps its date, the
 empty streaming row is saved early, saved chats carry no schema version, and
-"Add Gradescope" has no back. Open: Marco's live Penn sign-in test on his phone; Olisa's backend deploy for
-the prompt change; the Canvas app hand-off, unchecked on a device.
+"Add Gradescope" has no back. Open: Marco's live Penn sign-in test on his phone; the Canvas app hand-off,
+unchecked on a device. The prompt change went live in `ask` v13 on 2026-11-02.
