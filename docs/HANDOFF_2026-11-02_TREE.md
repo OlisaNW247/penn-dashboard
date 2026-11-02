@@ -133,3 +133,51 @@ measured ones.
   word p50 3.3 s, p95 6.1 s. Production `ask` is v13 from the same tree.
   What remains is the phone: the recording's two questions on a build of
   this tree.
+- 2026-11-02, evening, Marco's Mac (this is where the next session
+  starts). Step 2 is done except the evening check: `v8` is checked out
+  in the worktree `.claude/worktrees/v8`; `swift test --no-parallel` ran
+  alone and passed **3414/329**, the runner's count (recorded in CLAUDE.md
+  → Test baseline, `d434db8`); the iOS Debug build of `d434db8` (stamped
+  3.4.0 (17), the same as the store build) is **installed on Marco's
+  iPhone 17 Pro**, replacing the `v9` build that was there (the no-banner
+  sign-in work; `v9` and `v8` are not merged either way). On it, "Do I
+  not have cis 2620 class today?" answered from the 2026-11-01 Ed post
+  ("you do have quiz", right for that Monday). The follow-up question was
+  **not** asked and the 8 pm "what's due tomorrow" check was not done.
+  Marco's verdict on the build: the model still reasons poorly about
+  when; recent posts should come first for today/recency questions, the
+  syllabus for general ones. At his request the answer is research, not
+  code: `docs/TREE_CONTEXT_RESEARCH_2026-11-02.md` (`4905087`) maps the
+  pipeline with line references and proposes six steps in order, with a
+  frozen regression set to measure them. **Step 3 (3.4.1 (18)) has not
+  started**: no stamp, no archive, no upload; it still waits for Olisa's
+  go, and Marco should decide whether to ship before or after the
+  research is acted on.
+
+## 5. Next session (any Mac with the repo; the phone steps need Marco's)
+
+Paste:
+
+> Read CLAUDE.md top to bottom, then ROADMAP.md, then
+> `docs/HANDOFF_2026-11-02_TREE.md` → Status (last entry) and
+> `docs/TREE_CONTEXT_RESEARCH_2026-11-02.md`. Work on `v8` in the worktree
+> `.claude/worktrees/v8` (`git pull --rebase origin v8` first). Then, in
+> this order, stopping for a person's word where it says so:
+> 1. Decide with Marco and Olisa how the weekly schedule reaches the
+>    phone (sent down with the course profiles, or built from the
+>    student's class setup); the research's Part 3 needs it for steps 3
+>    and 5.
+> 2. Implement steps 1 and 2 of the research (the time-frame resolver in
+>    the Kit, per-intent freshness in `CourseSearch`), with the frozen
+>    regression set from Part 4 in `swift test`, pinned clock, no model.
+>    Compile with `swift test --no-parallel`; the count must not drop
+>    below 3414/329 without a named reason.
+> 3. Build the iOS Debug app to Marco's phone (CLAUDE.md → Commands;
+>    check it is the newest build first) and run the two phone shapes: a
+>    class-meeting question the day after a cancellation post, and
+>    "what's due tomorrow" after 8 pm Eastern. Record in CLAUDE.md →
+>    Known gaps.
+> 4. Only with Olisa's go, stamp 3.4.1 (18) and archive, check the
+>    widget's AlarmKit link is weak with `otool -L`, upload, and record it
+>    in CLAUDE.md → Release state and `docs/appstore/CHECKLIST.md` (step
+>    3 of this hand-off).
