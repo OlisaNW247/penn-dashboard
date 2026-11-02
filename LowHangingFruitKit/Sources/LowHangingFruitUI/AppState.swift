@@ -8563,8 +8563,10 @@ final class AppState: ObservableObject {
     /// per-item replace as `updatedNoSubmissionIDs`. Every item a refresh
     /// observed enters the set when its launch host is McGraw Hill's and
     /// leaves it otherwise; a course the refresh never touched keeps what the
-    /// cache had. Pure, so it is tested without a network or defaults.
-    static func updatedMcGrawHillToolIDs(
+    /// cache had. Pure, so it is tested without a network or defaults, and
+    /// `nonisolated` so a test (or any caller) need not be on the main actor
+    /// for a function that touches no state (`CLAUDE.md`, the `decidedText` trap).
+    nonisolated static func updatedMcGrawHillToolIDs(
         cached: Set<String>,
         snapshots: [CourseGradeSnapshot]
     ) -> Set<String> {
