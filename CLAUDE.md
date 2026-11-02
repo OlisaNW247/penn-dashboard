@@ -1158,9 +1158,12 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current: 3414 tests / 329 suites, all green, on `v8` at `01a71db`
-(2026-11-02, `swift test --no-parallel` on a GitHub-hosted macOS 26 runner
-with Xcode 26.6, 100.8 s; the `tests` workflow, run 41482109986).** The
+**Current: 3414 tests / 329 suites, all green, on `v8` at `b85ef70`
+(2026-11-02, `swift test --no-parallel` alone on Marco's Mac, Xcode 26.6,
+65.1 s, from a fresh `.build`; the same count the `tests` workflow reported
+at `01a71db` on the macOS 26 runner, 100.8 s, run 41482109986, and at
+`784da81` on the macOS 15 runner, run 41484871951; the commits between
+change only docs).** The
 first compile of the week's blind tree work: +15 tests and +2 suites over
 3399/327, exactly as predicted (`AskMeetingExcerptTests`,
 `ConversationHistoryTests`, two `RecencyIntentTests` cases, one request
