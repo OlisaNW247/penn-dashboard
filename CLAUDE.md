@@ -1888,8 +1888,11 @@ itself.
   that nobody approves ends `.needsDuo` (latches `autoLoginAwaitingDuo`,
   the "duo needs you" line). A background attempt never taps push
   (`backgroundDuoStandDown` and `backgroundMayUseCredentials` unchanged).
-  `-LHFForgetDuoTrust` (DEBUG) deletes Duo's cookies before the check so
-  the push path can be exercised on a phone whose trust has not lapsed.
+  `-LHFForgetDuoTrust` (DEBUG) deletes Duo's cookies and the live Canvas
+  session cookies from the hidden login store (the Keychain copy stays) and
+  skips the session probes for that launch. Combined with
+  `-LHFAgeCanvasSession`, the launch therefore performs a full PennKey +
+  Duo re-login whose push the owner must approve.
 - **When it runs (2026-11-02 spacing and keepalive).** Foreground
   attempts are spaced 90 s apart (`CanvasSessionRenewer.foregroundSpacing`);
   the one-hour `cooldown` gates the background slot only, which is what

@@ -172,8 +172,24 @@ struct SilentRenewalCoreTests {
 
     // MARK: - Duo stand-down, consecutive landings, background abort
 
+    /// The renewal bookkeeping keys `AppState.init` reads back. Cleared before
+    /// the state is built so a domain poisoned by a killed run, or by another
+    /// suite, cannot seed a foreground stamp into a test about the background
+    /// slot (the shared-`UserDefaults` trap in CLAUDE.md). The fix is on the
+    /// polluting side: the state then runs with persistence off, so nothing
+    /// here writes the shared domain.
+    private static let renewalKeys = [
+        "lastSilentRenewalAttemptAtV1", "lastSilentRenewalAttemptOutcomeV1",
+        "lastBackgroundSilentRenewalAttemptAtV1", "lastSilentRenewalSummaryV1",
+        "silentRenewalConsecutiveLandingsV1", "backgroundDuoStandDownV1",
+        "autoLoginAwaitingDuoV1", "autoLoginAwaitingDuoSinceV1",
+        "lastCredentialSubmissionAtV1", "lastFailedCredentialSubmissionAtV1",
+    ]
+
     private func makeState() -> AppState {
+        for key in Self.renewalKeys { UserDefaults.lhf.removeObject(forKey: key) }
         let state = AppState(assignmentStore: try? AssignmentStore(inMemory: true))
+        state.disablePersistenceForTesting()
         state.forceCanvasCookieSessionExpiredForTesting(false)
         return state
     }

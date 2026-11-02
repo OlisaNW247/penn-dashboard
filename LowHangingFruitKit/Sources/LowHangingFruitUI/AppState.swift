@@ -1425,12 +1425,20 @@ final class AppState: ObservableObject {
             UserDefaults.lhf.removeObject(forKey: Self.lastBackgroundSilentRenewalAttemptAtKey)
             lastBackgroundSilentRenewalAttemptAt = nil
         }
-        // `-LHFForgetDuoTrust`: deletes Duo's cookies (its remembered-device
-        // trust) from the Canvas login store before the check below runs, so
-        // the next renewal has to go through Duo's push on a phone whose
-        // 30-day trust has not lapsed. Combine with `-LHFAgeCanvasSession`.
-        // Counts only; never a cookie name, value or URL.
+        // `-LHFForgetDuoTrust`: stages a genuine PennKey + Duo re-login for
+        // this launch. It deletes Duo's cookies (the remembered-device trust)
+        // AND the live Canvas session cookies from the hidden login store
+        // (the Keychain copy is untouched, so `-LHFAgeCanvasSession` still
+        // ages it), and skips the pre-expiry and keepalive probes for this
+        // process (`debugSkipSessionProbe`), so the aged clock goes straight
+        // to a renewal that must submit the password and wait on a Duo push.
+        // Without the session cookie deletion the hidden WebView's own live
+        // `canvas_session` would redirect to the dashboard without touching
+        // PennKey. Combine with `-LHFAgeCanvasSession`. Counts only; never a
+        // cookie name, value or URL.
         if ProcessInfo.processInfo.arguments.contains("-LHFForgetDuoTrust") {
+            debugSkipSessionProbe = true
+            let canvasHost = canvasInstallation.host
             forgetDuoTrustTask = Task { @MainActor in
                 let store = LoginDataStores.canvas.httpCookieStore
                 let cookies: [HTTPCookie] = await withCheckedContinuation { continuation in
@@ -1442,7 +1450,17 @@ final class AppState: ObservableObject {
                         store.delete(cookie) { continuation.resume() }
                     }
                 }
-                DebugRenewalLog.record("forgot duo trust: removed \(duo.count) cookies")
+                let sessions = cookies.filter {
+                    CanvasSessionRenewer.isCanvasSessionCookie($0, canvasHost: canvasHost)
+                }
+                for cookie in sessions {
+                    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                        store.delete(cookie) { continuation.resume() }
+                    }
+                }
+                DebugRenewalLog.record(
+                    "forgot duo trust: removed \(duo.count) duo cookies, \(sessions.count) canvas session cookies"
+                )
             }
         }
         #endif
@@ -2634,6 +2652,17 @@ final class AppState: ObservableObject {
     /// `-LHFForgetDuoTrust`'s deletion, awaited by `performSilentCanvasRenewal`
     /// so the renewer never builds its WebView before the cookies are gone.
     private var forgetDuoTrustTask: Task<Void, Never>?
+
+    /// `-LHFForgetDuoTrust`: no session probe (pre-expiry or keepalive) for
+    /// this process, so the aged clock goes straight to the renewal.
+    private var debugSkipSessionProbe = false
+    private var loggedProbeSkip = false
+
+    private func noteProbeSkipped() {
+        guard !loggedProbeSkip else { return }
+        loggedProbeSkip = true
+        DebugRenewalLog.record("probe skipped (-LHFForgetDuoTrust)")
+    }
     #endif
 
     /// When the renewal now in flight started; nil when idle. The status
@@ -3384,6 +3413,9 @@ final class AppState: ObservableObject {
     /// the next open. The probe's own timeout is 8 seconds so a bad network
     /// cannot spend the wake's ~30.
     func runBackgroundKeepAliveProbe(now: Date = Date()) async {
+        #if DEBUG
+        if debugSkipSessionProbe { noteProbeSkipped(); return }
+        #endif
         guard renewalContext == .background, hasFinishedInit, !isUsingFixtureData,
               !canvasSessionExpired, pendingSessionProbe == nil else { return }
         guard sessionProbeForTesting != nil || !SharedDefaults.isTestRunner else { return }
@@ -3442,6 +3474,9 @@ final class AppState: ObservableObject {
     /// probes here" (which keeps today's clock behaviour).
     private var canProbeSessionOnceInitialized: Bool {
         guard renewalContext == .foreground, !isUsingFixtureData else { return false }
+        #if DEBUG
+        if debugSkipSessionProbe { noteProbeSkipped(); return false }
+        #endif
         if sessionProbeForTesting != nil { return true }
         return !SharedDefaults.isTestRunner
     }
@@ -4028,8 +4063,14 @@ final class AppState: ObservableObject {
     /// Not a parameter on any production call site; production always goes
     /// through `performSilentCanvasRenewal()`'s own `renewIfNeeded()` call.
     func noteRenewalOutcomeForTesting(_ outcome: CanvasSessionRenewer.Outcome) {
+        // Restores the PRIOR value, not `true`: a state that called
+        // `disablePersistenceForTesting()` must stay unpersisted after this
+        // seam returns, or the Duo stand-down, landing count and attempt
+        // stamps written by the refresh that follows leak into the shared
+        // defaults domain and poison the next `AppState.init`.
+        let previous = persistsConfirmedDeadFlag
         persistsConfirmedDeadFlag = false
-        defer { persistsConfirmedDeadFlag = true }
+        defer { persistsConfirmedDeadFlag = previous }
         applyRenewalOutcome(outcome)
     }
 
@@ -4357,8 +4398,9 @@ final class AppState: ObservableObject {
     }
 
     func noteCanvasSessionProvenAliveForTesting() {
+        let previous = persistsConfirmedDeadFlag
         persistsConfirmedDeadFlag = false
-        defer { persistsConfirmedDeadFlag = true }
+        defer { persistsConfirmedDeadFlag = previous }
         noteCanvasSessionProvenAlive()
     }
 
