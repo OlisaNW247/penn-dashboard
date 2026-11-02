@@ -313,6 +313,26 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
 
 ## Next: features
 
+- **McGraw Hill (Connect, ALEKS)** (owner's request, 2026-11-02; research
+  only, nothing built). `reports/McGraw Hill access for Smooth.md` is the
+  write-up, with its notes in `research_notes/McGraw Hill access for
+  Smooth/`. The verdict is in two halves:
+  - Connect work an instructor deploys into Canvas probably already
+    reaches the dashboard as ordinary Canvas cards. The risk is the done
+    state: if Canvas never records `submitted_at` for a finished Connect
+    set, the card stays overdue and the Sweeper rings for finished work.
+  - Reading McGraw Hill directly, by an LTI launch like Ed's or a login
+    like Gradescope's, runs into McGraw Hill's terms (robots and scrapers
+    barred without written permission) and Apple 5.2.2. It waits on
+    written permission or an explicit owners' decision.
+
+  First step, no code: call
+  `GET /api/v1/courses/:id/assignments?include[]=submission` on one real
+  Penn Connect section, before starting, after finishing and after the
+  due date. Also read that section's ICS event. McGraw Hill's own site
+  was blocked from the research container, so its claims rest on search
+  summaries.
+
 - **Improve the tree (ask)** (owner's request, 2026-10-24; the research
   is done, nothing implemented). `docs/TREE_IMPROVEMENT_PLAN.md` has the
   30-question set with verdicts (19 answerable today, 6 not in the pool,
