@@ -466,7 +466,21 @@ Roughly in priority order.
   on Marco's phone 2026-11-02: the class-meeting question passes (answers
   from the Ed post); the "you should've said that" follow-up was not
   asked. Next: check `history` is sent (DEBUG request body or a canary
-  probe with a `history` pair), and the context research below.
+  probe with a `history` pair).
+- **Give the tree better context to reason with** (research written
+  2026-11-02 at Marco's request, `docs/TREE_CONTEXT_RESEARCH_2026-11-02.md`).
+  His verdict on the first phone build of the tree work: recent posts
+  are not put first when the question is about today or recency, and a
+  general question should lean on the syllabus. The research maps what
+  the model is given today (no time-frame classification, no freshness
+  in scoring, the weekly schedule only in `COURSE STRUCTURE`, due-date
+  questions left to the model's date arithmetic) and proposes, in order:
+  a time-frame resolver on the phone, per-intent freshness in scoring,
+  per-intent slot budgets with the schedule and the newest post side by
+  side, dated passage labels, a computed verdict line before the
+  question, then one server prompt pass. A frozen regression set in
+  `swift test` measures it. Not started; needs a decision on how the
+  weekly schedule reaches the phone.
 - **Make ask cite titles, so more source chips link.** The server prompt
   asks for "a few words locating the fact"; a chip only links when the
   model happens to write a document's title. One prompt line, behind an
