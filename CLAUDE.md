@@ -1001,7 +1001,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
   key.
 - **McGraw Hill reader** (2026-11-02, the owners' decision in `ROADMAP.md`
   → Next; on `feature/mcgraw-hill-reader`, draft PR into `v8`, not
-  merged, never on a phone). Only the parts that need no McGraw Hill
+  merged, never on a phone; compiled green on the runner, 3458/340 at
+`d6d6e31`). Only the parts that need no McGraw Hill
   endpoint exist; no reader runs, and `FeatureFlags.mcgrawHillReader` is
   false. What is live in a build from the branch: a Canvas assignment
   whose `external_tool_tag_attributes.url` host is McGraw Hill's
@@ -1177,6 +1178,14 @@ Chromium, not by `npm test`.
 Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
+
+**On `feature/mcgraw-hill-reader` (draft PR #20): 3458 tests / 340 suites,
+all green, at `d6d6e31` (2026-11-02, the `tests` workflow, macOS 15 runner,
+run 41526392541, 94.4 s).** Exactly `v8`'s 3414/329 below plus the 44 tests
+in 11 suites of `McGrawHillReaderTests.swift`. The first attempt at
+`518932d` failed on one test-only line (a main-actor static called from a
+nonisolated suite; fixed by making the helper `nonisolated`). The iOS build
+of this branch has not been run.
 
 **Current: 3414 tests / 329 suites, all green, on `v8` at `b85ef70`
 (2026-11-02, `swift test --no-parallel` alone on Marco's Mac, Xcode 26.6,
@@ -2848,7 +2857,7 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
-| `feature/mcgraw-hill-reader` | **2026-11-02, off `v8`, draft PR into `v8`; never merge it from a session, the owners do.** The McGraw Hill reader's parts that need no endpoint (What the app does → McGraw Hill reader). Compiled only by the `tests` workflow on the PR. |
+| `feature/mcgraw-hill-reader` | **2026-11-02, off `v8`, draft PR into `v8`; never merge it from a session, the owners do.** The McGraw Hill reader's parts that need no endpoint (What the app does → McGraw Hill reader). Compiled only by the `tests` workflow on the PR: green, 3458/340 at `d6d6e31`. No iOS build yet. |
 | `v8-merge-marco` | **The merge of seven of Marco's branches into `origin/v8` at `63b228f`, 2026-10-23; not compiled, not pushed, not yet fast-forwarded into `v8` (the plan is `docs/MERGE_PLAN_MARCO_2026-10-23.md`).** In order: `fix/submission-status` (the module-row id veto and the Gradescope title scan), `fix/canvas-signin-bulletproof` (the analytics-cookie diagnosis and `-LHFSessionDiagnostics`; no behaviour), `v8-launch-prep` (its handoff doc only), `parked/missing-login-banner` (the banner and renew-on-open when the cookie item is gone), `parked/gradescope-unverified-submission`, `v8-server-exam-dates` (needs a `sync` deploy from `v8`, v14 or later, before the app sees anything) and `codex/automatic-canvas-login` (the PennKey saved automatically after a verified sign-in; the vault becomes a repair tool; the owner's reversal of 2026-10-23, see Stay signed in). Not merged: `parked/launch-submission-refresh` (would also post turned-in and grade notices at launch on `v8`) and `parked/ask-course-sync-fixes` (conflicts with the 2026-10-23 announcement window). Docs conflicts resolved by keeping both sides with their dates. Deno 428/0 here; Swift predicted 2723, unverified. Safe to delete once it has compiled and been fast-forwarded. |
 | `v8-merge-loud-alert` | **The merge of `origin/v8` (Olisa, 10 commits of 2026-10-19, through `55a9203`) and `origin/v8-loud-alert-actions` (Marco: `75dc7aa`, `e3f9af8`, `5cdb4cc`), 2026-10-20; fast-forwarded into `v8` at `4aab3eb` once it compiled green. Safe to delete.** Decisions made by the overseer: one Ed task pass (Marco's, given Olisa's posting day, twin check, quota stop and a summary), one past-due rule for announcement tasks (Marco's `isHiddenAnnouncementTask`; `isExpired` back to the `.event` rule), Olisa's retry cap, quota stop, back-off and summaries kept in the Canvas loop, Grade Watcher stays hidden, Marco's `project.yml` kept. Rows the brief `announcement-ed:` reading wrote stay as inert `.canvasAnnouncement` rows. |
 | `v8-launch-prep` | **Marco's launch-prep work, on `v8` at `e2672eb`** (2026-10-09/10): source links on cards, the 10-minute reminder, assignment names in reminders, the sign-up backlog rule, the real announcements list with Ed rows, the ask search / excerpt / follow-up / citation work, the copy cut, saved due-date edits, deleting your own tasks, the widget fixes and ten small fixes. It does not change sign-in or the sync: `sync()`, `syncGradescope` and `connectCanvas` are byte-identical to `e2672eb`. Compiled for iOS; only the first four items have been on a phone. Merged into `v8` on 2026-10-10 (pull request 9); kept as a branch because these notes cite it. |

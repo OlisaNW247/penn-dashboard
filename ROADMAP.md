@@ -379,6 +379,8 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
      card, no change to `AssignmentDeduplicator`); a Keychain service and a
      reauth rule (`McGrawHillReauthRule`: a real sign-in page, seen twice an
      hour apart, never disconnects).
+     **Green on the runner 2026-11-02** (PR #20, 3458/340 at `d6d6e31`);
+     not built for iOS, not on a phone.
   2. *The reader*, after recon: through Canvas (Ed's hidden LTI launch) if
      the launch works without a new window, else a visible McGraw Hill
      sign-in (Gradescope's pane). Fail soft; 15-minute cadence; any short
