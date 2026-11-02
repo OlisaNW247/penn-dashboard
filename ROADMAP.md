@@ -332,6 +332,11 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   due date. Also read that section's ICS event. McGraw Hill's own site
   was blocked from the research container, so its claims rest on search
   summaries.
+  **2026-11-02, later:** Olisa asked for the direct reader to be built
+  anyway. `docs/MCGRAW_HILL_READER_SESSION_PROMPT.md` is the brief for
+  that session. It covers a remote kill switch in the update manifest
+  (off unless turned on), on-device only, recon by Marco before any
+  client, and compiling through the GitHub runner on a draft PR.
 
 - **Improve the tree (ask)** (owner's request, 2026-10-24; the research
   is done, nothing implemented). `docs/TREE_IMPROVEMENT_PLAN.md` has the
