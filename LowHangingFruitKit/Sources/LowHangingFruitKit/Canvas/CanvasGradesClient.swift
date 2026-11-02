@@ -333,7 +333,8 @@ public struct CanvasGradesClient: Sendable {
             isExcused: dto.submission?.excused ?? false,
             omitFromFinalGrade: dto.omitFromFinalGrade ?? false,
             dueAt: parseDate(dto.dueAt),
-            submissionTypes: dto.submissionTypes
+            submissionTypes: dto.submissionTypes,
+            externalToolHost: McGrawHillTool.host(fromLaunchURL: dto.externalToolTag?.url)
         )
     }
 
@@ -504,6 +505,12 @@ private struct AssignmentDTO: Decodable {
     /// page over it.
     let submissionTypes: [String]?
     let submission: SubmissionDTO?
+    /// Canvas `external_tool_tag_attributes`, present on an assignment whose
+    /// submission type is `external_tool` (an LTI launch such as McGraw Hill
+    /// Connect). Only its `url` is read, and from that only the host
+    /// (`GradeItem.externalToolHost`). Lenient: any shape decodes, a bad one
+    /// to no url, so this field can never fail an assignment_groups page.
+    let externalToolTag: ExternalToolTagDTO?
 
     enum CodingKeys: String, CodingKey {
         case id, name
@@ -512,6 +519,25 @@ private struct AssignmentDTO: Decodable {
         case dueAt = "due_at"
         case submissionTypes = "submission_types"
         case submission
+        case externalToolTag = "external_tool_tag_attributes"
+    }
+}
+
+/// `external_tool_tag_attributes`, read as leniently as `FlexibleDouble`
+/// reads numbers: an object with a string `url` yields it; anything else
+/// (an array, a string, a number, a url that is not a string) yields nil
+/// rather than throwing, because the whole grade fetch, and with it every
+/// card's turned-in state, decodes in one page.
+private struct ExternalToolTagDTO: Decodable {
+    let url: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case url
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try? decoder.container(keyedBy: CodingKeys.self)
+        url = (try? container?.decodeIfPresent(String.self, forKey: .url)) ?? nil
     }
 }
 

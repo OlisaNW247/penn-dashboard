@@ -326,6 +326,15 @@ final class UpdateGateStore: ObservableObject {
             let policy = try await client.fetchPolicy()
             let fetchedAt = now()
             cache.save(policy, at: fetchedAt)
+            // The reader kill switch (`ReaderSwitches`): recorded on every
+            // successful fetch, whatever it says, so a manifest without a
+            // `readers` object records "all off". Only here, never from the
+            // cached policy at init and never on a failed fetch: the switch
+            // fails closed, so the one thing that may turn a reader on is a
+            // manifest this process has just read. Demo mode and a forced
+            // DEBUG verdict never reach this line (`neverFetches`), and
+            // `ReaderGate` keeps fixture data off on its own anyway.
+            ReaderSwitchStore(defaults: defaults).record(policy.readers, at: fetchedAt)
             lastFetchDate = fetchedAt
             let previous = verdict
             verdict = policy.verdict(forInstalled: installedVersion)

@@ -927,6 +927,9 @@ final class NotificationScheduler: ObservableObject {
     ///   prose is `.assignment` and would be the one card this alert is least
     ///   for. A feed exam is not covered by this line: Canvas knows whether it
     ///   takes a submission, and the line above already says so;
+    /// - not McGraw Hill work whose finished state Canvas cannot see
+    ///   (`DashItem.completionNotVisible`, recognised by its launch host):
+    ///   until a reader says otherwise, the alarm cannot know it is not done;
     /// - in a class whose reminders are not switched off.
     ///
     /// Those are the predicates the dashboard and the ordinary planner already
@@ -957,6 +960,12 @@ final class NotificationScheduler: ObservableObject {
             guard !item.isCompleted, let due = item.due, due > now, due <= horizon else { continue }
             guard !item.showsNothingToSubmit, !RecurringTask.isOccurrence(item.assignment) else { continue }
             guard !item.isFoundExam else { continue }
+            // McGraw Hill work Canvas cannot see finished (2026-11-02,
+            // `AppState.completionNotVisible`): the alarm says "you haven't
+            // turned this in", and for a Connect set Canvas never stamps
+            // `submitted_at` that would be a lie told to a student who did.
+            // The plain lead-time reminders still come.
+            guard !item.completionNotVisible else { continue }
             guard !sweeperExcludedCourses.contains(item.assignment.course) else { continue }
             guard prefs.notificationsEnabled(item.assignment.course) else { continue }
 

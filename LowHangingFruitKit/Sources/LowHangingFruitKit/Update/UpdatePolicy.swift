@@ -51,23 +51,30 @@ public struct UpdatePolicy: Codable, Sendable, Equatable {
     /// The optional one-time feedback card (`FeedbackNotice`). Nothing in the
     /// version verdict reads it.
     public var feedback: FeedbackNotice?
+    /// The optional remote reader switches (`ReaderSwitches`, the McGraw Hill
+    /// kill switch). Nothing in the version verdict reads it. Nil when the
+    /// manifest has no `readers` object or one that could not be read, which
+    /// every reader treats as off.
+    public var readers: ReaderSwitches?
 
     public init(
         minimumVersion: AppVersion? = nil,
         latestVersion: AppVersion? = nil,
         message: String? = nil,
         appStoreURL: URL? = nil,
-        feedback: FeedbackNotice? = nil
+        feedback: FeedbackNotice? = nil,
+        readers: ReaderSwitches? = nil
     ) {
         self.minimumVersion = minimumVersion
         self.latestVersion = latestVersion
         self.message = message
         self.appStoreURL = appStoreURL
         self.feedback = feedback
+        self.readers = readers
     }
 
     private enum CodingKeys: String, CodingKey {
-        case minimumVersion, latestVersion, message, appStoreURL, feedback
+        case minimumVersion, latestVersion, message, appStoreURL, feedback, readers
     }
 
     public init(from decoder: Decoder) throws {
@@ -92,6 +99,11 @@ public struct UpdatePolicy: Codable, Sendable, Equatable {
         // card is the least important field in the file; it is flattened to
         // nil on any problem.
         feedback = try? container.decodeIfPresent(FeedbackNotice.self, forKey: .feedback)
+        // The same `try?`, for the same reason: `readers` is a kill switch
+        // that fails closed (`ReaderSwitches`), and nothing about it may ever
+        // fail the floor open. `ReaderSwitches.init(from:)` already reads any
+        // bad shape as all off; this `try?` is the second wall.
+        readers = try? container.decodeIfPresent(ReaderSwitches.self, forKey: .readers)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -101,6 +113,7 @@ public struct UpdatePolicy: Codable, Sendable, Equatable {
         try container.encodeIfPresent(message, forKey: .message)
         try container.encodeIfPresent(appStoreURL?.absoluteString, forKey: .appStoreURL)
         try container.encodeIfPresent(feedback, forKey: .feedback)
+        try container.encodeIfPresent(readers, forKey: .readers)
     }
 
     // MARK: Sanitizers

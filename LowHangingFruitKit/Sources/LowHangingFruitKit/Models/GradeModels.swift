@@ -47,6 +47,14 @@ public struct GradeItem: Sendable, Hashable, Codable, Identifiable {
     /// Canvas `submission_types` — e.g. `["online_upload"]`, `["none"]`,
     /// `["on_paper", "online_upload"]`. nil/empty when Canvas didn't say.
     public let submissionTypes: [String]?
+    /// The host of Canvas `external_tool_tag_attributes.url`, lowercased, for
+    /// an assignment that launches an LTI tool; nil for every other
+    /// assignment. Only the host is kept (a launch URL can carry
+    /// resource-link ids and tokens). Read by `McGrawHillTool` to recognise
+    /// Connect and ALEKS work, so the Smooth Sweeper does not ring for work
+    /// Canvas cannot see finished. Optional with a default, so a snapshot
+    /// encoded before 2026-11-02 still decodes.
+    public let externalToolHost: String?
 
     public init(
         id: String,
@@ -57,7 +65,8 @@ public struct GradeItem: Sendable, Hashable, Codable, Identifiable {
         isExcused: Bool = false,
         omitFromFinalGrade: Bool = false,
         dueAt: Date? = nil,
-        submissionTypes: [String]? = nil
+        submissionTypes: [String]? = nil,
+        externalToolHost: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -68,6 +77,7 @@ public struct GradeItem: Sendable, Hashable, Codable, Identifiable {
         self.omitFromFinalGrade = omitFromFinalGrade
         self.dueAt = dueAt
         self.submissionTypes = submissionTypes
+        self.externalToolHost = externalToolHost
     }
 
     /// True when Canvas expects no online submission for this assignment —
