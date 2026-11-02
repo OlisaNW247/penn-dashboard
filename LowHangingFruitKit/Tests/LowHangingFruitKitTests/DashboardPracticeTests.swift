@@ -12,9 +12,8 @@ struct DashboardPracticeTests {
         #expect(practice.step == .previous)
         #expect(!practice.canContinue(syncReady: true))
         practice.undo()
-        #expect(practice.step == .finished)
+        #expect(practice.step == .feature(.lists))
         #expect(!practice.canContinue(syncReady: true))
-        practice.next()
         for feature in DashboardPracticeProgress.Feature.allCases {
             #expect(practice.step == .feature(feature))
             #expect(!practice.canContinue(syncReady: true))
@@ -36,10 +35,10 @@ struct DashboardPracticeTests {
         practice.undo()
         practice.complete()
         practice.undo()
-        #expect(practice.step == .finished)
+        #expect(practice.step == .feature(.lists))
         #expect(DashboardPracticeProgress().step == .todo)
     }
-    @Test("Feature explanations start only after undo and support going back")
+    @Test("Feature explanations start right after undo and support going back, never past the first")
     func featureNavigation() {
         var practice = DashboardPracticeProgress()
         practice.next()
@@ -48,13 +47,12 @@ struct DashboardPracticeTests {
         practice.next()
         #expect(practice.step == .previous)
         practice.undo()
-        practice.next()
         #expect(practice.step == .feature(.lists))
         practice.next()
         practice.back()
         #expect(practice.step == .feature(.lists))
         practice.back()
-        #expect(practice.step == .finished)
+        #expect(practice.step == .feature(.lists))
     }
 
 }

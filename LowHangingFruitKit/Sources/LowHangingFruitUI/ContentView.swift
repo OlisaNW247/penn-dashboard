@@ -474,7 +474,7 @@ struct ContentView: View {
     /// recurring task without changing the dashboard's data flow.
     private var addInlineButton: some View {
         Button { showAddSheet = true } label: {
-            Image(systemName: "calendar.badge.plus")
+            Image(systemName: "plus")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Color.smoothTomatoInk)
                 .frame(width: 38, height: 38)

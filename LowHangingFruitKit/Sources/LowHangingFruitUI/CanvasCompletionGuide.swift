@@ -29,7 +29,10 @@ struct DashboardPracticeProgress {
             }
         }
     }
-    enum Step: Equatable { case todo, previous, finished, feature(Feature), ready }
+    /// There is deliberately no step between the undo practice and the
+    /// first feature card. A "You've got it" pause lived there until
+    /// 2026-10-30; the owner cut it because it did nothing but ask for a tap.
+    enum Step: Equatable { case todo, previous, feature(Feature), ready }
     private(set) var step: Step = .todo
 
     mutating func complete() {
@@ -39,12 +42,11 @@ struct DashboardPracticeProgress {
 
     mutating func undo() {
         guard step == .previous else { return }
-        step = .finished
+        step = .feature(.lists)
     }
 
     mutating func next() {
         switch step {
-        case .finished: step = .feature(.lists)
         case .feature(let feature):
             step = Feature(rawValue: feature.rawValue + 1).map(Step.feature) ?? .ready
         default: break
@@ -53,7 +55,7 @@ struct DashboardPracticeProgress {
 
     mutating func back() {
         guard case .feature(let feature) = step else { return }
-        step = Feature(rawValue: feature.rawValue - 1).map(Step.feature) ?? .finished
+        step = Feature(rawValue: feature.rawValue - 1).map(Step.feature) ?? step
     }
 
     func canContinue(syncReady: Bool) -> Bool { step == .ready && syncReady }
@@ -87,7 +89,7 @@ struct CanvasCompletionGuide: View {
                             .modifier(FeatureHighlight(active: feature == .lists))
                         ClassFilterMenu(courses: [], selection: .constant(nil))
                             .modifier(FeatureHighlight(active: feature == .classes))
-                        Image(systemName: "calendar.badge.plus")
+                        Image(systemName: "plus")
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(Color.smoothTomatoInk)
                             .frame(width: 38, height: 38)
@@ -106,11 +108,11 @@ struct CanvasCompletionGuide: View {
                     .accessibilityElement(children: .combine)
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(feature?.title ?? (practiced ? "You’ve got it." : inPrevious ? "2 / 2 · Undo in prev" : "1 / 2 · Try a swipe"))
+                        Text(feature?.title ?? (practiced ? "Almost there." : inPrevious ? "2 / 2 · Undo in prev" : "1 / 2 · Try a swipe"))
                             .font(.lhfSerif(26))
                             .accessibilityAddTraits(.isHeader)
                             .accessibilityFocused($instructionFocused)
-                        Label(feature?.detail ?? (practiced ? "Back in todo. Tap Next to explore the app." : inPrevious ? "Swipe left or tap to undo." : "Swipe right to mark this done."),
+                        Label(feature?.detail ?? (practiced ? "Smooth is finishing your first Canvas sync." : inPrevious ? "Swipe left or tap to undo." : "Swipe right to mark this done."),
                               systemImage: feature != nil ? "info.circle" : inPrevious ? "arrow.left" : practiced ? "checkmark" : "arrow.right")
                             .font(.lhfSans(15, weight: .medium))
                             .fixedSize(horizontal: false, vertical: true)
@@ -149,7 +151,7 @@ struct CanvasCompletionGuide: View {
                     }
                     if practiced {
                         HStack {
-                            if feature != nil {
+                            if let feature, feature != .lists {
                                 Button("Back") { change { progress.back() } }
                                     .font(.lhfSans(14))
                                     .frame(minWidth: 44, minHeight: 48)
