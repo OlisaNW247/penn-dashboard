@@ -10,6 +10,27 @@ conversation history, all compiled only on GitHub's macOS runner so far
 
 ## 1. The server prompt: a cloud session with deploys allowed (Olisa)
 
+**Amended 2026-11-02 17:30 UTC:** the canary is dark until
+`LHF_PROBE_SECRET` exists (Status, below). Paste this into the deploy
+session first:
+
+> The project has no `LHF_PROBE_SECRET`, so the canary you deployed
+> answers 404 to every probe. I approve setting one. Generate a random
+> 48-hex-character value and set it with one call: `POST
+> https://api.supabase.com/v1/projects/ynetfjixexksxqrrkwsg/secrets` with
+> body `[{"name":"LHF_PROBE_SECRET","value":"<value>"}]` (the proxy injects
+> the token); print only the HTTP status, never the value, and wait 20 s.
+> Then `export LHF_PROBE_SECRET=<value>` in the same shell and run the
+> 20-run `citations` probe with tag `cite-def`. If every run answered and
+> the four counts are no worse than the 2026-10-25 baseline (6/6
+> answered, 2/2 Meyerson, 3/6 titles), deploy production `ask`
+> (`deploy-function.mjs ask`), record ask-canary v8, the new `ask`
+> version, the date and the counts in CLAUDE.md's ask section, ROADMAP →
+> Next and `docs/HANDOFF_2026-11-02_TREE.md` → Status, and push to `v8`
+> after `git pull --rebase origin v8`. Show me the secret value once in
+> chat so I can save it; never write it into the repo. Deploy nothing
+> else.
+
 Only the cloud sessions hold the Supabase Management API token (there is
 none on either Mac), and this session's permission mode refuses a
 function deploy. Open a new Claude Code session on this repository with
@@ -90,3 +111,12 @@ measured ones.
   and the archive. The workflow runs on the macOS 15 image since
   `784da81` (Xcode 26.3 there) because the macOS 26 pool queued one run
   for 15 minutes and cancelled it.
+- 2026-11-02, 17:30 UTC: Olisa's deploy session put `ask-canary` v8 live
+  (the new prompt), then its probe stopped: since the 2026-10-27 hardening
+  the canary answers 404 to any request without `x-lhf-probe-secret`
+  equal to the function secret `LHF_PROBE_SECRET`, and the project has
+  **no such secret** (the Management API lists none). So no probe can run
+  against the canary until one is set, from a session whose permission
+  mode allows a secret write (the overseer session's does not, and it
+  could not even relay the instruction). Production `ask` is not gated
+  and is unaffected. Step 1 below is amended: set the secret first.
