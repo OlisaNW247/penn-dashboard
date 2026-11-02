@@ -525,7 +525,14 @@ struct PreviousQuestionPlumbingTests {
         }
     }
 
-    @Test("backend: typing the three-turn chain keeps the third request in CIS 2400 and puts no earlier question on the wire")
+    // Until 2026-11-02 this pinned the opposite: no earlier question on the
+    // wire. The conversation's recent turns now travel as `history`
+    // (`ConversationHistory`, disclosed in `docs/PRIVACY.md`), so the pin is
+    // that they arrive as whole exchanges, in order, while `question` stays
+    // exactly what was typed and the retrieval scope still comes from the
+    // phone. The wrong fix would have been loosening the old assertion;
+    // the behaviour changed on purpose, so the test says what it is now.
+    @Test("backend: typing the three-turn chain keeps the third request in CIS 2400, carries the two earlier exchanges as history, and sends the question verbatim")
     func backendChainThroughTheConversation() async throws {
         let box = RequestBox()
         let conversation = AssistantConversation(responder: RequestBuildingResponder(box: box))
@@ -538,9 +545,16 @@ struct PreviousQuestionPlumbingTests {
         #expect(box.all.count == 3)
         #expect(FollowUpFixture.courses(in: third.excerpts) == ["CIS 2400"])
         #expect(third.question == FollowUpFixture.midterm)
-        #expect(third.history.isEmpty)
-        let json = try String(data: JSONEncoder().encode(third), encoding: .utf8) ?? ""
-        #expect(!json.contains("zxqvone") && !json.contains("zxqvtwo"))
+        #expect(third.history == [
+            AskTurn(role: "user", content: "What's the zxqvone late policy in CIS 2400?"),
+            AskTurn(role: "assistant", content: "ok"),
+            AskTurn(role: "user", content: "and for the zxqvtwo final?"),
+            AskTurn(role: "assistant", content: "ok"),
+        ])
+        #expect(!third.question.contains("zxqvone") && !third.question.contains("zxqvtwo"))
+        // The first request of a conversation still carries no history.
+        let first = try #require(box.all.first)
+        #expect(first.history.isEmpty)
     }
 
     @Test("on-device: typing the three-turn chain keeps the third answer in CIS 2400")
