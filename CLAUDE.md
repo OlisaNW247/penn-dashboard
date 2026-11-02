@@ -1036,6 +1036,14 @@ cd backend && deno task test
 cd backend && deno task check
 ```
 
+Since 2026-11-02 every push to `v8` also runs the three suites on GitHub's
+runners (`.github/workflows/tests.yml`: `swift test --no-parallel` on a
+macOS image with Xcode 26 selected, the Deno suite with `--no-check`, the
+extension's `npm test`). It is the compile gate when no Mac is at hand; it
+builds no app and signs nothing, so the iOS `xcodebuild`, the archive and
+the phone still need a Mac. Read a run with `gh api
+repos/OlisaNW247/penn-dashboard/actions/workflows/tests.yml/runs`.
+
 `xcrun devicectl` launch fails with `FBSOpenApplicationServiceErrorDomain
 error 1` when the phone is locked; the install still succeeded. The built
 product is `Smooth.app` (see the macOS naming trap below).
@@ -1150,7 +1158,21 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current: 3399 tests / 327 suites on `v8` at `8b691b6` (2026-10-29, `swift test --no-parallel`, on Olisa's Mac, 61 s): two failures and the SEC-10 known issue.** The first run of `30c4132` did not compile: `GradescopeSessionKeepTests` wrote an offset as `15 * 60` in a tuple array, typed `Int` (fixed in `8b691b6`, `hour / 4`). The two failures were `OwnTaskRemovalTests`' stop-repeating tests counting all ten weekly occurrences where the dashboard's term cap (`AppState.withinTermCap`) keeps nine once ten weeks from late October passes the term's end; the tests now count what the cap keeps (`fbb0296`). SEC-10 is fixed in the extension (`decide()` drops anonymous threads after private, as `EdThreadFilter` does) and its `withKnownIssue` wrapper removed, so `EdFilterParityTests` now asserts parity outright. Both fixes are blind until the next Mac run. The iOS Debug device build of `30c4132` succeeded and was installed on Olisa's iPhone 17 at 13:57 local the same day.
+**Current: 3414 tests / 329 suites, all green, on `v8` at `01a71db`
+(2026-11-02, `swift test --no-parallel` on a GitHub-hosted macOS 26 runner
+with Xcode 26.6, 100.8 s; the `tests` workflow, run 41482109986).** The
+first compile of the week's blind tree work: +15 tests and +2 suites over
+3399/327, exactly as predicted (`AskMeetingExcerptTests`,
+`ConversationHistoryTests`, two `RecencyIntentTests` cases, one request
+test). The first pass at `8bbbc67` failed one test, the three-turn chain
+in `FollowUpRetrievalTests`, which pinned that no earlier question is on
+the wire; the history change reverses that on purpose and the pin was
+rewritten (`01a71db`), nothing loosened. The runner is a fresh machine
+each time, so the shared-defaults trap cannot bite there; the iOS
+`xcodebuild` is still not covered, and nothing from this tree has been on
+a phone. `.github/workflows/tests.yml` runs this plus Deno (470/0) and the
+extension's suite on every push to `v8`.
+Before it: **3399 tests / 327 suites on `v8` at `8b691b6` (2026-10-29, `swift test --no-parallel`, on Olisa's Mac, 61 s): two failures and the SEC-10 known issue.** The first run of `30c4132` did not compile: `GradescopeSessionKeepTests` wrote an offset as `15 * 60` in a tuple array, typed `Int` (fixed in `8b691b6`, `hour / 4`). The two failures were `OwnTaskRemovalTests`' stop-repeating tests counting all ten weekly occurrences where the dashboard's term cap (`AppState.withinTermCap`) keeps nine once ten weeks from late October passes the term's end; the tests now count what the cap keeps (`fbb0296`). SEC-10 is fixed in the extension (`decide()` drops anonymous threads after private, as `EdThreadFilter` does) and its `withKnownIssue` wrapper removed, so `EdFilterParityTests` now asserts parity outright. Both fixes are blind until the next Mac run. The iOS Debug device build of `30c4132` succeeded and was installed on Olisa's iPhone 17 at 13:57 local the same day.
 **Current: 3373 tests / 322 suites on `release/3.3.1` (the three-way merge of `fix/duplicate-category-ids`, `origin/v8` and `claude/sharp-newton-qwv18v`, plus the notification-tap crash fix; 2026-10-27, `swift test --no-parallel`, on Marco's Mac), all green.** Deno: 614 tests, `deno task check` green. iOS Simulator and device Debug builds of the same tree succeeded; the device build (3.3.1 (17)) was installed on Marco's phone that evening, launched, refreshed once, and left no crash report. Before that: 3346 tests / 320 suites on `fix/duplicate-category-ids` (`v8` `e3a57b3` plus the A1 crash fix, Release A, and the hardening groups of 2026-10-27; 2026-10-27, `swift test --no-parallel`, on Marco's Mac, with no other worktree testing at the same time), all green.** Deno: 599 tests, `deno task check` green on Deno 2.9 (`cd backend && deno task test`). The one red test since `aeaf982`, `AskCitationLinkTests` "the encoded request is byte-identical…", was a golden re-typed by hand with `America/New_York` where `JSONEncoder` writes `America\/New_York`; the golden was fixed on 2026-10-27, not the encoder. The new tests since `e3a57b3` are `DuplicateCategoryIDTests` (17, the launch crash, `docs/LAUNCH_CRASH_2026-10-26.md`; run against the original source they die with the production trap), `ReconnectCoverTests` (two suites, the A2 cover, plus two existing tests adjusted), and `SessionCookieLiveSessionTests` (10) with three Keychain tests in `SessionCookieStoreTests` (the A3 gate).  Before that: 2907 / 262 on `v8` `e3a57b3` (2026-10-25, the audit's gate run, same one failure).
 
 **Current: 2933 tests / 264 suites, all green, on `v8` at `17ce51f` (2026-10-27, `swift test --no-parallel`, on Olisa's Mac, 15.5 s), first run.** +43 tests and +4 suites over 2890/260: the tree-plan work of 2026-10-25 (`aeaf982`: local dates in the context document and excerpt block, kept excerpt structure, `WebsiteDiscoveryBatches`, the citation contract, the retrieval bench), compiled here for the first time. The Swift tree is unchanged through `6195eae` (later commits touch only the extension, the backend and docs). The iOS build of this tree (`xcodebuild`, which `swift test` does not cover) has not been run yet.
@@ -1766,6 +1788,9 @@ client problem. The pieces, all exercised by tests:
   puts the class's newest posts from the last 14 days first, at most four,
   under a note telling the model a post overrides the schedule and that
   "no post mentions a change" is the honest form of "nothing announced".
+  Both compiled green on the GitHub runner the same day (3414/329, Test
+  baseline); neither has been on a phone, and the recording's two
+  questions are the test.
 - **What the phone holds** is the limit. Canvas Files (slides, readings,
   any PDF not named "syllabus") are not ingested by the phone, only the 40
   newest pages get their bodies, and announcements reach the pool only

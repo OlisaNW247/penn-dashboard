@@ -653,3 +653,10 @@ cd LowHangingFruitKit && LHF_BENCH_KNOWLEDGE=~/lhf-bench/course-knowledge.json s
   earlier turns for "you missed that"), which take effect only when `ask`
   is deployed. The recording is the test: the same two questions on the
   phone after the compile.
+- **2026-11-02, later.** Olisa had no Mac, so the compile moved to a
+  GitHub-hosted macOS runner (`.github/workflows/tests.yml`): the whole
+  tree of items 1 to 4 plus the recording fixes passed, 3414 tests in 329
+  suites, exactly the predicted count, on Xcode 26.6 in 101 s, after the
+  one test that pinned the old "no history on the wire" rule was rewritten
+  to the new contract. Still not on a phone, and `ask` is still not
+  deployed: `docs/HANDOFF_2026-11-02_TREE.md` says who runs what next.

@@ -83,4 +83,10 @@ measured ones.
 - 2026-11-02: written. The `tests` workflow's first macOS run failed on
   Xcode 16 (`Schema.Version` not `Sendable`); the job moved to the macOS
   26 image at `8bbbc67`. Deno 470/0 and the extension's suite are green on
-  the runners. The Swift result is recorded below when it lands.
+  the runners. **Swift: 3414 tests / 329 suites green at `01a71db`**
+  (Xcode 26.6 on the macOS 26 runner, 100.8 s), after one test that pinned
+  the old no-history rule was rewritten to the new contract. So step 2's
+  compile is done; what Marco's laptop adds is the iOS build, the phone
+  and the archive. The workflow runs on the macOS 15 image since
+  `784da81` (Xcode 26.3 there) because the macOS 26 pool queued one run
+  for 15 minutes and cancelled it.

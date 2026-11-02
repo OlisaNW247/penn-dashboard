@@ -452,7 +452,8 @@ Roughly in priority order.
   2026-11-02 at the owner's word (`ConversationHistory`, the last three
   exchanges sent as `history`, `docs/PRIVACY.md` updated); with it, a
   `.meeting` recency kind so "do I have class today" sees the newest
-  posts. Not compiled; the recording that prompted it is the test: ask
+  posts. Compiled green on the GitHub runner the same day (3414/329);
+  not on a phone. The recording that prompted it is the test: ask
   "do I not have cis 2620 class today?" with a "no lectures this week" Ed
   post in the pool, then "you should've said that".
 - **Make ask cite titles, so more source chips link.** The server prompt
