@@ -34,11 +34,14 @@ on:
 jobs:
   swift:
     name: swift test --no-parallel
-    # macOS 26 image: the package compiles against the Xcode 26 SDK on the
-    # developers' Macs, and under Xcode 16 `SwiftData.Schema.Version` is not
-    # `Sendable`, which fails `LedgerContainerError` (seen on the first run,
-    # 2026-11-02). The step below also picks the newest Xcode on the image.
-    runs-on: macos-26
+    # The package compiles against the Xcode 26 SDK on the developers' Macs,
+    # and under Xcode 16 `SwiftData.Schema.Version` is not `Sendable`, which
+    # fails `LedgerContainerError` (seen on the first run, 2026-11-02). The
+    # macOS 15 image ships Xcode 26.0.1 to 26.3 beside 16.x, and its runners
+    # start at once, where the macOS 26 pool queued a job for 15 minutes and
+    # cancelled it the same day; so the job runs here and the step below
+    # selects the newest Xcode 26 on the image.
+    runs-on: macos-15
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
