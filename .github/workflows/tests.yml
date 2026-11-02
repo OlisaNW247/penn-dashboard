@@ -34,13 +34,20 @@ on:
 jobs:
   swift:
     name: swift test --no-parallel
-    runs-on: macos-15
+    # macOS 26 image: the package compiles against the Xcode 26 SDK on the
+    # developers' Macs, and under Xcode 16 `SwiftData.Schema.Version` is not
+    # `Sendable`, which fails `LedgerContainerError` (seen on the first run,
+    # 2026-11-02). The step below also picks the newest Xcode on the image.
+    runs-on: macos-26
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain
         run: |
           sw_vers
+          ls -d /Applications/Xcode*.app
+          newest=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$newest" ]; then sudo xcode-select -s "$newest"; fi
           xcodebuild -version
           swift --version
       - name: Test
