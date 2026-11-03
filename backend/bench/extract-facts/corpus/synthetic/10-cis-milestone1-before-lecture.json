@@ -1,0 +1,112 @@
+{
+  "id": "synthetic-10",
+  "source": "synthetic",
+  "course": "CIS 2400",
+  "kind": "announcement",
+  "title": "Milestone 1 logistics",
+  "postedAt": "2026-10-29T12:02:00-04:00",
+  "text": "For the project: Milestone 1 now needs to be submitted before Tuesday's lecture rather than at midnight, since we're going to use the first part of class to swap designs and review each other's work. Late milestones can't be part of the swap, sorry. Check your repos on GitHub Classroom are pushed.\n\nProf. Ahn",
+  "index": [
+    {
+      "sourceID": "a-41801",
+      "title": "HW1: Bits and Bytes",
+      "dueAt": "2026-09-15T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41802",
+      "title": "HW2: Combinational Logic",
+      "dueAt": "2026-09-29T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41803",
+      "title": "HW3: Finite State Machines",
+      "dueAt": "2026-10-13T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41812",
+      "title": "Recitation 7",
+      "dueAt": "2026-10-16T12:00:00-04:00",
+      "kind": "event"
+    },
+    {
+      "sourceID": "a-41804",
+      "title": "Midterm Exam",
+      "dueAt": "2026-10-22T13:45:00-04:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "a-41805",
+      "title": "HW4: Assembly",
+      "dueAt": "2026-10-27T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41806",
+      "title": "Project Milestone 1",
+      "dueAt": "2026-11-03T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41807",
+      "title": "HW5: Caches",
+      "dueAt": "2026-11-10T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41809",
+      "title": "Quiz 3: Pipelining",
+      "dueAt": "2026-11-12T13:45:00-05:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "a-41808",
+      "title": "Project Milestone 2",
+      "dueAt": "2026-11-17T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41810",
+      "title": "HW6: Virtual Memory",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41811",
+      "title": "Final Project Demo",
+      "dueAt": "2026-12-08T13:45:00-05:00",
+      "kind": "event"
+    }
+  ],
+  "meetings": [
+    {
+      "weekday": "Tue",
+      "start": "13:45",
+      "end": "15:14",
+      "room": "Towne 100"
+    },
+    {
+      "weekday": "Thu",
+      "start": "13:45",
+      "end": "15:14",
+      "room": "Towne 100"
+    }
+  ],
+  "timezone": "America/New_York",
+  "now": "2026-10-29T13:04:00-04:00",
+  "expected": {
+    "facts": [
+      {
+        "type": "reschedule",
+        "target": "a-41806",
+        "title_any": [
+          "milestone 1"
+        ],
+        "due_at": "2026-11-03T13:45:00-05:00",
+        "due_tolerance": "exact",
+        "note": "'before Tuesday's lecture': Tuesday 11-03 at class start 13:45 (meeting pattern)"
+      }
+    ]
+  }
+}

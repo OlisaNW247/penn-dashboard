@@ -1,0 +1,110 @@
+{
+  "id": "synthetic-32",
+  "source": "synthetic",
+  "course": "CIS 2400",
+  "kind": "announcement",
+  "title": "HW5 and the cache project",
+  "postedAt": "2026-11-02T15:10:00-05:00",
+  "text": "Hi all,\n\nOne note for people who finished the extra-credit cache simulator project: if you did the project, you can skip HW5. Your project score will count in its place. If you did not do the project, HW5 is required as usual.\n\nI'll email the list of who completed the project later this week.\n\nProf. Ahn",
+  "index": [
+    {
+      "sourceID": "a-41801",
+      "title": "HW1: Bits and Bytes",
+      "dueAt": "2026-09-15T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41802",
+      "title": "HW2: Combinational Logic",
+      "dueAt": "2026-09-29T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41803",
+      "title": "HW3: Finite State Machines",
+      "dueAt": "2026-10-13T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41812",
+      "title": "Recitation 7",
+      "dueAt": "2026-10-16T12:00:00-04:00",
+      "kind": "event"
+    },
+    {
+      "sourceID": "a-41804",
+      "title": "Midterm Exam",
+      "dueAt": "2026-10-22T13:45:00-04:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "a-41805",
+      "title": "HW4: Assembly",
+      "dueAt": "2026-10-27T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41806",
+      "title": "Project Milestone 1",
+      "dueAt": "2026-11-03T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41807",
+      "title": "HW5: Caches",
+      "dueAt": "2026-11-10T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41809",
+      "title": "Quiz 3: Pipelining",
+      "dueAt": "2026-11-12T13:45:00-05:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "a-41808",
+      "title": "Project Milestone 2",
+      "dueAt": "2026-11-17T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41810",
+      "title": "HW6: Virtual Memory",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41811",
+      "title": "Final Project Demo",
+      "dueAt": "2026-12-08T13:45:00-05:00",
+      "kind": "event"
+    }
+  ],
+  "meetings": [
+    {
+      "weekday": "Tue",
+      "start": "13:45",
+      "end": "15:14",
+      "room": "Towne 100"
+    },
+    {
+      "weekday": "Thu",
+      "start": "13:45",
+      "end": "15:14",
+      "room": "Towne 100"
+    }
+  ],
+  "timezone": "America/New_York",
+  "now": "2026-11-02T16:12:00-05:00",
+  "expected": {
+    "facts": [
+      {
+        "type": "needs_review",
+        "target": "a-41807",
+        "title_any": [
+          "hw5"
+        ],
+        "note": "Conditional ('if you did the project, you can skip HW5'); depends on the student, flag don't apply"
+      }
+    ]
+  }
+}

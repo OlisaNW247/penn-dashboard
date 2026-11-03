@@ -1,0 +1,110 @@
+{
+  "id": "synthetic-03",
+  "source": "synthetic",
+  "course": "ECON 0100",
+  "kind": "announcement",
+  "title": "Midterm update",
+  "postedAt": "2026-10-19T11:05:00-04:00",
+  "text": "Hi everyone,\n\nI've been thinking about this since the survey results came back and I have decided to drop the midterm entirely. The Wednesday 10/28 exam is cancelled. The final exam will now count for 40% of your grade instead of 25%, and problem sets stay at 30%.\n\nI know some of you were studying already. That work isn't wasted since the final is cumulative.\n\nQuestions in office hours or on Ed.\n\nProf. Lindqvist",
+  "index": [
+    {
+      "sourceID": "c-7201",
+      "title": "Problem Set 3",
+      "dueAt": "2026-10-07T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7204",
+      "title": "Reading Response 5",
+      "dueAt": "2026-10-14T12:00:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7202",
+      "title": "Problem Set 4",
+      "dueAt": "2026-10-21T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7212",
+      "title": "Midterm Review Session",
+      "dueAt": "2026-10-26T18:00:00-04:00",
+      "kind": "event"
+    },
+    {
+      "sourceID": "c-7203",
+      "title": "Midterm",
+      "dueAt": "2026-10-28T12:00:00-04:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "c-7205",
+      "title": "Problem Set 5",
+      "dueAt": "2026-11-04T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7206",
+      "title": "Quiz 4",
+      "dueAt": "2026-11-09T12:00:00-05:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "c-7207",
+      "title": "Policy Memo: Draft",
+      "dueAt": "2026-11-16T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7208",
+      "title": "Problem Set 6",
+      "dueAt": "2026-11-18T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7210",
+      "title": "Policy Memo: Final",
+      "dueAt": "2026-12-07T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7211",
+      "title": "Final Exam",
+      "dueAt": "2026-12-17T13:00:00-05:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "c-7209",
+      "title": "Course Evaluation",
+      "kind": "module_item"
+    }
+  ],
+  "meetings": [
+    {
+      "weekday": "Mon",
+      "start": "12:00",
+      "end": "13:29",
+      "room": "Cohen 402"
+    },
+    {
+      "weekday": "Wed",
+      "start": "12:00",
+      "end": "13:29",
+      "room": "Cohen 402"
+    }
+  ],
+  "timezone": "America/New_York",
+  "now": "2026-10-19T12:07:00-04:00",
+  "expected": {
+    "facts": [
+      {
+        "type": "cancel",
+        "target": "c-7203",
+        "title_any": [
+          "midterm"
+        ],
+        "note": "'The Wednesday 10/28 exam is cancelled.'"
+      }
+    ]
+  }
+}

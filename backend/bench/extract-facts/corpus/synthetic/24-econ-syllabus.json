@@ -1,0 +1,101 @@
+{
+  "id": "synthetic-24",
+  "source": "synthetic",
+  "course": "ECON 0100",
+  "kind": "syllabus",
+  "title": "ECON 0100 Syllabus: Grading and Late Policy",
+  "postedAt": "2026-08-26T09:00:00-04:00",
+  "text": "ECON 0100: Principles of Microeconomics. Course policies\n\nGrading. Problem sets 30%, quizzes 15%, midterm 25% (Wednesday, October 28, in class), final exam 30%. Your lowest problem set is dropped.\n\nLate work. Problem sets are accepted up to 48 hours late with a 10% penalty per 24 hours. After 48 hours the assignment earns no credit. If you need more time because of illness or a family emergency, email your TA before the deadline, not after. Extensions are granted by the instructor only.\n\nAcademic integrity. You may discuss problems with classmates but must write your solutions alone and list collaborators at the top of the first page. Use of AI tools to generate solutions is not permitted.\n\nAccommodations. Contact Student Disabilities Services early in the semester so we can make arrangements. We will not be able to apply accommodations retroactively.\n\nOffice hours are posted on Canvas and may change; announcements will be made on Canvas.\n\nQuizzes. There are four short quizzes during the semester, each given in the first twenty minutes of class on a Monday. There are no make-up quizzes, but your lowest quiz is replaced by the average of the others. If you will miss a quiz for a religious observance or a university-sanctioned athletic event, tell your TA at least a week ahead so we can arrange another sitting.\n\nRegrades. Regrade requests are made through Gradescope within one week of the grade being released. Please explain, in a sentence or two, what you think was misgraded. We regrade the whole question, so your grade can go down as well as up.\n\nAttendance. Attendance is not graded, but the exams draw heavily on the in-class examples, and the students who miss several weeks tend to struggle. Lectures are not recorded in full; the slides are posted after each class.\n\nCommunication. Please use Ed for questions about the course content. Email is fine for private matters such as accommodations, but it can take up to two business days to get a reply, and it will take longer on weekends. Do not email the instructor the night before an assignment is due asking for an extension; see the late policy above.\n\nTextbook. The required text is the one on the reading list on Canvas. An older edition is fine; the chapter numbers differ by at most one and we will give both numberings when it matters.",
+  "index": [
+    {
+      "sourceID": "c-7201",
+      "title": "Problem Set 3",
+      "dueAt": "2026-10-07T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7204",
+      "title": "Reading Response 5",
+      "dueAt": "2026-10-14T12:00:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7202",
+      "title": "Problem Set 4",
+      "dueAt": "2026-10-21T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7212",
+      "title": "Midterm Review Session",
+      "dueAt": "2026-10-26T18:00:00-04:00",
+      "kind": "event"
+    },
+    {
+      "sourceID": "c-7203",
+      "title": "Midterm",
+      "dueAt": "2026-10-28T12:00:00-04:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "c-7205",
+      "title": "Problem Set 5",
+      "dueAt": "2026-11-04T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7206",
+      "title": "Quiz 4",
+      "dueAt": "2026-11-09T12:00:00-05:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "c-7207",
+      "title": "Policy Memo: Draft",
+      "dueAt": "2026-11-16T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7208",
+      "title": "Problem Set 6",
+      "dueAt": "2026-11-18T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7210",
+      "title": "Policy Memo: Final",
+      "dueAt": "2026-12-07T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7211",
+      "title": "Final Exam",
+      "dueAt": "2026-12-17T13:00:00-05:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "c-7209",
+      "title": "Course Evaluation",
+      "kind": "module_item"
+    }
+  ],
+  "meetings": [
+    {
+      "weekday": "Mon",
+      "start": "12:00",
+      "end": "13:29",
+      "room": "Cohen 402"
+    },
+    {
+      "weekday": "Wed",
+      "start": "12:00",
+      "end": "13:29",
+      "room": "Cohen 402"
+    }
+  ],
+  "timezone": "America/New_York",
+  "now": "2026-08-26T10:02:00-04:00",
+  "expected": {
+    "facts": []
+  }
+}

@@ -1,0 +1,113 @@
+{
+  "id": "synthetic-30",
+  "source": "synthetic",
+  "course": "ECON 0100",
+  "kind": "announcement",
+  "title": "Review session time",
+  "postedAt": "2026-10-20T12:50:00-04:00",
+  "text": "The Midterm Review Session originally scheduled for Monday 10/26 at 6:00 pm has moved to Tuesday, October 27 at 6:30 pm (same room, Cohen 402). The TAs got double booked. Sorry about that! Bring questions, and bring last year's practice midterm if you have printed it, we will go through a few of those problems.",
+  "index": [
+    {
+      "sourceID": "c-7201",
+      "title": "Problem Set 3",
+      "dueAt": "2026-10-07T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7204",
+      "title": "Reading Response 5",
+      "dueAt": "2026-10-14T12:00:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7202",
+      "title": "Problem Set 4",
+      "dueAt": "2026-10-21T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7212",
+      "title": "Midterm Review Session",
+      "dueAt": "2026-10-26T18:00:00-04:00",
+      "kind": "event"
+    },
+    {
+      "sourceID": "c-7203",
+      "title": "Midterm",
+      "dueAt": "2026-10-28T12:00:00-04:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "c-7205",
+      "title": "Problem Set 5",
+      "dueAt": "2026-11-04T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7206",
+      "title": "Quiz 4",
+      "dueAt": "2026-11-09T12:00:00-05:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "c-7207",
+      "title": "Policy Memo: Draft",
+      "dueAt": "2026-11-16T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7208",
+      "title": "Problem Set 6",
+      "dueAt": "2026-11-18T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7210",
+      "title": "Policy Memo: Final",
+      "dueAt": "2026-12-07T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7211",
+      "title": "Final Exam",
+      "dueAt": "2026-12-17T13:00:00-05:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "c-7209",
+      "title": "Course Evaluation",
+      "kind": "module_item"
+    }
+  ],
+  "meetings": [
+    {
+      "weekday": "Mon",
+      "start": "12:00",
+      "end": "13:29",
+      "room": "Cohen 402"
+    },
+    {
+      "weekday": "Wed",
+      "start": "12:00",
+      "end": "13:29",
+      "room": "Cohen 402"
+    }
+  ],
+  "timezone": "America/New_York",
+  "now": "2026-10-20T13:52:00-04:00",
+  "expected": {
+    "facts": [
+      {
+        "type": "reschedule",
+        "target": "c-7212",
+        "title_any": [
+          "review session"
+        ],
+        "due_at": "2026-10-27T18:30:00-04:00",
+        "due_tolerance": "day",
+        "kind": "event",
+        "note": "Event item with explicit new date and time"
+      }
+    ]
+  }
+}

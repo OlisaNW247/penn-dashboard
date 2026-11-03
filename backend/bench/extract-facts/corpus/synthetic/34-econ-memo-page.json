@@ -1,0 +1,113 @@
+{
+  "id": "synthetic-34",
+  "source": "synthetic",
+  "course": "ECON 0100",
+  "kind": "page",
+  "title": "Policy Memo Project",
+  "postedAt": "2026-10-05T10:00:00-04:00",
+  "text": "Policy Memo Project\n\nOverview. Over the second half of the semester you will write a 4-page policy memo on a market intervention of your choice (minimum wage, a carbon tax, rent control, etc.), addressed to a fictional city official.\n\nMilestones\n- Annotated outline due Monday, November 9 at 11:59 PM (submit on Canvas, one page)\n- Draft due Monday, November 16 at 11:59 PM\n- Final memo due Monday, December 7 at 11:59 PM\n\nGrading. Draft 20%, final 70%, outline 10%. Memos that skip the outline can't earn higher than a B on the final.\n\nResources. The Writing Center offers sessions for policy memos. See the sample memo under Files.",
+  "index": [
+    {
+      "sourceID": "c-7201",
+      "title": "Problem Set 3",
+      "dueAt": "2026-10-07T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7204",
+      "title": "Reading Response 5",
+      "dueAt": "2026-10-14T12:00:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7202",
+      "title": "Problem Set 4",
+      "dueAt": "2026-10-21T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7212",
+      "title": "Midterm Review Session",
+      "dueAt": "2026-10-26T18:00:00-04:00",
+      "kind": "event"
+    },
+    {
+      "sourceID": "c-7203",
+      "title": "Midterm",
+      "dueAt": "2026-10-28T12:00:00-04:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "c-7205",
+      "title": "Problem Set 5",
+      "dueAt": "2026-11-04T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7206",
+      "title": "Quiz 4",
+      "dueAt": "2026-11-09T12:00:00-05:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "c-7207",
+      "title": "Policy Memo: Draft",
+      "dueAt": "2026-11-16T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7208",
+      "title": "Problem Set 6",
+      "dueAt": "2026-11-18T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7210",
+      "title": "Policy Memo: Final",
+      "dueAt": "2026-12-07T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7211",
+      "title": "Final Exam",
+      "dueAt": "2026-12-17T13:00:00-05:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "c-7209",
+      "title": "Course Evaluation",
+      "kind": "module_item"
+    }
+  ],
+  "meetings": [
+    {
+      "weekday": "Mon",
+      "start": "12:00",
+      "end": "13:29",
+      "room": "Cohen 402"
+    },
+    {
+      "weekday": "Wed",
+      "start": "12:00",
+      "end": "13:29",
+      "room": "Cohen 402"
+    }
+  ],
+  "timezone": "America/New_York",
+  "now": "2026-10-05T11:02:00-04:00",
+  "expected": {
+    "facts": [
+      {
+        "type": "new_task",
+        "target": null,
+        "title_any": [
+          "outline"
+        ],
+        "due_at": "2026-11-09T23:59:00-05:00",
+        "due_tolerance": "day",
+        "kind": "submission",
+        "note": "Draft and final already in the index; only the outline is new"
+      }
+    ]
+  }
+}

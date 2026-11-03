@@ -1,0 +1,101 @@
+{
+  "id": "synthetic-21",
+  "source": "synthetic",
+  "course": "ECON 0100",
+  "kind": "announcement",
+  "title": "Office hours this week",
+  "postedAt": "2026-10-12T17:00:00-04:00",
+  "text": "Friendly reminder that my office hours are Tuesday 3-5 pm in McNeil 450 and the TAs hold theirs Thursday evening on Zoom. Come with questions; we're happy to go over the problem sets, the reading, or anything else about the course. The queue gets long right before things are due so don't wait.",
+  "index": [
+    {
+      "sourceID": "c-7201",
+      "title": "Problem Set 3",
+      "dueAt": "2026-10-07T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7204",
+      "title": "Reading Response 5",
+      "dueAt": "2026-10-14T12:00:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7202",
+      "title": "Problem Set 4",
+      "dueAt": "2026-10-21T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7212",
+      "title": "Midterm Review Session",
+      "dueAt": "2026-10-26T18:00:00-04:00",
+      "kind": "event"
+    },
+    {
+      "sourceID": "c-7203",
+      "title": "Midterm",
+      "dueAt": "2026-10-28T12:00:00-04:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "c-7205",
+      "title": "Problem Set 5",
+      "dueAt": "2026-11-04T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7206",
+      "title": "Quiz 4",
+      "dueAt": "2026-11-09T12:00:00-05:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "c-7207",
+      "title": "Policy Memo: Draft",
+      "dueAt": "2026-11-16T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7208",
+      "title": "Problem Set 6",
+      "dueAt": "2026-11-18T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7210",
+      "title": "Policy Memo: Final",
+      "dueAt": "2026-12-07T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-7211",
+      "title": "Final Exam",
+      "dueAt": "2026-12-17T13:00:00-05:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "c-7209",
+      "title": "Course Evaluation",
+      "kind": "module_item"
+    }
+  ],
+  "meetings": [
+    {
+      "weekday": "Mon",
+      "start": "12:00",
+      "end": "13:29",
+      "room": "Cohen 402"
+    },
+    {
+      "weekday": "Wed",
+      "start": "12:00",
+      "end": "13:29",
+      "room": "Cohen 402"
+    }
+  ],
+  "timezone": "America/New_York",
+  "now": "2026-10-12T18:02:00-04:00",
+  "expected": {
+    "facts": []
+  }
+}

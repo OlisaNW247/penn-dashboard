@@ -1,0 +1,128 @@
+{
+  "id": "synthetic-33",
+  "source": "synthetic",
+  "course": "PHYS 0151",
+  "kind": "announcement",
+  "title": "Midterm 2 logistics",
+  "postedAt": "2026-10-26T10:05:00-04:00",
+  "text": "Hi all,\n\nWe may need to move Midterm 2 to a different slot because the Friday time conflicts with a university event that the registrar just told me about. I should know by the end of the week and will confirm. For now assume it is as scheduled but keep an eye on your email.\n\nDr. Okafor",
+  "index": [
+    {
+      "sourceID": "b-5113",
+      "title": "Problem Set 3",
+      "dueAt": "2026-09-25T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5101",
+      "title": "Problem Set 4",
+      "dueAt": "2026-10-09T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5103",
+      "title": "Lab 5 Report",
+      "dueAt": "2026-10-22T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5102",
+      "title": "Problem Set 5",
+      "dueAt": "2026-10-23T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5112",
+      "title": "Lab Meeting 6",
+      "dueAt": "2026-10-29T14:00:00-04:00",
+      "kind": "event"
+    },
+    {
+      "sourceID": "b-5106",
+      "title": "Lab 6 Report",
+      "dueAt": "2026-11-05T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5104",
+      "title": "Midterm 2",
+      "dueAt": "2026-11-06T10:15:00-05:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "b-5105",
+      "title": "Problem Set 6",
+      "dueAt": "2026-11-06T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5108",
+      "title": "Lab 7 Report",
+      "dueAt": "2026-11-12T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5107",
+      "title": "Problem Set 7",
+      "dueAt": "2026-11-13T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5109",
+      "title": "Pre-lecture Reading 12",
+      "kind": "module_item"
+    },
+    {
+      "sourceID": "b-5110",
+      "title": "Problem Set 8",
+      "dueAt": "2026-11-20T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5111",
+      "title": "Final Exam",
+      "dueAt": "2026-12-15T09:00:00-05:00",
+      "kind": "quiz"
+    }
+  ],
+  "meetings": [
+    {
+      "weekday": "Mon",
+      "start": "10:15",
+      "end": "11:14",
+      "room": "DRL A8"
+    },
+    {
+      "weekday": "Wed",
+      "start": "10:15",
+      "end": "11:14",
+      "room": "DRL A8"
+    },
+    {
+      "weekday": "Fri",
+      "start": "10:15",
+      "end": "11:14",
+      "room": "DRL A8"
+    },
+    {
+      "weekday": "Thu",
+      "start": "14:00",
+      "end": "16:59",
+      "room": "DRL 2C8"
+    }
+  ],
+  "timezone": "America/New_York",
+  "now": "2026-10-26T11:07:00-04:00",
+  "expected": {
+    "facts": [
+      {
+        "type": "needs_review",
+        "target": "b-5104",
+        "title_any": [
+          "midterm 2"
+        ],
+        "note": "'We may need to move': no decision made, flag don't reschedule"
+      }
+    ]
+  }
+}

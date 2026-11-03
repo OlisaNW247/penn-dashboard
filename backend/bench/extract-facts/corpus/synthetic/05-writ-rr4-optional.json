@@ -1,0 +1,110 @@
+{
+  "id": "synthetic-05",
+  "source": "synthetic",
+  "course": "WRIT 0020",
+  "kind": "announcement",
+  "title": "Reading Response 4: optional",
+  "postedAt": "2026-10-12T08:30:00-04:00",
+  "text": "Hi writers,\n\nSince many of you are deep in revisions for the Rhetorical Analysis, Reading Response 4 is now optional. If you do it, I'll still read it and give feedback, and it can replace one lower response score. If you skip it, nothing happens to your grade. Your call.\n\nHave a great week,\nProf. Delgado",
+  "index": [
+    {
+      "sourceID": "d-9301",
+      "title": "Rhetorical Analysis: Draft",
+      "dueAt": "2026-10-08T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "d-9302",
+      "title": "Peer Review 1",
+      "dueAt": "2026-10-13T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "d-9304",
+      "title": "Reading Response 4",
+      "dueAt": "2026-10-15T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "d-9303",
+      "title": "Rhetorical Analysis: Final",
+      "dueAt": "2026-10-20T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "d-9305",
+      "title": "Annotated Bibliography",
+      "dueAt": "2026-10-29T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "d-9306",
+      "title": "Individual Conference",
+      "dueAt": "2026-11-03T14:00:00-05:00",
+      "kind": "event"
+    },
+    {
+      "sourceID": "d-9307",
+      "title": "Reading Response 5",
+      "dueAt": "2026-11-05T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "d-9308",
+      "title": "Research Proposal",
+      "dueAt": "2026-11-10T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "d-9309",
+      "title": "Peer Review 2",
+      "dueAt": "2026-11-17T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "d-9310",
+      "title": "Draft Portfolio",
+      "dueAt": "2026-12-01T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "d-9312",
+      "title": "Final Portfolio",
+      "dueAt": "2026-12-10T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "d-9311",
+      "title": "Reflective Letter",
+      "kind": "assignment"
+    }
+  ],
+  "meetings": [
+    {
+      "weekday": "Tue",
+      "start": "10:15",
+      "end": "11:44",
+      "room": "Fisher-Bennett 307"
+    },
+    {
+      "weekday": "Thu",
+      "start": "10:15",
+      "end": "11:44",
+      "room": "Fisher-Bennett 307"
+    }
+  ],
+  "timezone": "America/New_York",
+  "now": "2026-10-12T09:32:00-04:00",
+  "expected": {
+    "facts": [
+      {
+        "type": "needs_review",
+        "target": "d-9304",
+        "title_any": [
+          "reading response 4"
+        ],
+        "note": "'now optional': NOT labelled cancel. Cancel would hide the card, but the student may still want to do it (and it can replace a lower score); the ledger never removes work the student might choose to do, so the extractor should flag it for the student rather than apply it."
+      }
+    ]
+  }
+}

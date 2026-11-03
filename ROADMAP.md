@@ -339,8 +339,23 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   Two findings to act on regardless: `ask`'s model `openai/gpt-4.1-mini`
   is scheduled for shutdown by OpenAI on 2027-01-14, and the JSON
   functions run on `glm-5.3-flash`, the candidate with the weakest
-  evidence. Phase 0 is a labelled bench off two phones; four decisions
-  for Marco and Olisa are in the doc's Part 8.
+  evidence. Four decisions for Marco and Olisa are in the doc's Part 8.
+  **Phase 0 started 2026-11-03 on `phase0/extract-facts-bench`** (off
+  `v9`, Marco's go): `backend/supabase/functions/_shared/facts.ts` is the
+  `extract-facts` prompt, strict JSON schema and parser (quote-in-text,
+  target-in-index and 400-day checks reject a fact in code; 10 Deno
+  tests), `backend/bench/extract-facts/` is the bench (OpenRouter runner
+  with `json_schema` strict and `require_parameters`, a scorer with the
+  Part 7 ship gates, a converter from a phone's `course-knowledge.json`,
+  a pull script) and `corpus/synthetic/` holds 36 hand-labelled invented
+  documents covering the Addendum B cases so the bench runs before real
+  documents exist. Dry run writes all 36 request bodies; no model has
+  been called (no OpenRouter key in this shell). Left: Olisa's key (or a
+  canary route) for the four candidate models; a phone plugged in for
+  `pull-from-phone.sh` and 50-80 real documents labelled by hand; the
+  labelling calls recorded in `corpus/synthetic/MANIFEST.md` (made
+  optional is `needs_review`, a date for an undated item is `reschedule`)
+  need Marco's yes; moving `ask` off gpt-4.1-mini on the canary.
 
 - **Improve the tree (ask)** (owner's request, 2026-10-24; the research
   is done, nothing implemented). `docs/TREE_IMPROVEMENT_PLAN.md` has the

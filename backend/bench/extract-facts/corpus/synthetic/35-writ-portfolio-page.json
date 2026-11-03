@@ -1,0 +1,112 @@
+{
+  "id": "synthetic-35",
+  "source": "synthetic",
+  "course": "WRIT 0020",
+  "kind": "page",
+  "title": "Final Portfolio Guidelines",
+  "postedAt": "2026-10-05T09:00:00-04:00",
+  "text": "Final Portfolio Guidelines\n\nYour portfolio includes your two revised essays, the Research Paper and your reflective letter.\n\nDates\nDraft portfolio due Tuesday, December 1 at 11:59 PM for peer feedback.\nFinal portfolio due Thursday, December 10 at 11:59 PM.\nThe reflective letter (2 pages, addressed to me) is due Thursday, December 10 at 11:59 PM with the final portfolio.\n\nFormatting. Single PDF, 12pt, double spaced. Name your file lastname_portfolio.pdf. We are going to read these on screens so please embed your comments in the PDF.",
+  "index": [
+    {
+      "sourceID": "d-9301",
+      "title": "Rhetorical Analysis: Draft",
+      "dueAt": "2026-10-08T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "d-9302",
+      "title": "Peer Review 1",
+      "dueAt": "2026-10-13T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "d-9304",
+      "title": "Reading Response 4",
+      "dueAt": "2026-10-15T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "d-9303",
+      "title": "Rhetorical Analysis: Final",
+      "dueAt": "2026-10-20T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "d-9305",
+      "title": "Annotated Bibliography",
+      "dueAt": "2026-10-29T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "d-9306",
+      "title": "Individual Conference",
+      "dueAt": "2026-11-03T14:00:00-05:00",
+      "kind": "event"
+    },
+    {
+      "sourceID": "d-9307",
+      "title": "Reading Response 5",
+      "dueAt": "2026-11-05T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "d-9308",
+      "title": "Research Proposal",
+      "dueAt": "2026-11-10T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "d-9309",
+      "title": "Peer Review 2",
+      "dueAt": "2026-11-17T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "d-9310",
+      "title": "Draft Portfolio",
+      "dueAt": "2026-12-01T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "d-9312",
+      "title": "Final Portfolio",
+      "dueAt": "2026-12-10T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "d-9311",
+      "title": "Reflective Letter",
+      "kind": "assignment"
+    }
+  ],
+  "meetings": [
+    {
+      "weekday": "Tue",
+      "start": "10:15",
+      "end": "11:44",
+      "room": "Fisher-Bennett 307"
+    },
+    {
+      "weekday": "Thu",
+      "start": "10:15",
+      "end": "11:44",
+      "room": "Fisher-Bennett 307"
+    }
+  ],
+  "timezone": "America/New_York",
+  "now": "2026-10-05T10:02:00-04:00",
+  "expected": {
+    "facts": [
+      {
+        "type": "reschedule",
+        "target": "d-9311",
+        "title_any": [
+          "reflective letter"
+        ],
+        "due_at": "2026-12-10T23:59:00-05:00",
+        "due_tolerance": "day",
+        "note": "Index item is undated; the page gives its date"
+      }
+    ]
+  }
+}

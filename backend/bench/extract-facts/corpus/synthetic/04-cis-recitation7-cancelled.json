@@ -1,0 +1,110 @@
+{
+  "id": "synthetic-04",
+  "source": "synthetic",
+  "course": "CIS 2400",
+  "kind": "announcement",
+  "title": "Recitation this Friday",
+  "postedAt": "2026-10-14T17:48:00-04:00",
+  "text": "hi folks - this is Maya (head TA). Recitation 7 this Friday 10/16 at noon is cancelled, I'm sick and the other TAs are all covered. Go ahead and use that hour for HW4 if you want, I'll be on Ed in the evening. Back to normal next week! If you can't make the regular office hours either, just message me and we'll find a time.",
+  "index": [
+    {
+      "sourceID": "a-41801",
+      "title": "HW1: Bits and Bytes",
+      "dueAt": "2026-09-15T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41802",
+      "title": "HW2: Combinational Logic",
+      "dueAt": "2026-09-29T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41803",
+      "title": "HW3: Finite State Machines",
+      "dueAt": "2026-10-13T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41812",
+      "title": "Recitation 7",
+      "dueAt": "2026-10-16T12:00:00-04:00",
+      "kind": "event"
+    },
+    {
+      "sourceID": "a-41804",
+      "title": "Midterm Exam",
+      "dueAt": "2026-10-22T13:45:00-04:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "a-41805",
+      "title": "HW4: Assembly",
+      "dueAt": "2026-10-27T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41806",
+      "title": "Project Milestone 1",
+      "dueAt": "2026-11-03T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41807",
+      "title": "HW5: Caches",
+      "dueAt": "2026-11-10T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41809",
+      "title": "Quiz 3: Pipelining",
+      "dueAt": "2026-11-12T13:45:00-05:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "a-41808",
+      "title": "Project Milestone 2",
+      "dueAt": "2026-11-17T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41810",
+      "title": "HW6: Virtual Memory",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41811",
+      "title": "Final Project Demo",
+      "dueAt": "2026-12-08T13:45:00-05:00",
+      "kind": "event"
+    }
+  ],
+  "meetings": [
+    {
+      "weekday": "Tue",
+      "start": "13:45",
+      "end": "15:14",
+      "room": "Towne 100"
+    },
+    {
+      "weekday": "Thu",
+      "start": "13:45",
+      "end": "15:14",
+      "room": "Towne 100"
+    }
+  ],
+  "timezone": "America/New_York",
+  "now": "2026-10-14T18:50:00-04:00",
+  "expected": {
+    "facts": [
+      {
+        "type": "cancel",
+        "target": "a-41812",
+        "title_any": [
+          "recitation"
+        ],
+        "note": "'Recitation 7 this Friday 10/16 at noon is cancelled'"
+      }
+    ]
+  }
+}

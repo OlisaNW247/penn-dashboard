@@ -1,0 +1,129 @@
+{
+  "id": "synthetic-02",
+  "source": "synthetic",
+  "course": "PHYS 0151",
+  "kind": "announcement",
+  "title": "No lab this week",
+  "postedAt": "2026-10-26T15:40:00-04:00",
+  "text": "Hello 0151 folks,\n\nThere is no lab meeting this Thursday (10/29). The DRL 2C8 room is getting its air handling replaced and facilities finally scheduled it. Lab 6 will not be made up; we will drop the lowest lab grade anyway so nobody is hurt. The Lab 6 report is NOT cancelled; it still goes ahead using the data your TA will send out.\n\n- Dr. Okafor",
+  "index": [
+    {
+      "sourceID": "b-5113",
+      "title": "Problem Set 3",
+      "dueAt": "2026-09-25T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5101",
+      "title": "Problem Set 4",
+      "dueAt": "2026-10-09T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5103",
+      "title": "Lab 5 Report",
+      "dueAt": "2026-10-22T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5102",
+      "title": "Problem Set 5",
+      "dueAt": "2026-10-23T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5112",
+      "title": "Lab Meeting 6",
+      "dueAt": "2026-10-29T14:00:00-04:00",
+      "kind": "event"
+    },
+    {
+      "sourceID": "b-5106",
+      "title": "Lab 6 Report",
+      "dueAt": "2026-11-05T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5104",
+      "title": "Midterm 2",
+      "dueAt": "2026-11-06T10:15:00-05:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "b-5105",
+      "title": "Problem Set 6",
+      "dueAt": "2026-11-06T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5108",
+      "title": "Lab 7 Report",
+      "dueAt": "2026-11-12T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5107",
+      "title": "Problem Set 7",
+      "dueAt": "2026-11-13T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5109",
+      "title": "Pre-lecture Reading 12",
+      "kind": "module_item"
+    },
+    {
+      "sourceID": "b-5110",
+      "title": "Problem Set 8",
+      "dueAt": "2026-11-20T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5111",
+      "title": "Final Exam",
+      "dueAt": "2026-12-15T09:00:00-05:00",
+      "kind": "quiz"
+    }
+  ],
+  "meetings": [
+    {
+      "weekday": "Mon",
+      "start": "10:15",
+      "end": "11:14",
+      "room": "DRL A8"
+    },
+    {
+      "weekday": "Wed",
+      "start": "10:15",
+      "end": "11:14",
+      "room": "DRL A8"
+    },
+    {
+      "weekday": "Fri",
+      "start": "10:15",
+      "end": "11:14",
+      "room": "DRL A8"
+    },
+    {
+      "weekday": "Thu",
+      "start": "14:00",
+      "end": "16:59",
+      "room": "DRL 2C8"
+    }
+  ],
+  "timezone": "America/New_York",
+  "now": "2026-10-26T16:42:00-04:00",
+  "expected": {
+    "facts": [
+      {
+        "type": "cancel",
+        "target": "b-5112",
+        "title_any": [
+          "lab meeting",
+          "lab 6"
+        ],
+        "note": "'There is no lab meeting this Thursday (10/29)'; the Lab 6 report is explicitly NOT cancelled"
+      }
+    ]
+  }
+}
