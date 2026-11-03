@@ -350,12 +350,27 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   a pull script) and `corpus/synthetic/` holds 36 hand-labelled invented
   documents covering the Addendum B cases so the bench runs before real
   documents exist. Dry run writes all 36 request bodies; no model has
-  been called (no OpenRouter key in this shell). Left: Olisa's key (or a
-  canary route) for the four candidate models; a phone plugged in for
-  `pull-from-phone.sh` and 50-80 real documents labelled by hand; the
-  labelling calls recorded in `corpus/synthetic/MANIFEST.md` (made
-  optional is `needs_review`, a date for an undated item is `reschedule`)
-  need Marco's yes; moving `ask` off gpt-4.1-mini on the canary.
+  been called (no OpenRouter key in this shell). Later that day the real
+  corpus was pulled off Marco's phone (`pull-from-phone.sh`, 310 KB,
+  synced 15:22 Eastern): 85 prose documents over five classes (45 Ed,
+  22 Canvas announcements, 9 modules, 6 empty pages, 3 syllabi), all
+  labelled by hand that afternoon, 39 expected facts and 61 "nothing
+  changes" cases, under `corpus/phone/marco/` (untracked, real course
+  text) with a `LABELS-*.md` per class listing about 40 judgment calls
+  for Marco. Found on the way and fixed: a Canvas announcement can carry
+  its whole fact in the title, so quotes are checked against title plus
+  body; Ed `updatedAt` is the last edit, not the post date; the pool's
+  index is today's state and must be rewound per file to the state as of
+  the post; CIS 2620 has no `assignment` documents in the pool at all
+  (its index is reconstructed from its own Ed posts and marked so);
+  `devicectl` cannot copy root-level App Group files, so the ledger
+  stays on the phone. Zero real cancellations in the set; the wrong-
+  cancel gate rests on the synthetic cases until a real one appears.
+  Also read off the plist that day, Olisa's area, untouched: the
+  course-material sync reports `manifest failed · uploaded 0 · errors 7`
+  and the Ed task pass a 502. Left: Olisa's key (or a canary route) for
+  the four candidate models; Marco's pass over the `LABELS-*.md` calls;
+  moving `ask` off gpt-4.1-mini on the canary.
 
 - **Improve the tree (ask)** (owner's request, 2026-10-24; the research
   is done, nothing implemented). `docs/TREE_IMPROVEMENT_PLAN.md` has the
