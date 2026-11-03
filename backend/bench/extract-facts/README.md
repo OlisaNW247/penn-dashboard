@@ -72,6 +72,23 @@ also an FP and FN.
   on `target` only if the label names one. Label sparingly; it rewards flagging
   over guessing.
 
+Three rules learned on the first real corpus (Marco's phone, 2026-11-03):
+
+- **Not in the index.** A post that moves, cancels or dates work the index
+  does not hold is labelled `new_task` with the new date (kind `event` for a
+  quiz, exam or session), because the model has no target to name; a
+  cancellation of something not in the index yields no fact unless it
+  announces replacement work. The pool holds `assignment` documents only
+  where the sync got them, so real indexes are often thin.
+- **Rewind the index per file.** The pool's index is today's Canvas state,
+  but the live path runs at post time, so a file whose post moved a date
+  must carry the pre-post state: set that index entry's `dueAt` to what an
+  earlier post states, or drop it. Otherwise the model is scored wrong for
+  noticing the index already agrees with the post.
+- **Ed post dates.** `updatedAt` on an Ed document is the thread's last
+  edit; the converter reads the real date from the text's first line
+  (`posted YYYY-MM-DD`, noon New York). Phase 2 should carry `posted_at`.
+
 `due_at: null` in a label means "no date expected" and a predicted date counts
 as wrong; omit `due_at` to skip the check; `due_tolerance:"any"` also skips it.
 Day comparison uses the document's `timezone`; a bare date label is that day.

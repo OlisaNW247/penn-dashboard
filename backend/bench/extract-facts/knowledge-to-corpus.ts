@@ -36,6 +36,23 @@ interface KnowledgeBase {
   lastSyncedAt?: string | null;
 }
 
+/** An Ed document's `updatedAt` is the thread's last edit, not its post
+ *  date, and the two can be a week apart on a thread that staff keep
+ *  touching ("Midterm date -- October 12" read as posted 2026-10-19 on
+ *  Marco's phone). The collector writes the real date into the text's
+ *  first line as `posted YYYY-MM-DD`, so read it back from there. Noon in
+ *  New York rather than midnight, so a "tomorrow" in the post lands on
+ *  the right side of the DST switch either way. The proper fix is a
+ *  `posted_at` on the document (Phase 2, item 13); this is the bench's
+ *  stand-in. */
+function edPostedAt(d: { kind: string; text: string }): string | undefined {
+  if (d.kind !== "ed") return undefined;
+  const m = /posted (\d{4}-\d{2}-\d{2})/.exec(d.text.split("\n", 1)[0] ?? "");
+  if (!m) return undefined;
+  const offset = m[1] >= "2026-11-01" && m[1] < "2027-03-08" ? "-05:00" : "-04:00";
+  return `${m[1]}T12:00:00${offset}`;
+}
+
 const EMIT_KINDS = new Set(["announcement", "ed", "page", "syllabus", "module"]);
 // Calendar convention in the Kit: 1 = Sunday.
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
@@ -86,7 +103,7 @@ if (import.meta.main) {
         course: course.code,
         kind: d.kind,
         title: d.title,
-        postedAt: d.updatedAt ?? d.fetchedAt,
+        postedAt: edPostedAt(d) ?? d.updatedAt ?? d.fetchedAt,
         text: stripPersonalState(d.text),
         index,
         meetings,

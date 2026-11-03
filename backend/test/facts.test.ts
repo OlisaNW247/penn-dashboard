@@ -82,6 +82,13 @@ Deno.test("parseFacts rejects a quote that is not in the document", () => {
   assert.equal(parsed.rejected[0].reason, "quote_not_in_text");
 });
 
+Deno.test("parseFacts accepts a quote taken from the title", () => {
+  const titled = { ...doc, title: "Quiz 2 is rescheduled to Sep 23" };
+  const parsed = parseFacts(wrap([{ ...base, type: "reschedule", target: "a1", due_at: "2026-09-23T23:59:00-04:00", quote: "rescheduled to Sep 23" }]), titled);
+  assert.equal(parsed.rejected.length, 0);
+  assert.equal(parsed.facts.length, 1);
+});
+
 Deno.test("parseFacts rejects a target that is not in the index", () => {
   const parsed = parseFacts(wrap([{ ...base, type: "note", target: "zzz", title: "x", quote: "read chapter 5" }]), doc);
   assert.equal(parsed.rejected[0].reason, "unknown_target");

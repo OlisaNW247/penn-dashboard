@@ -263,7 +263,13 @@ export function parseFacts(text: string, doc: FactsDocument): ParsedFacts {
   }
 
   const result: ParsedFacts = { facts: [], rejected: [], parseFailed: false };
-  const normalizedText = normalizeForQuote(doc.text);
+  // The title is part of the document: a Canvas announcement often carries
+  // its whole point there ("Quiz 2 for Chap.22 is rescheduled to Sep 23")
+  // with a body that says only why. The prompt shows the model the title,
+  // so a quote from it is as verifiable as one from the body. Checking the
+  // body alone, the first version of this check, made that fact impossible
+  // to emit at all (found labelling Marco's PHYS 0151 posts, 2026-11-03).
+  const normalizedText = normalizeForQuote(doc.title + "\n" + doc.text);
   const knownIDs = new Set(doc.index.map((item) => item.sourceID));
   const now = new Date(doc.now).getTime();
 
