@@ -327,6 +327,21 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
 
 ## Next: features
 
+- **A composed day: facts applied to the ledger, not a list built by a
+  model** (Marco's idea, 2026-11-03; research only, nothing agreed or
+  built). `docs/DAY_PLANNER_RESEARCH_2026-11-03.md` maps what is already
+  collected (modules, pages, Planner, announcements, Ed, syllabus: nearly
+  everything), finds the gap is reconciliation (no path can say "this
+  post cancels that item"), and proposes a per-document `extract-facts`
+  pass pooled per course on the server, applied on the phone with
+  provenance, precedence and undo. Costs about $2 a month at 200
+  students pooled versus $50-1,000 for a nightly per-student re-plan.
+  Two findings to act on regardless: `ask`'s model `openai/gpt-4.1-mini`
+  is scheduled for shutdown by OpenAI on 2027-01-14, and the JSON
+  functions run on `glm-5.3-flash`, the candidate with the weakest
+  evidence. Phase 0 is a labelled bench off two phones; four decisions
+  for Marco and Olisa are in the doc's Part 8.
+
 - **Improve the tree (ask)** (owner's request, 2026-10-24; the research
   is done, nothing implemented). `docs/TREE_IMPROVEMENT_PLAN.md` has the
   30-question set with verdicts (19 answerable today, 6 not in the pool,
