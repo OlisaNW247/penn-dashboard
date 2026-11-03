@@ -354,7 +354,7 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   corpus was pulled off Marco's phone (`pull-from-phone.sh`, 310 KB,
   synced 15:22 Eastern): 85 prose documents over five classes (45 Ed,
   22 Canvas announcements, 9 modules, 6 empty pages, 3 syllabi), all
-  labelled by hand that afternoon, 39 expected facts and 61 "nothing
+  labelled by hand that afternoon, 35 expected facts and 55 "nothing
   changes" cases, under `corpus/phone/marco/` (untracked, real course
   text) with a `LABELS-*.md` per class listing about 40 judgment calls
   for Marco. Found on the way and fixed: a Canvas announcement can carry
