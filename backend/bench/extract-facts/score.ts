@@ -141,6 +141,17 @@ export function identityMatches(exp: ExpectedFact, pred: Fact): boolean {
   }
 }
 
+/** Whole calendar days between a label's date and a prediction's, in the
+ * document's zone. A label with no usable date counts every dated prediction
+ * as equally near (0), so only dated-versus-dateless is decided. */
+function dayDistance(expDue: string | null | undefined, predDue: string, timeZone: string): number {
+  if (!expDue) return 0;
+  const a = dayKey(expDue, timeZone);
+  const b = dayKey(predDue, timeZone);
+  if (a === null || b === null) return 0;
+  return Math.abs(Date.parse(a + "T00:00:00Z") - Date.parse(b + "T00:00:00Z")) / 86400000;
+}
+
 function emptyCounts(): Record<FactType, Counts> {
   const o = {} as Record<FactType, Counts>;
   for (const t of FACT_TYPES) o[t] = { tp: 0, fp: 0, fn: 0, dateWrong: 0 };
@@ -163,22 +174,42 @@ export function scoreDoc(
   for (const pass of [1, 2] as const) {
     expected.forEach((exp, ei) => {
       if (doneExp.has(ei)) return;
+      let pick = -1;
+      let pickDist = Infinity;
       for (let pi = 0; pi < parsed.facts.length; pi++) {
         if (usedPred.has(pi)) continue;
         const pred = parsed.facts[pi];
         if (!identityMatches(exp, pred)) continue;
         const ok = dateOK(exp, pred.due_at, doc.timezone);
         if (pass === 1 && !ok) continue;
-        usedPred.add(pi);
-        doneExp.add(ei);
-        if (ok) {
-          byType[exp.type].tp++;
-          pairs.push({ kind: "tp", expected: exp, predicted: pred });
-        } else {
-          byType[exp.type].dateWrong++;
-          pairs.push({ kind: "date_wrong", expected: exp, predicted: pred });
+        if (pass === 1) {
+          pick = pi;
+          break;
         }
-        return;
+        // Pass 2, several predictions share this label's identity: the first
+        // used to win, and a dateless wrong prediction listed ahead of the
+        // right one took the label, pushing the right one into FP (phone doc
+        // announcement:1949400:11298483, round 1). Prefer a prediction that
+        // has a due_at, and among those the one whose calendar day is nearest
+        // the label's; ties keep the earlier prediction.
+        const dist = pred.due_at === null ? Infinity : dayDistance(exp.due_at, pred.due_at, doc.timezone);
+        const rank = pred.due_at === null ? 1e12 : dist;
+        if (pick === -1 || rank < pickDist) {
+          pick = pi;
+          pickDist = rank;
+        }
+      }
+      if (pick === -1) return;
+      const pred = parsed.facts[pick];
+      const ok = dateOK(exp, pred.due_at, doc.timezone);
+      usedPred.add(pick);
+      doneExp.add(ei);
+      if (ok) {
+        byType[exp.type].tp++;
+        pairs.push({ kind: "tp", expected: exp, predicted: pred });
+      } else {
+        byType[exp.type].dateWrong++;
+        pairs.push({ kind: "date_wrong", expected: exp, predicted: pred });
       }
     });
   }

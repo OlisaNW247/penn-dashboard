@@ -96,18 +96,6 @@
   "timezone": "America/New_York",
   "now": "2026-10-26T14:22:00-04:00",
   "expected": {
-    "facts": [
-      {
-        "type": "new_task",
-        "target": null,
-        "title_any": [
-          "beige book"
-        ],
-        "due_at": null,
-        "due_tolerance": "any",
-        "kind": "preparation",
-        "note": "Undated reading, 'No due date on this': due_at null"
-      }
-    ]
+    "facts": []
   }
 }

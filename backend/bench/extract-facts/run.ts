@@ -38,6 +38,7 @@ interface Args {
   requireParameters: boolean;
   temperature: number;
   maxTokens: number;
+  reasoning: "low" | "medium" | "high" | null;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -50,7 +51,10 @@ function parseArgs(argv: string[]): Args {
     dryRun: false,
     requireParameters: false,
     temperature: 0,
-    maxTokens: 1500,
+    // 4000, not 1500: in round 1 gpt-6-luna spent its whole 1500-token budget
+    // on reasoning on five documents and returned empty or truncated JSON.
+    maxTokens: 4000,
+    reasoning: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
@@ -67,13 +71,19 @@ function parseArgs(argv: string[]): Args {
       case "--concurrency": a.concurrency = Math.max(1, Number(v())); break;
       case "--temperature": a.temperature = Number(v()); break;
       case "--max-tokens": a.maxTokens = Number(v()); break;
+      case "--reasoning": {
+        const x = v();
+        if (x !== "low" && x !== "medium" && x !== "high") throw new Error("--reasoning must be low|medium|high");
+        a.reasoning = x;
+        break;
+      }
       case "--dry-run": a.dryRun = true; break;
       case "--require-parameters": a.requireParameters = true; break;
       default: throw new Error(`unknown argument ${k}`);
     }
   }
   if (!a.corpus || !a.tag || a.models.length === 0) {
-    throw new Error("usage: run.ts --corpus <dir> --tag <name> --model <id> [--model <id> ...] [--limit N] [--concurrency 4] [--dry-run] [--temperature 0] [--max-tokens 1500]");
+    throw new Error("usage: run.ts --corpus <dir> --tag <name> --model <id> [--model <id> ...] [--limit N] [--concurrency 4] [--dry-run] [--temperature 0] [--max-tokens 4000] [--reasoning low|medium|high]");
   }
   return a;
 }
@@ -116,6 +126,7 @@ function requestBody(model: string, doc: FactsDocument, args: Args) {
     messages: [{ role: "system", content: system }, { role: "user", content: user }],
     temperature: args.temperature,
     max_tokens: args.maxTokens,
+    ...(args.reasoning ? { reasoning: { effort: args.reasoning } } : {}),
     response_format: {
       type: "json_schema",
       json_schema: { name: "facts", strict: true, schema: FACTS_JSON_SCHEMA },

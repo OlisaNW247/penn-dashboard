@@ -124,6 +124,11 @@
           "problems 1-4"
         ],
         "note": "'only problems 1-4'; due date explicitly unchanged"
+      },
+      {
+        "type": "scope_change",
+        "target": "b-5105",
+        "note": "problems 5-6 roll into PS6"
       }
     ]
   }

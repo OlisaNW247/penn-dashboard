@@ -76,22 +76,23 @@ export const FACTS_INSTRUCTIONS: string = [
   + `page, a syllabus or a module -- against an ITEM INDEX of the course's `
   + `current work, and emit zero or more facts about what that document `
   + `says the STUDENT must now do, or no longer must do. Every fact carries `
-  + `a verbatim quote from the document that supports it.`,
+  + `a verbatim quote from the document that supports it. The title is part `
+  + `of the document: a fact stated only in the title is a fact, and its `
+  + `quote may come from the title.`,
 
   `Each fact has a "type":\n`
-  + `- "new_task": work the document asks of the student that is NOT in the `
-  + `index. Give a short imperative "title" (at most 80 characters), a `
-  + `"kind" and a "due_at" (or null).\n`
+  + `- "new_task": work the student must do that is NOT in the index. Give a `
+  + `short imperative "title" (at most 80 characters), a "kind" and a `
+  + `"due_at" (or null).\n`
   + `- "cancel": an indexed item no longer needs doing. "target" is required.\n`
   + `- "reschedule": an indexed item has a new date. "target" is required and `
   + `"due_at" is the NEW date.\n`
-  + `- "scope_change": an indexed item's scope changes, e.g. "only problems `
-  + `1-4". "target" is required and the change goes in "title".\n`
+  + `- "scope_change": assigned work whose requirement shrinks or grows, e.g. `
+  + `"only problems 1-4". "target" is required and the change goes in "title".\n`
   + `- "note": information attached to an indexed item, e.g. "covers `
   + `chapters 5-6". "target" is required and the note goes in "title".\n`
-  + `- "needs_review": ambiguous or conditional, e.g. "skip HW5 if you did `
-  + `the project". It is shown to the student and never applied. "target" is `
-  + `optional.`,
+  + `- "needs_review": an indexed item put in doubt. It is shown to the `
+  + `student and never applied. "target" is optional.`,
 
   `Name a target ONLY by its sourceID exactly as it appears in the ITEM `
   + `INDEX, never by title. Never invent an item the index already has -- use `
@@ -102,23 +103,63 @@ export const FACTS_INSTRUCTIONS: string = [
   + `posted", "I uploaded the recording", "we will cover chapter 6 next `
   + `week" -- is informational and yields no fact, even when it names course `
   + `material. A room, time or office-hours change yields no fact either `
-  + `unless it moves or cancels an indexed item. A later correction post `
-  + `supersedes an earlier one, but that is handled elsewhere: extract only `
-  + `what THIS document says.`,
+  + `unless it moves or cancels an indexed item. "X is posted" or `
+  + `"released" for work the index already holds, or that matches an indexed `
+  + `item by number or name, yields no fact. Extract only what THIS document `
+  + `says.`,
+
+  `A new_task needs a requirement and a date: emit it only for something the `
+  + `instructor requires students to do that has a stated date, or a date `
+  + `resolvable from the posted date and CLASS MEETINGS. Study advice, "I `
+  + `recommend", "feel free", "it would be great if", optional reading, `
+  + `optional dated events (a career talk, a forum), social threads, and `
+  + `account or admin chores ("accept the invitation", "sign up for the `
+  + `tool") yield no fact. Optional work that earns credit with a stated date `
+  + `(a resubmission window, a redemption session the instructor asks `
+  + `students to attend) is a new_task, kind "submission" or "event", with `
+  + `"optional" at the start of its title. Regrade, appeal and score-posting `
+  + `logistics, and advice conditional on the student's own score, yield no `
+  + `fact.`,
+
+  `Grade weights, late or submission policy, and other standing rules yield `
+  + `no fact; a post that restates an indexed item's existing due date yields `
+  + `no fact.`,
+
+  `When the title or text names an indexed item and gives or resolves a `
+  + `date, emit reschedule with that date rather than needs_review. A change `
+  + `for one section or group only, or an indexed item made optional, is `
+  + `needs_review on that item, never reschedule and never cancel. Use `
+  + `needs_review only for an indexed item whose date, scope or status the `
+  + `document puts in doubt without saying how (a holiday collision, a `
+  + `section-only change, "we may move the midterm", "now optional"). A `
+  + `cancellation or "no quiz on X" for something not in the index, a `
+  + `conditional poll, or a contradiction between a stated weekday and date, `
+  + `yields no fact.`,
+
+  `What an exam or quiz covers or excludes ("covers chapters 5-6", "will not `
+  + `test X"), stated for the first time, is a note on that item; `
+  + `scope_change is only for assigned work whose requirement shrinks or `
+  + `grows (problems dropped or added, a different venue). A note must add `
+  + `information about an indexed item not already captured by the `
+  + `document's primary fact: coverage, format, allowed materials ("bring a `
+  + `calculator"), location. Restatements, reminders to do the item, grade `
+  + `releases, FAQs, tips, reasons for a change, and Q&A confirmations are `
+  + `not notes. At most one note per target per document.`,
 
   `"due_at" is an ISO 8601 datetime with a timezone, or null. Resolve a `
   + `relative date ("Friday", "before Tuesday's class") from the document's `
   + `posted date, the weekday it gives, and the CLASS MEETINGS block when `
   + `present; "before class" or "in class" means that day's class start `
-  + `time, not 23:59. When you are not sure of a date, set "due_at" to null `
-  + `rather than guess, and do no calendar arithmetic beyond that. "kind" is `
+  + `time. When the day is known (stated, or "today", "tomorrow" or a `
+  + `weekday resolved from the posted date) and no time is stated, "due_at" `
+  + `is 23:59 in the document's timezone on that day; never null for a known `
+  + `day. Null only when no day is stated or resolvable. "kind" is `
   + `"submission" for anything handed in or completed on a platform, `
   + `"preparation" for work with nothing to hand in (read, watch, review, `
   + `bring), and "event" for a dated happening such as an exam or review `
   + `session.`,
 
-  `When a post is ambiguous, prefer a "needs_review" fact over a guess. When `
-  + `nothing in the document changes the student's work, return an empty `
+  `When nothing in the document changes the student's work, return an empty `
   + `"facts" list.`,
 
   `The "quote" must be copied exactly from the document, character for `

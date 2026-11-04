@@ -98,7 +98,7 @@
   "expected": {
     "facts": [
       {
-        "type": "scope_change",
+        "type": "note",
         "target": "a-41805",
         "title_any": [
           "hw4",

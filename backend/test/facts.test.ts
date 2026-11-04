@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import {
   buildFactsMessages,
+  FACTS_INSTRUCTIONS,
   FACTS_JSON_SCHEMA,
   type FactsDocument,
   parseFacts,
@@ -45,6 +46,12 @@ Deno.test("FACTS_JSON_SCHEMA is strict at every object level", () => {
   };
   walk(FACTS_JSON_SCHEMA);
   assert.equal(objects, 2);
+});
+
+Deno.test("FACTS_INSTRUCTIONS keeps the rules the bench taught", () => {
+  for (const word of ["23:59", "optional", "covers", "title"]) {
+    assert.ok(FACTS_INSTRUCTIONS.includes(word), `missing "${word}"`);
+  }
 });
 
 Deno.test("buildFactsMessages renders weekday, index, meetings and document", () => {

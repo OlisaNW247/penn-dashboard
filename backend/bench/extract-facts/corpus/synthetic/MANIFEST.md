@@ -6,6 +6,7 @@ Labelling decisions:
 - "made optional" (05) is labelled `needs_review`, not `cancel`: `cancel` would hide a card the student may still want to do (the post says it can replace a lower score), and the ledger never loses work the student might choose to do. The extractor should flag it.
 - Relative days resolve from postedAt and the meeting pattern; `due_tolerance` is `day` unless the post names a class start (`exact`). No-time dates default to 23:59.
 - A moved/cancelled class meeting that is not an index item (the 10:15 slot in 36) is deliberately left unlabelled.
+- An undated, soft reading ask ("if you've got a free hour", no due date) is not a task (17 is labelled empty, round 1): a card with no date and no obligation is noise on the dashboard.
 - Ed documents (23, 36) put the thread in `text` as plain text, replies included.
 
 | file | course | kind | case | expected fact types |
@@ -21,12 +22,12 @@ Labelling decisions:
 | 09-econ-ps4-correction.json | ECON 0100 | announcement | correction supersedes an earlier move | reschedule |
 | 10-cis-milestone1-before-lecture.json | CIS 2400 | announcement | 'before Tuesday's lecture' (exact start) | reschedule |
 | 11-phys-ps5-only-1-4.json | PHYS 0151 | announcement | scope: only problems 1-4 | scope_change |
-| 12-cis-hw4-gradescope.json | CIS 2400 | announcement | scope: Gradescope, not Canvas | scope_change |
+| 12-cis-hw4-gradescope.json | CIS 2400 | announcement | submission venue: Gradescope, not Canvas | note |
 | 13-econ-quiz4-covers.json | ECON 0100 | announcement | note: quiz covers chapters 5-6 | note |
 | 14-cis-hw6-dated.json | CIS 2400 | announcement | date given for an index item that is undated | reschedule |
 | 15-cis-read-before-tuesday.json | CIS 2400 | announcement | prep task before Tuesday (class start) | new_task |
 | 16-writ-feedback-survey.json | WRIT 0020 | announcement | survey by a date, 23:59 | new_task |
-| 17-econ-undated-reading.json | ECON 0100 | announcement | undated reading (due_at null) | new_task |
+| 17-econ-undated-reading.json | ECON 0100 | announcement | undated, soft reading ask (not a task) | none |
 | 18-cis-module7.json | CIS 2400 | module | module page: 2 items not in index, 3 already indexed | new_task, new_task |
 | 19-phys-hw-slides-posted.json | PHYS 0151 | announcement | none: slides posted | none |
 | 20-cis-recording-uploaded.json | CIS 2400 | announcement | none: recording uploaded | none |
