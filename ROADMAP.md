@@ -368,9 +368,16 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   cancel gate rests on the synthetic cases until a real one appears.
   Also read off the plist that day, Olisa's area, untouched: the
   course-material sync reports `manifest failed · uploaded 0 · errors 7`
-  and the Ed task pass a 502. Left: Olisa's key (or a canary route) for
-  the four candidate models; Marco's pass over the `LABELS-*.md` calls;
-  moving `ask` off gpt-4.1-mini on the canary.
+  and the Ed task pass a 502. **Measured the same evening with the
+  OpenRouter key, two rounds, five models**
+  (`docs/EXTRACT_FACTS_BENCH_2026-11-03.md`): Claude Haiku 5.5 is the
+  only model that passes the ship gates on the real documents (90%
+  precision, 85% recall, every task and date it emitted correct, $0.0004
+  a document); today's extractor `glm-5.3-flash` invented quotes and
+  cancellations. Decision: Haiku 5.5 for `extract-facts`. Left: Marco's
+  pass over the `LABELS-*.md` calls; moving `ask` off gpt-4.1-mini on
+  the canary; Phase 1 and the identity layer can start, Phase 2 needs
+  Olisa's go.
 
 - **Improve the tree (ask)** (owner's request, 2026-10-24; the research
   is done, nothing implemented). `docs/TREE_IMPROVEMENT_PLAN.md` has the
