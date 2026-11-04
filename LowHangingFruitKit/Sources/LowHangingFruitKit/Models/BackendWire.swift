@@ -97,6 +97,10 @@ public struct CourseDocumentWire: Codable, Sendable, Equatable {
     public let contentHash: String
     public let dueAt: Date?
     public let pointsPossible: Double?
+    /// When the post was published, if the source says (`CourseDocument
+    /// .postedAt`). Optional and omitted from the JSON when nil, so a server
+    /// that predates it decodes the same and a nil costs no bytes.
+    public let postedAt: Date?
 
     public init(
         id: String,
@@ -111,7 +115,8 @@ public struct CourseDocumentWire: Codable, Sendable, Equatable {
         fetchedAt: Date,
         contentHash: String,
         dueAt: Date? = nil,
-        pointsPossible: Double? = nil
+        pointsPossible: Double? = nil,
+        postedAt: Date? = nil
     ) {
         self.id = id
         self.courseID = courseID
@@ -126,6 +131,7 @@ public struct CourseDocumentWire: Codable, Sendable, Equatable {
         self.contentHash = contentHash
         self.dueAt = dueAt
         self.pointsPossible = pointsPossible
+        self.postedAt = postedAt
     }
 
     public init(document: CourseDocument) {
@@ -142,6 +148,7 @@ public struct CourseDocumentWire: Codable, Sendable, Equatable {
         self.contentHash = document.contentHash
         self.dueAt = document.dueAt
         self.pointsPossible = document.pointsPossible
+        self.postedAt = document.postedAt
     }
 
     /// Converts back to the on-device model, or `nil` if the wire payload
@@ -173,7 +180,8 @@ public struct CourseDocumentWire: Codable, Sendable, Equatable {
             fetchedAt: fetchedAt,
             dueAt: dueAt,
             pointsPossible: pointsPossible,
-            submitted: nil
+            submitted: nil,
+            postedAt: postedAt
         )
     }
 }
@@ -237,10 +245,16 @@ public struct SyncManifestRequest: Encodable, Sendable, Equatable {
     public let acceptsKinds: [String] = CourseDocument.Kind.allCases.map(\.rawValue)
     public let courses: [CourseSummaryWire]
     public let documents: [DocumentStub]
+    /// The facts cursor (a `seq`) the phone last saw; the server sends only
+    /// facts above it. Omitted from the JSON when nil, which asks for every
+    /// fact, so a first sync and a "re-read everything" both leave it out.
+    /// The server refuses anything but a non-negative integer.
+    public let factsSince: Int?
 
-    public init(courses: [CourseSummaryWire], documents: [DocumentStub]) {
+    public init(courses: [CourseSummaryWire], documents: [DocumentStub], factsSince: Int? = nil) {
         self.courses = courses
         self.documents = documents
+        self.factsSince = factsSince
     }
 }
 
@@ -273,23 +287,36 @@ public struct SyncManifestResponse: Decodable, Sendable, Equatable {
     /// exactly this reason, so one bad timestamp from the server can't take
     /// down `catalog` and `download` in the same response.
     public let profiles: [CourseGradingProfile]
+    /// Facts the pooled course documents state (`CourseFactWire`), newer than
+    /// the `factsSince` the request sent. Empty from a server that predates
+    /// facts. Decoded element by element: one fact this build cannot read (a
+    /// type a newer server invented) costs that fact, never the manifest.
+    public let facts: [CourseFactWire]
+    /// The highest fact `seq` the server read for this call (withheld rows
+    /// included), to send back as `factsSince`. Nil from a server without
+    /// facts, which is not the same as 0.
+    public let factsCursor: Int?
 
     public init(
         coursesFresh: [String] = [],
         serverManifest: [DocumentStub] = [],
         download: [CourseDocumentWire] = [],
         catalog: [CourseCatalogEntry] = [],
-        profiles: [CourseGradingProfile] = []
+        profiles: [CourseGradingProfile] = [],
+        facts: [CourseFactWire] = [],
+        factsCursor: Int? = nil
     ) {
         self.coursesFresh = coursesFresh
         self.serverManifest = serverManifest
         self.download = download
         self.catalog = catalog
         self.profiles = profiles
+        self.facts = facts
+        self.factsCursor = factsCursor
     }
 
     private enum CodingKeys: String, CodingKey {
-        case coursesFresh, serverManifest, download, catalog, profiles
+        case coursesFresh, serverManifest, download, catalog, profiles, facts, factsCursor
     }
 
     public init(from decoder: Decoder) throws {
@@ -310,6 +337,115 @@ public struct SyncManifestResponse: Decodable, Sendable, Equatable {
         catalog = try container.decodeIfPresent([CourseCatalogEntry].self, forKey: .catalog) ?? []
         let wireProfiles = try container.decodeIfPresent([CourseProfileWire].self, forKey: .profiles) ?? []
         profiles = wireProfiles.compactMap { $0.profile() }
+        // Same lossy rule as `download`, and for the same reason: a fact
+        // with a type or confidence this build does not know is the normal
+        // shape of a server one release ahead, not a corrupt response.
+        facts = (try container.decodeIfPresent([LossyFactWire].self, forKey: .facts) ?? []).compactMap(\.wire)
+        // A cursor that is not an integer is ignored rather than failing:
+        // the worst case is re-reading facts, which the store dedupes.
+        factsCursor = try? container.decodeIfPresent(Int.self, forKey: .factsCursor)
+    }
+}
+
+/// One element of the manifest's `facts` array; see `LossyDocumentWire`.
+private struct LossyFactWire: Decodable {
+    let wire: CourseFactWire?
+
+    init(from decoder: Decoder) {
+        wire = try? CourseFactWire(from: decoder)
+    }
+}
+
+/// One fact as the manifest serves it (`CourseFactWire` in `_shared/
+/// manifest.ts`, `backend/PROTOCOL.md` "Facts"). Course-level: it names a
+/// document and an item, never a student.
+///
+/// `type` and `confidence` are strict (an unknown value drops the fact:
+/// guessing that a type we cannot name is a `note` could hide or move real
+/// work). `kind`, `dueAt` and `postedAt` are lenient: an unknown kind or a
+/// date we cannot parse reads as nil, because losing a nice-to-have must not
+/// cost the fact. The consequence is handled where it matters: a `reschedule`
+/// with no usable `dueAt` goes to review, never applied (`FactApplication`).
+public struct CourseFactWire: Decodable, Sendable, Equatable {
+    public enum FactType: String, Sendable, Codable, Hashable, CaseIterable {
+        case newTask = "new_task"
+        case cancel
+        case reschedule
+        case scopeChange = "scope_change"
+        case note
+        case needsReview = "needs_review"
+    }
+
+    public enum Kind: String, Sendable, Codable, Hashable {
+        case submission, preparation, event
+    }
+
+    public enum Confidence: String, Sendable, Codable, Hashable {
+        case high, medium
+    }
+
+    public let seq: Int
+    public let courseID: String
+    public let documentID: String
+    public let contentHash: String
+    public let type: FactType
+    /// An item id from the index the server showed the model: an
+    /// assignment's Canvas `sourceID`, or `module:<source id>`. Nil for a
+    /// fact about no existing item.
+    public let target: String?
+    public let title: String?
+    public let dueAt: Date?
+    public let kind: Kind?
+    public let quote: String
+    public let confidence: Confidence
+    public let postedAt: Date?
+
+    public init(
+        seq: Int,
+        courseID: String,
+        documentID: String,
+        contentHash: String,
+        type: FactType,
+        target: String? = nil,
+        title: String? = nil,
+        dueAt: Date? = nil,
+        kind: Kind? = nil,
+        quote: String = "",
+        confidence: Confidence = .high,
+        postedAt: Date? = nil
+    ) {
+        self.seq = seq
+        self.courseID = courseID
+        self.documentID = documentID
+        self.contentHash = contentHash
+        self.type = type
+        self.target = target
+        self.title = title
+        self.dueAt = dueAt
+        self.kind = kind
+        self.quote = quote
+        self.confidence = confidence
+        self.postedAt = postedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case seq, courseID, documentID, contentHash, type, target, title, dueAt, kind, quote, confidence, postedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        seq = try c.decode(Int.self, forKey: .seq)
+        courseID = try c.decode(String.self, forKey: .courseID)
+        documentID = try c.decode(String.self, forKey: .documentID)
+        contentHash = try c.decode(String.self, forKey: .contentHash)
+        type = try c.decode(FactType.self, forKey: .type)
+        target = try? c.decodeIfPresent(String.self, forKey: .target)
+        title = try? c.decodeIfPresent(String.self, forKey: .title)
+        dueAt = (try? c.decodeIfPresent(String.self, forKey: .dueAt)).flatMap { $0 }.flatMap(BackendJSON.parseDate)
+        kind = (try? c.decodeIfPresent(String.self, forKey: .kind)).flatMap { $0 }.flatMap(Kind.init(rawValue:))
+        quote = (try? c.decodeIfPresent(String.self, forKey: .quote)).flatMap { $0 } ?? ""
+        confidence = try c.decode(Confidence.self, forKey: .confidence)
+        postedAt = (try? c.decodeIfPresent(String.self, forKey: .postedAt)).flatMap { $0 }.flatMap(BackendJSON.parseDate)
     }
 }
 

@@ -458,4 +458,77 @@ private extension JSONDecoder {
         guard let data = "{\"date\":\"\(string)\"}".data(using: .utf8) else { return nil }
         return try? decode(Wrapper.self, from: data).date
     }
+
+    // MARK: - Facts
+
+    private static let factJSON = #"{"seq":7,"courseID":"1234","documentID":"announcement:1234:55","contentHash":"h1","type":"reschedule","target":"555","title":"PSet 3","dueAt":"2027-01-15T04:59:00Z","kind":"submission","quote":"moved to Friday","confidence":"high","postedAt":"2027-01-10T15:00:00.000Z"}"#
+
+    @Test("SyncManifestResponse without facts decodes them to empty with a nil cursor")
+    func manifestFactsDefaultToEmpty() throws {
+        let response = try BackendJSON.decoder().decode(SyncManifestResponse.self, from: Data("{}".utf8))
+        #expect(response.facts.isEmpty)
+        #expect(response.factsCursor == nil)
+    }
+
+    @Test("SyncManifestResponse decodes facts and the cursor")
+    func manifestDecodesFacts() throws {
+        let json = #"{"facts":[\#(Self.factJSON)],"factsCursor":9}"#
+        let response = try BackendJSON.decoder().decode(SyncManifestResponse.self, from: Data(json.utf8))
+        #expect(response.factsCursor == 9)
+        let fact = try #require(response.facts.first)
+        #expect(fact.seq == 7)
+        #expect(fact.type == .reschedule)
+        #expect(fact.target == "555")
+        #expect(fact.kind == .submission)
+        #expect(fact.confidence == .high)
+        #expect(fact.dueAt == Date(timeIntervalSince1970: 1_799_989_140))
+        #expect(fact.postedAt != nil)
+    }
+
+    @Test("A bad fact is dropped without failing the manifest or its neighbours")
+    func badFactIsDropped() throws {
+        let unknownType = Self.factJSON.replacingOccurrences(of: "\"reschedule\"", with: "\"teleport\"")
+        let missingSeq = #"{"courseID":"1"}"#
+        let json = #"{"facts":[\#(unknownType),\#(missingSeq),\#(Self.factJSON)],"coursesFresh":["1234"]}"#
+        let response = try BackendJSON.decoder().decode(SyncManifestResponse.self, from: Data(json.utf8))
+        #expect(response.facts.map(\.seq) == [7])
+        #expect(response.coursesFresh == ["1234"])
+    }
+
+    @Test("A fact with an unknown kind or unreadable date keeps the fact and loses the field")
+    func lenientFactFields() throws {
+        let json = Self.factJSON
+            .replacingOccurrences(of: "\"submission\"", with: "\"homework\"")
+            .replacingOccurrences(of: "2027-01-15T04:59:00Z", with: "next friday")
+            .replacingOccurrences(of: "\"target\":\"555\"", with: "\"target\":null")
+        let fact = try BackendJSON.decoder().decode(CourseFactWire.self, from: Data(json.utf8))
+        #expect(fact.kind == nil)
+        #expect(fact.dueAt == nil)
+        #expect(fact.target == nil)
+        #expect(fact.type == .reschedule)
+    }
+
+    @Test("SyncManifestRequest encodes factsSince only when set")
+    func requestFactsSince() throws {
+        let without = try BackendJSON.encoder().encode(SyncManifestRequest(courses: [], documents: []))
+        #expect(!String(decoding: without, as: UTF8.self).contains("factsSince"))
+        let with = try BackendJSON.encoder().encode(SyncManifestRequest(courses: [], documents: [], factsSince: 12))
+        #expect(String(decoding: with, as: UTF8.self).contains("\"factsSince\":12"))
+    }
+
+    @Test("postedAt round-trips on the document wire, is omitted when nil, and leaves contentHash alone")
+    func postedAtOnDocumentWire() throws {
+        let posted = Date(timeIntervalSince1970: 1_800_000_000)
+        let base = CourseDocument(courseID: "1", course: "CIS 1", kind: .announcement, sourceID: "9", title: "T", url: nil, text: "body")
+        let dated = CourseDocument(courseID: "1", course: "CIS 1", kind: .announcement, sourceID: "9", title: "T", url: nil, text: "body", postedAt: posted)
+        #expect(base.contentHash == dated.contentHash)
+
+        let wire = CourseDocumentWire(document: dated)
+        let decoded = try BackendJSON.decoder().decode(CourseDocumentWire.self, from: BackendJSON.encoder().encode(wire))
+        #expect(decoded.postedAt == posted)
+        #expect(try #require(decoded.document()).postedAt == posted)
+
+        let plain = try BackendJSON.encoder().encode(CourseDocumentWire(document: base))
+        #expect(!String(decoding: plain, as: UTF8.self).contains("postedAt"))
+    }
 }

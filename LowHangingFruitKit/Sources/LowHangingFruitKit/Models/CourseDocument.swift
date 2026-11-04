@@ -82,6 +82,15 @@ public struct CourseDocument: Codable, Sendable, Hashable, Identifiable {
     public let pointsPossible: Double?
     /// The student's own submission state, when Canvas reports it.
     public let submitted: Bool?
+    /// When the post was published (an announcement's or Ed thread's own
+    /// posted time), if the source says. Distinct from `updatedAt`: an edit
+    /// to an old post moves `updatedAt` but not when the instructor said it,
+    /// and facts are ordered by when things were said (`FactApplication`).
+    /// Deliberately NOT part of `contentHash` (which stays `title` + `text`):
+    /// folding a date in would re-hash, and so re-upload and re-extract,
+    /// every document already pooled. Optional so a knowledge file written
+    /// before this field decodes with `nil`.
+    public let postedAt: Date?
 
     public init(
         courseID: String,
@@ -95,7 +104,8 @@ public struct CourseDocument: Codable, Sendable, Hashable, Identifiable {
         fetchedAt: Date = Date(),
         dueAt: Date? = nil,
         pointsPossible: Double? = nil,
-        submitted: Bool? = nil
+        submitted: Bool? = nil,
+        postedAt: Date? = nil
     ) {
         self.courseID = courseID
         self.course = course
@@ -110,6 +120,7 @@ public struct CourseDocument: Codable, Sendable, Hashable, Identifiable {
         self.dueAt = dueAt
         self.pointsPossible = pointsPossible
         self.submitted = submitted
+        self.postedAt = postedAt
     }
 
     /// Rough word count, used to budget what fits in a small model context.
