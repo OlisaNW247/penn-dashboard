@@ -55,6 +55,10 @@ struct AssignmentCardView: View {
     /// (`item.removal`). Defaulted so previews and every other construction
     /// site, which never offer the button, need not pass one.
     var onRemove: () -> Void = {}
+    /// Takes back what facts from the server did to this card
+    /// (`AppState.rejectFacts`). Nil, the default, offers no `undo`: the
+    /// megaphone's found cards and previews pass none.
+    var onUndo: (() -> Void)? = nil
     /// The dashboard's own verdict on whether this item is an exam, for when
     /// it knows better than the title does (an exam that arrived from an
     /// announcement or the syllabus under some other name). Nil, the default
@@ -267,6 +271,15 @@ struct AssignmentCardView: View {
                         .font(.lhfMono(8.5, weight: .semibold))
                         .foregroundStyle(secondaryTextColor)
                 }
+                // A fact moved the date: the old one stays, small and struck
+                // through, so the change is visible and not just trusted.
+                if let from = item.fact?.movedFrom, item.dueOverride == nil {
+                    Text(from.formatted(.dateTime.month(.abbreviated).day()).lowercased())
+                        .font(.lhfMono(8.5))
+                        .strikethrough()
+                        .foregroundStyle(secondaryTextColor)
+                        .accessibilityLabel("was \(fullDueText(from))")
+                }
                 if item.dueOverride != nil {
                     Text("adjusted")
                         .font(.lhfMono(8.5))
@@ -296,6 +309,21 @@ struct AssignmentCardView: View {
 
                 Spacer(minLength: 8)
 
+                if let onUndo, let fact = item.fact, !fact.factIDs.isEmpty {
+                    Button { onUndo() } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "arrow.uturn.backward")
+                                .font(.system(size: 12, weight: .medium))
+                            Text("undo")
+                                .font(.lhfAssignmentTitle(12))
+                        }
+                        .foregroundStyle(primaryTextColor)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("undo this change")
+                }
+
                 Button { onEdit() } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "calendar")
@@ -310,6 +338,17 @@ struct AssignmentCardView: View {
                 .accessibilityLabel("edit due date")
             }
             .padding(.top, 10)
+
+            // Facts that changed this card: the instructor's own words, one
+            // line each, opening the post they came from where it is known.
+            // The details are the same `Link` shape as the source links
+            // below, for the same reason (a bare gesture would collapse the
+            // card on its way out).
+            if let fact = item.fact {
+                ForEach(fact.details) { detail in
+                    factDetailRow(detail)
+                }
+            }
 
             // One link per page this item came from (`Assignment.sourceLinks`:
             // zero for manual work, two for a Canvas+Gradescope pair). A
@@ -369,6 +408,35 @@ struct AssignmentCardView: View {
             // date printed the same words twice on one card.
         }
         .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
+    @ViewBuilder
+    private func factDetailRow(_ detail: FactItemDisplay.Detail) -> some View {
+        if !detail.text.isEmpty {
+            let line = HStack(spacing: 5) {
+                Text(detail.text)
+                    .font(.lhfSecondary(12))
+                    .foregroundStyle(secondaryTextColor)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if detail.postURL != nil {
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(secondaryTextColor)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.top, 6)
+            .contentShape(Rectangle())
+            if let url = detail.postURL {
+                Link(destination: url) { line }
+                    .buttonStyle(.plain)
+                    .environment(\.openURL, CanvasAppLink.action)
+                    .accessibilityHint("opens the original page")
+            } else {
+                line
+            }
+        }
     }
 
     private func fullDueText(_ due: Date?) -> String {

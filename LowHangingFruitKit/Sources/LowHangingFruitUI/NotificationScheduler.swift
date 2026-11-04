@@ -750,13 +750,15 @@ final class NotificationScheduler: ObservableObject {
     /// alone keep their buzzes, so every item the loud alert covers has an
     /// alarm or its buzzes, and the budget counts the buzzes that are returned.
     func plannedRequests(
-        from items: [DashItem],
+        from allItems: [DashItem],
         now: Date = Date(),
         preferences: CoursePreferencesStore? = nil,
         loudAlertsAsAlarms: Bool = false,
         buzzFallbackAssignmentIDs: Set<String> = [],
         calendar: Calendar = .current
     ) -> [UNNotificationRequest] {
+        // A cancelled item gets no reminder (`DashItem.isFactCancelled`).
+        let items = allItems.filter { !$0.isFactCancelled }
         let prefs = resolvedPreferences(preferences)
         // Read once per pass, from the same store the mute and lead-time
         // settings come from; `courseNameOverrides` is the canonical copy of
@@ -999,7 +1001,7 @@ final class NotificationScheduler: ObservableObject {
     ) -> [PlannedAlarm] {
         let prefs = resolvedPreferences(preferences)
         let horizon = now.addingTimeInterval(Double(Self.horizonDays) * 86_400)
-        let selection = loudAlerts(from: items, now: now, horizon: horizon, preferences: prefs)
+        let selection = loudAlerts(from: items.filter { !$0.isFactCancelled }, now: now, horizon: horizon, preferences: prefs)
             .map(\.item)
         return BerserkAlarmPlan.alarms(for: selection, now: now, nameOverrides: prefs.courseNameOverrides, lead: sweeperLead, sound: sweeperSound)
     }

@@ -437,7 +437,8 @@ extension AppState {
         AnnouncementReadState.unreadCount(
             finds: announcementFoundItems(now: now),
             records: announcementSheetRecords(now: now),
-            seen: announcementSeenIDs
+            seen: announcementSeenIDs,
+            facts: appliedFactKeys
         )
     }
 
@@ -465,20 +466,23 @@ extension AppState {
     func openAnnouncementsSheet(now: Date = Date()) -> Set<String> {
         let finds = announcementFoundItems(now: now)
         let records = announcementSheetRecords(now: now)
+        let factKeys = appliedFactKeys
         let newIDs = AnnouncementReadState.newIDs(
             finds: finds,
             records: records,
-            seen: announcementSeenIDs
+            seen: announcementSeenIDs,
+            facts: factKeys
         )
         // Rows of a hidden class are not on the page but are still known, so
         // their already-seen state survives the class being shown again.
-        let known = knownAnnouncementKeys(canvas: announcementLogRecords)
+        let known = knownAnnouncementKeys(canvas: announcementLogRecords).union(factKeys)
         if let log = announcementLog {
-            log.readState.markAllSeen(finds, records: records, keeping: known)
+            log.readState.markAllSeen(finds, records: records, facts: factKeys, keeping: known)
             announcementSeenIDs = log.readState.seenIDs
         } else {
             announcementSeenIDs = Set(finds.map(\.id))
                 .union(records.map(AnnouncementReadState.key(for:)))
+                .union(factKeys)
                 .union(announcementSeenIDs.intersection(known))
         }
         // The count drops the moment the rows are seen: the header's badge
@@ -510,6 +514,7 @@ extension AppState {
         announcementLogRecords = []
         announcementSeenIDs = announcementSeenIDs.filter {
             !AnnouncementReadState.isRecordKey($0) && !AnnouncementReadState.isEdKey($0)
+                && !AnnouncementReadState.isFactKey($0)
         }
         seedEdAnnouncementsIfNeeded()
         refreshAnnouncementRecordsOnPage()

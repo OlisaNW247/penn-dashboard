@@ -55,6 +55,13 @@ struct AnnouncementFindsView: View {
     /// The student saved (or reset, with nil) an edited date on a found card.
     var onSetDue: (Assignment, Date?) -> Void = { _, _ in }
 
+    /// What facts from the server changed, grouped by the item they changed
+    /// (`AppState.factChangeGroups`). The sheet's first group.
+    var factChanges: [FactChangeGroup] = []
+    /// Facts the app would not apply on its own (`AppState.factReviewRows`).
+    /// The group after it.
+    var factReviews: [FactReviewRow] = []
+
     /// The classes the sheet is narrowed to (class keys), empty for all of
     /// them. Starts empty every time the sheet opens, and is the sheet's own:
     /// it is not the dashboard's filter, which a student may have set for a
@@ -70,6 +77,14 @@ struct AnnouncementFindsView: View {
 
     private var visibleRecords: [AnnouncementRecord] {
         AppState.announcementSheetNarrowed(records, toCourses: selection)
+    }
+
+    private var visibleChanges: [FactChangeGroup] {
+        factChanges.filter { AppState.announcementSheetCourseMatches($0.courseCode, selection: selection) }
+    }
+
+    private var visibleReviews: [FactReviewRow] {
+        factReviews.filter { AppState.announcementSheetCourseMatches($0.courseCode, selection: selection) }
     }
 
     var body: some View {
@@ -102,6 +117,10 @@ struct AnnouncementFindsView: View {
                         AnnouncementRecord.recordID(fromFindSourceID: $0.assignment.sourceID)
                     })
                     let now = Date()
+
+                    // Facts first: what changed, then what needs a look, then
+                    // the posts themselves.
+                    factSections(now: now)
 
                     if selection.isEmpty {
                         if !foundNow.isEmpty {
@@ -160,6 +179,127 @@ struct AnnouncementFindsView: View {
                         set: { onSetDue(assignment, $0) }
                     )
                 )
+            }
+        }
+    }
+
+    // MARK: Facts
+
+    @ViewBuilder
+    private func factSections(now: Date) -> some View {
+        let changes = visibleChanges
+        let reviews = visibleReviews
+        if !changes.isEmpty {
+            SmoothSectionHeader(AnnouncementSheetCopy.changedHeader, accent: .smoothAnnouncementAccent)
+                .padding(.top, 4)
+            ForEach(changes) { group in
+                factChangeRow(group, now: now)
+            }
+        }
+        if !reviews.isEmpty {
+            SmoothSectionHeader(AnnouncementSheetCopy.reviewHeader, accent: .smoothAnnouncementAccent)
+                .padding(.top, changes.isEmpty ? 4 : 12)
+            ForEach(reviews) { review in
+                factReviewRow(review, now: now)
+            }
+        }
+    }
+
+    /// Today, yesterday, else "nov 5": the post's date, in the record rows' style.
+    private func factDateLabel(_ date: Date?, now: Date) -> String? {
+        guard let date else { return nil }
+        let calendar = Calendar.current
+        if calendar.isDate(date, inSameDayAs: now) { return "today" }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
+           calendar.isDate(date, inSameDayAs: yesterday) { return "yesterday" }
+        return date.formatted(.dateTime.month(.abbreviated).day()).lowercased()
+    }
+
+    @ViewBuilder
+    private func factRowChrome<Content: View>(
+        url: URL?, hint: String, @ViewBuilder content: () -> Content
+    ) -> some View {
+        let body = HStack(spacing: 12) {
+            Capsule()
+                .fill(Color.smoothAnnouncementAccent)
+                .frame(width: 4)
+                .frame(maxHeight: .infinity)
+                .accessibilityHidden(true)
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if url != nil {
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.smoothMuted)
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(14)
+        .background(Color.v2DoneCard, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        if let url {
+            Link(destination: url) { body }
+                .buttonStyle(.plain)
+                .environment(\.openURL, CanvasAppLink.action)
+                .accessibilityHint(hint)
+        } else {
+            body
+        }
+    }
+
+    private func factChip(_ code: String, date: Date?, isNew: Bool, now: Date) -> some View {
+        HStack(spacing: 6) {
+            Text(AppState.factCourseLabel(code, overrides: courseNameOverrides).uppercased())
+                .font(.lhfMono(9.5, weight: .semibold))
+                .tracking(1.1)
+                .foregroundStyle(Color.smoothAnnouncementAccent)
+            if let label = factDateLabel(date, now: now) {
+                Text(label)
+                    .font(.lhfMono(9.5))
+                    .foregroundStyle(Color.smoothMuted)
+            }
+            if isNew {
+                Text("NEW")
+                    .font(.lhfMono(8, weight: .bold))
+                    .tracking(0.8)
+                    .foregroundStyle(Color.smoothPaper)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.smoothAnnouncementAccent))
+            }
+        }
+    }
+
+    /// One item and the one-word changes made to it. An undone fact is the
+    /// same row, dimmed and struck through, so a wrong tap can be seen.
+    private func factChangeRow(_ group: FactChangeGroup, now: Date) -> some View {
+        let isNew = group.rows.contains { newIDs.contains(AnnouncementReadState.factKey($0.id)) }
+        return factRowChrome(url: group.url, hint: AnnouncementSheetCopy.canvasLinkHint) {
+            VStack(alignment: .leading, spacing: 6) {
+                factChip(group.courseCode, date: group.postedAt, isNew: isNew, now: now)
+                Text(group.title)
+                    .font(.lhfAssignmentTitle(17))
+                    .foregroundStyle(Color.smoothInk)
+                    .strikethrough(group.isUndone)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(group.rows.map(\.word).joined(separator: " \u{00B7} "))
+                    .font(.lhfMono(9.5))
+                    .foregroundStyle(Color.smoothMuted)
+            }
+            .opacity(group.isUndone ? 0.5 : 1)
+        }
+    }
+
+    /// A fact the app held back: the instructor's words and the post.
+    private func factReviewRow(_ review: FactReviewRow, now: Date) -> some View {
+        factRowChrome(url: review.url, hint: AnnouncementSheetCopy.canvasLinkHint) {
+            VStack(alignment: .leading, spacing: 6) {
+                factChip(review.courseCode, date: review.postedAt, isNew: false, now: now)
+                Text(review.quote)
+                    .font(.lhfSecondary(13))
+                    .foregroundStyle(Color.smoothInk)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -371,6 +511,10 @@ enum AnnouncementSheetCopy {
     static let allBubble = "all"
     static let foundHeader = "found"
     static let announcementsHeader = "announcements"
+    /// The facts group: what changed on the student's cards.
+    static let changedHeader = "changed"
+    /// The facts the app held back for the student to judge.
+    static let reviewHeader = "needs a look"
     /// A row whose post came without a title.
     static let untitled = "untitled"
 

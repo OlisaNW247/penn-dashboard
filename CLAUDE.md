@@ -73,7 +73,13 @@ Google Form in Safari; the app adds nothing to the link. The
 PennKey password is saved automatically (since 2026-10-23) after a verified
 Penn Canvas sign-in inside the app's own login page, with a one-line
 disclosure above that page; it stays in this phone's Keychain
-(this-device-only, never synced) and only ever goes to Penn's login page. There is no analytics, tracking,
+(this-device-only, never synced) and only ever goes to Penn's login page. Since 2026-11-04 (written, not
+deployed) the pooled course material is also read once per revision by a
+model on the server for course-level "facts"; they belong to the class,
+carry no user id, and a student's AI-assist switch does not stop them
+(`docs/PRIVACY.md` says so). The phone also reads Canvas's own structured
+endpoints (Planner, module completion, section dates) with the student's
+session and keeps the results on the phone. There is no analytics, tracking,
 or third-party SDK. Don't say "everything is on-device" (untrue since
 `assistant-ui`) or "no server" (untrue since the backend). `docs/PRIVACY.md`
 is the student-facing version and must change in the same commit as any
@@ -127,10 +133,16 @@ with the backend unreachable, ask answers on-device:
 items, retrieves policy and content answers from synced course materials
 (`CourseKnowledgeCollector` → `CourseKnowledgeStore`), and on iOS 26 /
 macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
-(`OnDeviceLanguageModel`). Ten Edge Functions live in
-`backend/supabase/functions/`: `ask`, `ask-canary`, `delete-account`,
-`device-sync`, `discover-websites`, `extract-announcement`,
-`extract-profile`, `map-categories`, `pair`, `sync`. `pair` and
+(`OnDeviceLanguageModel`). Eleven Edge Functions are in
+`backend/supabase/functions/` (ten were deployed before 2026-11-04): `ask`,
+`ask-canary`, `delete-account`, `device-sync`, `discover-websites`,
+`extract-announcement`, **`extract-facts`**, `extract-profile`,
+`map-categories`, `pair`, `sync`. `extract-facts` (written 2026-11-04 on
+`v10`, **not deployed**) reads each pooled course document once per
+revision with Claude Haiku 5.5 and stores the course-level changes it states
+in `course_facts` (a cancelled item, a new date, a new task, each with a
+quote); the manifest serves them to every enrolled classmate. No user id is
+in any fact (see "Facts and structured sources" under Architecture). `pair` and
 `device-sync` (the Chrome extension's pairing and encrypted sync) and the
 `20261022090000_chrome_extension.sql` migration went live on 2026-10-22
 with Olisa's go (`sync` v11, `delete-account` v6); `extract-profile` v8
@@ -637,6 +649,26 @@ Keep this current. It is the fastest way for a new session to know what exists.
       syllabus exam is in the megaphone's found list since 2026-10-18 (it
       was left out before, as found in no announcement), and its card
       says "from syllabus".
+  - **Facts on cards** (2026-11-04, `v10`, behind `FeatureFlags.appliedFacts`;
+    nothing has been watched on a device and no real fact has reached a
+    phone, because the backend is not deployed). A card the instructor
+    cancelled leaves **todo**, stays in **all** tagged `cancelled`, and
+    nothing is completed or deleted. A moved date shows the new date with
+    the old one small and struck through, tagged `moved`; a changed scope
+    or a note is tagged `changed` and listed on the opened card as the
+    instructor's own sentence, linking the post where it is known. The
+    opened card carries `undo`, which rejects the fact (it stays rejected
+    when a newer fact arrives). A new task from a post is a "from
+    announcements" card. Caveats: a cancelled item already overdue appears
+    nowhere (todo hides it, all excludes overdue, prev is completed-only);
+    a medium-confidence cancel is never applied.
+    The **megaphone** sheet now opens with a `changed` group (what facts did
+    to which cards) and a `needs a look` group (facts the app held back:
+    the quote and the post), then the announcement finds as before.
+  - **Canvas's own signals** (2026-11-04, behind
+    `FeatureFlags.structuredCanvasSources`): Planner ticks and dismissals,
+    met module requirements and section due-date overrides now move cards;
+    module-only work gets rows. See Architecture.
   - **Cards.** Tap a card to open it (full date, "edit date", and since
     2026-10-09 "open in canvas" / "open in gradescope", derived at display
     time by `Assignment.sourceLinks` from the URL the ledger already
@@ -1173,7 +1205,22 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v10` (2026-11-03): the merge of `v9` (3442 / 329 at the
+**Current on `v10` (2026-11-04): 3559 tests / 340 suites, all green,
+`swift test --no-parallel` on Marco's Mac, with all of the 2026-11-04 work
+(structured Canvas sources, the identity layer, the applied-fact store and
+engine, the facts wire and the megaphone/card changes): +102 tests / +9
+suites over the merge below. Deno 671 (was 628), `deno task check` clean.
+The migration `20261104090000_course_facts.sql` and `backend/test/rls.test.sql`
+were NOT run (no Postgres on this Mac), so the SQL, including
+`claim_fact_extraction`, is unexecuted. No iOS build was part of this run;
+see Known gaps for the device state.**
+One thing to know about that figure: the first full run that day showed
+three failures, all wall-clock thresholds in the fuzz suites, while a second
+full run and a filtered run were sharing the Mac; the fuzz suites alone
+passed in 68 s and none of the code they exercise had changed. Run the
+suite alone before reading a fuzz timing failure as a regression.
+
+Before it, **on `v10` (2026-11-03): the merge of `v9` (3442 / 329 at the
 onboarding-polish merge, plus the sign-in work) and `origin/v8` `7e004c5`
 (3414 / 329, the tree's recency and follow-up work): 3457 tests / 331
 suites, all green, `swift test --no-parallel` on Marco's Mac, 115 s,
@@ -1258,6 +1305,14 @@ the quoted display names.
 
 History (newest first; each verified on a Mac). The notes say what moved
 the count, so a later drop can be traced:
+- 3559/340 `v10`, 2026-11-04: composed-day Phases 1-3 (+102 / +9 suites): six new test files
+  (`WorkItemIdentityTests`, `CanvasStructuredSourcesTests`,
+  `StructuredSourcesWiringTests`, `AppliedFactStoreTests`,
+  `FactApplicationTests`, `AppliedFactsWiringTests`) and additions to
+  `BackendWireTests`; one existing test was rewritten on purpose: the
+  assignment-document test in `CourseKnowledgeTests` now asserts that pooled
+  text carries no "Status: submitted" line (see Traps).
+- 3457/331 `v10`, 2026-11-03: the merge of `v9` and `origin/v8`.
 - 2736/246 `origin/v8` at `fb3ed94` (Olisa's `v8-merge-marco` fast-forwarded, pushed uncompiled, predicted 2736), compiled and run on Marco's Mac 2026-10-23 ~22:00, `swift test --no-parallel`, 28.1 s: **one failure**, `DeviceSyncWiringTests` "a pass is called from the foreground refresh and the launch task, never from the background wake". The test checks call order by text position inside `ContentView.refresh()`; `launch-refresh-rework` moved the grades fetch and the reload into `fetchSessionSources()` / `settleAfterFetch()`, so the positions reversed while the runtime order (fetch, device-sync pass, reload) is unchanged. Test fixed in PR #13's merge of this tip, not a code regression.
 - 2755/251 `fix/megaphone-every-class`, 2026-10-23 late, `swift test
   --no-parallel` on Marco's Mac, 23.6 s, green: +3 in `NonClassCanvasSiteTests`
@@ -1895,6 +1950,64 @@ client problem. The pieces, all exercised by tests:
   posts, which the phone's search has to find. Nothing new leaves the
   phone; the section number was already sent.
 
+### Facts and structured sources (2026-11-04, `v10`, not on a device)
+
+The composed-day plan (`docs/DAY_PLANNER_RESEARCH_2026-11-03.md`; the
+decisions behind it are in `docs/HANDOFF_V10_2026-11-04.md`) has two halves,
+each behind its own compile-time kill switch in `FeatureFlags.swift`, both
+`true`:
+
+- **`structuredCanvasSources`, phone only, no model, any school.**
+  `CanvasStructuredSourcesClient` reads Planner items, missing submissions
+  and, per course, modules at item grain, assignments with `all_dates`,
+  discussion topics and dated pages with the student's own session;
+  `CanvasStructuredSourcesReconciler` turns that into plain
+  `CanvasStructuredSignals` (completions, dismissals, section dates, rows);
+  `AppState+StructuredSources.swift` is the only applier. Rows are upserted,
+  never reconciled. Completions, dismissals and section dates are additive
+  sets and a map in `UserDefaults.lhf` (`structuredCompletedItemIDsV1`,
+  `structuredDismissedItemIDsV1`, `structuredDueOverridesV1`), consulted when
+  the dashboard pool is built and never written as the student's own edits.
+  `WorkItemIdentity` / `WorkItemAlias` / `WorkItemMatcher` /
+  `WorkItemMergeRecord` are the identity layer (research Addendum C, item 1):
+  one work item known by several aliases (feed uid, Canvas assignment id,
+  module item id, Gradescope id), matched by id first and by title and date
+  proximity second.
+- **`appliedFacts`, needs the backend.** The manifest request carries
+  `factsSince` (`factsCursorV1`); the answer's `facts` go into
+  `AppliedFactStore`, and every dashboard rebuild runs `FactApplication`
+  (`Facts/FactApplication.swift`, pure: no store, no clock) over them.
+  `AppState+AppliedFacts.swift` writes the result back. Server side:
+  `extract-facts` and `_shared/factsExtraction.ts` (prompt, schema and checks
+  are Phase 0's `_shared/facts.ts`), the `course_facts` migration, and
+  `backend/PROTOCOL.md` → "Facts and `extract-facts`".
+
+**Two stores, on purpose.** The facts live in `AppliedFacts.store`, a
+SwiftData file of their own (`AppliedFactStore`, the `GradeHistoryStore`
+pattern), never in the ledger's schema. The structured sets live in defaults.
+Neither touches `Assignments.store`.
+
+**Precedence, in the order `FactApplication` applies it:**
+
+1. A fact the student rejected (`undo`) is dropped first, before supersession,
+   so it neither applies nor suppresses an older fact.
+2. The student's own action outranks a fact (a completion, a hand-edited
+   date); only an explicit `confirmed` lifts that.
+3. Canvas outranks prose where they already agree (the source already moved
+   the date or dropped the item): the fact is `redundant`, not applied.
+4. The newest fact per (target, type) wins, computed over everything still
+   live, not only over what would otherwise apply.
+5. A target resolves only among rows of the fact's own course; an unresolved
+   or ambiguous pointer, an extractor `needs_review`, a medium-confidence
+   `cancel` and a detail-less reschedule go to `needs a look` and are never
+   applied. The output type cannot say "complete" or "delete": the strongest
+   effect is hide from todo and tag.
+
+Reschedules are substituted into the dashboard pool's copy of the row, never
+written onto the ledger row (the feed rewrites `dueAt` every sync). Only a
+new task is written to the ledger: a `.canvasAnnouncement` row with a
+`fact-<documentID>-<seq>` sourceID.
+
 ### Stay signed in (Penn only)
 
 Canvas signs students out from time to time, and reconnecting means PennKey
@@ -2084,6 +2197,42 @@ itself.
 
 ## Traps that have already bitten
 
+- **A new SwiftData model goes in its own store file, never in the ledger's
+  schema** (decided 2026-11-04 for `AppliedFact`). Adding `StoredAppliedFact`
+  to `LedgerSchemaV1` looks like the natural home ("the ledger is where
+  per-item state lives") and the wrong fix is to do it and write a
+  `LedgerSchemaV2` migration. The ledger's migration path has never opened a
+  real pre-existing on-disk store (Known gaps), failure there is a silent
+  fallback to an empty ledger, and the widget opens `Assignments.store` with
+  its own one-entity container that would then disagree with the app about
+  the file. A facts feature must not be able to put the student's record at
+  risk. `AppliedFactStore` is a file of its own (`AppliedFacts.store`) with
+  its own versioned schema, the `GradeHistoryStore` pattern; the cost of the
+  separate file is nothing. The same reasoning kept `FactItem` as a plain
+  value the engine reads rather than a new ledger column.
+- **Canvas-derived completions, dismissals and dates are not student edits**
+  (decided 2026-11-04). The tempting fix for "Canvas says this is done" is
+  `setCompleted`, and for "the section's date is Nov 8" is a write into
+  `dueDateEdits`. Both are wrong. `userCompleted` and `dueDateEdits`
+  carry no provenance, `dueDateEdits` is synced between devices and pruned by
+  id family, and a later sync could not tell Canvas's value from the
+  student's choice; a Canvas-written entry would ship to their other devices as if they had
+  chosen it. `AppState+StructuredSources.swift` keeps additive
+  sets (`structuredCompletedItemIDsV1`, `structuredDismissedItemIDsV1`) and
+  a map (`structuredDueOverridesV1`) in `UserDefaults.lhf`, read when the
+  pool is built; the student's tick, un-tick and edit stay theirs and win by
+  construction (`effectiveDueDate` reads the edit first). Likewise
+  `applySubmissionState` is a full replace and is the wrong tool for an
+  additive signal.
+- **Pooled assignment text carried the student's own submission state.**
+  `CanvasCourseContentClient` wrote a "Status: submitted | not submitted"
+  line into the assignment document it uploads to the shared pool, so one
+  student's submission state reached every classmate's copy. Found
+  2026-11-04 while wiring facts, and removed there (the assignment-document
+  test now asserts the pooled text has no "Status:" line). Already-pooled
+  documents keep the old text until their next revision. This is the area
+  Olisa owns; it was landed and flagged rather than parked because it is a
+  privacy fix to a rule `docs/PRIVACY.md` states.
 - **The 24-hour clock said signed out while Canvas said yes, and a
   background attempt had spent the hour the foreground needed.** Read off
   Marco's phone on 2026-11-01, on the App Store 3.4.0 (17): the "needs a
@@ -2942,7 +3091,9 @@ itself.
 ## Branches
 
 `v10` is the line (2026-11-03): `v9` plus `origin/v8` `7e004c5` plus
-`phase0/extract-facts-bench`. Start at `docs/HANDOFF_V10_2026-11-03.md`.
+`phase0/extract-facts-bench`. Start at `docs/HANDOFF_V10_2026-11-04.md`
+(it replaces the 2026-11-03 one). The 2026-11-04 composed-day work
+(Phases 1-3) is committed on `v10`.
 Before it, `v8` was the line. Marco's launch-prep work (2026-10-09/10) was merged
 into it on 2026-10-10 through pull request 9, at Marco's instruction;
 `v8-launch-prep` is the branch it was built on. So `v8` now carries work
@@ -2991,6 +3142,48 @@ none is a ship line.
 
 ## Known gaps
 
+- **Nothing in the composed day (Phases 1-3) has been watched on a device**,
+  and no real fact has ever reached a phone, because `extract-facts`, the
+  `course_facts` migration and the `sync` changes are **not deployed**. The
+  structured-sources path and the card/megaphone changes are proven only by
+  fixtures (3559 tests green, 2026-11-04). The Debug build for Marco's iPhone
+  17 Pro compiled on 2026-11-04 (`xcodebuild` to the device destination);
+  the install waited on the phone, which had dropped off the cable, so
+  nothing has been watched running. The migration SQL and
+  `backend/test/rls.test.sql` have never been run (no Postgres on the dev
+  Mac). A live probe on 2026-11-04 showed OpenRouter accepting the exact
+  production request for `anthropic/claude-haiku-5.5` (strict `json_schema`,
+  `reasoning: low`, `provider: {data_collection: "deny", allow_fallbacks:
+  true}`, no `require_parameters`), routed via Azure, returning
+  `{"facts": []}` with 258 reasoning tokens for $0.0002. That proves the body,
+  not the extractions.
+- **Deploying `extract-facts` needs Olisa's go and a token this Mac lacks.**
+  Phases 2-3 replace the announcement watcher's output and change what `sync`
+  stores, both his area. The deploy script relies on a cloud session's proxy
+  injecting the Supabase management token, which the dev Mac does not have;
+  `LHF_PROBE_SECRET` is absent here too, so the `ask-canary` probe could not
+  run. Set `LHF_MODEL` on the canary, probe, promote: moving `ask` off
+  `openai/gpt-4.1-mini` (OpenAI shutdown 2027-01-14) is a deploy/secret
+  operation now, not a code change.
+- **Known limits of the facts engine** (from the implementers, 2026-11-04):
+  - A `module:<hash>` fact target cannot resolve to a `module-item-<id>` row
+    and lands in `needs a look` until module documents carry item ids (the
+    per-item module documents, research Addendum C item 8, are not built).
+  - A fact-created row from an Ed post reads `announcementOrigin == .canvas`.
+  - A newer `reschedule` does not withdraw an older `cancel` on the same
+    item (different types).
+  - The engine cannot tell when Canvas edited a date after a post.
+  - A cancelled item already overdue appears nowhere (todo hides it, all
+    excludes overdue, prev is completed-only).
+  - When the Canvas rate-limit bucket drops under the floor, every later
+    course in that run is skipped.
+  - The `claim_fact_extraction` caps (60 per course per day, 400 per course
+    per month, 5000 per month overall) are plain-sum reads and can overshoot
+    by in-flight claims.
+  - A student's AI-assist switch does not stop course-level extraction of
+    posts a classmate uploaded (`docs/PRIVACY.md` now says so).
+  - Not built: the build-map first read (research Addendum A), Phase 4 (the
+    day view) and Phase 5 (feedback).
 - **The Duo push path is proven once, on one phone** (2026-11-02, Marco's
   iPhone, `-LHFForgetDuoTrust -LHFAgeCanvasSession`, Debug build of `v9`):
   the hidden WebView reached Penn's form, filled and submitted the saved

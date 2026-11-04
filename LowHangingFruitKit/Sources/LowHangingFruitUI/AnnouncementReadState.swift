@@ -57,6 +57,19 @@ struct AnnouncementReadState {
         id.hasPrefix(edKeyPrefix)
     }
 
+    private static let factKeyPrefix = "fact:"
+
+    /// The stored id for an applied fact (`CourseFactWire`), the fourth kind
+    /// of thing tracked: the megaphone's "what changed" rows. The prefix keeps
+    /// it apart from the other three and from every assignment id.
+    static func factKey(_ factID: String) -> String {
+        factKeyPrefix + factID
+    }
+
+    static func isFactKey(_ id: String) -> Bool {
+        id.hasPrefix(factKeyPrefix)
+    }
+
     /// The stored id for any row on the sheet's "all announcements" list.
     static func key(for record: AnnouncementRecord) -> String {
         record.isEd ? edKey(record.id) : recordKey(record.id)
@@ -67,7 +80,7 @@ struct AnnouncementReadState {
     /// starts from nothing seen.
     func forgetRecords() {
         defaults.set(
-            seenIDs.filter { !Self.isRecordKey($0) && !Self.isEdKey($0) }.sorted(),
+            seenIDs.filter { !Self.isRecordKey($0) && !Self.isEdKey($0) && !Self.isFactKey($0) }.sorted(),
             forKey: Self.key
         )
         defaults.removeObject(forKey: Self.edSeededKey)
@@ -98,8 +111,13 @@ struct AnnouncementReadState {
     /// can never hold more than the log, the Ed rows and one page of finds.
     /// Nothing in `known` is *newly* marked seen unless it is on the page, so
     /// a hidden class's unread posts stay unread.
-    func markAllSeen(_ items: [Assignment], records: [AnnouncementRecord] = [], keeping known: Set<String> = []) {
-        let page = Set(items.map(\.id) + records.map(Self.key(for:)))
+    func markAllSeen(
+        _ items: [Assignment],
+        records: [AnnouncementRecord] = [],
+        facts: [String] = [],
+        keeping known: Set<String> = []
+    ) {
+        let page = Set(items.map(\.id) + records.map(Self.key(for:)) + facts)
         let carried = seenIDs.intersection(known)
         defaults.set(page.union(carried).sorted(), forKey: Self.key)
     }
@@ -123,13 +141,16 @@ struct AnnouncementReadState {
         records.filter { !seen.contains(key(for: $0)) }
     }
 
-    /// The badge: unread finds plus unread records.
+    /// The badge: unread finds plus unread records plus unread applied facts.
+    /// `facts` are seen-state keys (`factKey`).
     static func unreadCount(
         finds: [Assignment],
         records: [AnnouncementRecord],
-        seen: Set<String>
+        seen: Set<String>,
+        facts: [String] = []
     ) -> Int {
         unread(finds, seen: seen).count + unreadRecords(records, seen: seen).count
+            + facts.filter { !seen.contains($0) }.count
     }
 
     /// Both kinds of id that were unread, in the form the sheet checks rows
@@ -137,10 +158,12 @@ struct AnnouncementReadState {
     static func newIDs(
         finds: [Assignment],
         records: [AnnouncementRecord],
-        seen: Set<String>
+        seen: Set<String>,
+        facts: [String] = []
     ) -> Set<String> {
         Set(unread(finds, seen: seen).map(\.id))
             .union(unreadRecords(records, seen: seen).map(key(for:)))
+            .union(facts.filter { !seen.contains($0) })
     }
 
     /// The megaphone shows when there is anything to open: it used to need a

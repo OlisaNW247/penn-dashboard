@@ -65,7 +65,7 @@ final class AppState: ObservableObject {
     /// `AssignmentStore.reconcile(_:source: .canvasModules)`. Read-only
     /// outside this file; `rebuildDashboardItems` folds it into the Canvas
     /// pool it filters.
-    @Published private(set) var moduleReadingItems: [Assignment] = []
+    @Published var moduleReadingItems: [Assignment] = []
     /// Assignments `syncAnnouncements()` extracted from Canvas course
     /// announcement text (`.canvasAnnouncement` ledger rows), read back the
     /// same way `moduleReadingItems` is: a snapshot from the ledger, not a
@@ -455,6 +455,56 @@ final class AppState: ObservableObject {
     /// `AppState.init`. Same shape as `signupBacklogStore`.
     var dueDateEditStore: DueDateEditStore? =
         SharedDefaults.isTestRunner ? nil : DueDateEditStore(defaults: .lhf)
+
+    // What Canvas's structured endpoints told us (`AppState+StructuredSources.swift`).
+    // Stored here because an extension cannot hold stored properties. All three
+    // are sets/maps of LEDGER ids, persisted in `structuredDefaults` (nil under
+    // the test runner unless a test hands it a scratch suite, the same shape as
+    // `dueDateEditStore`, so no concurrently running suite's `AppState.init`
+    // can read another suite's seed).
+    /// Rows Canvas says are done (planner tick, module requirement). Additive:
+    /// nothing in here is ever removed by a later run.
+    var structuredCompletedItemIDs: Set<String> = []
+    /// Rows the student dismissed in Canvas's Planner. Hidden from todo and all,
+    /// never deleted from the ledger.
+    var structuredDismissedItemIDs: Set<String> = []
+    /// `all_dates` section overrides, ledger id to the date Canvas says applies
+    /// to this student. Read under the student's own edit, never over it.
+    var structuredDueOverrides: [String: Date] = [:]
+    var structuredDefaults: UserDefaults? = SharedDefaults.isTestRunner ? nil : .lhf
+    /// Test seams: a canned fetch result and the course list to read it with.
+    var structuredSourcesRunForTesting: CanvasStructuredSourcesClient.RunResult?
+    var structuredSourcesCoursesForTesting: [CourseSummary]?
+
+    // Facts the server read out of pooled course posts (`AppState+AppliedFacts.swift`).
+    // Stored here because an extension cannot hold stored properties. Nil under
+    // the test runner unless a test hands in its own (in-memory) store and
+    // scratch defaults, the same shape as `dueDateEditStore`, so no concurrently
+    // running suite's `AppState.init` opens a store or reads another suite's cursor.
+    /// The phone's copy of the facts, with the student's verdict on each.
+    var appliedFactStore: AppliedFactStore? =
+        SharedDefaults.isTestRunner ? nil : AppliedFactStore.makeDefault() {
+        didSet { appliedFactsCache = nil; factsLastEffects = nil }
+    }
+    /// Holds the facts cursor (`factsCursorV1`).
+    var factsDefaults: UserDefaults? = SharedDefaults.isTestRunner ? nil : .lhf
+    /// The stored facts as snapshots, read once and dropped whenever the store
+    /// changes, so a rebuild (which runs often) does not fetch every time.
+    var appliedFactsCache: [AppliedFact]?
+    /// The last evaluation, minus its clock, so an unchanged verdict is not
+    /// written back to the store on every rebuild.
+    var factsLastEffects: FactEffects?
+    /// What each ledger row shows because of facts (by `Assignment.id`).
+    var factDisplay: [String: FactItemDisplay] = [:]
+    /// Fact-created ledger rows kept off the dashboard: undone, withdrawn, now
+    /// covered by Canvas, or the whole feature switched off. Never deleted.
+    var factHiddenRowIDs: Set<String> = []
+    /// The megaphone's "what changed" and "needs a look" groups.
+    var factChangeGroups: [FactChangeGroup] = []
+    var factReviewRows: [FactReviewRow] = []
+    /// True while the rebuild is re-running itself after writing new-task rows,
+    /// so it can only do that once.
+    var isRebuildingForFactRows = false
 
     // Device sync (`AppState+DeviceSync.swift`). An extension cannot hold
     // stored properties, so the state it needs lives here.
@@ -1284,6 +1334,7 @@ final class AppState: ObservableObject {
         // pre-ledger completions onto rows by this point, so this one derivation
         // sees the complete picture.
         reloadCompletionFromLedger()
+        loadStructuredState()
 
         // Wired here rather than at `cloudPrefsMirror`'s own construction
         // above: forming a closure that captures `self` isn't legal until
@@ -1856,7 +1907,9 @@ final class AppState: ObservableObject {
     func announcementItemsStillOpen(now: Date = Date()) -> [Assignment] {
         let postDates = announcementPostDates(for: announcementItems)
         return announcementItems.filter { item in
-            isCompleted(item) || !Self.isHiddenAnnouncementTask(
+            // A task a fact created that was undone or withdrawn is not open.
+            if factHiddenRowIDs.contains(item.id) { return false }
+            return isCompleted(item) || !Self.isHiddenAnnouncementTask(
                 item, dueAt: item.dueAt, postedAt: postDates.postedAt(for: item),
                 firstSeenAt: postDates.firstSeenAt(for: item), now: now
             )
@@ -4817,6 +4870,11 @@ final class AppState: ObservableObject {
         // course re-qualifies for a decision.
         purgeLedger(.canvasModules)
         moduleReadingItems = []
+        // Session-derived the same way: a different account must not inherit
+        // the last one's planner ticks, dismissals or section dates.
+        clearStructuredState()
+        // Facts are derived from the course material of the account being left.
+        clearAppliedFacts()
         // Announcement-extracted tasks are session-derived the identical way
         // — purge the ledger rows (a disconnected/reconnected account,
         // possibly a different one, shouldn't have a prior session's
@@ -5596,6 +5654,10 @@ final class AppState: ObservableObject {
             guard let items = try? await client.fetchModulesReadings(courseID: course.id) else { continue }
             courseProbes[course.id] = CourseProbeResult(submittableAssignmentCount: nil, moduleReadingCount: items.count)
         }
+
+        // After the module step so the planner and modules read here land on
+        // rows that already exist; before the rebuild so one rebuild shows it.
+        await syncStructuredCanvasSources(cookies: cookies)
 
         rebuildDashboardItems()
 
@@ -8274,7 +8336,34 @@ final class AppState: ObservableObject {
         for pair in collapse.collapses {
             carryCompletion(from: pair.moduleID, to: pair.canvasID)
         }
-        let structuredCanvasItems = collapse.canvasItems + collapse.moduleItems
+        // Section `all_dates` overrides go on after the collapses (which judge
+        // by the feed's own dates) and before everything that reads `dueAt`.
+        // The student's own edit still outranks the result (`effectiveDueDate`).
+        let sectionDatedItems = (collapse.canvasItems + collapse.moduleItems)
+            .map(applyingStructuredDueOverride)
+        // Facts from the server (`AppState+AppliedFacts.swift`) are judged on
+        // what Canvas itself says, so after the section dates and before
+        // anything that reads `dueAt`. New-task rows are written to the ledger
+        // here; if any were, the announcement rows are re-read and this
+        // rebuild runs once more so the new cards are in its pool.
+        let factPass = evaluateAppliedFacts(canvasPool: sectionDatedItems, now: now)
+        if factPass.wroteRows, !isRebuildingForFactRows {
+            isRebuildingForFactRows = true
+            if let store = assignmentStore { reloadAnnouncementItems(from: store) }
+            rebuildDashboardItems(now: now)
+            isRebuildingForFactRows = false
+            return
+        }
+        // A rescheduled row is the pool's copy only, never the ledger's. The
+        // student's own edit still outranks it (`effectiveDueDate`; the engine
+        // also stood the fact down for an edited row).
+        let structuredCanvasItems = sectionDatedItems.map { item in
+            factPass.reschedules[item.id].map { Self.applyingFactReschedule(item, to: $0) } ?? item
+        }
+        // Rows a fact created that the dashboard must not show (undone,
+        // withdrawn, switched off) are out of the announcement pool for the
+        // rest of this rebuild. The ledger rows stay.
+        let announcementItems = self.announcementItems.filter { !factHiddenRowIDs.contains($0.id) }
         let realItems = structuredCanvasItems + gradescopeItems + manualItems
         // Suppression is a presentation collapse, so it carries the same
         // ledger invariant as the Canvas/Modules collapses above: if the user
@@ -8445,6 +8534,10 @@ final class AppState: ObservableObject {
         refreshAnnouncementRecordsOnPage()
         let beforeBacklog = allItems.filter { item in
             !isCompleted(item)
+                // Dismissed in Canvas's Planner: off todo and all, still in the
+                // ledger. After `isCompleted` on purpose, so finished work the
+                // student also dismissed still reaches prev.
+                && !structuredDismissedItemIDs.contains(item.id)
                 && !Self.isTooOld(item, now: now)
                 && isCourseSelected(item.course)          // class picker
                 // The per-row archive stamp. Authoritative, because it was
@@ -8696,6 +8789,8 @@ final class AppState: ObservableObject {
     func widgetNextDueItems() -> [WidgetItem] {
         let overrides = courseNameOverrides
         let dated: [(assignment: Assignment, due: Date)] = (assignments + assessments + laterAssignments)
+            // A cancelled item is not "next due" (`isFactCancelled`).
+            .filter { !isFactCancelled($0) }
             .compactMap { assignment in
                 effectiveDueDate(for: assignment).map { (assignment, $0) }
             }
@@ -8901,6 +8996,10 @@ final class AppState: ObservableObject {
     func isCompleted(_ assignment: Assignment) -> Bool {
         if assignment.submitted || completedAssignmentIDs.contains(assignment.id) { return true }
         if let linkedID = assignment.linkedID, completedAssignmentIDs.contains(linkedID) { return true }
+        // Canvas's own structured say-so (planner tick, module requirement):
+        // done on the card without the student's `userCompleted` ever being set.
+        if structuredCompletedItemIDs.contains(assignment.id) { return true }
+        if let linkedID = assignment.linkedID, structuredCompletedItemIDs.contains(linkedID) { return true }
         if let canvasID = assignment.canvasAssignmentID,
            submittedCanvasAssignmentIDs.contains(canvasID) {
             return true

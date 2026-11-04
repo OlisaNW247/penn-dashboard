@@ -20,6 +20,8 @@ xcuserdata/
 LowHangingFruitKit/dist/
 LowHangingFruitKit/dist-ios/
 LowHangingFruitKit/.iosbuild/
+# Per-task scratch build dirs (`swift build --scratch-path .build-ui2` etc.).
+LowHangingFruitKit/.build-*/
 
 # Secrets / local
 .env

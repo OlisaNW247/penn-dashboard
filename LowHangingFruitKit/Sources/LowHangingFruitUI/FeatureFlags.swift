@@ -103,6 +103,42 @@ enum FeatureFlags {
     /// Canvas resync of their course drops them.
     static let edDiscussion = true
 
+    /// **Canvas's structured sources feed the ledger.** Planner items,
+    /// module completion, section due-date overrides and per-course modules,
+    /// graded discussions and dated pages are read with the student's own
+    /// session on each course refresh (`CanvasStructuredSourcesClient`) and
+    /// applied by `AppState.applyStructuredSources`: module-only work gets
+    /// rows, a planner tick or a met module requirement shows a card as done
+    /// (never setting the student's own completion), a Planner dismissal
+    /// hides a card, and a section override moves its date unless the student
+    /// moved it themselves.
+    ///
+    /// **This is the kill switch.** False removes the whole path: no extra
+    /// requests, nothing applied, and the saved completion, dismissal and
+    /// date sets are not even read back, so every card behaves as it did
+    /// before this existed. Rows already upserted stay in the ledger (it never
+    /// deletes) and show as ordinary module rows. Turn it off if Canvas starts
+    /// rate-limiting the app or a signal proves wrong, then fix the reconciler.
+    static let structuredCanvasSources = true
+
+    /// **Facts the server read out of pooled course posts change the
+    /// dashboard.** The sync asks the server for facts newer than the last one
+    /// it saw (`factsSince`), stores them (`AppliedFactStore`), and every
+    /// dashboard rebuild runs the precedence engine over them
+    /// (`FactApplication`): a cancelled item leaves todo (and says
+    /// "cancelled" in all), a rescheduled one shows the new date with the old
+    /// one struck through, a changed scope or a note is listed on the opened
+    /// card, a new task appears as a "from announcements" card, and the
+    /// megaphone lists what changed and what needs a look. Every effect has an
+    /// `undo` on the card. No effect ever completes or deletes anything.
+    ///
+    /// **This is the kill switch.** False removes the whole path: the
+    /// manifest request carries no `factsSince`, stored facts are not read,
+    /// nothing is evaluated, and the `fact-` rows an earlier run wrote to the
+    /// ledger are kept off the dashboard (they stay in the ledger, which never
+    /// deletes). Turn it off if a bad fact keeps hiding or moving real work.
+    static let appliedFacts = true
+
     /// Evaluates a token-store read only while the experiment is enabled.
     /// Keeping the guard around the closure (rather than around its result)
     /// is load-bearing: Keychain reads are synchronous and must not happen at

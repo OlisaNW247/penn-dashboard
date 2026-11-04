@@ -26,6 +26,8 @@ struct TimelineSectionView: View {
     /// animates away (`AssignmentCardView.onCommit`). Defaulted so a caller
     /// that does not pass one behaves as before.
     var onCommit: (DashItem) -> Void = { _ in }
+    /// The student took back what facts did to a card (`undo`).
+    var onUndo: (DashItem) -> Void = { _ in }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -38,6 +40,7 @@ struct TimelineSectionView: View {
                     onCommit: { onCommit(item) },
                     onEdit: { onEdit(item) },
                     onRemove: { onRemove(item) },
+                    onUndo: { onUndo(item) },
                     isExamOverride: item.examStyleOverride
                 )
                 .transition(.asymmetric(

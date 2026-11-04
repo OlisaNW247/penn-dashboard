@@ -338,10 +338,9 @@ extension AppState {
         var manifest = SyncManifestResponse()
         var manifestSucceeded = false
         do {
-            manifest = try await client.syncManifest(SyncManifestRequest(
-                courses: courses.map { CourseSummaryWire(summary: $0) },
-                documents: courseKnowledge.documents.map(DocumentStub.init(document:))
-            ))
+            manifest = try await client.syncManifest(
+                makeSyncManifestRequest(courses: courses, documents: courseKnowledge.documents)
+            )
             manifestSucceeded = true
         } catch {
             courseKnowledgeNotice = "couldn't reach lhf's server; syncing from canvas only."
@@ -379,6 +378,11 @@ extension AppState {
         // on disk before this sync began.
         try? store.save(withDownloads)
         courseKnowledge = withDownloads
+        // Facts the server read out of the pooled posts ride the same
+        // response. Stored after the documents they came from are folded in,
+        // so a stale revision's facts are pruned against the new hashes.
+        // Never fails the sync (`receiveManifestFacts` throws nothing).
+        receiveManifestFacts(manifest)
         // Re-taken after the manifest's downloads: another student's phone
         // may have pooled Ed threads for a course this phone has none for,
         // and those are as worth restoring as the ones read locally.
@@ -402,6 +406,9 @@ extension AppState {
                 store: store
             )
             courseKnowledge = ed.knowledge
+            // The collector may have refetched a post that was edited since:
+            // facts of the revision it replaced go.
+            if pruneStaleFacts() > 0 { rebuildDashboardItems() }
             pushGradeWatcherFacts()
             markCourseKnowledgeSyncVersion()
             trace.fullyFetched = report.fullyFetchedCourseIDs.sorted()

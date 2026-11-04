@@ -7,8 +7,9 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-10-28 on `release/3.4.0` (the 3.4.0 release, renamed
-from 3.3.1 that afternoon when PR #16 was folded in). Before
+Last updated 2026-11-04 on `v10` (composed-day Phases 1-3 built, uncommitted,
+not deployed). Before that, 2026-10-28 on `release/3.4.0` (the 3.4.0 release,
+renamed from 3.3.1 that afternoon when PR #16 was folded in). Before
 that, 2026-10-24 on `v8` (the tree research plan). Before that,
 2026-10-22, on `v8` (the Chrome extension). Before that,
 2026-10-20, on `v8-merge-loud-alert` (Olisa's `v8` merged
@@ -46,6 +47,27 @@ These block shipping, or would make shipping risky. The launch-prep
 work of 2026-10-09/10 is summarised, with the order to take these in,
 in `docs/LAUNCH_PREP_HANDOFF.md`.
 
+- **Deploy `extract-facts` and the `course_facts` migration** (Olisa's go;
+  the Supabase management token). Built 2026-11-04 on `v10`, nothing
+  deployed. Phases 2-3 replace the announcement watcher's output and change
+  what `sync` stores, both Olisa's area, so he decides. Steps, in order:
+  1. Olisa's go, and the management token plus `LHF_PROBE_SECRET` in the
+     shell (this Mac has neither; the deploy script relies on a cloud
+     session's proxy injecting the token).
+  2. Run `backend/supabase/migrations/20261104090000_course_facts.sql` and
+     `backend/test/rls.test.sql` against a real Postgres first; neither has
+     been executed. Apply the migration BEFORE deploying the functions.
+  3. Set `LHF_FACTS_MODEL` only if it should differ from the default
+     `anthropic/claude-haiku-5.5`; `LHF_FACTS_DISABLED=1` is the off switch.
+  4. `node backend/scripts/deploy-function.mjs extract-facts --also sync`
+     (`sync` carries the manifest `facts`/`factsCursor` and schedules
+     extraction after an upload). Check `deno task test` (671) and
+     `deno task check` first.
+  5. Watch `course_fact_extractions` (status, cost, rejects) for a day on
+     the real pool, then a phone: a fact should reach `AppliedFacts.store`
+     and change a card. Nothing about this path has been watched on a device.
+  Also open: the phone's course-material sync reported `manifest failed ·
+  uploaded 0 · errors 7` on 2026-11-03, which would starve extraction.
 - **Reminders for work already turned in, and a Sweeper that earns its
   ring** (Marco, 2026-11-04: reminded of an assignment he had submitted
   fifteen minutes earlier; agreed to the plan the same day). Reminders
@@ -392,6 +414,35 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   pass over the `LABELS-*.md` calls; moving `ask` off gpt-4.1-mini on
   the canary; Phase 1 and the identity layer can start, Phase 2 needs
   Olisa's go.
+  **Built 2026-11-04 on `v10`** (Marco: "make all the decisions"; Phases 1-3
+  written, committed on `v10`, **not deployed**, nothing watched on a device; 3559 /
+  340 green, Deno 671, `deno task check` clean; the migration SQL and
+  `rls.test.sql` not run). *Phase 1*, phone only, no model:
+  `CanvasStructuredSourcesClient`/`Reconciler` read Planner items, missing
+  submissions, modules, `all_dates`, discussion topics and dated pages;
+  `AppState+StructuredSources.swift` applies them (rows upserted; completions,
+  dismissals and section dates as additive sets in `UserDefaults.lhf`, never
+  as student edits). *Identity layer*: `WorkItemIdentity`/`Alias`/`Matcher`/
+  `MergeRecord`. *Phase 2*, server: `extract-facts` and
+  `_shared/factsExtraction.ts` on Haiku 5.5, `course_facts` migration,
+  manifest `facts`/`factsCursor`, `posted_at` on documents, PROTOCOL.md
+  "Facts", PRIVACY.md paragraph. *Phase 3*, phone: `AppliedFactStore` (its
+  own SwiftData file), `FactApplication` (pure precedence engine),
+  `AppState+AppliedFacts.swift`, card tags `cancelled`/`moved`/`changed`, a
+  struck old date, `undo`, and the megaphone's `changed` and `needs a look`
+  groups first. Decisions taken by the session: facts in their own store,
+  never the ledger schema; `cancel` hides from todo with undo; a
+  medium-confidence cancel goes to `needs a look` and is never applied; each
+  half behind a compile-time flag (`FeatureFlags.structuredCanvasSources`,
+  `.appliedFacts`); "Status: submitted" stripped from pooled assignment text
+  (a privacy fix in Olisa's collector, landed and flagged). A live probe with
+  Marco's key showed Haiku 5.5 accepting the exact production body. Left:
+  deploy (Now, with Olisa's go); phone verification; the per-item module
+  documents (Addendum C item 8) and the build-map first read (Addendum A);
+  Phase 4 (the day view) and Phase 5 (feedback); Marco's `LABELS-*.md` pass;
+  moving `ask` off `gpt-4.1-mini` (shutdown 2027-01-14), now a deploy/secret
+  operation on the canary, not a code change. Known engine limits are under
+  CLAUDE.md → Known gaps.
 - **McGraw Hill (Connect, ALEKS)** (owner's request, 2026-11-02; research
   only, nothing built). `reports/McGraw Hill access for Smooth.md` is the
   write-up, with its notes in `research_notes/McGraw Hill access for
@@ -730,6 +781,13 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-04.** Composed day, Phases 1-3 (`v10`, uncommitted, not deployed):
+  Canvas's structured sources and the identity layer on the phone; the
+  `extract-facts` Edge Function, `course_facts` migration and manifest facts
+  on the server; `AppliedFactStore`, the precedence engine, card tags with
+  `undo` and the megaphone's `changed`/`needs a look` groups on the phone.
+  3559/340 green, Deno 671. "Status: submitted" no longer goes into pooled
+  assignment text. Device verification and the deploy are open.
 - **2026-11-01.** Probe before declaring the Canvas session expired
   (`v9`, `docs/SIGNOUT_2026-11-01.md`): the 24-hour cookie rule now
   starts a `GET /api/v1/users/self` check instead of the banner; alive

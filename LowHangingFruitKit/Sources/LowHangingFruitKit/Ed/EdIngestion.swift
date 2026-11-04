@@ -47,7 +47,11 @@ public enum EdIngestion {
                 url: threadURL(edCourseID: edCourseID, threadID: thread.id),
                 text: EdDocumentBuilder.text(for: thread, decision: decision),
                 updatedAt: moved,
-                fetchedAt: now
+                fetchedAt: now,
+                // When the thread was started: distinct from `moved`, which a
+                // reply or edit pushes forward, and facts are ordered by when
+                // things were said.
+                postedAt: thread.createdAt
             ))
         }
         // Stable for equal dates: `sorted` is not guaranteed stable, so tie-break on id.

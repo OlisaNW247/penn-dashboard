@@ -383,16 +383,7 @@ struct ContentView: View {
         // its date edited in the sheet, and the dashboard's own sheets do the
         // same on the way out.
         .sheet(isPresented: $showAnnouncementFinds, onDismiss: rescheduleNotifications) {
-            AnnouncementFindsView(
-                found: state.announcementFoundCards(),
-                records: state.announcementSheetRecords(),
-                newIDs: announcementNewIDs,
-                // Classes the student has on only: the sheet never lists a
-                // hidden class's posts, so its bubble would always be empty.
-                courses: filterableCourses.filter { state.isCourseSelected($0.key) },
-                onComplete: { state.markCompleted($0.assignment) },
-                onSetDue: { assignment, date in state.setDueDateEdit(date, for: assignment) }
-            )
+            announcementFindsSheet
         }
         // A Canvas or Gradescope reconnect (`AppState.restartOnboarding(for:)`
         // with a single service, from a signed-in install) opens over the
@@ -1038,11 +1029,34 @@ struct ContentView: View {
                         },
                         // The swipe's write, made before the card animates away;
                         // `onComplete` above follows and finds it done.
-                        onCommit: { item in vm.commitCompletion(item) }
+                        onCommit: { item in vm.commitCompletion(item) },
+                        // `undo` on a card a fact changed; the rebuild it
+                        // triggers puts the card back as it was.
+                        onUndo: { item in
+                            vm.undoFacts(item)
+                            rescheduleNotifications()
+                        }
                     )
                 }
             }
         }
+    }
+
+    /// The megaphone sheet's content, built apart from `body` so that view's
+    /// expression stays small enough to type-check.
+    private var announcementFindsSheet: some View {
+        AnnouncementFindsView(
+            found: state.announcementFoundCards(),
+            records: state.announcementSheetRecords(),
+            newIDs: announcementNewIDs,
+            // Classes the student has on only: the sheet never lists a
+            // hidden class's posts, so its bubble would always be empty.
+            courses: filterableCourses.filter { state.isCourseSelected($0.key) },
+            onComplete: { state.markCompleted($0.assignment) },
+            onSetDue: { assignment, date in state.setDueDateEdit(date, for: assignment) },
+            factChanges: state.factChangeGroups,
+            factReviews: state.factReviewRows
+        )
     }
 
     /// The first-launch submission hold's on-screen half — see

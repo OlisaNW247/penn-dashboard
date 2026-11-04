@@ -29,6 +29,13 @@ struct DashItem: Identifiable, Equatable {
     /// and preview or demo data must not offer it. Nil by default, so sample
     /// data and every existing construction site offer nothing.
     var removal: OwnTaskRemoval? = nil
+    /// What facts from the server did to this card (`FactItemDisplay`):
+    /// cancelled, moved, changed. Snapshotted at `reload` time like the fields
+    /// above. Nil for sample data and for every card no fact touched.
+    var fact: FactItemDisplay? = nil
+
+    /// A fact cancelled it: off todo and reminders, still listed in all.
+    var isFactCancelled: Bool { fact?.cancelled == true }
 
     var id: String { assignment.id }
     var due: Date? { dueOverride ?? assignment.dueAt }
@@ -101,7 +108,7 @@ struct DashItem: Identifiable, Equatable {
     /// Canvas, and the card's link opens Ed. An exam out of the syllabus says
     /// "from syllabus" for the same reason: it is no announcement's.
     var caveatText: String? {
-        var parts: [String] = []
+        var parts: [String] = fact?.caveatWords ?? []
         if showsNothingToSubmit { parts.append("nothing to submit") }
         if isFromAnnouncement {
             switch assignment.announcementOrigin {
@@ -258,7 +265,8 @@ final class DashboardViewModel: ObservableObject {
                                   isCompleted: false,
                                   completedAt: nil,
                                   requiresNoSubmission: state.requiresNoSubmission(a),
-                                  removal: OwnTaskRemoval.offered(for: a, isUsingFixtureData: isFixture)))
+                                  removal: OwnTaskRemoval.offered(for: a, isUsingFixtureData: isFixture),
+                                  fact: state.factDisplay[a.id]))
         }
 
         // Completed pool: reconstruct from the source feeds, since the grouped
@@ -357,6 +365,14 @@ final class DashboardViewModel: ObservableObject {
         }
     }
 
+    /// Takes back every fact applied to a card. `AppState` records the verdict
+    /// on the facts and rebuilds; the next `reload` reads the card back as it
+    /// was. Sample data has no facts, so nothing happens there.
+    func undoFacts(_ item: DashItem) {
+        guard !usingSampleData, let state = appState, let ids = item.fact?.factIDs, !ids.isEmpty else { return }
+        state.rejectFacts(ids)
+    }
+
     private func index(of item: DashItem) -> Int? {
         items.firstIndex { $0.id == item.id }
     }
@@ -373,7 +389,10 @@ final class DashboardViewModel: ObservableObject {
             now: now,
             includeOverdue: true,
             includeLater: false,
-            upcomingHorizon: 2 * 86_400
+            upcomingHorizon: 2 * 86_400,
+            // A cancelled item leaves todo and nowhere else: all still lists it
+            // with its caveat, and the ledger row is untouched.
+            excludingCancelled: true
         )
     }
 
@@ -392,7 +411,8 @@ final class DashboardViewModel: ObservableObject {
         now: Date,
         includeOverdue: Bool,
         includeLater: Bool,
-        upcomingHorizon: TimeInterval
+        upcomingHorizon: TimeInterval,
+        excludingCancelled: Bool = false
     ) -> [DashSection] {
         var overdue: [DashItem] = []
         var today: [DashItem] = []
@@ -401,7 +421,7 @@ final class DashboardViewModel: ObservableObject {
 
         // Section thresholds are independent of the per-card color tiers:
         // overdue / today (<24h) / rest of week (1–7d) / later (8d+).
-        for item in activeItems {
+        for item in activeItems where !(excludingCancelled && item.isFactCancelled) {
             guard let due = item.due else {
                 if includeLater { later.append(item) }   // undated → "later" only
                 continue
@@ -534,7 +554,7 @@ final class DashboardViewModel: ObservableObject {
         }.count
 
         let dueThisWeek = items.filter {
-            guard !$0.isCompleted, let d = $0.due else { return false }
+            guard !$0.isCompleted, !$0.isFactCancelled, let d = $0.due else { return false }
             return d >= now && d <= weekEnd
         }.count
 
