@@ -46,6 +46,20 @@ These block shipping, or would make shipping risky. The launch-prep
 work of 2026-10-09/10 is summarised, with the order to take these in,
 in `docs/LAUNCH_PREP_HANDOFF.md`.
 
+- **Reminders for work already turned in, and a Sweeper that earns its
+  ring** (Marco, 2026-11-04: reminded of an assignment he had submitted
+  fifteen minutes earlier; agreed to the plan the same day). Reminders
+  are local notifications scheduled days ahead and only a replan after a
+  Canvas grades fetch unsets one; that fetch runs at most every 15
+  minutes and only in the foreground, so a submission inside about 20
+  minutes of a reminder, or with the app closed, cannot stop it.
+  `docs/REMINDER_SUBMISSION_FIX_SESSION_PROMPT.md` is the brief, four
+  parts that ship alone: cancel at observation, a submissions-only poll
+  every minute inside the last hour, the background wake proven on a
+  phone with a throttle bypass, and the Sweeper armed only inside the
+  last hour from a confirmed-unsubmitted check, qualified by rules
+  (no-submission, zero points, "optional"/"survey" titles) with a seam
+  for a pooled model verdict later. Not started.
 - **Ship the no-banner sign-in as 3.4.1.** `v9` (2026-11-02): the sign-out
   banner is gone for good, replaced by a quiet status line the clock can
   never trigger; silent re-login on every open; keepalive probes; the

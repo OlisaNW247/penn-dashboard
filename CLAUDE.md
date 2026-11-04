@@ -3293,7 +3293,11 @@ none is a ship line.
     everything); `LHFBackgroundRefresh.run()` posts "turned in" notices but
     never reschedules, and the silent-renewal refetch
     (`performSilentCanvasRenewal`) doesn't either. Background code is off
-    limits.
+    limits. **Bit Marco on 2026-11-03** (a reminder fifteen minutes after
+    he submitted): the fix is planned in
+    `docs/REMINDER_SUBMISSION_FIX_SESSION_PROMPT.md` (`ROADMAP.md` → Now);
+    `LHFBackgroundRefresh.run()` does replan since the hardening work,
+    unverified on a phone, and hits the same 15-minute throttle.
   - **Canvas partial failure.** When one site of a class fails and another
     succeeds, the 15-minute throttle arms for both and the failed one keeps
     its old snapshot (`GradeWatcherStore` `fetchedAny`).
