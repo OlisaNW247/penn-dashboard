@@ -412,6 +412,14 @@ export function renderReport(tag: string, lines: ResultLine[]): string {
 
 // --- CLI: re-score a saved results file ------------------------------------
 
+async function* walk(dir: string): AsyncGenerator<string> {
+  for await (const e of Deno.readDir(dir)) {
+    const p = `${dir}/${e.name}`;
+    if (e.isDirectory) yield* walk(p);
+    else if (e.isFile && e.name.endsWith(".json")) yield p;
+  }
+}
+
 export function readResults(text: string): ResultLine[] {
   return text.split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l) as ResultLine);
 }
@@ -424,6 +432,26 @@ if (import.meta.main) {
     Deno.exit(2);
   }
   const lines = readResults(await Deno.readTextFile(path));
+  // --corpus <dir>: re-read each document's `expected` from the corpus by
+  // document id before scoring. A results line snapshots the labels as they
+  // were when the model ran, so a label corrected after the run would
+  // otherwise never change the score, and a re-score would look like
+  // confirmation (round 2, 2026-11-03: five corrections, identical totals).
+  // Only labels are swapped; the model's answer and the index it saw stay.
+  const c = Deno.args.indexOf("--corpus");
+  if (c >= 0 && Deno.args[c + 1]) {
+    const byId = new Map<string, ExpectedFact[]>();
+    for await (const f of walk(Deno.args[c + 1])) {
+      const doc = JSON.parse(await Deno.readTextFile(f));
+      if (doc && typeof doc.id === "string" && Array.isArray(doc.expected?.facts)) byId.set(doc.id, doc.expected.facts);
+    }
+    let swapped = 0;
+    for (const l of lines) {
+      const e = byId.get(l.docId);
+      if (e) { l.expected = e; swapped++; }
+    }
+    console.log(`labels reloaded from corpus for ${swapped}/${lines.length} lines`);
+  }
   for (const l of lines) {
     l.score = scoreDoc(l.expected, l.parsed ?? { facts: [], rejected: [], parseFailed: true }, l);
   }
