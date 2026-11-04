@@ -31,6 +31,12 @@
 --     bench taught"), and a relative date ("by Friday") resolves from the
 --     post date, so the extractor needs one. Nullable: nothing sends it yet.
 --
+-- Idempotent on purpose (scripts/deploy-facts.mjs applies it through the
+-- Management API and may be re-run): `if not exists` on tables, columns and
+-- indexes, `create or replace` on the function, drop-then-create on the policy.
+-- Never edit a table definition here after it has been applied; add a new
+-- migration instead, because `if not exists` skips a changed table silently.
+--
 -- Apply this BEFORE deploying the functions that call it. `sync` only writes
 -- `posted_at` when a client sends one, so it keeps working if deployed
 -- first; `extract-facts` and the manifest's facts read fail soft (they log
@@ -51,7 +57,7 @@ alter table public.course_documents
 --                   `attempts` reaches 3, then left as it is (given up)
 --   skipped_budget  a budget cap said no; tried again on a later call, so a
 --                   day's exhausted course is picked up the next UTC day
-create table public.course_fact_extractions (
+create table if not exists public.course_fact_extractions (
   id                 bigint generated always as identity primary key,
   document_id        text not null references public.course_documents (id) on delete cascade,
   content_hash       text not null,
@@ -81,13 +87,13 @@ create table public.course_fact_extractions (
   unique (document_id, content_hash)
 );
 
-create index course_fact_extractions_course_idx
+create index if not exists course_fact_extractions_course_idx
   on public.course_fact_extractions (course_id, status);
 
 -- ---------------------------------------------------------------------
 -- course_facts
 -- ---------------------------------------------------------------------
-create table public.course_facts (
+create table if not exists public.course_facts (
   -- The cursor. Identity values are handed out in order but become visible
   -- in commit order, so a reader at cursor N can in principle miss a row
   -- numbered below N that committed late. The extractor inserts all of an
@@ -116,8 +122,8 @@ create table public.course_facts (
   created_at         timestamptz not null default now()
 );
 
-create index course_facts_course_seq_idx on public.course_facts (course_id, seq);
-create index course_facts_document_idx on public.course_facts (document_id);
+create index if not exists course_facts_course_seq_idx on public.course_facts (course_id, seq);
+create index if not exists course_facts_document_idx on public.course_facts (document_id);
 
 -- ---------------------------------------------------------------------
 -- fact_extraction_budget
@@ -127,14 +133,14 @@ create index course_facts_document_idx on public.course_facts (document_id);
 -- `courses` on purpose: the global monthly cap sums these rows, and a
 -- course deleted mid-month must not hand its spend back to the cap.
 -- Holds a course id and a count: nothing personal.
-create table public.fact_extraction_budget (
+create table if not exists public.fact_extraction_budget (
   course_id    text not null,
   day          date not null,
   extractions  integer not null default 0,
   primary key (course_id, day)
 );
 
-create index fact_extraction_budget_day_idx on public.fact_extraction_budget (day);
+create index if not exists fact_extraction_budget_day_idx on public.fact_extraction_budget (day);
 
 -- ---------------------------------------------------------------------
 -- claim_fact_extraction(): decide, before the model call, whether this
@@ -165,7 +171,7 @@ create index fact_extraction_budget_day_idx on public.fact_extraction_budget (da
 --
 -- SECURITY DEFINER with the service-role-only grant below, like every
 -- function that takes ids as parameters.
-create function public.claim_fact_extraction(
+create or replace function public.claim_fact_extraction(
   p_document_id text,
   p_course_id text,
   p_content_hash text,
@@ -289,6 +295,8 @@ revoke all on public.fact_extraction_budget from anon, authenticated;
 grant all on public.course_facts, public.course_fact_extractions, public.fact_extraction_budget
   to service_role;
 
+-- Re-runnable: `create policy` has no `if not exists`.
+drop policy if exists course_facts_select_enrolled on public.course_facts;
 create policy course_facts_select_enrolled
   on public.course_facts
   for select

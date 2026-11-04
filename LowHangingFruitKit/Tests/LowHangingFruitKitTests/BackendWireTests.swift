@@ -532,3 +532,155 @@ private extension JSONDecoder {
         #expect(!String(decoding: plain, as: UTF8.self).contains("postedAt"))
     }
 }
+
+// MARK: - Hostile manifest input
+
+/// A static manifest, a proxy or a server one release ahead can send the phone
+/// anything. The rule these pin: the manifest as a whole never fails to decode
+/// over a bad `facts` element or a bad `download` element; each bad element is
+/// dropped or loses only a nice-to-have field. Where the phone is more
+/// tolerant than the server's contract, a test says so by name.
+@Suite("Backend wire: hostile facts and documents")
+struct BackendWireHostileTests {
+    private static func fact(_ replacing: [String: String] = [:], seq: String = "7") -> String {
+        var fields: [(String, String)] = [
+            ("seq", seq), ("courseID", "\"1234\""), ("documentID", "\"announcement:1234:55\""),
+            ("contentHash", "\"h1\""), ("type", "\"reschedule\""), ("target", "\"555\""),
+            ("title", "\"PSet 3\""), ("dueAt", "\"2027-01-15T04:59:00Z\""), ("kind", "\"submission\""),
+            ("quote", "\"moved\""), ("confidence", "\"high\""), ("postedAt", "\"2027-01-10T15:00:00Z\""),
+        ]
+        fields = fields.map { ($0.0, replacing[$0.0] ?? $0.1) }
+        return "{" + fields.map { "\"\($0.0)\":\($0.1)" }.joined(separator: ",") + "}"
+    }
+
+    private func manifest(facts: [String], cursor: String = "9") throws -> SyncManifestResponse {
+        let json = "{\"facts\":[\(facts.joined(separator: ","))],\"factsCursor\":\(cursor),\"coursesFresh\":[\"1234\"]}"
+        let response = try BackendJSON.decoder().decode(SyncManifestResponse.self, from: Data(json.utf8))
+        #expect(response.coursesFresh == ["1234"], "the rest of the manifest survives")
+        return response
+    }
+
+    @Test("non-object elements in facts are dropped and the good fact kept")
+    func nonObjectElements() throws {
+        let response = try manifest(facts: ["1", "\"str\"", "null", "[]", "[{}]", "true", Self.fact()])
+        #expect(response.facts.map(\.seq) == [7])
+    }
+
+    @Test("a facts value that is not an array reads as no facts and leaves the rest of the manifest")
+    func factsContainerShape() throws {
+        for value in ["null", "{\"seq\":1}", "\"x\"", "42", "true"] {
+            let response = try BackendJSON.decoder().decode(
+                SyncManifestResponse.self, from: Data("{\"facts\":\(value),\"factsCursor\":5,\"coursesFresh\":[\"1\"]}".utf8))
+            #expect(response.facts.isEmpty, "facts: \(value)")
+            #expect(response.coursesFresh == ["1"] && response.factsCursor == 5)
+        }
+    }
+
+    @Test("seq as a string or a float drops the fact")
+    func seqWrongType() throws {
+        let response = try manifest(facts: [Self.fact(seq: "\"7\""), Self.fact(seq: "1.5"), Self.fact(seq: "null"), Self.fact(seq: "8")])
+        #expect(response.facts.map(\.seq) == [8])
+    }
+
+    @Test("seq outside 1...2^53 drops the fact; the ends of the range are kept")
+    func seqExtremes() throws {
+        let response = try manifest(facts: [
+            Self.fact(seq: "4611686018427387904"), Self.fact(seq: "-3"), Self.fact(seq: "0"),
+            Self.fact(seq: "9007199254740993"), Self.fact(seq: "99999999999999999999"),
+            Self.fact(seq: "1"), Self.fact(seq: "9007199254740992"),
+        ])
+        #expect(response.facts.map(\.seq) == [1, 9_007_199_254_740_992])
+    }
+
+    @Test("a cursor outside 0...2^53, a string or a float decodes as nil; the manifest survives")
+    func hostileCursor() throws {
+        for bad in ["\"abc\"", "1.5", "-1", "4611686018427387904", "9007199254740993", "null"] {
+            #expect(try manifest(facts: [], cursor: bad).factsCursor == nil, "cursor \(bad)")
+        }
+        #expect(try manifest(facts: [], cursor: "0").factsCursor == 0)
+        #expect(try manifest(facts: [], cursor: "9007199254740992").factsCursor == 9_007_199_254_740_992)
+    }
+
+    @Test("dueAt at the ends of the calendar decodes to a real date; junk reads as nil")
+    func extremeDates() throws {
+        let response = try manifest(facts: [
+            Self.fact(["dueAt": "\"1900-01-01T00:00:00Z\""], seq: "1"),
+            Self.fact(["dueAt": "\"9999-12-31T23:59:59Z\""], seq: "2"),
+            Self.fact(["dueAt": "\"\""], seq: "3"),
+            Self.fact(["dueAt": "12345"], seq: "4"),
+            Self.fact(["dueAt": "\"2027-13-45T99:99:99Z\""], seq: "5"),
+        ])
+        #expect(response.facts.map(\.seq) == [1, 2, 3, 4, 5])
+        #expect(response.facts[0].dueAt == Date(timeIntervalSince1970: -2_208_988_800))
+        #expect(response.facts[1].dueAt == Date(timeIntervalSince1970: 253_402_300_799))
+        #expect(response.facts[2...].allSatisfy { $0.dueAt == nil })
+    }
+
+    @Test("a 100,000-character quote decodes intact")
+    func hugeQuote() throws {
+        let quote = String(repeating: "a", count: 100_000)
+        let response = try manifest(facts: [Self.fact(["quote": "\"\(quote)\""])])
+        #expect(response.facts.first?.quote.count == 100_000)
+    }
+
+    @Test("unknown or null type and out-of-vocabulary confidence drop the fact")
+    func strictEnums() throws {
+        let response = try manifest(facts: [
+            Self.fact(["type": "\"teleport\""], seq: "1"),
+            Self.fact(["type": "null"], seq: "2"),
+            Self.fact(["type": "\"CANCEL\""], seq: "3"),
+            Self.fact(["confidence": "\"LOW\""], seq: "4"),
+            Self.fact(["confidence": "\"low\""], seq: "5"),
+            Self.fact(["confidence": "null"], seq: "6"),
+            Self.fact(seq: "7"),
+        ])
+        #expect(response.facts.map(\.seq) == [7])
+    }
+
+    @Test("lenient fields (target, title, kind, quote, postedAt) of the wrong type read as nil or empty")
+    func lenientWrongTypes() throws {
+        let response = try manifest(facts: [Self.fact([
+            "target": "5", "title": "{}", "kind": "\"nonsense\"", "quote": "[1]", "postedAt": "true",
+        ])])
+        let fact = try #require(response.facts.first)
+        #expect(fact.target == nil && fact.title == nil && fact.kind == nil)
+        #expect(fact.quote == "" && fact.postedAt == nil)
+    }
+
+    @Test("missing required fields drop the fact")
+    func missingRequired() throws {
+        let response = try manifest(facts: [
+            #"{"seq":1,"type":"cancel","confidence":"high"}"#,
+            #"{"seq":2,"courseID":"1","documentID":"d","contentHash":"h","type":"cancel"}"#,
+            Self.fact(seq: "3"),
+        ])
+        #expect(response.facts.map(\.seq) == [3])
+    }
+
+    // MARK: Document postedAt
+
+    private func documentJSON(posted: String?, source: String = "55") -> String {
+        let extra = posted.map { ",\"postedAt\":\($0)" } ?? ""
+        return #"{"id":"announcement:1234:\#(source)","courseID":"1234","course":"CIS 2400","kind":"announcement","sourceID":"\#(source)","title":"T","text":"body","fetchedAt":"2026-11-02T08:30:00Z","contentHash":"h"\#(extra)}"#
+    }
+
+    @Test("a garbage postedAt on a download costs only the hint")
+    func garbagePostedAt() throws {
+        let json = "{\"download\":[\(documentJSON(posted: "\"garbage\"", source: "1")),\(documentJSON(posted: "42", source: "2")),\(documentJSON(posted: "{}", source: "3")),\(documentJSON(posted: "\"\"", source: "4")),\(documentJSON(posted: "null", source: "5")),\(documentJSON(posted: nil, source: "6")),\(documentJSON(posted: "\"2026-11-02T09:00:00.000Z\"", source: "7"))],\"coursesFresh\":[\"1234\"]}"
+        let response = try BackendJSON.decoder().decode(SyncManifestResponse.self, from: Data(json.utf8))
+        #expect(response.coursesFresh == ["1234"])
+        // Matches the server's upload rule: an unreadable postedAt costs the hint,
+        // never the document.
+        #expect(response.download.map(\.sourceID) == ["1", "2", "3", "4", "5", "6", "7"])
+        #expect(response.download.map(\.postedAt) == [nil, nil, nil, nil, nil, nil, Date(timeIntervalSince1970: 1_793_610_000)])
+    }
+
+    @Test("a postedAt at the ends of the calendar decodes")
+    func extremePostedAt() throws {
+        for posted in ["1900-01-01T00:00:00Z", "9999-12-31T23:59:59Z"] {
+            let wire = try BackendJSON.decoder().decode(CourseDocumentWire.self, from: Data(documentJSON(posted: "\"\(posted)\"").utf8))
+            #expect(wire.postedAt != nil)
+            #expect(wire.document()?.postedAt == wire.postedAt)
+        }
+    }
+}

@@ -275,8 +275,23 @@ function extractJSON(text: string): string {
   return (fenced ? fenced[1] : text).trim();
 }
 
+/** Folds both the document and a quote the same way before the containment
+ *  check: Unicode NFKC, curly quotes and apostrophes to straight, en/em
+ *  dashes to "-", non-breaking space to space, then whitespace collapsed and
+ *  lowercased. Applied to BOTH sides, so it cannot make a quote match text
+ *  that does not say it; it only stops typography the model re-spelled
+ *  (NFD, curly vs straight) from discarding a true fact. The stored quote is
+ *  the model's own string, never this folded form. */
 function normalizeForQuote(s: string): string {
-  return s.replace(/\s+/g, " ").trim().toLowerCase();
+  return s
+    .normalize("NFKC")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2013\u2014]/g, "-")
+    .replace(/\u00A0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
 }
 
 const TARGET_REQUIRED: ReadonlySet<string> = new Set(["cancel", "reschedule", "scope_change", "note"]);

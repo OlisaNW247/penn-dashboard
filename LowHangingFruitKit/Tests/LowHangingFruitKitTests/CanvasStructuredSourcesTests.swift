@@ -380,3 +380,211 @@ struct CanvasStructuredReconcilerTests {
         #expect(graded.kind == .discussion)
     }
 }
+
+// MARK: - Hostile input
+
+/// Shapes a Canvas instance, a proxy or a captive portal could send. The rule:
+/// a bad field reads as absent, a bad element is dropped and counted, nothing
+/// throws and nothing stalls.
+///
+/// Fixed 2026-11-04: an id sent as a float beyond Int64 (`"plannable_id":
+/// 1e300`) reached `Int64(double)` in `flexString` and trapped; `hugeFloatIDs`
+/// pins the range check.
+@Suite("Canvas structured sources: hostile decoding")
+struct CanvasStructuredHostileDecoderTests {
+    private func data(_ s: String) -> Data { Data(s.utf8) }
+
+    @Test("ids as floats: whole floats become integers, fractions keep their digits")
+    func floatIDs() {
+        let json = #"[{"plannable_type":"assignment","plannable_id":55.0,"course_id":7.5},{"plannable_type":"assignment","plannable_id":"55","course_id":-3}]"#
+        let r = CanvasStructuredDecoding.decode(CanvasPlannerItem.self, fromPages: [data(json)])
+        #expect(r.dropped == 0)
+        #expect(r.elements.map(\.plannableID) == ["55", "55"])
+        #expect(r.elements.map(\.courseID) == ["7.5", "-3"])
+    }
+
+    @Test("ids as huge, tiny or edge floats never trap")
+    func hugeFloatIDs() {
+        let ids = ["1e300", "-1e300", "1e19", "9.3e18", "-9.3e18", "9.1e18", "1e-300", "0.0", "-0.0"]
+        let json = "[" + ids.map { "{\"plannable_type\":\"assignment\",\"plannable_id\":\($0),\"course_id\":\($0)}" }.joined(separator: ",") + "]"
+        let r = CanvasStructuredDecoding.decode(CanvasPlannerItem.self, fromPages: [data(json)])
+        #expect(r.dropped == 0)
+        #expect(r.elements.count == ids.count)
+        #expect(r.elements.allSatisfy { $0.plannableID != nil })
+        #expect(r.elements[5].plannableID == "9100000000000000000")
+        #expect(r.elements[0].plannableID == String(1e300))
+    }
+
+    @Test("planner: null override, submissions false, null plannable and empty todo_date read as absent")
+    func plannerNulls() {
+        let json = """
+        [{"plannable_type":"planner_note","plannable_id":1,"planner_override":null,"submissions":false,"plannable":{"title":"x","todo_date":""}},
+         {"plannable_type":"assignment","plannable_id":2,"plannable":null,"submissions":null,"planner_override":false},
+         {"plannable_type":null,"plannable_id":null},
+         {"plannable_type":"assignment","plannable_id":3,"plannable":{"due_at":"not a date","todo_date":12}},
+         {}]
+        """
+        let r = CanvasStructuredDecoding.decode(CanvasPlannerItem.self, fromPages: [data(json)])
+        #expect(r.dropped == 0)
+        #expect(r.elements.count == 5)
+        #expect(r.elements[0].todoDate == nil && !r.elements[0].markedComplete && !r.elements[0].dismissed && r.elements[0].submitted == nil)
+        #expect(r.elements[1].title == nil && r.elements[1].dueAt == nil)
+        #expect(r.elements[2].plannableType == "" && r.elements[2].plannableID == nil)
+        #expect(r.elements[3].dueAt == nil && r.elements[3].todoDate == nil)
+    }
+
+    @Test("planner: wrong-typed booleans inside overrides read as false, not as dismissed")
+    func plannerWrongBooleans() {
+        let json = #"[{"plannable_type":"assignment","plannable_id":1,"planner_override":{"marked_complete":"true","dismissed":1},"submissions":{"submitted":"yes"}}]"#
+        let r = CanvasStructuredDecoding.decode(CanvasPlannerItem.self, fromPages: [data(json)])
+        let item = r.elements[0]
+        #expect(!item.markedComplete && !item.dismissed)
+        #expect(item.submitted == nil)
+    }
+
+    @Test("module items: content_details missing, completion_requirement empty or wrong-typed")
+    func moduleItemShapes() {
+        let json = """
+        [{"id":1,"name":"W1","items":[
+          {"id":10,"type":"Assignment","title":"A"},
+          {"id":11,"type":"Assignment","title":"B","completion_requirement":{},"content_details":null},
+          {"id":12,"type":"Page","title":"C","completion_requirement":"must_view","content_details":[]},
+          {"id":13.0,"type":"Page","title":"D","completion_requirement":{"type":5,"completed":"yes"},"content_details":{"due_at":"","points_possible":"ten"}},
+          {"id":null,"title":"no id"},
+          7
+        ]}]
+        """
+        let r = CanvasStructuredDecoding.modules(fromPages: [data(json)])
+        #expect(r.elements.count == 1)
+        #expect(r.elements[0].items.map(\.id) == ["10", "11", "12", "13"])
+        #expect(r.elements[0].items.allSatisfy { $0.completionRequirementType == nil && $0.completionCompleted == nil })
+        #expect(r.elements[0].items.allSatisfy { $0.dueAt == nil && $0.pointsPossible == nil })
+        #expect(r.dropped == 2)
+    }
+
+    @Test("discussion topics: assignment null, wrong-typed or id-less nest reads as no assignment")
+    func discussionNesting() {
+        let json = """
+        [{"id":1,"title":"a","assignment":null},
+         {"id":2,"title":"b","assignment":"x"},
+         {"id":3,"title":"c","assignment":{}},
+         {"id":4,"title":"d","assignment":{"id":9.0,"due_at":"2026-11-10T04:59:00Z"}},
+         {"title":"no id"}]
+        """
+        let r = CanvasStructuredDecoding.decode(CanvasDiscussionTopic.self, fromPages: [data(json)])
+        #expect(r.elements.map(\.id) == ["1", "2", "3", "4"])
+        #expect(r.dropped == 1)
+        #expect(r.elements[0...2].allSatisfy { $0.assignmentID == nil && $0.assignmentDueAt == nil })
+        #expect(r.elements[3].assignmentID == "9" && r.elements[3].assignmentDueAt != nil)
+    }
+
+    @Test("assignments: all_dates and overrides of the wrong shape cost the list, not the assignment")
+    func assignmentLists() {
+        let json = """
+        [{"id":1,"all_dates":null,"overrides":"none","submission_types":[1,"online_upload",null]},
+         {"id":2,"all_dates":[7,{"due_at":"2026-11-10T04:59:00Z","base":true},null],"overrides":{"id":1}},
+         {"id":3,"published":"false","workflow_state":9}]
+        """
+        let r = CanvasStructuredDecoding.decode(CanvasOverrideAssignment.self, fromPages: [data(json)])
+        #expect(r.dropped == 0)
+        #expect(r.elements.count == 3)
+        #expect(r.elements[0].allDates.isEmpty && r.elements[0].overrides.isEmpty)
+        #expect(r.elements[0].submissionTypes == ["online_upload"])
+        #expect(r.elements[1].allDates.count == 1 && r.elements[1].overrides.isEmpty)
+        #expect(r.elements[2].published == nil && r.elements[2].isLive)
+    }
+
+    @Test("a page of the wrong top-level shape is counted once; a mixed page keeps its good elements")
+    func pageShapes() {
+        for body in ["null", "42", "\"text\"", "{\"a\":[]}", "", "[", "[[[[]]]]"] {
+            let r = CanvasStructuredDecoding.decode(CanvasPlannerItem.self, fromPages: [data(body)])
+            #expect(r.elements.isEmpty || body == "[[[[]]]]")
+            #expect(r.dropped >= (body == "[[[[]]]]" ? 0 : 1), "\(body)")
+        }
+        let mixed = CanvasStructuredDecoding.decode(CanvasPlannerItem.self, fromPages: [
+            data(#"[1,null,{"plannable_type":"assignment","plannable_id":5},"x"]"#),
+        ])
+        #expect(mixed.elements.map(\.plannableID) == ["5"])
+        #expect(mixed.dropped == 3)
+    }
+
+    @Test("the while(1); prefix and a BOM-less empty list decode")
+    func prefixAndEmpty() {
+        #expect(CanvasStructuredDecoding.decode(CanvasPlannerItem.self, fromPages: [data("while(1);[]")]).dropped == 0)
+        #expect(CanvasStructuredDecoding.decode(CanvasPlannerItem.self, fromPages: []).elements.isEmpty)
+    }
+}
+
+@Suite("Canvas structured sources: hostile client")
+struct CanvasStructuredHostileClientTests {
+    private let base = URL(string: "https://canvas.example.edu")!
+    private let t0 = ISO8601DateFormatter().date(from: "2026-11-01T00:00:00Z")!
+    private let t1 = ISO8601DateFormatter().date(from: "2026-12-01T00:00:00Z")!
+
+    @Test("a Link chain that never ends is stopped by the page cap and the endpoint is not called complete")
+    func endlessChain() async {
+        let canned = Canned()
+        let path = "/api/v1/courses/7/assignments"
+        func link(_ page: Int) -> [String: String] {
+            ["Link": "<https://canvas.example.edu\(path)?page=\(page)&per_page=100>; rel=\"next\""]
+        }
+        canned.set(path, [.init(body: "[{\"id\":1}]", headers: link(2))])
+        // 58 further pages, each pointing at the next: well past any sane cap.
+        for page in 2...59 { canned.set("\(path)?page=\(page)", [.init(body: "[{\"id\":\(page)}]", headers: link(page + 1))]) }
+        let run = await CanvasStructuredSourcesClient(baseURL: base, transport: canned.transport())
+            .fetch(courseIDs: ["7"], plannerStart: t0, plannerEnd: t1)
+        let requests = canned.paths().filter { $0 == path }.count
+        #expect(requests == 50, "the cap is 50 pages; saw \(requests)")
+        #expect(run.courses[0].assignments.count == 50, "what was fetched is kept")
+        #expect(!run.courses[0].completedEndpoints.contains(.assignments))
+        #expect(!run.rateLimited && !run.sessionExpired)
+    }
+
+    @Test("a next link that points back at the same page cannot loop forever")
+    func selfLoop() async {
+        let canned = Canned()
+        let path = "/api/v1/courses/7/pages"
+        let loop = ["Link": "<https://canvas.example.edu\(path)?page=2>; rel=\"next\""]
+        canned.set(path, [.init(body: "[{\"url\":\"a\"}]", headers: loop)])
+        canned.set("\(path)?page=2", [.init(body: "[{\"url\":\"b\"}]", headers: loop)])
+        let run = await CanvasStructuredSourcesClient(baseURL: base, transport: canned.transport())
+            .fetch(courseIDs: ["7"], plannerStart: t0, plannerEnd: t1)
+        #expect(canned.paths().filter { $0 == path }.count == 50)
+        #expect(!run.courses[0].completedEndpoints.contains(.pages))
+    }
+
+    @Test("an X-Rate-Limit-Remaining that is not a number is ignored; a negative or tiny one stops the run")
+    func hostileRateHeader() async {
+        let ignored = ["abc", "", "   ", "nan", "1e999", "--5", "0x10", "inf", "1e2", "5 5", "."]
+        for value in ignored {
+            let canned = Canned()
+            canned.set("/api/v1/courses/7/modules", [.init(body: "[{\"id\":1,\"name\":\"W\",\"items\":[]}]", headers: ["X-Rate-Limit-Remaining": value])])
+            let run = await CanvasStructuredSourcesClient(baseURL: base, transport: canned.transport())
+                .fetch(courseIDs: ["7", "8"], plannerStart: t0, plannerEnd: t1)
+            #expect(!run.rateLimited, "header \"\(value)\" must not read as exhausted")
+            #expect(run.courses[0].modules.count == 1)
+            #expect(canned.paths().contains("/api/v1/courses/8/pages"), "header \"\(value)\" stopped the run")
+        }
+        for value in ["-5", "0", " 12 ", "-1000000000", "49.999", "+12", "12."] {
+            let canned = Canned()
+            canned.set("/api/v1/courses/7/modules", [.init(body: "[{\"id\":1,\"name\":\"W\",\"items\":[]}]", headers: ["X-Rate-Limit-Remaining": value])])
+            let run = await CanvasStructuredSourcesClient(baseURL: base, transport: canned.transport())
+                .fetch(courseIDs: ["7", "8"], plannerStart: t0, plannerEnd: t1)
+            #expect(run.rateLimited, "header \"\(value)\" is under the floor")
+            #expect(run.courses[0].modules.count == 1, "the page that carried it is kept")
+            #expect(!canned.paths().contains { $0.contains("/courses/8/") })
+        }
+    }
+
+    @Test("a hostile body on a 200 (empty, binary, a huge string) fails that endpoint without throwing")
+    func hostileBodies() async {
+        let canned = Canned()
+        canned.set("/api/v1/courses/7/assignments", [.init(body: "")])
+        canned.set("/api/v1/courses/7/pages", [.init(body: String(repeating: "x", count: 200_000))])
+        canned.set("/api/v1/courses/7/modules", [.init(body: "[" + String(repeating: "[", count: 5_000))])
+        let run = await CanvasStructuredSourcesClient(baseURL: base, transport: canned.transport())
+            .fetch(courseIDs: ["7"], plannerStart: t0, plannerEnd: t1)
+        #expect(run.courses.count == 1)
+        #expect(!run.rateLimited)
+    }
+}

@@ -46,10 +46,19 @@
 // 404), confirming the endpoint exists and is multipart-only -- there is no
 // JSON body form to fall back to.
 //
-// No Authorization header is set here: this environment's outbound proxy
-// injects the Supabase management token for api.supabase.com.
+// ## Authorization
+//
+// `resolveManagementToken()` reads the Management API token from
+// `SUPABASE_ACCESS_TOKEN`, or else from the file named by
+// `LHF_SUPABASE_TOKEN_FILE` (default `~/lhf-bench/supabase.token`, trimmed;
+// mode 600 expected, a looser mode is warned about, never fatal). When found
+// it is sent as `Authorization: Bearer`. When neither exists NO header is set:
+// that is the old cloud environment, whose outbound proxy injected the token
+// for api.supabase.com. The log line says which case ran; the token itself
+// is never printed. Create one at supabase.com/dashboard/account/tokens.
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -57,7 +66,40 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, "..", ".."); // backend/scripts -> repo root
 const FUNCTIONS_ROOT = path.join(REPO_ROOT, "backend", "supabase", "functions");
-const PROJECT_REF = process.env.LHF_SUPABASE_PROJECT_REF ?? "ynetfjixexksxqrrkwsg";
+export const PROJECT_REF = process.env.LHF_SUPABASE_PROJECT_REF ?? "ynetfjixexksxqrrkwsg";
+
+
+/** Returns `{ token, source }` where source is "env", "file" or "none". The
+ *  token is trimmed; an empty value counts as absent. Never logs the token. */
+export function resolveManagementToken(env = process.env) {
+  const fromEnv = (env.SUPABASE_ACCESS_TOKEN ?? "").trim();
+  if (fromEnv) return { token: fromEnv, source: "env" };
+  const file = env.LHF_SUPABASE_TOKEN_FILE ?? path.join(os.homedir(), "lhf-bench", "supabase.token");
+  try {
+    const mode = fs.statSync(file).mode & 0o777;
+    if (mode & 0o077) {
+      console.warn(`warning: ${file} has mode ${mode.toString(8)}; run chmod 600 on it`);
+    }
+    const fromFile = fs.readFileSync(file, "utf8").trim();
+    if (fromFile) return { token: fromFile, source: "file" };
+  } catch {
+    // no file: fall through to the proxy case
+  }
+  return { token: undefined, source: "none" };
+}
+
+/** Headers for a Management API call; `Authorization` only when a token exists. */
+export function managementHeaders(token, extra = {}) {
+  return token ? { Authorization: `Bearer ${token}`, ...extra } : { ...extra };
+}
+
+export function describeTokenSource(source) {
+  return source === "env"
+    ? "auth: Bearer token from SUPABASE_ACCESS_TOKEN"
+    : source === "file"
+    ? "auth: Bearer token from the token file"
+    : "auth: no token found, sending no Authorization header (assuming a proxy injects it)";
+}
 
 function usageAndExit(message) {
   if (message) console.error(message);
@@ -114,8 +156,12 @@ function collectFiles(dir, relPrefix) {
   return out;
 }
 
-async function main() {
-  const { slug, from, also: alsoSlugs } = parseArgs(process.argv.slice(2));
+/** Deploys one function bundle. Returns the parsed response (or `{ raw }`).
+ *  Throws on any failure (the CLI wrapper turns that into exit 1). With
+ *  `dryRun` it builds the bundle and returns the plan without sending.
+ *  opts: { from, also = [], dryRun = false, fetchImpl = fetch, log = console.log, env = process.env } */
+export async function deployFunction(slug, opts = {}) {
+  const { from, also: alsoSlugs = [], dryRun = false, fetchImpl = fetch, log = console.log, env = process.env } = opts;
 
   // If `functions/<slug>/index.ts` already exists, that directory is the
   // source regardless of `--from` -- `--from` exists only to stand in for a
@@ -126,7 +172,7 @@ async function main() {
   const sourceDir = path.join(FUNCTIONS_ROOT, sourceSlug);
 
   if (!fs.existsSync(path.join(sourceDir, "index.ts"))) {
-    usageAndExit(
+    throw new Error(
       `no index.ts found for source "${sourceSlug}" (looked in ${sourceDir}); ` +
         `pass --from <source-slug> if "${slug}" has no directory of its own yet`,
     );
@@ -145,9 +191,7 @@ async function main() {
     ...(fs.existsSync(sharedDir) ? collectFiles(sharedDir, "functions/_shared") : []),
   ];
 
-  console.log(
-    `Deploying slug "${slug}" from source "${sourceSlug}" (${files.length} files) to project ${PROJECT_REF}...`,
-  );
+  log(`Deploying slug "${slug}" from source "${sourceSlug}" (${files.length} files) to project ${PROJECT_REF}...`);
 
   const metadata = {
     entrypoint_path: `functions/${slug}/index.ts`,
@@ -157,19 +201,27 @@ async function main() {
 
   const form = new FormData();
   form.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }));
+  let bytesTotal = 0;
   for (const file of files) {
     const bytes = fs.readFileSync(file.abs);
+    bytesTotal += bytes.length;
     form.append("file", new Blob([bytes]), file.rel);
   }
 
   const url = `https://api.supabase.com/v1/projects/${PROJECT_REF}/functions/deploy?slug=${encodeURIComponent(slug)}`;
-  const res = await fetch(url, { method: "POST", body: form });
+  const { token, source } = resolveManagementToken(env);
+  log(describeTokenSource(source));
+
+  if (dryRun) {
+    log(`[dry-run] POST ${url} (multipart, ${files.length} files, ${bytesTotal} bytes)`);
+    return { dryRun: true, url, files: files.map((f) => f.rel), bytes: bytesTotal };
+  }
+
+  const res = await fetchImpl(url, { method: "POST", headers: managementHeaders(token), body: form });
   const bodyText = await res.text();
 
   if (!res.ok) {
-    console.error(`Deploy failed: HTTP ${res.status}`);
-    console.error(bodyText);
-    process.exit(1);
+    throw new Error(`Deploy of "${slug}" failed: HTTP ${res.status} ${bodyText}`);
   }
 
   let parsed;
@@ -180,16 +232,23 @@ async function main() {
   }
 
   if (parsed) {
-    console.log(
-      `Deployed "${slug}": version ${parsed.version}, status ${parsed.status}, id ${parsed.id}`,
-    );
-    console.log(JSON.stringify(parsed, null, 2));
-  } else {
-    console.log(bodyText);
+    log(`Deployed "${slug}": version ${parsed.version}, status ${parsed.status}, id ${parsed.id}`);
+    return parsed;
   }
+  log(bodyText);
+  return { raw: bodyText };
 }
 
-main().catch((err) => {
-  console.error("Deploy script failed:", err instanceof Error ? err.stack ?? err.message : err);
-  process.exit(1);
-});
+async function main() {
+  const { slug, from, also } = parseArgs(process.argv.slice(2));
+  const result = await deployFunction(slug, { from, also });
+  console.log(JSON.stringify(result, null, 2));
+}
+
+const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === __filename;
+if (invokedDirectly) {
+  main().catch((err) => {
+    console.error("Deploy script failed:", err instanceof Error ? err.message : err);
+    process.exit(1);
+  });
+}

@@ -139,3 +139,140 @@ Deno.test("parseFacts flags unparseable output and keeps order", () => {
   ]), doc);
   assert.deepEqual(parsed.facts.map((f) => f.title), ["n1", "n2"]);
 });
+
+// ---------------------------------------------------------------------
+// Hostile input: none of this may throw, and every bad shape must come back
+// as a clean rejection or `parseFailed`, never a partial fact.
+// ---------------------------------------------------------------------
+
+Deno.test("parseFacts: non-object and wrongly shaped JSON is parseFailed, never a throw", () => {
+  for (const text of [
+    "", "   ", "null", "true", "42", '"facts"', "[]", "[{}]", "{}", '{"facts":null}', '{"facts":{}}',
+    '{"facts":"x"}', '{"facts":42}', "{", '{"facts":[}', "```json\n[]\n```", "```json\n{\"facts\":", "\u0000\u0001",
+  ]) {
+    const parsed = parseFacts(text, doc);
+    assert.equal(parsed.parseFailed, true, `expected parseFailed for ${JSON.stringify(text)}`);
+    assert.deepEqual(parsed.facts, []);
+  }
+});
+
+Deno.test("parseFacts: array entries of the wrong kind are bad_shape rejections", () => {
+  const parsed = parseFacts(wrap([null, 1, "x", [], [{}], true, {}, { type: "note" }, { type: 5, quote: "HW3", confidence: "high" }]), doc);
+  assert.equal(parsed.parseFailed, false);
+  assert.deepEqual(parsed.facts, []);
+  assert.equal(parsed.rejected.length, 9);
+  assert.ok(parsed.rejected.every((r) => r.reason === "bad_shape"));
+});
+
+Deno.test("parseFacts: a field of the wrong type rejects the fact (target, title, due_at, kind, confidence, quote)", () => {
+  const ok = { ...base, type: "note", target: "a1", title: "t", quote: "HW3" };
+  for (const bad of [
+    { target: 5 }, { target: {} }, { target: ["a1"] }, { title: 5 }, { title: {} }, { due_at: 5 }, { due_at: {} },
+    { kind: "party" }, { kind: 5 }, { confidence: "low" }, { confidence: 1 }, { confidence: null },
+    { quote: 5 }, { quote: "" }, { quote: "   " }, { quote: null },
+  ]) {
+    const parsed = parseFacts(wrap([{ ...ok, ...bad }]), doc);
+    assert.deepEqual(parsed.facts, [], JSON.stringify(bad));
+    assert.equal(parsed.rejected.length, 1, JSON.stringify(bad));
+  }
+});
+
+Deno.test("parseFacts: 10,000 facts do not throw, stay in order, and finish quickly", () => {
+  const many = Array.from({ length: 10_000 }, (_, i) => ({
+    ...base, type: "note", target: i % 2 === 0 ? "a1" : "nope", title: `n${i}`, quote: "HW3",
+  }));
+  const started = Date.now();
+  const parsed = parseFacts(wrap(many), doc);
+  assert.ok(Date.now() - started < 5000, "10k facts took over 5 s");
+  assert.equal(parsed.facts.length, 5000);
+  assert.equal(parsed.rejected.length, 5000);
+  assert.ok(parsed.rejected.every((r) => r.reason === "unknown_target"));
+  assert.equal(parsed.facts[0].title, "n0");
+  assert.equal(parsed.facts.at(-1)!.title, "n9998");
+});
+
+Deno.test("parseFacts: a huge quote or title is handled without throwing", () => {
+  const huge = "x".repeat(2_000_000);
+  const parsed = parseFacts(wrap([{ ...base, type: "new_task", title: huge, quote: huge }]), doc);
+  assert.deepEqual(parsed.facts, []);
+  assert.equal(parsed.rejected[0].reason, "quote_not_in_text");
+});
+
+Deno.test("parseFacts: Unicode form, curly quotes, dashes and NBSP are folded on both sides, and the stored quote is as emitted", () => {
+  const nfc = "Caf\u00e9 quiz is cancelled";
+  const d: FactsDocument = { ...doc, text: `${nfc}. Don't forget the \u201cfinal\u201d \u2013 bring\u00a0ID.` };
+  const nfd = nfc.normalize("NFD");
+  assert.notEqual(nfd, nfc);
+  const kept = [
+    nfc,
+    nfd,
+    "Don\u2019t forget the \u201cfinal",
+    "Don't forget the \"final\"",
+    "Don't forget the \u201cfinal\u201d",
+    "the \"final\" - bring ID",
+    "the \u201cfinal\u201d \u2014 bring ID",
+  ];
+  for (const quote of kept) {
+    const parsed = parseFacts(wrap([{ ...base, type: "needs_review", quote }]), d);
+    assert.equal(parsed.facts.length, 1, quote);
+    assert.equal(parsed.facts[0].quote, quote, "the quote is stored as the model emitted it");
+  }
+});
+
+Deno.test("parseFacts: a curly-quote quote matches straight-quote text, and a quote still fails when a word differs", () => {
+  const d: FactsDocument = { ...doc, text: "Don't forget: it's \"open book\"." };
+  const match = parseFacts(wrap([{ ...base, type: "needs_review", quote: "it\u2019s \u201copen book\u201d" }]), d);
+  assert.equal(match.facts.length, 1);
+  assert.equal(match.facts[0].quote, "it\u2019s \u201copen book\u201d");
+  for (const quote of ["it\u2019s \u201cclosed book\u201d", "it\u2019s open book today", "Caf\u00e9"]) {
+    const parsed = parseFacts(wrap([{ ...base, type: "needs_review", quote }]), d);
+    assert.deepEqual(parsed.facts, [], quote);
+    assert.equal(parsed.rejected[0].reason, "quote_not_in_text");
+  }
+});
+
+Deno.test("parseFacts: targets that merely share a prefix with a real sourceID are unknown_target", () => {
+  const d: FactsDocument = {
+    ...doc,
+    index: [
+      { sourceID: "a1", title: "HW3", kind: "assignment" },
+      { sourceID: "a10", title: "HW4", kind: "assignment" },
+      { sourceID: "module:7", title: "Week 7", kind: "module_item" },
+    ],
+  };
+  for (const target of ["a", "a1 ", " a1", "A1", "a100", "a1/", "module:", "module:70", "module", "a1\u0000", ""]) {
+    const parsed = parseFacts(wrap([{ ...base, type: "cancel", target, quote: "HW3" }]), d);
+    assert.deepEqual(parsed.facts, [], JSON.stringify(target));
+    // An empty-string target is not null, so it is unknown rather than missing.
+    assert.equal(parsed.rejected[0].reason, "unknown_target", JSON.stringify(target));
+  }
+  for (const target of ["a1", "a10", "module:7"]) {
+    assert.equal(parseFacts(wrap([{ ...base, type: "cancel", target, quote: "HW3" }]), d).facts.length, 1);
+  }
+});
+
+Deno.test("parseFacts: extra keys such as seq, as string, float or negative, are ignored and never copied", () => {
+  for (const seq of ["7", 1.5, -3, null, {}, [1]]) {
+    const parsed = parseFacts(wrap([{ ...base, type: "note", target: "a1", title: "n", quote: "HW3", seq, id: 9 }]), doc);
+    assert.equal(parsed.facts.length, 1);
+    assert.deepEqual(Object.keys(parsed.facts[0]).sort(), ["confidence", "due_at", "quote", "target", "title", "type"]);
+  }
+});
+
+Deno.test("parseFacts: due_at in 1900 or 9999 or unparseable is dropped for new_task, and rejects a reschedule", () => {
+  const dates = ["1900-01-01T00:00:00Z", "9999-12-31T23:59:59Z", "+275760-09-13T00:00:00.000Z", "10000-01-01", "-000001-01-01T00:00:00Z", "0000-00-00", "Friday", "2026-13-45T99:99:99Z", ""];
+  for (const due_at of dates) {
+    const task = parseFacts(wrap([{ ...base, type: "new_task", title: "Read", kind: "preparation", due_at, quote: "read chapter 5" }]), doc);
+    assert.equal(task.facts.length, 1, due_at);
+    assert.equal(task.facts[0].due_at, null, due_at);
+    const move = parseFacts(wrap([{ ...base, type: "reschedule", target: "a1", due_at, quote: "HW3" }]), doc);
+    assert.deepEqual(move.facts, [], due_at);
+    assert.equal(move.rejected[0].reason, "date_out_of_range", due_at);
+  }
+});
+
+Deno.test("parseFacts: an unparseable `now` disables the range check instead of throwing", () => {
+  const d: FactsDocument = { ...doc, now: "not a date" };
+  const parsed = parseFacts(wrap([{ ...base, type: "reschedule", target: "a1", due_at: "2031-01-01T00:00:00Z", quote: "HW3" }]), d);
+  assert.equal(parsed.facts.length, 1);
+});

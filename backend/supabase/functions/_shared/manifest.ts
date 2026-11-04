@@ -777,7 +777,19 @@ export function factsResponse(
 ): { facts: CourseFactWire[]; factsCursor: number } {
   const facts: CourseFactWire[] = [];
   let cursor = since;
-  for (const row of [...rows].sort((a, b) => a.seq - b.seq)) {
+  // `seq` is coerced with Number(): a driver that handed a bigint back as a
+  // string must not turn `factsCursor` into a string. A row whose seq is not
+  // a finite integer is skipped outright (it can neither be served nor move
+  // the cursor).
+  const numbered: FactRowWithDocument[] = [];
+  for (const row of rows) {
+    const raw: unknown = row.seq;
+    // Number(null), Number("") and Number(true) are 0 or 1, so only a number
+    // or a non-blank string is allowed to be coerced.
+    const seq = typeof raw === "number" || (typeof raw === "string" && raw.trim() !== "") ? Number(raw) : NaN;
+    if (Number.isInteger(seq)) numbered.push({ ...row, seq });
+  }
+  for (const row of numbered.sort((a, b) => a.seq - b.seq)) {
     if (row.seq > cursor) cursor = row.seq;
     const document = Array.isArray(row.course_documents) ? row.course_documents[0] : row.course_documents;
     if (!document || document.gone_at != null || document.content_hash !== row.content_hash) continue;

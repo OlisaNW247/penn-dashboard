@@ -189,9 +189,12 @@ extension AppState {
             wires: wires,
             stored: Set(store.all().map(\.id))
         ), let defaults = factsDefaults {
-            let observed = max(cursor ?? 0, wires.map(\.seq).max() ?? 0)
+            // Never backwards, never past 2^53: a nil cursor contributes nothing,
+            // and a value outside the range the server can send is ignored.
+            let valid = (cursor ?? 0) <= CourseFactWire.maxSeq ? (cursor ?? 0) : 0
+            let observed = max(valid, wires.map(\.seq).filter { $0 <= CourseFactWire.maxSeq }.max() ?? 0)
             let current = defaults.object(forKey: FactKey.cursor) as? Int ?? 0
-            if observed > current { defaults.set(observed, forKey: FactKey.cursor) }
+            if observed > current, observed <= CourseFactWire.maxSeq { defaults.set(observed, forKey: FactKey.cursor) }
         }
         return added
     }

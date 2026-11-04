@@ -311,4 +311,163 @@ struct FactApplicationTests {
             }
         }
     }
+
+    // MARK: Fuzz: 500 rounds, seeded
+
+    /// One generated scenario. Built from a seed alone, so two builds from the
+    /// same seed are the same input, and a red round names its seed.
+    private struct Scenario {
+        var facts: [AppliedFact]
+        var items: [FactItem]
+    }
+
+    private func scenario(seed: UInt64, uniqueSeqs: Bool = false) -> Scenario {
+        var rng = SeededGenerator(seed: seed)
+        let sourceIDs = ["555", "556", "557", "558"]
+        var items: [FactItem] = []
+        for (index, id) in sourceIDs.enumerated() {
+            let course = index == 3 ? "MATH 1400" : "CIS 2400"
+            let canvasDue: Date? = rng.chance(0.15) ? nil : Self.due.addingTimeInterval(Double(index) * 90_000)
+            items.append(FactItem(
+                assignment: canvasItem(id, title: "Task \(index) \(id)", course: course, due: canvasDue),
+                userCompleted: rng.chance(0.25),
+                editedDueDate: rng.chance(0.25) ? Self.due.addingTimeInterval(7_000) : nil,
+                isGoneFromFeed: rng.chance(0.25),
+                canvasDueAt: canvasDue,
+                hasStructuredDueDate: rng.chance(0.3)
+            ))
+        }
+        if rng.chance(0.5) {
+            // A row a fact created on an earlier pass, so a re-evaluation sees its own output.
+            items.append(FactItem(Assignment(
+                source: .canvasAnnouncement, sourceID: FactApplication.taskSourceID(documentID: "announcement:1234:55", seq: 3),
+                kind: .other, course: "CIS 2400", title: "Read", dueAt: Self.due, url: nil
+            )))
+        }
+        let types = CourseFactWire.FactType.allCases
+        let targets: [String?] = [nil, "", "555", "556", "557", "558", "999", "module:zz", "abc"]
+        let titles: [String?] = [nil, "", "  ", "Quiz 1", "Read", "Task 1 556", "PSet 3"]
+        let dues: [Date?] = [nil, Self.due, Self.due.addingTimeInterval(30), Self.due.addingTimeInterval(500_000),
+                             Self.due.addingTimeInterval(90_000), Date.distantPast, Date.distantFuture]
+        let docs = ["announcement:1234:55", "announcement:1234:56", "ed:1234:9"]
+        let courses = ["1234", "1234", "1234", "99", "777"]
+        var facts: [AppliedFact] = []
+        for index in 0..<rng.int(0...16) {
+            // Duplicate seqs are different facts in different documents (the id
+            // carries the document); a repeat of one id is the store's job to drop.
+            let seq = uniqueSeqs ? index + 1 : rng.int(1...6)
+            let doc = uniqueSeqs ? docs[index % docs.count] : rng.pick(docs)
+            let candidate = fact(
+                seq, rng.pick(types), target: rng.pick(targets), title: rng.pick(titles), dueAt: rng.pick(dues),
+                kind: rng.pick([nil, .submission, .preparation, .event]),
+                confidence: rng.chance(0.5) ? .high : .medium,
+                posted: rng.chance(0.2) ? nil : Double(uniqueSeqs ? rng.int(0...3) * 1000 + index : rng.int(0...3)),
+                course: rng.pick(courses), doc: doc,
+                override: rng.chance(0.6) ? .none : rng.pick(FactOverride.allCases)
+            )
+            if !facts.contains(where: { $0.id == candidate.id }) { facts.append(candidate) }
+        }
+        return Scenario(facts: facts, items: items)
+    }
+
+    @Test("500 seeded rounds: nothing completed or deleted, buckets disjoint, no phantom reschedule, deterministic")
+    func engineFuzz() {
+        // Tallies, so a generator that drifted into producing only trivial
+        // rounds fails here instead of passing vacuously.
+        var cancels = 0, reschedules = 0, tasks = 0, reviews = 0, redundants = 0
+        defer {
+            #expect(cancels > 15 && reschedules > 15 && tasks > 30 && reviews > 100 && redundants > 100,
+                    "generator coverage: \(cancels) \(reschedules) \(tasks) \(reviews) \(redundants)")
+        }
+        for round in 0..<500 {
+            let seed = 0xFAC7_0000 &+ UInt64(round)
+            let input = scenario(seed: seed)
+            let out = run(input.facts, input.items)
+            let again = run(scenario(seed: seed).facts, scenario(seed: seed).items)
+            #expect(out == again, "round \(round) seed \(seed): not deterministic")
+
+            cancels += out.items.values.filter { $0.cancelled != nil }.count
+            reschedules += out.items.values.filter { $0.rescheduled != nil }.count
+            tasks += out.newTasks.count
+            reviews += out.needsReview.count
+            redundants += out.redundant.count
+            let known = Set(input.items.map(\.assignment.id))
+            let factIDs = Set(input.facts.map(\.id))
+            let byID = Dictionary(uniqueKeysWithValues: input.items.map { ($0.assignment.id, $0) })
+
+            // The output type cannot complete or delete; what it can do is touch
+            // only rows that exist, and add only rows that do not.
+            #expect(Set(out.items.keys).isSubset(of: known), "round \(round): effects only on existing rows")
+            #expect(out.newTasks.allSatisfy { !known.contains($0.assignment.id) || $0.assignment.source == .canvasAnnouncement })
+            #expect(out.newTasks.allSatisfy { !$0.assignment.submitted && $0.assignment.source == .canvasAnnouncement })
+            #expect(Set(out.newTasks.map(\.assignment.id)).count == out.newTasks.count, "round \(round): one row per new task")
+
+            // No row is both hidden by a cancel and created as a new task.
+            let cancelled = Set(out.items.filter { $0.value.cancelled != nil }.keys)
+            #expect(cancelled.isDisjoint(with: Set(out.newTasks.map(\.assignment.id))), "round \(round) seed \(seed)")
+
+            // Every fact the engine names exists in the input.
+            #expect(out.applied.isSubset(of: factIDs), "round \(round)")
+            #expect(Set(out.needsReview.map(\.fact.id)).isSubset(of: factIDs))
+            #expect(Set(out.redundant.map(\.factID)).isSubset(of: factIDs))
+            #expect(Set(out.resolvedItems.keys).isSubset(of: factIDs))
+            for effects in out.items.values {
+                for id in [effects.cancelled?.by, effects.rescheduled?.by, effects.scopeChanged?.by].compactMap({ $0 }) + effects.notes.map(\.by) {
+                    #expect(factIDs.contains(id) && out.applied.contains(id), "round \(round): effect by an unapplied fact")
+                }
+            }
+
+            // Each fact lands in at most one bucket.
+            let review = Set(out.needsReview.map(\.fact.id)), redundant = Set(out.redundant.map(\.factID))
+            #expect(review.count == out.needsReview.count && redundant.count == out.redundant.count, "round \(round): a fact listed twice")
+            #expect(review.isDisjoint(with: redundant), "round \(round) seed \(seed)")
+            #expect(review.isDisjoint(with: out.applied), "round \(round) seed \(seed)")
+            #expect(redundant.isDisjoint(with: out.applied), "round \(round) seed \(seed)")
+
+            // A reschedule that is applied always moves the date by more than the
+            // tolerance Canvas's own value is compared with.
+            for (id, effects) in out.items {
+                guard let moved = effects.rescheduled, let canvas = byID[id]?.canvasDueAt else { continue }
+                #expect(abs(moved.to.timeIntervalSince(canvas)) > FactApplication.sameDateTolerance, "round \(round) seed \(seed)")
+            }
+
+            // The student wins: a finished or hand-dated row is untouched unless
+            // a fact aimed at it was confirmed.
+            let confirmedCourses = Set(input.facts.filter { $0.studentOverride == .confirmed }.map(\.courseID))
+            for item in input.items where (item.userCompleted || item.editedDueDate != nil) && confirmedCourses.isEmpty {
+                #expect(out.items[item.assignment.id] == nil, "round \(round) seed \(seed)")
+            }
+            for rejected in input.facts where rejected.studentOverride == .rejected {
+                #expect(!out.applied.contains(rejected.id))
+            }
+        }
+    }
+
+    @Test("with unique seqs the outcome does not depend on the order the facts arrive in")
+    func engineIgnoresInputOrder() {
+        for round in 0..<200 {
+            let seed = 0xBEEF_0000 &+ UInt64(round)
+            let input = scenario(seed: seed, uniqueSeqs: true)
+            var rng = SeededGenerator(seed: seed ^ 0xFFFF)
+            let shuffledFacts = input.facts.shuffled(using: &rng)
+            let shuffledItems = input.items.shuffled(using: &rng)
+            #expect(run(input.facts, input.items) == run(shuffledFacts, shuffledItems), "round \(round) seed \(seed)")
+        }
+    }
+
+    @Test("two facts tied on postedAt and seq that fight for one row get a stable winner")
+    func tieOnPostedAtAndSeq() {
+        // Cross-listed sites: two Canvas course ids that carry one code. Different
+        // documents, same seq, same postedAt, both rescheduling the same row.
+        // The winner is the greater fact id, in any input order, every call.
+        let codes = ["1234": "CIS 2400", "5678": "CIS 2400"]
+        let first = fact(1, .reschedule, dueAt: Self.due.addingTimeInterval(100_000), posted: 5, course: "1234", doc: "announcement:1234:55")
+        let second = fact(1, .reschedule, dueAt: Self.due.addingTimeInterval(200_000), posted: 5, course: "5678", doc: "announcement:5678:77")
+        let expected = first.id > second.id ? first.dueAt : second.dueAt
+        for round in 0..<60 {
+            let input = round.isMultiple(of: 2) ? [first, second] : [second, first]
+            let out = FactApplication.evaluate(facts: input, items: [FactItem(canvasItem("555"))], courseCodeByID: codes, now: Self.now)
+            #expect(out.items[itemID]?.rescheduled?.to == expected, "round \(round)")
+        }
+    }
 }

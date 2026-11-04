@@ -48,24 +48,26 @@ work of 2026-10-09/10 is summarised, with the order to take these in,
 in `docs/LAUNCH_PREP_HANDOFF.md`.
 
 - **Deploy `extract-facts` and the `course_facts` migration** (Olisa's go;
-  the Supabase management token). Built 2026-11-04 on `v10`, nothing
-  deployed. Phases 2-3 replace the announcement watcher's output and change
-  what `sync` stores, both Olisa's area, so he decides. Steps, in order:
-  1. Olisa's go, and the management token plus `LHF_PROBE_SECRET` in the
-     shell (this Mac has neither; the deploy script relies on a cloud
-     session's proxy injecting the token).
-  2. Run `backend/supabase/migrations/20261104090000_course_facts.sql` and
-     `backend/test/rls.test.sql` against a real Postgres first; neither has
-     been executed. Apply the migration BEFORE deploying the functions.
-  3. Set `LHF_FACTS_MODEL` only if it should differ from the default
+  the Supabase management token). Built 2026-11-04 on `v10`; **Olisa gave
+  his go the same day** (Phases 2-3 replace the announcement watcher's
+  output and change what `sync` stores). Nothing deployed yet: this Mac has
+  no management token. `docs/DEPLOY_FACTS_2026-11-04.md` is the runbook and
+  `backend/scripts/deploy-facts.mjs` runs it, stopping at the first failure:
+  1. A Supabase personal access token in `~/lhf-bench/supabase.token`
+     (chmod 600), created at supabase.com/dashboard/account/tokens.
+  2. `bash backend/scripts/sql-check.sh` (Docker): stub, all migrations,
+     idempotency, `rls.test.sql`, `claim_fact_extraction.test.sql`. Passed
+     2026-11-04.
+  3. `node backend/scripts/deploy-facts.mjs --dry-run`, then without the
+     flag: secrets check, migration through the Management API, deploy
+     `sync`, deploy `extract-facts`, one manifest call old and new shape,
+     then the first real extraction's row and its quotes.
+  4. `LHF_FACTS_MODEL` only if it should differ from the default
      `anthropic/claude-haiku-5.5`; `LHF_FACTS_DISABLED=1` is the off switch.
-  4. `node backend/scripts/deploy-function.mjs extract-facts --also sync`
-     (`sync` carries the manifest `facts`/`factsCursor` and schedules
-     extraction after an upload). Check `deno task test` (671) and
-     `deno task check` first.
-  5. Watch `course_fact_extractions` (status, cost, rejects) for a day on
-     the real pool, then a phone: a fact should reach `AppliedFacts.store`
-     and change a card. Nothing about this path has been watched on a device.
+  5. Phone: `bash backend/scripts/verify-facts-on-phone.sh <CoreDevice id>`
+     after a sync, then one card a fact touched: `undo` works, nothing
+     completed or deleted, a manual date edit still wins. Nothing about this
+     path has been watched on a device.
   Also open: the phone's course-material sync reported `manifest failed ·
   uploaded 0 · errors 7` on 2026-11-03, which would starve extraction.
 - **Reminders for work already turned in, and a Sweeper that earns its
@@ -415,9 +417,9 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   the canary; Phase 1 and the identity layer can start, Phase 2 needs
   Olisa's go.
   **Built 2026-11-04 on `v10`** (Marco: "make all the decisions"; Phases 1-3
-  written, committed on `v10`, **not deployed**, nothing watched on a device; 3559 /
-  340 green, Deno 671, `deno task check` clean; the migration SQL and
-  `rls.test.sql` not run). *Phase 1*, phone only, no model:
+  written, committed on `v10`, **not deployed**, nothing watched on a device; 3596 /
+  345 green, Deno 686, `deno task check` clean; the SQL passed in a Docker
+  Postgres the same day). *Phase 1*, phone only, no model:
   `CanvasStructuredSourcesClient`/`Reconciler` read Planner items, missing
   submissions, modules, `all_dates`, discussion topics and dated pages;
   `AppState+StructuredSources.swift` applies them (rows upserted; completions,

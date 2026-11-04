@@ -134,6 +134,32 @@ public struct CourseDocumentWire: Codable, Sendable, Equatable {
         self.postedAt = postedAt
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case id, courseID, course, kind, sourceID, title, url, text, updatedAt, fetchedAt, contentHash, dueAt, pointsPossible, postedAt
+    }
+
+    /// `postedAt` is a hint, so it decodes lossily, matching the server's
+    /// upload rule (`validateDocument` drops an unreadable one and keeps the
+    /// document): garbage, a wrong type or null reads as nil. Every other
+    /// field stays strict, exactly as the synthesized decoder had it.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        courseID = try c.decode(String.self, forKey: .courseID)
+        course = try c.decode(String.self, forKey: .course)
+        kind = try c.decode(String.self, forKey: .kind)
+        sourceID = try c.decode(String.self, forKey: .sourceID)
+        title = try c.decode(String.self, forKey: .title)
+        url = try c.decodeIfPresent(String.self, forKey: .url)
+        text = try c.decode(String.self, forKey: .text)
+        updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt)
+        fetchedAt = try c.decode(Date.self, forKey: .fetchedAt)
+        contentHash = try c.decode(String.self, forKey: .contentHash)
+        dueAt = try c.decodeIfPresent(Date.self, forKey: .dueAt)
+        pointsPossible = try c.decodeIfPresent(Double.self, forKey: .pointsPossible)
+        postedAt = (try? c.decodeIfPresent(String.self, forKey: .postedAt)).flatMap { $0 }.flatMap(BackendJSON.parseDate)
+    }
+
     public init(document: CourseDocument) {
         self.id = document.id
         self.courseID = document.courseID
@@ -340,10 +366,15 @@ public struct SyncManifestResponse: Decodable, Sendable, Equatable {
         // Same lossy rule as `download`, and for the same reason: a fact
         // with a type or confidence this build does not know is the normal
         // shape of a server one release ahead, not a corrupt response.
-        facts = (try container.decodeIfPresent([LossyFactWire].self, forKey: .facts) ?? []).compactMap(\.wire)
-        // A cursor that is not an integer is ignored rather than failing:
-        // the worst case is re-reading facts, which the store dedupes.
-        factsCursor = try? container.decodeIfPresent(Int.self, forKey: .factsCursor)
+        // A `facts` that is not an array at all (an object, a string, a number,
+        // null) reads as no facts: the rest of the manifest is worth more.
+        facts = ((try? container.decodeIfPresent([LossyFactWire].self, forKey: .facts)) ?? nil ?? []).compactMap(\.wire)
+        // A cursor that is not an integer, or lies outside 0...2^53 (the server
+        // only sends safe integers), is ignored rather than failing or
+        // poisoning the stored cursor: the worst case is re-reading facts,
+        // which the store dedupes.
+        let rawCursor = (try? container.decodeIfPresent(Int.self, forKey: .factsCursor)) ?? nil
+        factsCursor = rawCursor.flatMap { (0...CourseFactWire.maxSeq).contains($0) ? $0 : nil }
     }
 }
 
@@ -383,6 +414,9 @@ public struct CourseFactWire: Decodable, Sendable, Equatable {
     public enum Confidence: String, Sendable, Codable, Hashable {
         case high, medium
     }
+
+    /// 2^53, the largest integer the server (JavaScript) can state exactly.
+    public static let maxSeq = 9_007_199_254_740_992
 
     public let seq: Int
     public let courseID: String
@@ -434,7 +468,13 @@ public struct CourseFactWire: Decodable, Sendable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        seq = try c.decode(Int.self, forKey: .seq)
+        let rawSeq = try c.decode(Int.self, forKey: .seq)
+        // The server's seq is a positive safe integer; anything else is not
+        // a fact this build can trust to order or to key a row.
+        guard (1...Self.maxSeq).contains(rawSeq) else {
+            throw DecodingError.dataCorruptedError(forKey: .seq, in: c, debugDescription: "seq out of range")
+        }
+        seq = rawSeq
         courseID = try c.decode(String.self, forKey: .courseID)
         documentID = try c.decode(String.self, forKey: .documentID)
         contentHash = try c.decode(String.self, forKey: .contentHash)

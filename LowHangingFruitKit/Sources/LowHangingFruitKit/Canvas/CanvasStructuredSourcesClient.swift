@@ -297,7 +297,15 @@ public struct CanvasStructuredSourcesClient: Sendable {
 
     static func remaining(in http: HTTPURLResponse) -> Double? {
         guard let raw = http.value(forHTTPHeaderField: "X-Rate-Limit-Remaining") else { return nil }
-        return Double(raw.trimmingCharacters(in: .whitespaces))
+        // Optional sign and decimal digits only (one decimal point allowed,
+        // truncated by `Double`). Swift's `Double(_:)` would also read hex
+        // ("0x10" is 16), "nan" and "inf"; Canvas sends none of those.
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = trimmed.first == "-" || trimmed.first == "+" ? String(trimmed.dropFirst()) : trimmed
+        let parts = body.split(separator: ".", maxSplits: 1, omittingEmptySubsequences: false)
+        guard !body.isEmpty, parts.count <= 2, parts.allSatisfy({ $0.allSatisfy { $0.isASCII && $0.isNumber } }),
+              parts[0].count + (parts.count == 2 ? parts[1].count : 0) > 0 else { return nil }
+        return Double(trimmed)
     }
 
     static func isRateLimitBody(_ data: Data) -> Bool {

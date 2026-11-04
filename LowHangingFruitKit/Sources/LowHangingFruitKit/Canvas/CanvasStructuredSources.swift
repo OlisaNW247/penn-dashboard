@@ -19,7 +19,12 @@ extension KeyedDecodingContainer {
         if let string = try? decodeIfPresent(String.self, forKey: key) { return string }
         if let int = try? decodeIfPresent(Int64.self, forKey: key) { return String(int) }
         if let double = try? decodeIfPresent(Double.self, forKey: key) {
-            return double == double.rounded() ? String(Int64(double)) : String(double)
+            // `Int64(_:)` traps outside its range (a JSON `1e300` is a valid
+            // number), so convert only a finite integral value that fits.
+            if double.isFinite, double == double.rounded(), double >= -9.2e18, double <= 9.2e18 {
+                return String(Int64(double))
+            }
+            return String(double)
         }
         return nil
     }

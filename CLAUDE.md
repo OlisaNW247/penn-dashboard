@@ -1205,14 +1205,21 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v10` (2026-11-04): 3559 tests / 340 suites, all green,
+**Current on `v10` (2026-11-04, evening): 3596 tests / 345 suites, all green,
+`swift test --no-parallel` alone on Marco's Mac in 64 s, after the contract
+and hostile-input tests below. Earlier that day: 3559 / 340,
 `swift test --no-parallel` on Marco's Mac, with all of the 2026-11-04 work
 (structured Canvas sources, the identity layer, the applied-fact store and
 engine, the facts wire and the megaphone/card changes): +102 tests / +9
 suites over the merge below. Deno 671 (was 628), `deno task check` clean.
-The migration `20261104090000_course_facts.sql` and `backend/test/rls.test.sql`
-were NOT run (no Postgres on this Mac), so the SQL, including
-`claim_fact_extraction`, is unexecuted. No iOS build was part of this run;
+Later on 2026-11-04 the SQL was executed for the first time, in a throwaway
+postgres:16 container (OrbStack): the auth stub, all 15 migrations in order,
+the facts migration a second time (idempotent), `rls.test.sql` and the new
+`test/claim_fact_extraction.test.sql` (11 checks: the claim state machine,
+three attempts, stale-running recovery, the three budgets, the revoke).
+`backend/scripts/sql-check.sh` reproduces that run. Deno 686 after the
+hostile-input tests and the deploy scripts' 12 Node tests
+(`node --test backend/scripts/*.test.mjs`). No iOS build was part of this run;
 see Known gaps for the device state.**
 One thing to know about that figure: the first full run that day showed
 three failures, all wall-clock thresholds in the fuzz suites, while a second
@@ -1305,6 +1312,12 @@ the quoted display names.
 
 History (newest first; each verified on a Mac). The notes say what moved
 the count, so a later drop can be traced:
+- 3596/345 `v10`, 2026-11-04 evening: `ManifestContractTests` (a manifest the
+  server's own `factsResponse` built, decoded by the phone), hostile-input
+  suites for the wire and the structured decoders, a 500-round engine fuzz,
+  `FactsPurityScanTests`; the fixes they forced (a `flexString` trap on
+  `1e300`, a nondeterministic tie in `FactApplication`, seq/cursor bounds,
+  lossy `postedAt`, hex rate-limit headers) are in `v10` with them.
 - 3559/340 `v10`, 2026-11-04: composed-day Phases 1-3 (+102 / +9 suites): six new test files
   (`WorkItemIdentityTests`, `CanvasStructuredSourcesTests`,
   `StructuredSourcesWiringTests`, `AppliedFactStoreTests`,
@@ -3151,9 +3164,13 @@ none is a ship line.
   fixtures (3559 tests green, 2026-11-04). The Debug build for Marco's iPhone
   17 Pro compiled on 2026-11-04 (`xcodebuild` to the device destination);
   the install waited on the phone, which had dropped off the cable, so
-  nothing has been watched running. The migration SQL and
-  `backend/test/rls.test.sql` have never been run (no Postgres on the dev
-  Mac). A live probe on 2026-11-04 showed OpenRouter accepting the exact
+  nothing has been watched running. The migration SQL, `rls.test.sql` and
+  `claim_fact_extraction.test.sql` passed in a Docker Postgres on
+  2026-11-04 (`backend/scripts/sql-check.sh`); the deploy itself is
+  prepared as `backend/scripts/deploy-facts.mjs` with
+  `docs/DEPLOY_FACTS_2026-11-04.md` as the runbook, and waits only on a
+  Supabase personal access token in `~/lhf-bench/supabase.token` (Olisa gave
+  his go on 2026-11-04). A live probe on 2026-11-04 showed OpenRouter accepting the exact
   production request for `anthropic/claude-haiku-5.5` (strict `json_schema`,
   `reasoning: low`, `provider: {data_collection: "deny", allow_fallbacks:
   true}`, no `require_parameters`), routed via Azure, returning

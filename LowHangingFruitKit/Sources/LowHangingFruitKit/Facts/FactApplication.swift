@@ -389,11 +389,14 @@ public enum FactApplication {
 
     /// Oldest first: by when it was said, then by `seq`. A fact with no
     /// `postedAt` sorts as oldest of all, so a dated fact beats an undated one
-    /// and ties fall back to extraction order.
+    /// and ties fall back to extraction order, then to fact id.
     nonisolated private static func isOlder(_ a: AppliedFact, _ b: AppliedFact) -> Bool {
         let pa = a.postedAt ?? .distantPast, pb = b.postedAt ?? .distantPast
         if pa != pb { return pa < pb }
-        return a.seq < b.seq
+        if a.seq != b.seq { return a.seq < b.seq }
+        // An exact tie (cross-listed sites can repeat a seq) is broken by id,
+        // or the winner would follow Dictionary iteration order.
+        return a.id < b.id
     }
 
     /// What "the same statement, said again" means per type. A target-less

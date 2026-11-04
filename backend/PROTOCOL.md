@@ -958,6 +958,8 @@ the usual `provider: { "data_collection": "deny", "allow_fallbacks": true }`.
 Haiku 5.5 request (measured 2026-11-03). One call is cut off at 20 seconds.
 `LHF_FACTS_DISABLED=1` switches the whole thing off.
 
+**Quote folding.** A fact's `quote` must appear in the document's title and text after both sides get the same folding (Unicode NFKC, curly quotes to straight, en/em dashes to "-", non-breaking space to space, whitespace collapsed, lowercased); the stored quote is the model's string as emitted.
+
 **Budgets** (`claim_fact_extraction`, one atomic database call before every
 model call): at most 60 extractions per course per UTC day
 (`FACTS_COURSE_DAILY_LIMIT`), 400 per course per calendar month

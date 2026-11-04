@@ -1,0 +1,161 @@
+{
+  "coursesFresh": [
+    "1234"
+  ],
+  "serverManifest": [
+    {
+      "id": "announcement:1234:55",
+      "contentHash": "hash-55"
+    },
+    {
+      "id": "assignment:1234:555",
+      "contentHash": "hash-555"
+    },
+    {
+      "id": "syllabus:99:syllabus",
+      "contentHash": "hash-syllabus"
+    }
+  ],
+  "download": [
+    {
+      "id": "announcement:1234:55",
+      "courseID": "1234",
+      "course": "CIS 2400",
+      "kind": "announcement",
+      "sourceID": "55",
+      "title": "HW3 is cancelled",
+      "url": "https://canvas.upenn.edu/courses/1234/announcements/55",
+      "text": "Body of HW3 is cancelled.",
+      "updatedAt": "2026-11-01T12:00:00.000Z",
+      "fetchedAt": "2026-11-02T08:30:00.000Z",
+      "contentHash": "hash-55"
+    },
+    {
+      "id": "assignment:1234:555",
+      "courseID": "1234",
+      "course": "CIS 2400",
+      "kind": "assignment",
+      "sourceID": "555",
+      "title": "PSet 3",
+      "url": "https://canvas.upenn.edu/courses/1234/assignments/555",
+      "text": "Body of PSet 3.",
+      "updatedAt": "2026-11-01T12:00:00.000Z",
+      "fetchedAt": "2026-11-02T08:30:00.000Z",
+      "contentHash": "hash-555",
+      "dueAt": "2026-11-10T04:59:00.000Z",
+      "pointsPossible": 100
+    },
+    {
+      "id": "syllabus:99:syllabus",
+      "courseID": "99",
+      "course": "MATH 1400",
+      "kind": "syllabus",
+      "sourceID": "syllabus",
+      "title": "MATH 1400 syllabus",
+      "url": "https://canvas.upenn.edu/courses/99/syllabuss/syllabus",
+      "text": "Body of MATH 1400 syllabus.",
+      "updatedAt": "2026-11-01T12:00:00.000Z",
+      "fetchedAt": "2026-11-02T08:30:00.000Z",
+      "contentHash": "hash-syllabus"
+    }
+  ],
+  "catalog": [],
+  "profiles": [
+    {
+      "courseID": "1234",
+      "gradingWeights": [
+        {
+          "name": "Homework",
+          "percent": 40,
+          "expectedCount": 8,
+          "dropLowest": 1
+        },
+        {
+          "name": "Final",
+          "percent": 60
+        }
+      ],
+      "components": [
+        {
+          "name": "Lecture",
+          "gradingBasis": "graded",
+          "creditUnits": 1
+        }
+      ],
+      "examDates": [
+        {
+          "name": "Final Exam",
+          "text": "Final exam Dec 15",
+          "date": "2026-12-15"
+        }
+      ],
+      "extractedAt": "2026-11-01T00:00:00.000Z"
+    },
+    {
+      "courseID": "99",
+      "gradingWeights": [],
+      "components": [],
+      "examDates": [],
+      "extractedAt": "2026-10-01T00:00:00.000Z"
+    }
+  ],
+  "facts": [
+    {
+      "seq": 101,
+      "courseID": "1234",
+      "documentID": "announcement:1234:55",
+      "contentHash": "hash-55",
+      "type": "cancel",
+      "target": "555",
+      "title": null,
+      "dueAt": null,
+      "kind": null,
+      "quote": "the quote",
+      "confidence": "high",
+      "postedAt": "2026-11-02T09:00:00.000Z"
+    },
+    {
+      "seq": 102,
+      "courseID": "1234",
+      "documentID": "announcement:1234:55",
+      "contentHash": "hash-55",
+      "type": "reschedule",
+      "target": "555",
+      "title": null,
+      "dueAt": "2026-11-12T04:59:00.000Z",
+      "kind": null,
+      "quote": "now due Thursday",
+      "confidence": "high",
+      "postedAt": "2026-11-02T09:00:00.000Z"
+    },
+    {
+      "seq": 103,
+      "courseID": "1234",
+      "documentID": "announcement:1234:55",
+      "contentHash": "hash-55",
+      "type": "new_task",
+      "target": null,
+      "title": "Read ch. 5",
+      "dueAt": "2026-11-09T14:00:00.000Z",
+      "kind": "preparation",
+      "quote": "the quote",
+      "confidence": "medium",
+      "postedAt": null
+    },
+    {
+      "seq": 104,
+      "courseID": "1234",
+      "documentID": "announcement:1234:55",
+      "contentHash": "hash-55",
+      "type": "needs_review",
+      "target": "module:abc",
+      "title": null,
+      "dueAt": null,
+      "kind": null,
+      "quote": "maybe moved?",
+      "confidence": "medium",
+      "postedAt": "2026-11-02T09:00:00.000Z"
+    }
+  ],
+  "factsCursor": 107
+}

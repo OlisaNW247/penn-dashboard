@@ -680,3 +680,65 @@ Deno.test("factsResponse: a fact of a gone document or of an edited revision is 
   assertEquals(facts.map((f) => f.seq), [1, 5]);
   assertEquals(factsCursor, 5, "filtered rows must not be re-read forever");
 });
+
+// ---------------------------------------------------------------------
+// Hostile input for the facts fields
+// ---------------------------------------------------------------------
+
+Deno.test("parseFactsSince: seq as string, float, negative, unsafe, NaN, Infinity or a container is a ManifestValidationError, never another throw", () => {
+  const bad: unknown[] = [
+    "0", "5", "", "1e3", 1.5, 0.1, -0.5, -1, Number.MAX_SAFE_INTEGER + 1, 2 ** 53, 1e308, NaN, Infinity, -Infinity,
+    {}, [], [1], true, false, () => 1, Symbol("x"), 10n,
+  ];
+  for (const raw of bad) {
+    try {
+      parseFactsSince(raw);
+      throw new Error(`accepted ${String(raw)}`);
+    } catch (err) {
+      assert(err instanceof ManifestValidationError, `${String(raw)} threw ${String(err)}`);
+    }
+  }
+  assertEquals(parseFactsSince(Number.MAX_SAFE_INTEGER), Number.MAX_SAFE_INTEGER);
+  assertEquals(parseFactsSince(-0), -0 as number); // negative zero is zero, accepted
+});
+
+Deno.test("factsResponse: hostile rows never throw; withheld rows still advance the cursor; the cursor never goes backwards", () => {
+  assertEquals(factsResponse([], 12), { facts: [], factsCursor: 12 });
+  const hostile = [
+    factRow(1, { course_documents: null }),
+    factRow(2, { course_documents: [] }),
+    factRow(3, { course_documents: { content_hash: "other", gone_at: null } }),
+    factRow(4, { course_documents: { content_hash: "h1", gone_at: "2026-01-01T00:00:00Z" } }),
+    factRow(-5),
+    factRow(NaN),
+    factRow(7),
+  ];
+  const { facts, factsCursor } = factsResponse(hostile, 3);
+  assertEquals(facts.map((f) => f.seq).filter((n) => Number.isFinite(n)), [-5, 7]);
+  assertEquals(factsCursor, 7);
+  // Lower rows than `since` cannot pull the cursor back.
+  assertEquals(factsResponse([factRow(2)], 50).factsCursor, 50);
+});
+
+Deno.test("factsResponse: 10,000 rows do not throw and the cursor is the highest seq", () => {
+  const rows = Array.from({ length: 10_000 }, (_, i) => factRow(10_000 - i));
+  const { facts, factsCursor } = factsResponse(rows, 0);
+  assertEquals(facts.length, 10_000);
+  assertEquals(facts[0].seq, 1);
+  assertEquals(factsCursor, 10_000);
+});
+
+Deno.test("factsResponse: a seq that arrives as a numeric string is coerced; a non-integer seq row is skipped; the cursor is always a number", () => {
+  const rows = [
+    factRow(1),
+    { ...factRow(2), seq: "9" as unknown as number },
+    { ...factRow(3), seq: "abc" as unknown as number },
+    { ...factRow(4), seq: 1.5 },
+    { ...factRow(5), seq: null as unknown as number },
+    { ...factRow(6), seq: Infinity },
+  ];
+  const { facts, factsCursor } = factsResponse(rows, 0);
+  assertEquals(factsCursor, 9);
+  assertEquals(typeof factsCursor, "number");
+  assertEquals(facts.map((f) => f.seq), [1, 9]);
+});

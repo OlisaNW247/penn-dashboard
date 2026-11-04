@@ -296,6 +296,24 @@ struct AppliedFactsWiringTests {
         #expect(facts.all().count == 1)
     }
 
+    @Test("the stored cursor never moves backwards, ignores nil, and never passes 2^53")
+    func cursorBounds() throws {
+        let (state, _, _, defaults) = try makeState([feedRow("55", title: "Quiz 4")])
+        let key = AppState.FactKey.cursor
+        state.ingestFacts([wire(10, .note, title: "a")], cursor: 10, now: now)
+        #expect(defaults.object(forKey: key) as? Int == 10)
+        state.ingestFacts([wire(3, .note, title: "b")], cursor: 3, now: now)
+        #expect(defaults.object(forKey: key) as? Int == 10, "never backwards")
+        state.ingestFacts([wire(4, .note, title: "c")], cursor: nil, now: now)
+        #expect(defaults.object(forKey: key) as? Int == 10, "a nil cursor moves nothing")
+        state.ingestFacts([wire(5, .note, title: "d")], cursor: CourseFactWire.maxSeq + 1, now: now)
+        #expect(defaults.object(forKey: key) as? Int == 10, "out of range is ignored")
+        state.ingestFacts([wire(6, .note, title: "e")], cursor: Int.max, now: now)
+        #expect(defaults.object(forKey: key) as? Int == 10)
+        state.ingestFacts([wire(7, .note, title: "f")], cursor: CourseFactWire.maxSeq, now: now)
+        #expect(defaults.object(forKey: key) as? Int == CourseFactWire.maxSeq)
+    }
+
     @Test("disconnect purges the facts and the cursor")
     func purgeOnDisconnect() throws {
         let (state, _, facts, defaults) = try makeState([feedRow("55", title: "Quiz 4")])

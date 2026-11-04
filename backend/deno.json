@@ -1,6 +1,7 @@
 {
   "tasks": {
     "test": "deno test --allow-env --allow-net --allow-read=test/fixtures test/",
-    "check": "deno check supabase/functions/*/index.ts"
+    "check": "deno check supabase/functions/*/index.ts",
+    "test:scripts": "node --test scripts/*.test.mjs"
   }
 }
