@@ -68,9 +68,9 @@ export interface DocScore {
 export const PRICES_PER_MTOK: Record<string, [number, number]> = {
   "anthropic/claude-haiku-5.5": [0.10, 0.50],
   "openai/gpt-6-luna": [0.10, 0.50],
-  "deepseek/deepseek-v4.1-flash": [0.10, 0.30],
-  "openai/gpt-6.1-terra": [1.0, 4.0],
-  "z-ai/glm-5.3-flash": [0.05, 0.20],
+  "deepseek/deepseek-v4.1-flash": [0.04, 0.50],
+  "openai/gpt-6.1-terra": [1.0, 5.0],
+  "z-ai/glm-5.3-flash": [0.03, 0.08],
   "openai/gpt-4.1-mini": [0.40, 1.60],
 };
 
@@ -308,7 +308,11 @@ export function summarize(lines: ResultLine[]): ModelSummary[] {
       httpFailures,
       gateInventedTasks,
       gateCancel,
-      pass: gateInventedTasks && gateCancel,
+      // A run with failed calls or unparseable answers cannot pass: the gates
+      // only count false positives, so an outage that answers nothing would
+      // otherwise read as a clean sheet (seen on the first smoke test, two
+      // 404s and a PASS).
+      pass: gateInventedTasks && gateCancel && httpFailures === 0 && parseFailures === 0,
       latency: lat.length
         ? { mean: mean(lat)!, median: percentile(lat, 0.5), p95: percentile(lat, 0.95) }
         : null,
@@ -333,7 +337,7 @@ export function renderReport(tag: string, lines: ResultLine[]): string {
   const out: string[] = [];
   out.push(`# extract-facts bench: ${tag}`, "");
   out.push(`${lines.length} model x document runs, ${new Set(lines.map((l) => l.docId)).size} documents.`, "");
-  out.push("Ship gates (Part 7): FP(new_task) + invented == 0, and FP(cancel) == 0.", "");
+  out.push("Ship gates (Part 7): FP(new_task) + invented == 0, and FP(cancel) == 0; any HTTP or parse failure fails the run.", "");
   out.push("| model | gates | invented | bad target | parse fail | http fail | P/R overall | latency ms mean/med/p95 | tokens in/out | est. cost |");
   out.push("|---|---|---|---|---|---|---|---|---|---|");
   for (const s of sums) {

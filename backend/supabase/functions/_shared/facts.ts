@@ -159,7 +159,11 @@ export const FACTS_JSON_SCHEMA: Record<string, unknown> = {
           target: { type: ["string", "null"] },
           title: { type: ["string", "null"] },
           due_at: { type: ["string", "null"] },
-          kind: { type: ["string", "null"], enum: [...FACT_KINDS, null] },
+          // Not `enum: [..., null]` on a nullable type: Anthropic's schema
+          // mode rejects a null inside an enum list (400 "Invalid schema:
+          // Enum val..." on the first live Haiku 5.5 call, 2026-11-03), while
+          // OpenAI's strict mode and the others accept this anyOf form.
+          kind: { anyOf: [{ type: "string", enum: [...FACT_KINDS] }, { type: "null" }] },
           quote: { type: "string" },
           confidence: { type: "string", enum: [...CONFIDENCES] },
         },

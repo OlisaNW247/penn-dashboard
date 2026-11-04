@@ -35,6 +35,7 @@ interface Args {
   limit: number | null;
   concurrency: number;
   dryRun: boolean;
+  requireParameters: boolean;
   temperature: number;
   maxTokens: number;
 }
@@ -47,6 +48,7 @@ function parseArgs(argv: string[]): Args {
     limit: null,
     concurrency: 4,
     dryRun: false,
+    requireParameters: false,
     temperature: 0,
     maxTokens: 1500,
   };
@@ -66,6 +68,7 @@ function parseArgs(argv: string[]): Args {
       case "--temperature": a.temperature = Number(v()); break;
       case "--max-tokens": a.maxTokens = Number(v()); break;
       case "--dry-run": a.dryRun = true; break;
+      case "--require-parameters": a.requireParameters = true; break;
       default: throw new Error(`unknown argument ${k}`);
     }
   }
@@ -117,9 +120,15 @@ function requestBody(model: string, doc: FactsDocument, args: Args) {
       type: "json_schema",
       json_schema: { name: "facts", strict: true, schema: FACTS_JSON_SCHEMA },
     },
-    // Without this OpenRouter may route to an endpoint that ignores the schema
-    // and the bench would score best-effort JSON, not what ships.
-    provider: { require_parameters: true },
+    // The research said to send provider.require_parameters so OpenRouter
+    // never routes to an endpoint that ignores the schema. Measured on
+    // 2026-11-03: with it set, every Haiku 5.5 request 404s ("No endpoints
+    // found that can handle the requested parameters"), with json_schema
+    // and with plain json_object alike, while strict json_schema without
+    // it is honoured (routed to Azure). So it is opt-in; the parser's own
+    // checks catch a best-effort endpoint anyway, as a parse failure or a
+    // bad shape, and the gates fail the run on either.
+    ...(args.requireParameters ? { provider: { require_parameters: true } } : {}),
   };
 }
 
