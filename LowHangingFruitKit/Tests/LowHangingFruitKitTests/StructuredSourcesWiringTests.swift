@@ -152,6 +152,31 @@ struct StructuredSourcesWiringTests {
         #expect(store.allRowsForTesting().contains { $0.sourceID == "event-assignment-55" && !$0.isGoneFromFeed })
     }
 
+    @Test("a dismissal undone in Canvas brings the card back; a failed planner read keeps it")
+    func dismissalReversible() throws {
+        let (state, _, _) = try makeState([feedRow("55", title: "Planner hidden")])
+        func planner(dismissed: Bool, complete: Bool) -> CanvasStructuredSourcesClient.RunResult {
+            var r = run(planner: [.init(plannableType: "assignment", plannableID: "55", courseID: "7", dismissed: dismissed)])
+            r.plannerCompleted = complete
+            return r
+        }
+        state.applyStructuredSources(run: planner(dismissed: true, complete: true), courses: [course])
+        rebuild(state)
+        #expect(!titles(state).contains("Planner hidden"))
+
+        // The planner read failed: nothing was seen, so nothing is forgotten.
+        var failed = run()
+        failed.plannerCompleted = false
+        state.applyStructuredSources(run: failed, courses: [course])
+        rebuild(state)
+        #expect(!titles(state).contains("Planner hidden"))
+
+        // The planner read finished and the item is no longer dismissed.
+        state.applyStructuredSources(run: planner(dismissed: false, complete: true), courses: [course])
+        rebuild(state)
+        #expect(titles(state).contains("Planner hidden"))
+    }
+
     @Test("a dismissed row the student completed still reaches prev")
     func dismissedButCompleted() throws {
         let (state, _, _) = try makeState([feedRow("55", title: "Both")])

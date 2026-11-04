@@ -26,7 +26,11 @@ import LowHangingFruitKit
 //    assignment id (a quiz module item, a planner note) has nothing for it to
 //    join on.
 //  - dismissals HIDE (`structuredDismissedItemIDs`, filtered in the dashboard
-//    pool). The ledger row stays.
+//    pool). The ledger row stays. Unlike completions they are reversible from
+//    Canvas: a run whose planner endpoint finished in full REPLACES the set
+//    with its own dismissals, so un-dismissing in Canvas brings the card back.
+//    A run whose planner did not finish (rate limit, failure, cut-off) only
+//    adds, so it can never drop a dismissal it simply failed to see.
 //  - section due dates are kept in a map beside the pool and substituted into
 //    the pool's copy of the row (`applyingStructuredDueOverride`), never
 //    written onto the ledger row, for the same reason the student's edits are
@@ -166,11 +170,11 @@ extension AppState {
         if !rows.isEmpty {
             if let store = assignmentStore {
                 store.upsert(rows)
-                moduleReadingItems = store.assignments(source: .canvasModules)
+                replaceModuleReadingItems(store.assignments(source: .canvasModules))
             } else {
                 var byID = Dictionary(uniqueKeysWithValues: moduleReadingItems.map { ($0.id, $0) })
                 for row in rows { byID[row.id] = row }
-                moduleReadingItems = Array(byID.values).sorted { $0.id < $1.id }
+                replaceModuleReadingItems(Array(byID.values).sorted { $0.id < $1.id })
             }
             summary.rows = rows.count
         }
@@ -195,10 +199,14 @@ extension AppState {
         summary.completions = completed.count
         structuredCompletedItemIDs.formUnion(completed)
 
-        // 3. Dismissals: additive hides.
+        // 3. Dismissals: replaced by a complete planner read, otherwise additive.
         let dismissed = Set(signals.dismissals.flatMap { ids($0.ref) })
         summary.dismissals = dismissed.count
-        structuredDismissedItemIDs.formUnion(dismissed)
+        if run.plannerCompleted {
+            structuredDismissedItemIDs = dismissed
+        } else {
+            structuredDismissedItemIDs.formUnion(dismissed)
+        }
 
         // 4. Section dates. A course whose assignments endpoint finished in
         // full is authoritative for its own rows, so an override Canvas has

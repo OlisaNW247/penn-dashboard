@@ -61,11 +61,20 @@ final class AppState: ObservableObject {
     /// `.exclude` decision (Settings' "Courses & content" toggle) stops it,
     /// via `shouldAutoImportReadings(for:)`. Kept separate
     /// from `canvasItems` because these never came through the ICS feed —
-    /// `refreshCourseIntel` is what fills it, ledger-backed the same way via
-    /// `AssignmentStore.reconcile(_:source: .canvasModules)`. Read-only
-    /// outside this file; `rebuildDashboardItems` folds it into the Canvas
-    /// pool it filters.
-    @Published var moduleReadingItems: [Assignment] = []
+    /// `refreshCourseIntel` is what fills it, ledger-backed through
+    /// `AssignmentStore.upsert` (not `reconcile`): reconcile partitions by
+    /// source and retires every row the fetch did not mention, which would
+    /// retire the structured sources' rows (`AppState+StructuredSources`) each
+    /// time a different fetch ran. Read-only outside this file, except through
+    /// `replaceModuleReadingItems`; `rebuildDashboardItems` folds it into the
+    /// Canvas pool it filters.
+    @Published private(set) var moduleReadingItems: [Assignment] = []
+
+    /// The one write door for the structured-sources extension, which cannot
+    /// reach the `private(set)` setter from another file.
+    func replaceModuleReadingItems(_ items: [Assignment]) {
+        moduleReadingItems = items
+    }
     /// Assignments `syncAnnouncements()` extracted from Canvas course
     /// announcement text (`.canvasAnnouncement` ledger rows), read back the
     /// same way `moduleReadingItems` is: a snapshot from the ledger, not a

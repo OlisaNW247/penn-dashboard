@@ -1964,8 +1964,10 @@ each behind its own compile-time kill switch in `FeatureFlags.swift`, both
   `CanvasStructuredSourcesReconciler` turns that into plain
   `CanvasStructuredSignals` (completions, dismissals, section dates, rows);
   `AppState+StructuredSources.swift` is the only applier. Rows are upserted,
-  never reconciled. Completions, dismissals and section dates are additive
-  sets and a map in `UserDefaults.lhf` (`structuredCompletedItemIDsV1`,
+  never reconciled. Completions are an additive set; dismissals are replaced
+  by each run whose planner endpoint finished in full (so un-dismissing in
+  Canvas restores the card) and only added to otherwise; section dates are a
+  map in `UserDefaults.lhf` (`structuredCompletedItemIDsV1`,
   `structuredDismissedItemIDsV1`, `structuredDueOverridesV1`), consulted when
   the dashboard pool is built and never written as the student's own edits.
   `WorkItemIdentity` / `WorkItemAlias` / `WorkItemMatcher` /
