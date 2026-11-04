@@ -35,7 +35,7 @@ struct CourseContentAPITests {
         }
     }
 
-    @Test("builds an assignment document with due date, points, submission state, and description")
+    @Test("builds an assignment document with due date, points, and description (never submission state)")
     func buildsAssignmentDocument() throws {
         let json = """
         while(1);[{
@@ -56,7 +56,9 @@ struct CourseContentAPITests {
         #expect(doc.dueAt != nil)
         #expect(doc.pointsPossible == 100)
         #expect(doc.submitted == false)
-        #expect(doc.text.contains("Status: not submitted"))
+        // Submission state is personal and must not appear in pooled text.
+        #expect(!doc.text.contains("Status:"))
+        #expect(!doc.text.lowercased().contains("submitted"))
         #expect(doc.text.contains("direct-mapped cache simulator"))
         #expect(doc.text.contains("• Part A"))
         #expect(!doc.text.contains("<"))

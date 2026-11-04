@@ -414,18 +414,29 @@ public enum AssignmentDeduplicator {
         struct Prepared {
             let item: Assignment
             let title: PreparedTitle
+            let identity: WorkItemIdentity
         }
         var gradescopeByCourse: [String: [Prepared]] = [:]
         for gradescopeItem in gradescopeItems where !usedGradescopeIDs.contains(gradescopeItem.id) {
             gradescopeByCourse[gradescopeItem.course, default: []]
-                .append(Prepared(item: gradescopeItem, title: PreparedTitle(gradescopeItem.title)))
+                .append(Prepared(item: gradescopeItem, title: PreparedTitle(gradescopeItem.title), identity: .from(gradescopeItem)))
         }
 
         var candidates: [Candidate] = []
         for canvasItem in canvasItems where !usedCanvasIDs.contains(canvasItem.id) {
             guard let bucket = gradescopeByCourse[canvasItem.course] else { continue }
             let canvasTitle = PreparedTitle(canvasItem.title)
+            let canvasIdentity = WorkItemIdentity.from(canvasItem)
             for gradescope in bucket {
+                // The hard rule over everything below: known, differing
+                // Canvas assignment ids are two assignments (WorkItemMatcher).
+                guard !WorkItemMatcher.canvasIDsConflict(canvasIdentity, gradescope.identity) else { continue }
+                // Tier 1 before any title test: a shared alias is the same
+                // item whatever the titles say, and outranks every title tier.
+                if !canvasIdentity.canonicalAliases.isDisjoint(with: gradescope.identity.canonicalAliases) {
+                    candidates.append(Candidate(canvas: canvasItem, gradescope: gradescope.item, score: 3.0))
+                    continue
+                }
                 guard isLikelyDuplicate(
                     canvasTitle, dueA: canvasItem.dueAt,
                     gradescope.title, dueB: gradescope.item.dueAt
@@ -720,8 +731,7 @@ public enum AssignmentDeduplicator {
     /// so it cannot conflict either. Pass 2, the title/date fallback, is the
     /// one place a collapse could join two rows with contradicting ids.
     static func haveConflictingCanvasAssignmentIDs(_ a: Assignment, _ b: Assignment) -> Bool {
-        guard let idA = a.canvasAssignmentID, let idB = b.canvasAssignmentID else { return false }
-        return idA != idB
+        WorkItemMatcher.canvasIDsConflict(.from(a), .from(b))
     }
 
     // MARK: - Canvas ICS section-override collapse

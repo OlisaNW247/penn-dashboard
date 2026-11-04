@@ -285,9 +285,16 @@ public enum CourseDocumentBuilder {
         if let points = assignment.pointsPossible {
             lines.append("Points: \(DateText.trimmed(points))")
         }
-        if let submission = assignment.submission {
-            lines.append(submission.isSubmitted ? "Status: submitted" : "Status: not submitted")
-        }
+        // There used to be a "Status: submitted | not submitted" line here.
+        // This text is what gets pooled server-side for the whole class, and
+        // whether THIS student has handed something in is personal: it must
+        // never leave the phone (docs/PRIVACY.md promises exactly that).
+        // `CourseDocument.submitted` is already stripped on the wire; the
+        // text line was the leak that survived because it is just prose.
+        // The wrong fix is stripping it in the upload layer: anything that
+        // builds a document from this text, or reads it back, would still
+        // carry the state, so it is dropped at the source. Submission state
+        // for the student's own use lives in the ledger, not in documents.
         let description = HTMLText.plainText(from: assignment.description ?? "")
         if !description.isEmpty { lines.append(description) }
 
@@ -383,7 +390,8 @@ public enum CourseDocumentBuilder {
             url: announcement.url,
             text: message,
             updatedAt: announcement.postedAt,
-            fetchedAt: now
+            fetchedAt: now,
+            postedAt: announcement.postedAt
         )
     }
 
