@@ -1,0 +1,98 @@
+# tests: the project's three suites on GitHub-hosted runners.
+#
+# Written 2026-11-02 because the owner had no Mac at hand and the Swift
+# changes of that week (the tree plan, the conversation history, the
+# class-meeting rule) were sitting on `v8` uncompiled. CLAUDE.md's rule is
+# that a change that has not been compiled is not done; until now the only
+# compiler was a developer's Mac. This runs `swift test --no-parallel` in
+# `LowHangingFruitKit` on a macOS runner (the same command the Test
+# baseline records), the Deno suite with `--no-check` (the type check
+# fails on Deno 2.9's `Timeout` types, see CLAUDE.md), and the extension's
+# `npm test`. It builds no app and signs nothing: the iOS `xcodebuild` and
+# the archive still need a Mac with the team's certificates.
+#
+# `--no-parallel` is deliberate (the parallel run hangs in the Keychain
+# suites) and each runner is a fresh machine, so the shared-defaults trap
+# (two runs in one `swiftpm-testing-helper` domain) cannot happen here.
+name: tests
+
+on:
+  push:
+    branches: [v8, main]
+    paths:
+      - "LowHangingFruitKit/**"
+      - "backend/**"
+      - "chrome-extension/**"
+      - ".github/workflows/tests.yml"
+  pull_request:
+    paths:
+      - "LowHangingFruitKit/**"
+      - "backend/**"
+      - "chrome-extension/**"
+  workflow_dispatch:
+
+jobs:
+  swift:
+    name: swift test --no-parallel
+    # The package compiles against the Xcode 26 SDK on the developers' Macs,
+    # and under Xcode 16 `SwiftData.Schema.Version` is not `Sendable`, which
+    # fails `LedgerContainerError` (seen on the first run, 2026-11-02). The
+    # macOS 15 image ships Xcode 26.0.1 to 26.3 beside 16.x, and its runners
+    # start at once, where the macOS 26 pool queued a job for 15 minutes and
+    # cancelled it the same day; so the job runs here and the step below
+    # selects the newest Xcode 26 on the image.
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          sw_vers
+          ls -d /Applications/Xcode*.app
+          newest=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$newest" ]; then sudo xcode-select -s "$newest"; fi
+          xcodebuild -version
+          swift --version
+      - name: Test
+        working-directory: LowHangingFruitKit
+        run: |
+          set -o pipefail
+          swift test --no-parallel 2>&1 | tee ../swift-test.log
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## swift test --no-parallel"
+            grep -E "Test run with [0-9]+ tests|Executed [0-9]+ tests|error:|failed" swift-test.log | tail -40 | sed 's/^/    /'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: swift-test-log
+          path: swift-test.log
+
+  deno:
+    name: deno test --no-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Test
+        working-directory: backend
+        run: deno test --no-check --allow-env --allow-net --allow-read=test/fixtures test/
+
+  extension:
+    name: chrome-extension npm test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test
+        working-directory: chrome-extension
+        run: npm test

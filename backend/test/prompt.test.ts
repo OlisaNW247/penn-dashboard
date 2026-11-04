@@ -247,6 +247,19 @@ Deno.test("buildMessages puts the Sections sentence, with the student's own sect
   assert.ok(plain.includes("Sections: 401 Lecture — Mon"), plain);
 });
 
+Deno.test("SYSTEM_INSTRUCTIONS says the weekly schedule never settles whether a class meets today", () => {
+  // 2026-11-02: the model read "no announcement" off excerpts the phone had
+  // not sent and told a student a class met while a staff post said "No
+  // lectures this week".
+  assert.ok(SYSTEM_INSTRUCTIONS.includes("never whether it meets on a given day"));
+  assert.ok(SYSTEM_INSTRUCTIONS.includes("no post in the excerpts mentions a change, never that nothing was announced"));
+});
+
+Deno.test("SYSTEM_INSTRUCTIONS tells the model to use earlier turns and to admit a fresh conversation", () => {
+  assert.ok(SYSTEM_INSTRUCTIONS.includes("Earlier turns of this conversation may come before the student's latest question"));
+  assert.ok(SYSTEM_INSTRUCTIONS.includes("say the conversation starts fresh rather than guessing"));
+});
+
 Deno.test("SYSTEM_INSTRUCTIONS explains the Sections sentence, including that exam rooms are not in it", () => {
   assert.ok(SYSTEM_INSTRUCTIONS.includes('"Sections:" sentence'));
   assert.ok(SYSTEM_INSTRUCTIONS.includes("exam rooms or one-off room changes"));

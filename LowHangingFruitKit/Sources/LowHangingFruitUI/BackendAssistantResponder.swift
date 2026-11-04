@@ -279,7 +279,7 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
             excerpts: block.text,
             askedAt: context.askedAt,
             courseIDs: context.knowledge.courses.map(\.courseID),
-            history: []
+            history: context.history
         )
         return (request, block.sources)
     }
@@ -367,9 +367,12 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
     /// A follow-up is retrieved with the help of the questions before it
     /// (`FollowUpRetrieval`): "and for the final?" searches the course an
     /// earlier question named, and a short one also borrows the previous
-    /// question's words. That choice is all the earlier questions do here.
-    /// They are not added to the request, not to `history` and not to the
-    /// question, and the output never mentions them.
+    /// question's words. That choice is all the earlier questions do to the
+    /// excerpts: the output never mentions them. They are not added to the
+    /// `question`. (Until 2026-11-02 they were not sent at all; the
+    /// conversation now reaches the server separately, as `context.history`
+    /// in the request's `history`, which is the model's memory of the chat and
+    /// has nothing to do with which passages are retrieved.)
     static func retrievedExcerpts(question: String, context: AssistantContext) -> String {
         excerptBlock(question: question, context: context).text
     }
@@ -438,17 +441,34 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         // They go first, newest first, and the BM25 hits fill what is left, so
         // a question that does not ask about recency never reaches this branch
         // and keeps byte-for-byte the excerpts it always had.
-        var recencyFired = false
+        //
+        // A class-meeting question (`RecencyIntent.Kind.meeting`, 2026-11-02)
+        // takes the same road with a smaller pick and its own note. Its note
+        // is emitted even when the window holds no post, because that is the
+        // case it exists for: the model must say "no post from the last 14
+        // days mentions a change" instead of reading the registrar's weekly
+        // schedule as proof that nothing was announced.
+        var recencyNote: String?
         if let intent = RecencyIntent.detect(in: followUp.query) {
             let picks = recencyPicks(intent: intent, courseIDs: courseIDs, context: context)
+            if intent.kind == .meeting { recencyNote = meetingExcerptNote }
             if !picks.isEmpty {
-                recencyFired = true
+                if intent.kind == .news { recencyNote = recencyExcerptNote }
                 let picked = Set(picks.map(\.document.id))
                 let fill = hits.filter { !picked.contains($0.document.id) }.prefix(max(excerptLimit - picks.count, 0))
                 hits = picks + Array(fill)
             }
         }
-        guard !hits.isEmpty else { return ExcerptBlock(text: localLine, sources: []) }
+        guard !hits.isEmpty else {
+            // Nothing to number, but a meeting question still needs its note:
+            // an empty block would leave the model with only the registrar's
+            // schedule and the confidence that came with it.
+            guard let recencyNote else { return ExcerptBlock(text: localLine, sources: []) }
+            return ExcerptBlock(
+                text: [localLine, "RETRIEVED EXCERPTS (from the student's synced course materials):", recencyNote].joined(separator: "\n"),
+                sources: []
+            )
+        }
         // Labelled only for courses that are actually split (a lecture
         // syllabus and a lab syllabus, whether on one Canvas site or two)
         // so the model can tell the two apart — see
@@ -468,7 +488,7 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         }
         var header = ["RETRIEVED EXCERPTS (from the student's synced course materials):"]
         if hits.contains(where: { $0.document.kind == .ed }) { header.append(edExcerptNote) }
-        if recencyFired { header.append(recencyExcerptNote) }
+        if let recencyNote { header.append(recencyNote) }
         return ExcerptBlock(
             text: ([localLine] + header + lines).joined(separator: "\n"),
             sources: hits.map { ExcerptSource(document: $0.document) }
@@ -549,6 +569,20 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
     /// `askedAt` alone. It must not start with `[`, like the Ed note.
     static let recencyExcerptNote = "The newest posts in the window asked about come first, newest first; a post's date is the day it was posted."
 
+    /// The header note for a class-meeting question (`RecencyIntent.Kind
+    /// .meeting`), in place of `recencyExcerptNote`. Static text, no date and
+    /// no count. It tells the model which source wins when a post and the
+    /// registrar's weekly schedule disagree (the post), and what to say when
+    /// no post speaks to the meeting: the wrong wording is "nothing was
+    /// announced", which is a claim about the whole board when only the last
+    /// 14 days were read. Must not start with `[`.
+    static let meetingExcerptNote = "The class's newest posts from the last 14 days, if any, come first. Answer whether the class meets from those posts before the registrar's weekly schedule: a post that cancels or moves a meeting overrides the schedule. If no post above mentions a change, say that no post from the last 14 days mentions one rather than asserting that nothing was announced."
+
+    /// How many of the eight excerpt slots a class-meeting question gives to
+    /// the newest posts. Fewer than the news rule's whole eight, so BM25 still
+    /// brings the schedule and the syllabus's attendance text alongside.
+    static let meetingPickLimit = 4
+
     /// The newest dated Ed posts and Canvas announcements in scope, newest
     /// first, at most `excerptLimit`, each as the first passage of its
     /// document (a post is short, and its head carries the news).
@@ -565,7 +599,9 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
     /// `askedAt` (never the clock). If nothing is inside it, the three newest
     /// posts stand in regardless: the model then sees that the latest post is
     /// from Oct 18 and can say so, where an empty block would invite it to
-    /// invent a recent one or to claim there are none at all.
+    /// invent a recent one or to claim there are none at all. A class-meeting
+    /// question (`.meeting`) takes at most `meetingPickLimit` and has no such
+    /// stand-in: an empty window is an empty pick.
     static func recencyPicks(intent: RecencyIntent, courseIDs: Set<String>?, context: AssistantContext) -> [SearchHit] {
         let dated: [(document: CourseDocument, posted: Date)] = context.knowledge.documents.compactMap { document -> (document: CourseDocument, posted: Date)? in
             guard document.kind == .ed || document.kind == .announcement else { return nil }
@@ -583,12 +619,18 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         if let days = intent.windowDays {
             let earliest = context.askedAt.addingTimeInterval(-Double(days) * 86_400)
             chosen = newestFirst.filter { $0.posted >= earliest }
-            if chosen.isEmpty { chosen = Array(newestFirst.prefix(3)) }
+            // The three-newest stand-in is for "what's new": the model then
+            // sees the latest post is from Oct 18 and says so. A meeting
+            // question wants the opposite: a post from last month says
+            // nothing about this week's lecture, so an empty window picks
+            // nothing and the meeting note carries the "none found" answer.
+            if chosen.isEmpty, intent.kind == .news { chosen = Array(newestFirst.prefix(3)) }
         }
+        let pickLimit = intent.kind == .meeting ? meetingPickLimit : excerptLimit
         var seen = Set<String>()
         var hits: [SearchHit] = []
         for item in chosen {
-            guard hits.count < excerptLimit, seen.insert(item.document.id).inserted,
+            guard hits.count < pickLimit, seen.insert(item.document.id).inserted,
                   let passage = PassageChunker.passages(for: item.document).first
             else { continue }
             hits.append(SearchHit(

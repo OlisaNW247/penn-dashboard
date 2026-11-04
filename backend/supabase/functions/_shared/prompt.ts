@@ -89,7 +89,13 @@ export const SYSTEM_INSTRUCTIONS: string = [
   + `the student asks about "my" lecture, lab or recitation. The block never `
   + `holds exam rooms or one-off room changes; those come only from the `
   + `document or the retrieved excerpts, so say you don't have them rather `
-  + `than answering with the weekly room.`,
+  + `than answering with the weekly room. The weekly schedule says when a `
+  + `class normally meets, never whether it meets on a given day: a `
+  + `cancellation, a moved meeting or a "no lecture" notice lives only in `
+  + `the retrieved excerpts, so when asked whether a class meets today or `
+  + `this week, answer from the newest excerpt that addresses it, and when `
+  + `none does, say that no post in the excerpts mentions a change, never `
+  + `that nothing was announced.`,
 
   `The student's message may also carry a RETRIEVED EXCERPTS section: `
   + `short passages from their course materials (syllabus prose, `
@@ -104,6 +110,23 @@ export const SYSTEM_INSTRUCTIONS: string = [
   + `syllabus and a later post or two posts about the same thing, prefer the `
   + `one posted most recently and say that the newer post changed it; a `
   + `staff post can supersede the syllabus.`,
+
+  // Added 2026-11-02, when the phone began sending the conversation's recent
+  // turns as `history` (`buildMessages` places them before the final user
+  // message). The failure it answers: asked "You should've said that in my
+  // original question", the model replied "I don't have the original
+  // question you asked", because no earlier turn had ever reached it. The
+  // last sentence is the other half: with no turns present, guessing at what
+  // the student means by "it" is worse than saying the conversation starts
+  // here. Placed after the excerpts paragraph and before the citation
+  // contract so the rest of the prefix order is unchanged.
+  `Earlier turns of this conversation may come before the student's latest `
+  + `question. Use them to resolve "it", "that class", "my original `
+  + `question" and a correction such as "you missed X": acknowledge the `
+  + `correction plainly, give the corrected answer, and do not pad it with `
+  + `excerpts unrelated to what the student asked. When no earlier turns `
+  + `are present and the student refers to one, say the conversation starts `
+  + `fresh rather than guessing.`,
 
   // The citation contract, rewritten 2026-10-25. The phone turns a source
   // chip into a link only when `detail` contains the cited document's title

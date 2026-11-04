@@ -1,0 +1,183 @@
+# Hand-off, 2026-11-02: getting the tree fixes onto phones without Olisa's Mac
+
+Written 2026-11-02. Olisa has no laptop this week; Marco has his. This
+page is what each of them runs, in order, and what each step proves. The
+work it refers to is on `v8` (`docs/TREE_IMPROVEMENT_PLAN.md` → Status
+for the why): local dates, kept excerpt structure, the website-discovery
+chunking, the citation contract, the `.meeting` recency kind and the
+conversation history, all compiled only on GitHub's macOS runner so far
+(the `tests` workflow, `.github/workflows/tests.yml`), never on a phone.
+
+## 1. The server prompt: a cloud session with deploys allowed (Olisa)
+
+**Done 2026-11-02 at about 17:13 UTC** (Status, below): the secret exists,
+the canary passed 20/20 and production `ask` is v13. Nothing here is left
+to run; the text stays as the record of what the deploy session was told.
+
+**Amended 2026-11-02 17:30 UTC:** the canary is dark until
+`LHF_PROBE_SECRET` exists (Status, below). Paste this into the deploy
+session first:
+
+> The project has no `LHF_PROBE_SECRET`, so the canary you deployed
+> answers 404 to every probe. I approve setting one. Generate a random
+> 48-hex-character value and set it with one call: `POST
+> https://api.supabase.com/v1/projects/ynetfjixexksxqrrkwsg/secrets` with
+> body `[{"name":"LHF_PROBE_SECRET","value":"<value>"}]` (the proxy injects
+> the token); print only the HTTP status, never the value, and wait 20 s.
+> Then `export LHF_PROBE_SECRET=<value>` in the same shell and run the
+> 20-run `citations` probe with tag `cite-def`. If every run answered and
+> the four counts are no worse than the 2026-10-25 baseline (6/6
+> answered, 2/2 Meyerson, 3/6 titles), deploy production `ask`
+> (`deploy-function.mjs ask`), record ask-canary v8, the new `ask`
+> version, the date and the counts in CLAUDE.md's ask section, ROADMAP →
+> Next and `docs/HANDOFF_2026-11-02_TREE.md` → Status, and push to `v8`
+> after `git pull --rebase origin v8`. Show me the secret value once in
+> chat so I can save it; never write it into the repo. Deploy nothing
+> else.
+
+Only the cloud sessions hold the Supabase Management API token (there is
+none on either Mac), and this session's permission mode refuses a
+function deploy. Open a new Claude Code session on this repository with
+Bash allowed for `node backend/scripts/deploy-function.mjs` (or in a
+mode that does not ask), and paste:
+
+> Read CLAUDE.md → "ask: the model, the hedge, and the loop that tunes
+> them" first. On `v8` at or after `8bbbc67`, deploy the `ask-canary`
+> function with the `ask` directory bundled
+> (`NODE_USE_ENV_PROXY=1 node backend/scripts/deploy-function.mjs
+> ask-canary --also ask`), then run `NODE_USE_ENV_PROXY=1 node
+> backend/scripts/ask-probe.mjs --slug ask-canary --runs 20 --set
+> citations --tag cite-def` and read the four counts it prints at the
+> end. If every run answered and the counts are no worse than the
+> 2026-10-25 baseline in `docs/TREE_IMPROVEMENT_PLAN.md` → Status
+> (6/6 answered, 2/2 Meyerson, 3/6 titles under the old prompt), deploy
+> production `ask` the same way (`deploy-function.mjs ask`), record the
+> new version numbers in CLAUDE.md's ask section and ROADMAP → Next, and
+> push to `v8` with `git pull --rebase origin v8` first. Deploy nothing
+> else: `sync` v15 and `extract-announcement` wait for their own go.
+
+What it changes on every phone today, before any app update: the model
+is told the weekly schedule never says whether a class meets on a given
+day and must not claim nothing was announced; the citation detail is the
+excerpt's title (chips link); a newer post beats an older one.
+
+## 2. The phone build: Marco's laptop
+
+Paste into a Claude Code session on Marco's Mac, in the repo:
+
+> Read CLAUDE.md top to bottom, then ROADMAP.md. Check out `v8` at or
+> after `8bbbc67` (`git pull --rebase origin v8`). Run `cd
+> LowHangingFruitKit && swift test --no-parallel` alone on the machine
+> (CLAUDE.md → Traps, the shared defaults domain) and compare the count
+> with the GitHub `tests` workflow's last green run on the same commit;
+> record the count in CLAUDE.md → Test baseline as the notes do. Then the
+> iOS Debug build for the connected phone (CLAUDE.md → Commands), install
+> it, and on the phone open the tree and ask, in one conversation: "Do I
+> not have cis 2620 class today?" and then "you should've said that in my
+> original question" (any class with an Ed post from the last two weeks
+> works; CIS 2620 posted "No lectures this week but quiz on Monday" on
+> 2026-11-01). The first answer should lead with that post and carry its
+> chip; the second should acknowledge the correction, not say it has no
+> record of the question. Also ask "what's due tomorrow" after 8 pm
+> Eastern and check the day. Write what you saw into CLAUDE.md → Known
+> gaps (the two entries dated 2026-10-24 and the follow-ups bullet dated
+> 2026-11-02) and push to `v8`.
+
+## 3. The release: Marco's laptop, after 2 is green and Olisa says go
+
+> On `v8` green per step 2, stamp 3.4.1 (18) in `project.yml` and
+> `project.pbxproj` by hand (CLAUDE.md → Commands → Release upload; never
+> `xcodegen generate`), archive and export with the two `xcodebuild`
+> commands there, confirm the widget's AlarmKit link is weak with
+> `otool -L` on the archive, and upload. Record the archive commit and
+> the upload time in CLAUDE.md → Release state and
+> `docs/appstore/CHECKLIST.md`. Submitting in App Store Connect is a
+> person's step; the `update-floor` workflow raises the floor six hours
+> after it is live.
+
+## 4. The retrieval bench: whoever has a developer build on a phone
+
+`docs/TREE_IMPROVEMENT_PLAN.md` → "Running the bench": copy
+`course-knowledge.json` off the phone into a folder outside the repo and
+run `RetrievalBenchTests` with `LHF_BENCH_KNOWLEDGE` set. Paste the
+output into a session; it replaces the plan's predicted verdicts with
+measured ones.
+
+## Status
+
+- 2026-11-02: written. The `tests` workflow's first macOS run failed on
+  Xcode 16 (`Schema.Version` not `Sendable`); the job moved to the macOS
+  26 image at `8bbbc67`. Deno 470/0 and the extension's suite are green on
+  the runners. **Swift: 3414 tests / 329 suites green at `01a71db`**
+  (Xcode 26.6 on the macOS 26 runner, 100.8 s), after one test that pinned
+  the old no-history rule was rewritten to the new contract. So step 2's
+  compile is done; what Marco's laptop adds is the iOS build, the phone
+  and the archive. The workflow runs on the macOS 15 image since
+  `784da81` (Xcode 26.3 there) because the macOS 26 pool queued one run
+  for 15 minutes and cancelled it.
+- 2026-11-02, 17:30 UTC: Olisa's deploy session put `ask-canary` v8 live
+  (the new prompt), then its probe stopped: since the 2026-10-27 hardening
+  the canary answers 404 to any request without `x-lhf-probe-secret`
+  equal to the function secret `LHF_PROBE_SECRET`, and the project has
+  **no such secret** (the Management API lists none). So no probe can run
+  against the canary until one is set, from a session whose permission
+  mode allows a secret write (the overseer session's does not, and it
+  could not even relay the instruction). Production `ask` is not gated
+  and is unaffected. Step 1 below is amended: set the secret first.
+- 2026-11-02, after that: `ask` is deployed, at Olisa's go. `LHF_PROBE_SECRET`
+  was set on the project (it had none, so the canary answered 404 to
+  every probe; Olisa holds the value). `ask-canary` v8, from `v8`
+  `dfb9d7f` with `--also ask`, passed the 20-run `citations` probe (tag
+  `cite-def`): 20/20 answered, `<sources>` 20/20, known title 20/20
+  (baseline 3/6), `ed` kind 15/20, Meyerson 7/7 (baseline 2/2), first
+  word p50 3.3 s, p95 6.1 s. Production `ask` is v13 from the same tree.
+  What remains is the phone: the recording's two questions on a build of
+  this tree.
+- 2026-11-02, evening, Marco's Mac (this is where the next session
+  starts). Step 2 is done except the evening check: `v8` is checked out
+  in the worktree `.claude/worktrees/v8`; `swift test --no-parallel` ran
+  alone and passed **3414/329**, the runner's count (recorded in CLAUDE.md
+  → Test baseline, `d434db8`); the iOS Debug build of `d434db8` (stamped
+  3.4.0 (17), the same as the store build) is **installed on Marco's
+  iPhone 17 Pro**, replacing the `v9` build that was there (the no-banner
+  sign-in work; `v9` and `v8` are not merged either way). On it, "Do I
+  not have cis 2620 class today?" answered from the 2026-11-01 Ed post
+  ("you do have quiz", right for that Monday). The follow-up question was
+  **not** asked and the 8 pm "what's due tomorrow" check was not done.
+  Marco's verdict on the build: the model still reasons poorly about
+  when; recent posts should come first for today/recency questions, the
+  syllabus for general ones. At his request the answer is research, not
+  code: `docs/TREE_CONTEXT_RESEARCH_2026-11-02.md` (`4905087`) maps the
+  pipeline with line references and proposes six steps in order, with a
+  frozen regression set to measure them. **Step 3 (3.4.1 (18)) has not
+  started**: no stamp, no archive, no upload; it still waits for Olisa's
+  go, and Marco should decide whether to ship before or after the
+  research is acted on.
+
+## 5. Next session (any Mac with the repo; the phone steps need Marco's)
+
+Paste:
+
+> Read CLAUDE.md top to bottom, then ROADMAP.md, then
+> `docs/HANDOFF_2026-11-02_TREE.md` → Status (last entry) and
+> `docs/TREE_CONTEXT_RESEARCH_2026-11-02.md`. Work on `v8` in the worktree
+> `.claude/worktrees/v8` (`git pull --rebase origin v8` first). Then, in
+> this order, stopping for a person's word where it says so:
+> 1. Decide with Marco and Olisa how the weekly schedule reaches the
+>    phone (sent down with the course profiles, or built from the
+>    student's class setup); the research's Part 3 needs it for steps 3
+>    and 5.
+> 2. Implement steps 1 and 2 of the research (the time-frame resolver in
+>    the Kit, per-intent freshness in `CourseSearch`), with the frozen
+>    regression set from Part 4 in `swift test`, pinned clock, no model.
+>    Compile with `swift test --no-parallel`; the count must not drop
+>    below 3414/329 without a named reason.
+> 3. Build the iOS Debug app to Marco's phone (CLAUDE.md → Commands;
+>    check it is the newest build first) and run the two phone shapes: a
+>    class-meeting question the day after a cancellation post, and
+>    "what's due tomorrow" after 8 pm Eastern. Record in CLAUDE.md →
+>    Known gaps.
+> 4. Only with Olisa's go, stamp 3.4.1 (18) and archive, check the
+>    widget's AlarmKit link is weak with `otool -L`, upload, and record it
+>    in CLAUDE.md → Release state and `docs/appstore/CHECKLIST.md` (step
+>    3 of this hand-off).

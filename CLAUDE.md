@@ -54,7 +54,12 @@ material by numeric Canvas course id, and two schools' ids would collide.
 **Privacy posture; say it this way.** "The student's own data stays
 on-device; course material is pooled server-side; ask has an on-device
 fallback." Grades, completions, submission state, the work list, the
-student's name, and Canvas/Gradescope cookies never leave the phone. The
+student's name, and Canvas/Gradescope cookies never leave the phone. Since
+2026-11-02 (blind) a question to the tree also carries the earlier turns
+of the conversation on screen (the last three exchanges, the student's
+words and the answers shown, dropped when the screen closes, stored by
+nobody), so "you missed that" and "what about that class" mean something
+to the model; `docs/PRIVACY.md` says so. The
 one exception, since 2026-10-22: a student who pairs the Chrome extension
 shares completions, due-date edits, their own tasks and the work list
 with their own laptop **end-to-end encrypted** (AES-256-GCM, a key that
@@ -1046,6 +1051,14 @@ cd backend && deno task test
 cd backend && deno task check
 ```
 
+Since 2026-11-02 every push to `v8` also runs the three suites on GitHub's
+runners (`.github/workflows/tests.yml`: `swift test --no-parallel` on a
+macOS image with Xcode 26 selected, the Deno suite with `--no-check`, the
+extension's `npm test`). It is the compile gate when no Mac is at hand; it
+builds no app and signs nothing, so the iOS `xcodebuild`, the archive and
+the phone still need a Mac. Read a run with `gh api
+repos/OlisaNW247/penn-dashboard/actions/workflows/tests.yml/runs`.
+
 `xcrun devicectl` launch fails with `FBSOpenApplicationServiceErrorDomain
 error 1` when the phone is locked; the install still succeeded. The built
 product is `Smooth.app` (see the macOS naming trap below).
@@ -1160,6 +1173,14 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
+**Current on `v10` (2026-11-03): the merge of `v9` (3442 / 329 at the
+onboarding-polish merge, plus the sign-in work) and `origin/v8` `7e004c5`
+(3414 / 329, the tree's recency and follow-up work). Expected about
+3457 / 331; NOT YET RUN at the time of the merge commit, see the
+next line once it is.**
+
+Before it, on the two lines that merged:
+
 **Current: 3442 tests / 329 suites, all green, on `v9` at the merge of `origin/onboarding-polish-2026-10` (2026-11-02, `swift test --no-parallel`, on Marco's Mac, 78 s).** The no-banner sign-in work (`e9a2c71`) took the count from 3420 to 3439 (the `bannerHasVerdict` table and the two retry tests pinned to the one-hour cooldown and the ten-minute timeout retry were deleted with those rules, replaced by status-line, keepalive, Duo and spacing tests), and the onboarding-polish merge added `DuoPasscodeAutofillTests` (+3 / +1 suite). The iOS Debug device build of the same tree succeeded and was installed on Marco's iPhone 17 Pro.
 
 **Previous: 3420 tests / 328 suites on `v9`, all green, on `v9` (2026-11-01, `swift test --no-parallel`, on Marco's Mac, 120 s), the probe-before-expired sign-in fix (`docs/SIGNOUT_2026-11-01.md`), +21 tests over `v8`.** A first run with two implementer agents compiling beside it failed only the three timing assertions in "Fuzz: very long announcement text" (195 s for a 10 s budget); the quiet re-run passed them. One filtered run hung after printing its pass line (the known teardown hang); the re-run did not.
@@ -1169,6 +1190,25 @@ a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 **Previous: 3402 tests / 328 suites on `onboarding-polish-2026-10` (`origin/v8` `019e1a5` plus the 2026-10-30 onboarding polish; 2026-10-30, `swift test --no-parallel`, on Marco's Mac, 109 s), all green after two source-pinning tests were updated to the new intent (`ReconnectCoverTests` now expects the preview door on the school pane and not on the Canvas pane; `SweeperOnboardingTests` expects one line). +3 tests / +1 suite over 3399/327: `DuoPasscodeAutofillTests`. The first run of this tree had exactly those two tests red and nothing else; the practice-guide tests were rewritten with the `.finished` step's removal and stayed green.** The iOS Debug device build (3.4.0 (17)) of the same tree was installed on Marco's iPhone 17 Pro the same afternoon and launched onto the intro. Before that: **Current: 3399 tests / 327 suites on `v8` at `8b691b6` (2026-10-29, `swift test --no-parallel`, on Olisa's Mac, 61 s): two failures and the SEC-10 known issue.** The first run of `30c4132` did not compile: `GradescopeSessionKeepTests` wrote an offset as `15 * 60` in a tuple array, typed `Int` (fixed in `8b691b6`, `hour / 4`). The two failures were `OwnTaskRemovalTests`' stop-repeating tests counting all ten weekly occurrences where the dashboard's term cap (`AppState.withinTermCap`) keeps nine once ten weeks from late October passes the term's end; the tests now count what the cap keeps (`fbb0296`). SEC-10 is fixed in the extension (`decide()` drops anonymous threads after private, as `EdThreadFilter` does) and its `withKnownIssue` wrapper removed, so `EdFilterParityTests` now asserts parity outright. Both fixes are blind until the next Mac run. The iOS Debug device build of `30c4132` succeeded and was installed on Olisa's iPhone 17 at 13:57 local the same day.
 Deno on `phase0/extract-facts-bench` (2026-11-03): 626 passed, 0 failed, `deno task check` green; +12 for `facts.test.ts`.
 
+
+**Current: 3414 tests / 329 suites, all green, on `v8` at `b85ef70`
+(2026-11-02, `swift test --no-parallel` alone on Marco's Mac, Xcode 26.6,
+65.1 s, from a fresh `.build`; the same count the `tests` workflow reported
+at `01a71db` on the macOS 26 runner, 100.8 s, run 41482109986, and at
+`784da81` on the macOS 15 runner, run 41484871951; the commits between
+change only docs).** The
+first compile of the week's blind tree work: +15 tests and +2 suites over
+3399/327, exactly as predicted (`AskMeetingExcerptTests`,
+`ConversationHistoryTests`, two `RecencyIntentTests` cases, one request
+test). The first pass at `8bbbc67` failed one test, the three-turn chain
+in `FollowUpRetrievalTests`, which pinned that no earlier question is on
+the wire; the history change reverses that on purpose and the pin was
+rewritten (`01a71db`), nothing loosened. The runner is a fresh machine
+each time, so the shared-defaults trap cannot bite there; the iOS
+`xcodebuild` is still not covered, and nothing from this tree has been on
+a phone. `.github/workflows/tests.yml` runs this plus Deno (470/0) and the
+extension's suite on every push to `v8`.
+Before it: **3399 tests / 327 suites on `v8` at `8b691b6` (2026-10-29, `swift test --no-parallel`, on Olisa's Mac, 61 s): two failures and the SEC-10 known issue.** The first run of `30c4132` did not compile: `GradescopeSessionKeepTests` wrote an offset as `15 * 60` in a tuple array, typed `Int` (fixed in `8b691b6`, `hour / 4`). The two failures were `OwnTaskRemovalTests`' stop-repeating tests counting all ten weekly occurrences where the dashboard's term cap (`AppState.withinTermCap`) keeps nine once ten weeks from late October passes the term's end; the tests now count what the cap keeps (`fbb0296`). SEC-10 is fixed in the extension (`decide()` drops anonymous threads after private, as `EdThreadFilter` does) and its `withKnownIssue` wrapper removed, so `EdFilterParityTests` now asserts parity outright. Both fixes are blind until the next Mac run. The iOS Debug device build of `30c4132` succeeded and was installed on Olisa's iPhone 17 at 13:57 local the same day.
 **Current: 3373 tests / 322 suites on `release/3.3.1` (the three-way merge of `fix/duplicate-category-ids`, `origin/v8` and `claude/sharp-newton-qwv18v`, plus the notification-tap crash fix; 2026-10-27, `swift test --no-parallel`, on Marco's Mac), all green.** Deno: 614 tests, `deno task check` green. iOS Simulator and device Debug builds of the same tree succeeded; the device build (3.3.1 (17)) was installed on Marco's phone that evening, launched, refreshed once, and left no crash report. Before that: 3346 tests / 320 suites on `fix/duplicate-category-ids` (`v8` `e3a57b3` plus the A1 crash fix, Release A, and the hardening groups of 2026-10-27; 2026-10-27, `swift test --no-parallel`, on Marco's Mac, with no other worktree testing at the same time), all green.** Deno: 599 tests, `deno task check` green on Deno 2.9 (`cd backend && deno task test`). The one red test since `aeaf982`, `AskCitationLinkTests` "the encoded request is byte-identical…", was a golden re-typed by hand with `America/New_York` where `JSONEncoder` writes `America\/New_York`; the golden was fixed on 2026-10-27, not the encoder. The new tests since `e3a57b3` are `DuplicateCategoryIDTests` (17, the launch crash, `docs/LAUNCH_CRASH_2026-10-26.md`; run against the original source they die with the production trap), `ReconnectCoverTests` (two suites, the A2 cover, plus two existing tests adjusted), and `SessionCookieLiveSessionTests` (10) with three Keychain tests in `SessionCookieStoreTests` (the A3 gate).  Before that: 2907 / 262 on `v8` `e3a57b3` (2026-10-25, the audit's gate run, same one failure).
 
 **Current: 2933 tests / 264 suites, all green, on `v8` at `17ce51f` (2026-10-27, `swift test --no-parallel`, on Olisa's Mac, 15.5 s), first run.** +43 tests and +4 suites over 2890/260: the tree-plan work of 2026-10-25 (`aeaf982`: local dates in the context document and excerpt block, kept excerpt structure, `WebsiteDiscoveryBatches`, the citation contract, the retrieval bench), compiled here for the first time. The Swift tree is unchanged through `6195eae` (later commits touch only the extension, the backend and docs). The iOS build of this tree (`xcodebuild`, which `swift test` does not cover) has not been run yet.
@@ -1718,6 +1758,19 @@ the result. Deploying `ask` itself is a production change and needs a
 person's go. The 2026-09-22 promotion was 55/55 on the canary (first
 word median 1.8 s, p95 3.9 s, max 6.5 s) and 5/5 on production.
 
+**2026-11-02: the citation contract and the recording fixes went live,
+at Olisa's go.** `ask-canary` v8 (deployed with `--also ask` from `v8`
+`dfb9d7f`, so it serves the new `prompt.ts`) answered the 20-run
+`citations` probe (tag `cite-def`) 20/20, first word p50 3.3 s, p95
+6.1 s; `<sources>` block 20/20, a known title in the detail 20/20 (the
+2026-10-25 baseline against the old prompt: 3/6), kind `ed` 15/20, and
+7/7 midterm answers named Meyerson, the newer post's room (baseline 2/2;
+all 7 also mention Towne, the room it replaced). Production `ask` then
+went to **v13** from the same tree. The canary is gated on the
+`LHF_PROBE_SECRET` function secret, which the project did not have until
+that day (every probe was a 404); Olisa holds the value, and the probe
+shell must export the same one. It is never written into the repo.
+
 ### ask: retrieval is on the phone
 
 The server does no searching. `ask` answers from the context document
@@ -1771,9 +1824,35 @@ client problem. The pieces, all exercised by tests:
 - **Follow-ups** (`FollowUpRetrieval`). A question that names no course
   searches within the course the nearest earlier question named (up to
   four back), and a question of six words or fewer is searched with the
-  one before it. On the phone only: `history` is still sent empty and
-  `question` is exactly what was typed. Sending earlier turns is a
-  privacy-policy change nobody has approved.
+  one before it. Since 2026-11-02 (blind, the owner's "improve this
+  immediately" on a recording where the tree said "I don't have the
+  original question you asked") `history` carries the conversation's last
+  three exchanges, capped at 6,000 characters (`ConversationHistory`,
+  `AssistantContext.history`), after the cache breakpoint; `question` is
+  still exactly what was typed. The policy sentence changed in the same
+  commit. The same recording showed "do I not have CIS 2620 class today?"
+  answered from the weekly schedule while an Ed post from the day before
+  said "no lectures this week": BM25 shares no word with that post, so
+  `RecencyIntent` now has a `.meeting` kind (class, lecture, lab, office
+  hours beside cancelled, "do I have", today, tomorrow, this week…) that
+  puts the class's newest posts from the last 14 days first, at most four,
+  under a note telling the model a post overrides the schedule and that
+  "no post mentions a change" is the honest form of "nothing announced".
+  Both compiled green on the GitHub runner the same day (3414/329, Test
+  baseline). **On a phone 2026-11-02** (Marco's iPhone 17 Pro, the `v8`
+  Debug build at `d434db8`, production `ask` v13): "Do I not have cis
+  2620 class today?" came back "you do have quiz", the content of the
+  2026-11-01 Ed post ("No lectures this week but quiz on Monday"; the
+  2nd was a Monday), where the recording had answered from the weekly
+  schedule. So the `.meeting` kind sent the post. Whether the answer
+  carried the post's chip is not reported. The follow-up ("you should've
+  said that in my original question") was **not asked**: an earlier
+  version of this line said it was and had failed, a misreading of
+  Marco's chat message, corrected the same hour. `history` on a phone is
+  still unproven. Marco's wider verdict the same day: the model still
+  reasons poorly about *when*; a question about today or this week should
+  put recent posts first, a general question should lean on the syllabus
+  (`docs/TREE_CONTEXT_RESEARCH_2026-11-02.md`).
 - **What the phone holds** is the limit. Canvas Files (slides, readings,
   any PDF not named "syllabus") are not ingested by the phone, only the 40
   newest pages get their bodies, and announcements reach the pool only
@@ -3329,6 +3408,20 @@ none is a ship line.
   answers from the new posts is the next check. This touched the
   course-material sync at the owner's direct request; Marco has not been
   told yet.
+- **The recording fixes, on a phone 2026-11-02: the class-meeting half
+  passes; the history half is untested.** On Marco's iPhone 17 Pro
+  (`v8` `d434db8` Debug, `ask` v13) "Do I not have cis 2620 class
+  today?" led with the quiz from the 2026-11-01 Ed post (the recording's
+  failure, answering from the schedule, is gone); whether the chip showed
+  is not reported. The follow-up question was not asked, so whether
+  `history` reaches the server with the earlier turn is known only from
+  tests. To check it: read the `history` field of the request from a
+  DEBUG build, or run `ask-probe.mjs` with a `history` pair against
+  `ask-canary` (needs `LHF_PROBE_SECRET`, which Olisa holds). The evening
+  "what's due tomorrow" check has not been done yet (the phone test ran
+  at 13:12 Eastern). Marco's verdict on the same build: recency is still
+  not prioritised by the question's time frame; the research for that is
+  `docs/TREE_CONTEXT_RESEARCH_2026-11-02.md`.
 - **ask tells the model every date in UTC and never says so** (read
   2026-10-24, `docs/TREE_IMPROVEMENT_PLAN.md` item 1). The context
   document renders due times as `…T03:59:00Z` and the user message's
@@ -3731,8 +3824,8 @@ multiline, the greetings rotate only when idle (paused while typing or in a
 conversation, off under Reduce Motion), and answer formatting keeps
 paragraphs and source links and drops bold.
 `backend/supabase/functions/_shared/prompt.ts` asks for shorter,
-phone-readable answers without bold, which takes effect only when Olisa
-deploys the backend. `CanvasAppLink` makes assignment-card Canvas links try
+phone-readable answers without bold; live since `ask` v13 (2026-11-02,
+from `dfb9d7f`, which carries it). `CanvasAppLink` makes assignment-card Canvas links try
 the Canvas Student app (`canvas-courses://`, same host/course/item/query)
 before falling back to HTTPS; other providers and macOS keep plain links.
 
@@ -3787,8 +3880,9 @@ directly. None of them touches the update wall.
 
 Validation. The PR reported 3,388 tests / 324 suites and a device install of
 the lesson, not a live sign-in; those are the author's claims, not this
-tree's. Marco's live PennKey sign-in on his phone, the Canvas app hand-off on
-a device, and Olisa's backend deploy are still owed (`ROADMAP.md`).
+tree's. Marco's live PennKey sign-in on his phone and the Canvas app hand-off
+on a device are still owed (`ROADMAP.md`); the backend deploy happened on
+2026-11-02 (`ask` v13).
 GATES ON THE MERGED TREE (2026-10-28, 18:30–19:00 UTC, Marco's Mac, PR #16's final
 head 80079f0 plus the sign-in restoration): `swift test --no-parallel` 3399 tests /
 327 suites (+3 tests, +1 suite over the 9082182 run: `AssistantHistoryTests`), all

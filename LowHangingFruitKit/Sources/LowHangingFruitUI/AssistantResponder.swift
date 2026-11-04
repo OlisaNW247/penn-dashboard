@@ -118,11 +118,12 @@ struct AssistantContext: Sendable {
     /// `FollowUpRetrieval` so a short follow-up ("and for the final?") picks
     /// its passages from the course the question before it named.
     ///
-    /// It decides which passages are chosen and nothing else. It is NOT sent
-    /// to the server (`BackendAssistantResponder.makeRequest` keeps `history`
-    /// empty and `question` verbatim: earlier turns leaving the phone would
-    /// be a privacy-policy change), and it must never be rendered into
-    /// `contextDocument`, whose bytes are the prompt-cache prefix.
+    /// On its own it decides which passages are chosen and nothing else:
+    /// `question` on the wire stays exactly what was typed, and it must never
+    /// be rendered into `contextDocument`, whose bytes are the prompt-cache
+    /// prefix. (Until 2026-11-02 the earlier turns stayed on the phone
+    /// altogether; they now reach the server through `history`, below, and
+    /// `docs/PRIVACY.md` says so.)
     var previousQuestion: String?
 
     /// The student questions before `previousQuestion`, newest first, so a
@@ -131,9 +132,27 @@ struct AssistantContext: Sendable {
     /// named. Together with `previousQuestion` at most
     /// `FollowUpRetrieval.maxEarlierQuestions`, set by `AssistantConversation
     /// .send`. Same limits as `previousQuestion`: it chooses passages and
-    /// nothing else, is never sent to the server, and never enters
-    /// `contextDocument`.
+    /// nothing else on their own and never enter `contextDocument`.
     var olderQuestions: [String] = []
+
+    /// The earlier turns of THIS screen's conversation, newest last: the
+    /// student's text as typed and the assistant's text as shown, without its
+    /// source chips. Never persisted (`AssistantConversation` is a
+    /// `@StateObject` that empties when the screen closes). Set by
+    /// `AssistantConversation.send` from its transcript, capped on the phone
+    /// to the last 6 messages (3 exchanges) and 6,000 characters, dropping
+    /// whole oldest turns first (`ConversationHistory`).
+    ///
+    /// **This leaves the phone, since 2026-11-02.** `BackendAssistantResponder`
+    /// sends it as the request's `history`, which the server places after the
+    /// cache breakpoint and before the question, so a follow-up can refer to
+    /// what was said ("you should have said that in my original question").
+    /// It is the answer to a screen recording in which the tree, asked that,
+    /// replied that it had no original question. The server stores none of it,
+    /// and `docs/PRIVACY.md` discloses it. It must never be rendered into
+    /// `contextDocument`: those bytes are the prompt-cache prefix and a
+    /// conversation changes every turn. The on-device responder ignores it.
+    var history: [AskTurn] = []
 }
 
 protocol AssistantResponder: Sendable {

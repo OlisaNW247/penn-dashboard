@@ -64,6 +64,29 @@ struct RecencyIntentTests {
         #expect(RecencyIntent.detect(in: "posts from today and then the past month") == RecencyIntent(windowDays: 30))
     }
 
+    @Test("a question about whether a class meets fires the meeting kind, with a 14-day window")
+    func meetingQuestions() {
+        let questions = [
+            "Do I not have cis 2620 class today?", "is there class tomorrow", "is lecture cancelled",
+            "do we have lab this week", "when does cis 2400 lecture meet",
+        ]
+        for question in questions {
+            #expect(RecencyIntent.detect(in: question) == RecencyIntent(windowDays: 14, kind: .meeting), "\(question)")
+        }
+    }
+
+    @Test("a meeting question needs both a meeting word and a presence or time word; the news rule wins when it fires")
+    func meetingBoundaries() {
+        #expect(RecencyIntent.detect(in: "what is the late policy") == nil)
+        #expect(RecencyIntent.detect(in: "when is the midterm") == nil)
+        #expect(RecencyIntent.detect(in: "what is the class participation grade") == nil)
+        let news = RecencyIntent.detect(in: "what did staff post this week")
+        #expect(news == RecencyIntent(windowDays: 7))
+        #expect(news?.kind == .news)
+        // A recency word beside a class word is still news, with no window.
+        #expect(RecencyIntent.detect(in: "any recent news about class today")?.kind == .news)
+    }
+
     @Test("deadline questions never fire")
     func negatives() {
         let questions = [
@@ -293,5 +316,107 @@ struct AskRecencyExcerptTests {
         #expect(lines[0].contains("posted Oct 18"))
         #expect(lines[1].contains("posted Oct 15") && lines[1].contains("· announcement ·"))
         #expect(lines[2].contains("posted Oct 12"))
+    }
+}
+
+@Suite("Ask excerpts: does the class meet")
+struct AskMeetingExcerptTests {
+    private static let cis = CourseSummary(courseID: "1", code: "CIS 2620", name: "CIS 2620 Operating Systems", url: nil)
+
+    private static func eastern(_ year: Int, _ month: Int, _ day: Int, _ hour: Int = 12) -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        var components = DateComponents()
+        components.year = year; components.month = month; components.day = day; components.hour = hour
+        return calendar.date(from: components)!
+    }
+
+    /// The day of the screen recording that found the bug (2026-11-02).
+    private static let asked = eastern(2026, 11, 2)
+
+    private static func ed(_ id: Int, title: String, body: String, posted: Date) -> CourseDocument {
+        let thread = EdThread(
+            id: id, userID: 7, courseID: 101, type: "announcement", title: title,
+            document: "<document version=\"2.0\"><paragraph>\(body)</paragraph></document>",
+            category: "General", createdAt: posted, updatedAt: posted
+        )
+        let decision = EdThreadFilter.decide(thread, authorRole: nil)
+        return CourseDocument(
+            courseID: "1", course: "CIS 2620", kind: .ed, sourceID: EdDocumentBuilder.sourceID(for: thread),
+            title: EdDocumentBuilder.title(for: thread), url: nil,
+            text: EdDocumentBuilder.text(for: thread, decision: decision), updatedAt: posted
+        )
+    }
+
+    /// The reported post. Its words share nothing with "Do I not have cis 2620
+    /// class today?", which is why the search never found it.
+    private static func noLectures(posted: Date) -> CourseDocument {
+        ed(1, title: "No lectures this week but quiz on Monday", body: "Review the proofs from the recitation notes before then.", posted: posted)
+    }
+
+    /// What BM25 does find for the question: the registrar-style schedule.
+    private static let schedule = CourseDocument(
+        courseID: "1", course: "CIS 2620", kind: .page, sourceID: "sched", title: "Meeting times", url: nil,
+        text: "The class meets Mondays and Wednesdays in Towne 100."
+    )
+
+    private static let question = "Do I not have cis 2620 class today?"
+
+    private static func context(_ documents: [CourseDocument]) -> AssistantContext {
+        AssistantContext(
+            courseCodes: ["CIS 2620"],
+            contextDocument: "the exact document text",
+            askedAt: asked,
+            knowledge: CourseKnowledgeBase(courses: [cis], documents: documents)
+        )
+    }
+
+    private static func lines(_ block: BackendAssistantResponder.ExcerptBlock) -> [String] {
+        block.text.split(separator: "\n").map(String.init).filter { $0.hasPrefix("[") }
+    }
+
+    @Test("a post from yesterday leads the block although it shares no word with the question, and the meeting note rides along")
+    func recentPostLeads() throws {
+        let post = Self.noLectures(posted: Self.eastern(2026, 11, 1))
+        let block = BackendAssistantResponder.excerptBlock(question: Self.question, context: Self.context([post, Self.schedule]))
+        let lines = Self.lines(block)
+        try #require(!lines.isEmpty)
+        #expect(lines[0].hasPrefix("[1] ") && lines[0].contains("posted Nov 1") && lines[0].contains("No lectures this week but quiz on Monday"))
+        #expect(lines.filter { $0.contains("No lectures this week") }.count == 1)
+        #expect(block.text.contains(BackendAssistantResponder.meetingExcerptNote))
+        #expect(!block.text.contains(BackendAssistantResponder.recencyExcerptNote))
+        #expect(block.sources.first?.title == "No lectures this week but quiz on Monday")
+    }
+
+    @Test("a post 20 days old is not picked, and the meeting note is still sent")
+    func oldPostIsNotPicked() {
+        let post = Self.noLectures(posted: Self.eastern(2026, 10, 13))
+        let block = BackendAssistantResponder.excerptBlock(question: Self.question, context: Self.context([post, Self.schedule]))
+        #expect(!Self.lines(block).contains { $0.contains("No lectures this week") })
+        #expect(block.text.contains(BackendAssistantResponder.meetingExcerptNote))
+    }
+
+    @Test("at most four posts are picked, newest first, so the search still fills the rest")
+    func fourPicksAtMost() throws {
+        let days = [1, 31, 30, 29, 28, 27]   // Nov 1, then Oct 31 ... Oct 27
+        let posts = days.enumerated().map { index, day in
+            Self.ed(10 + index, title: "Board note \(index)", body: "Reminder number \(index) about the project.", posted: Self.eastern(2026, day == 1 ? 11 : 10, day))
+        }
+        let block = BackendAssistantResponder.excerptBlock(question: Self.question, context: Self.context(posts + [Self.schedule]))
+        let lines = Self.lines(block)
+        try #require(lines.count >= 4)
+        #expect(lines[0].contains("posted Nov 1"))
+        #expect(lines[1].contains("posted Oct 31"))
+        #expect(lines[2].contains("posted Oct 30"))
+        #expect(lines[3].contains("posted Oct 29"))
+        #expect(!lines.contains { $0.contains("posted Oct 28") || $0.contains("posted Oct 27") })
+    }
+
+    @Test("a news question is untouched by the meeting rule: the news note, and no meeting note")
+    func newsStaysNews() {
+        let post = Self.noLectures(posted: Self.eastern(2026, 11, 1))
+        let block = BackendAssistantResponder.excerptBlock(question: "what did staff post this week", context: Self.context([post, Self.schedule]))
+        #expect(block.text.contains(BackendAssistantResponder.recencyExcerptNote))
+        #expect(!block.text.contains(BackendAssistantResponder.meetingExcerptNote))
     }
 }

@@ -629,3 +629,45 @@ cd LowHangingFruitKit && LHF_BENCH_KNOWLEDGE=~/lhf-bench/course-knowledge.json s
   kind word, which the phone already accepts. So item 4's effect is
   smaller than section 3 feared; the deploy still earns its place by
   making the title the rule rather than the habit.
+- **2026-11-02.** Olisa sent a screen recording with "this needs to be
+  improved upon immediately": "Do I not have cis 2620 class today?" was
+  answered from the registrar's weekly schedule, with "there is no
+  announcement or note indicating a class cancellation", while an Ed post
+  from the day before ("No lectures this week but quiz on Monday") sat in
+  the pool; told so, the tree found the post; told "you should've said
+  that in my original question", it answered "I don't have the original
+  question you asked" and padded with proof-writing excerpts. Two causes,
+  both already in sections 4 and 7: BM25 shares no word between that
+  question and that post and the recency rule fires only on news wording,
+  so the post was never sent; and `history` was empty by design, so the
+  model could not see its own previous turn. Written blind the same day:
+  a `.meeting` kind on `RecencyIntent` (a class-meeting or cancellation
+  question puts the class's newest posts from the last 14 days first, at
+  most four, under a note that a post overrides the schedule and that "no
+  post mentions a change" is the honest form of "nothing announced"); the
+  last three exchanges sent as `history` (`ConversationHistory`,
+  `docs/PRIVACY.md` and the privacy posture updated in the same commit:
+  this is the policy change section 7 said needed a yes, and the owner's
+  instruction on the recording is that yes); and two prompt sentences in
+  `prompt.ts` (the schedule never says whether a class meets on a day; use
+  earlier turns for "you missed that"), which take effect only when `ask`
+  is deployed. The recording is the test: the same two questions on the
+  phone after the compile.
+- **2026-11-02, later.** Olisa had no Mac, so the compile moved to a
+  GitHub-hosted macOS runner (`.github/workflows/tests.yml`): the whole
+  tree of items 1 to 4 plus the recording fixes passed, 3414 tests in 329
+  suites, exactly the predicted count, on Xcode 26.6 in 101 s, after the
+  one test that pinned the old "no history on the wire" rule was rewritten
+  to the new contract. `ask` went to v13 the same day at Olisa's go;
+  `docs/HANDOFF_2026-11-02_TREE.md` says who runs what next.
+- **2026-11-02, on the phone.** Marco's Mac ran the serial suite alone
+  (3414/329, matching the runner) and put the `v8` Debug build on his
+  iPhone 17 Pro. The recording's first question, "Do I not have cis 2620
+  class today?", now leads with the quiz from the 2026-11-01 Ed post
+  ("you do have quiz"; the 2nd was the Monday the post named): the
+  `.meeting` kind works on a phone. The second question was not asked, so
+  `history` on a phone is untested (CLAUDE.md → Known gaps has the two
+  ways to tell). Chip presence on the first answer was not reported.
+  Marco's reading of the build: the model still does not weight recent
+  posts by the question's time frame, nor lean on the syllabus for
+  general questions; see `docs/TREE_CONTEXT_RESEARCH_2026-11-02.md`.

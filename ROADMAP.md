@@ -378,6 +378,30 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   pass over the `LABELS-*.md` calls; moving `ask` off gpt-4.1-mini on
   the canary; Phase 1 and the identity layer can start, Phase 2 needs
   Olisa's go.
+- **McGraw Hill (Connect, ALEKS)** (owner's request, 2026-11-02; research
+  only, nothing built). `reports/McGraw Hill access for Smooth.md` is the
+  write-up, with its notes in `research_notes/McGraw Hill access for
+  Smooth/`. The verdict is in two halves:
+  - Connect work an instructor deploys into Canvas probably already
+    reaches the dashboard as ordinary Canvas cards. The risk is the done
+    state: if Canvas never records `submitted_at` for a finished Connect
+    set, the card stays overdue and the Sweeper rings for finished work.
+  - Reading McGraw Hill directly, by an LTI launch like Ed's or a login
+    like Gradescope's, runs into McGraw Hill's terms (robots and scrapers
+    barred without written permission) and Apple 5.2.2. It waits on
+    written permission or an explicit owners' decision.
+
+  First step, no code: call
+  `GET /api/v1/courses/:id/assignments?include[]=submission` on one real
+  Penn Connect section, before starting, after finishing and after the
+  due date. Also read that section's ICS event. McGraw Hill's own site
+  was blocked from the research container, so its claims rest on search
+  summaries.
+  **2026-11-02, later:** Olisa asked for the direct reader to be built
+  anyway. `docs/MCGRAW_HILL_READER_SESSION_PROMPT.md` is the brief for
+  that session. It covers a remote kill switch in the update manifest
+  (off unless turned on), on-device only, recon by Marco before any
+  client, and compiling through the GitHub runner on a draft PR.
 
 - **Improve the tree (ask)** (owner's request, 2026-10-24; the research
   is done, nothing implemented). `docs/TREE_IMPROVEMENT_PLAN.md` has the
@@ -407,6 +431,16 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   already preferring the newer post (2/2) and writing a linkable title in
   about half the `<sources>` details. Next: Olisa's compile, the canary
   deploy at his hand, then the three probe commands in the plan.
+  **Status 2026-11-02 (Olisa's go): live.** `ask-canary` v8 from `v8`
+  `dfb9d7f`, 20-run `citations` probe `cite-def`: 20/20 answered, a known
+  title in 20/20 `<sources>` details (baseline 3/6), `ed` kind 15/20,
+  Meyerson in 7/7 midterm answers (baseline 2/2), first word p50 3.3 s.
+  Production `ask` is **v13** from the same tree, carrying the citation
+  contract and the 2026-11-02 recording sentences (`history`, the
+  schedule-is-not-a-cancellation rule). On Marco's phone the same day
+  (`v8` `d434db8` Debug): the class-meeting question now answers from the
+  Ed post; the "you should've said that" follow-up was not asked, so the
+  history half is unproven (CLAUDE.md → Known gaps).
 
 - **Merge Marco's branches into `v8`** (plan written 2026-10-23,
   `docs/MERGE_PLAN_MARCO_2026-10-23.md`, owner's request). Seven live
@@ -514,10 +548,29 @@ Roughly in priority order.
   is a decision before it is code: pooling instructors' files on the
   server changes `docs/PRIVACY.md` and the hosted policy; an on-device
   only store does not, but helps nobody's classmates.
-- **Let a follow-up question carry the conversation.** Follow-ups search
-  better on the phone since 2026-10-10, but the model still sees each
-  question alone (`history: []`). The server already accepts ten turns;
-  sending them is a privacy-policy change that needs a yes.
+- **Let a follow-up question carry the conversation.** Done blind on
+  2026-11-02 at the owner's word (`ConversationHistory`, the last three
+  exchanges sent as `history`, `docs/PRIVACY.md` updated); with it, a
+  `.meeting` recency kind so "do I have class today" sees the newest
+  posts. Compiled green on the GitHub runner the same day (3414/329);
+  on Marco's phone 2026-11-02: the class-meeting question passes (answers
+  from the Ed post); the "you should've said that" follow-up was not
+  asked. Next: check `history` is sent (DEBUG request body or a canary
+  probe with a `history` pair).
+- **Give the tree better context to reason with** (research written
+  2026-11-02 at Marco's request, `docs/TREE_CONTEXT_RESEARCH_2026-11-02.md`).
+  His verdict on the first phone build of the tree work: recent posts
+  are not put first when the question is about today or recency, and a
+  general question should lean on the syllabus. The research maps what
+  the model is given today (no time-frame classification, no freshness
+  in scoring, the weekly schedule only in `COURSE STRUCTURE`, due-date
+  questions left to the model's date arithmetic) and proposes, in order:
+  a time-frame resolver on the phone, per-intent freshness in scoring,
+  per-intent slot budgets with the schedule and the newest post side by
+  side, dated passage labels, a computed verdict line before the
+  question, then one server prompt pass. A frozen regression set in
+  `swift test` measures it. Not started; needs a decision on how the
+  weekly schedule reaches the phone.
 - **Make ask cite titles, so more source chips link.** The server prompt
   asks for "a few words locating the fact"; a chip only links when the
   model happens to write a document's title. One prompt line, behind an
@@ -1097,7 +1150,7 @@ control, the shared `SmoothFormShapes` cluster top-right and the rotating
 greeting centred under it. Chats are saved on the device as per-conversation
 files under Application Support, scoped by Canvas host, never synced; a
 history icon reopens them and "New chat" archives the current one. The
-matching backend prompt change takes effect only when Olisa deploys.
+matching backend prompt change is live since `ask` v13 (2026-11-02).
 Assignment-card Canvas links try the Canvas Student app before HTTPS. The
 connect flow confirms first: a "Canvas connected" page with a disabled
 "Syncing Canvas…" button over the still-mounted login pane, then Continue
@@ -1113,5 +1166,5 @@ notes): the chat-history store is rebuilt on every Ask re-render (move it into
 the `StateObject` autoclosure), the first-run "Syncing Canvas…" overlay has no
 X, the store's error banner never clears, viewing a chat bumps its date, the
 empty streaming row is saved early, saved chats carry no schema version, and
-"Add Gradescope" has no back. Open: Marco's live Penn sign-in test on his phone; Olisa's backend deploy for
-the prompt change; the Canvas app hand-off, unchecked on a device.
+"Add Gradescope" has no back. Open: Marco's live Penn sign-in test on his phone; the Canvas app hand-off,
+unchecked on a device. The prompt change went live in `ask` v13 on 2026-11-02.
