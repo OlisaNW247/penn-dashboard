@@ -951,4 +951,123 @@ begin
 end $$;
 rollback;
 
+-- ---------------------------------------------------------------------
+-- Facts (20261104090000_course_facts.sql): the claim function's rules, and
+-- who can read or write the four new tables. One transaction, rolled back,
+-- so the fixtures above are left exactly as the later checks expect.
+-- ---------------------------------------------------------------------
+begin;
+set local role service_role;
+
+do $$
+declare
+  r text;
+  n int;
+begin
+  r := public.claim_fact_extraction('syllabus:100:1', '100', 'h1');
+  if r <> 'claimed' then raise exception 'first claim answered %', r; end if;
+
+  -- Another call is working on it (a fresh `running` row): not pending.
+  r := public.claim_fact_extraction('syllabus:100:1', '100', 'h1');
+  if r <> 'not_pending' then raise exception 'a running claim was granted again: %', r; end if;
+
+  -- Course 100 has spent one of a limit of 1 today: the next is skipped,
+  -- recorded, and spends nothing.
+  r := public.claim_fact_extraction('page:100:2', '100', 'h2', 3, 1, 5000);
+  if r <> 'skipped_budget' then raise exception 'course daily cap not enforced: %', r; end if;
+  select count(*) into n from public.course_fact_extractions
+   where document_id = 'page:100:2' and status = 'skipped_budget';
+  if n <> 1 then raise exception 'skipped_budget row not recorded'; end if;
+  select extractions into n from public.fact_extraction_budget where course_id = '100';
+  if n <> 1 then raise exception 'a skipped claim spent budget: %', n; end if;
+
+  -- The global monthly cap, with a limit already reached.
+  r := public.claim_fact_extraction('website:100:abcd1234abcd1234', '100', 'h4', 3, 60, 1);
+  if r <> 'skipped_budget' then raise exception 'monthly cap not enforced: %', r; end if;
+
+  -- The per-course monthly sub-cap (7th argument): course 100 has spent 1 or
+  -- more this month, so a limit of 1 refuses, whatever the daily and global
+  -- caps would allow.
+  r := public.claim_fact_extraction('website:100:abcd1234abcd1234', '100', 'h4', 3, 60, 5000, 1);
+  if r <> 'skipped_budget' then raise exception 'course monthly cap not enforced: %', r; end if;
+
+  -- A skipped row is claimable once there is room (next day, or a higher cap).
+  r := public.claim_fact_extraction('page:100:2', '100', 'h2', 3, 60, 5000);
+  if r <> 'claimed' then raise exception 'a skipped_budget row was not retried: %', r; end if;
+
+  -- Finished work is never claimed again; a failed row is retried until
+  -- the attempt limit and then given up.
+  update public.course_fact_extractions set status = 'done'
+   where document_id = 'syllabus:100:1';
+  r := public.claim_fact_extraction('syllabus:100:1', '100', 'h1');
+  if r <> 'not_pending' then raise exception 'a done row was claimed: %', r; end if;
+  update public.course_fact_extractions set status = 'failed', attempts = 2
+   where document_id = 'page:100:2';
+  r := public.claim_fact_extraction('page:100:2', '100', 'h2');
+  if r <> 'claimed' then raise exception 'a failed row under the limit was not retried: %', r; end if;
+  update public.course_fact_extractions set status = 'failed' where document_id = 'page:100:2';
+  r := public.claim_fact_extraction('page:100:2', '100', 'h2');
+  if r <> 'not_pending' then raise exception 'a row at the attempt limit was claimed: %', r; end if;
+
+  -- One fact in each course.
+  insert into public.course_fact_extractions (document_id, content_hash, course_id, status)
+    values ('home:200:3', 'h3', '200', 'done');
+  insert into public.course_facts (extraction_id, course_id, document_id, content_hash, fact_type, quote, confidence)
+    select id, course_id, document_id, content_hash, 'cancel', 'HW3 is cancelled', 'high'
+    from public.course_fact_extractions where document_id in ('syllabus:100:1', 'home:200:3');
+end $$;
+
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111"}', true);
+
+do $$
+declare
+  n int;
+begin
+  -- Student A is enrolled in course 100 only.
+  select count(*) into n from public.course_facts;
+  if n <> 1 then raise exception 'student A saw % facts, expected 1', n; end if;
+  select count(*) into n from public.course_facts where course_id = '200';
+  if n <> 0 then raise exception 'student A saw a fact of a course they are not in'; end if;
+
+  begin
+    insert into public.course_facts (extraction_id, course_id, document_id, content_hash, fact_type, quote, confidence)
+      select id, course_id, document_id, content_hash, 'cancel', 'forged', 'high'
+      from public.course_fact_extractions limit 1;
+    raise exception 'authenticated was able to insert a fact';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    select count(*) into n from public.course_fact_extractions;
+    raise exception 'authenticated could read course_fact_extractions';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    select count(*) into n from public.fact_extraction_budget;
+    raise exception 'authenticated could read fact_extraction_budget';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.claim_fact_extraction('home:200:3', '200', 'h3');
+    raise exception 'authenticated was able to call claim_fact_extraction';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+rollback;
+
+begin;
+set local role anon;
+do $$
+declare
+  n int;
+begin
+  begin
+    select count(*) into n from public.course_facts;
+    raise exception 'anon could read course_facts';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+rollback;
+
 \echo 'rls.test.sql: all checks passed'

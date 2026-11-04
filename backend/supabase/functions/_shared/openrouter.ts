@@ -101,6 +101,42 @@ export interface ChatCompletionJSONOptions {
   maxTokens: number;
   temperature?: number;
   signal?: AbortSignal;
+  /** When set, the request asks for OpenRouter's strict structured output,
+   *  `response_format: { type: "json_schema", json_schema: { name, strict:
+   *  true, schema } }`, instead of the loose `json_object` the two older
+   *  extract functions use. Absent (the default) leaves their request body
+   *  byte-for-byte what it was. `extract-facts` is the only caller. It is
+   *  deliberately NOT paired with `provider.require_parameters`: measured
+   *  2026-11-03, that flag makes OpenRouter 404 every Haiku 5.5 request
+   *  ("No endpoints found that can handle the requested parameters"), with
+   *  json_schema and json_object alike, while strict json_schema without it
+   *  is honoured. The parser's own checks (`parseFacts`) catch an endpoint
+   *  that ignores the schema. */
+  jsonSchema?: { name: string; schema: Record<string, unknown> };
+  /** Overrides `reasoningFor(model)` for every body this call builds. Left
+   *  unset, a `z-ai/` model gets `{ effort: "low" }` and anything else gets
+   *  no field, as before. `extract-facts` passes `{ effort: "low" }` for
+   *  Haiku, which `reasoningFor` would not send. */
+  reasoning?: unknown;
+}
+
+/** What a non-streaming completion reported about itself. Every field is
+ *  absent, not zero, when the response did not carry it, the same
+ *  distinction `StreamEvent`'s `reasoningTokens` keeps. `cost` is
+ *  OpenRouter's own `usage.cost` in USD. */
+export interface CompletionUsage {
+  promptTokens?: number;
+  completionTokens?: number;
+  reasoningTokens?: number;
+  cost?: number;
+}
+
+export interface JSONCompletion {
+  content: string;
+  usage: CompletionUsage;
+  /** The model that actually answered: the primary, or the fallback when it
+   *  was used. */
+  model: string;
 }
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -176,6 +212,16 @@ export async function* chatCompletionStream(
 export async function chatCompletionJSON(
   options: ChatCompletionJSONOptions,
 ): Promise<string> {
+  return (await chatCompletionJSONWithUsage(options)).content;
+}
+
+/** `chatCompletionJSON` plus what the response said about its own cost.
+ *  Same request, same fallback rules; split out so the two older callers keep
+ *  their `Promise<string>` and `extract-facts` can record tokens and cost per
+ *  document. */
+export async function chatCompletionJSONWithUsage(
+  options: ChatCompletionJSONOptions,
+): Promise<JSONCompletion> {
   const bodyFor = (model: string) =>
     buildRequestBody({
       model,
@@ -184,8 +230,13 @@ export async function chatCompletionJSON(
       temperature: options.temperature,
       provider: options.provider,
       stream: false,
-      responseFormat: { type: "json_object" },
-      reasoning: reasoningFor(model),
+      responseFormat: options.jsonSchema
+        ? {
+          type: "json_schema",
+          json_schema: { name: options.jsonSchema.name, strict: true, schema: options.jsonSchema.schema },
+        }
+        : { type: "json_object" },
+      reasoning: options.reasoning !== undefined ? options.reasoning : reasoningFor(model),
     });
 
   const { response, usedFallback } = await requestWithFallback(
@@ -197,8 +248,10 @@ export async function chatCompletionJSON(
     bodyFor,
   );
 
-  const content = await readUsableContent(response);
-  if (content !== undefined) return content;
+  const read = await readUsableContent(response);
+  if (read !== undefined) {
+    return { content: read.content, usage: read.usage, model: usedFallback ? options.fallbackModel! : options.model };
+  }
 
   if (options.fallbackModel === undefined || usedFallback) {
     throw new UpstreamError("OpenRouter response was missing choices[0].message.content");
@@ -216,18 +269,21 @@ export async function chatCompletionJSON(
     bodyFor(options.fallbackModel),
     options.signal,
   );
-  const fallbackContent = await readUsableContent(fallbackResponse);
-  if (fallbackContent === undefined) {
+  const fallbackRead = await readUsableContent(fallbackResponse);
+  if (fallbackRead === undefined) {
     throw new UpstreamError("OpenRouter fallback response was missing choices[0].message.content");
   }
-  return fallbackContent;
+  return { content: fallbackRead.content, usage: fallbackRead.usage, model: options.fallbackModel };
 }
 
-/** `choices[0].message.content` when it is a string with something in it;
- *  `undefined` for null, missing, or empty/whitespace. A body that is not
- *  JSON at all still throws -- that is a broken response, not an empty
- *  answer, and no model swap is promised for it. */
-async function readUsableContent(response: Response): Promise<string | undefined> {
+/** `choices[0].message.content` (with the response's usage block) when the
+ *  content is a string with something in it; `undefined` for null, missing,
+ *  or empty/whitespace. A body that is not JSON at all still throws -- that
+ *  is a broken response, not an empty answer, and no model swap is promised
+ *  for it. */
+async function readUsableContent(
+  response: Response,
+): Promise<{ content: string; usage: CompletionUsage } | undefined> {
   let payload: unknown;
   try {
     payload = await response.json();
@@ -235,7 +291,29 @@ async function readUsableContent(response: Response): Promise<string | undefined
     throw new UpstreamError(`OpenRouter response was not JSON: ${describeError(err)}`);
   }
   const content = extractMessageContent(payload);
-  return typeof content === "string" && content.trim().length > 0 ? content : undefined;
+  if (typeof content !== "string" || content.trim().length === 0) return undefined;
+  return { content, usage: extractUsage(payload) };
+}
+
+function extractUsage(payload: unknown): CompletionUsage {
+  if (typeof payload !== "object" || payload === null) return {};
+  const usage = (payload as Record<string, unknown>).usage;
+  if (typeof usage !== "object" || usage === null) return {};
+  const u = usage as Record<string, unknown>;
+  const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+  const details = typeof u.completion_tokens_details === "object" && u.completion_tokens_details !== null
+    ? (u.completion_tokens_details as Record<string, unknown>)
+    : {};
+  const out: CompletionUsage = {};
+  const prompt = num(u.prompt_tokens);
+  const completion = num(u.completion_tokens);
+  const reasoning = num(details.reasoning_tokens);
+  const cost = num(u.cost);
+  if (prompt !== undefined) out.promptTokens = prompt;
+  if (completion !== undefined) out.completionTokens = completion;
+  if (reasoning !== undefined) out.reasoningTokens = reasoning;
+  if (cost !== undefined) out.cost = cost;
+  return out;
 }
 
 // ---------------------------------------------------------------------
@@ -249,7 +327,7 @@ interface BuildRequestBodyOptions {
   temperature?: number;
   provider?: ProviderPreferences;
   stream: boolean;
-  responseFormat?: { type: string };
+  responseFormat?: Record<string, unknown>;
   reasoning?: unknown;
   providerOverride?: unknown;
 }

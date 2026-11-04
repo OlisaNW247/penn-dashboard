@@ -1,0 +1,119 @@
+{
+  "id": "synthetic-19",
+  "source": "synthetic",
+  "course": "PHYS 0151",
+  "kind": "announcement",
+  "title": "Slides from Wednesday",
+  "postedAt": "2026-10-14T13:10:00-04:00",
+  "text": "Slides from today's lecture (rotational dynamics, part 2) are up on Canvas under Files. Let me know if anything is unreadable, the scan of the board photo was blurry. The worked example with the spinning disk is on slide 14 if you want to redo it before the next problem set.",
+  "index": [
+    {
+      "sourceID": "b-5113",
+      "title": "Problem Set 3",
+      "dueAt": "2026-09-25T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5101",
+      "title": "Problem Set 4",
+      "dueAt": "2026-10-09T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5103",
+      "title": "Lab 5 Report",
+      "dueAt": "2026-10-22T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5102",
+      "title": "Problem Set 5",
+      "dueAt": "2026-10-23T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5112",
+      "title": "Lab Meeting 6",
+      "dueAt": "2026-10-29T14:00:00-04:00",
+      "kind": "event"
+    },
+    {
+      "sourceID": "b-5106",
+      "title": "Lab 6 Report",
+      "dueAt": "2026-11-05T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5104",
+      "title": "Midterm 2",
+      "dueAt": "2026-11-06T10:15:00-05:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "b-5105",
+      "title": "Problem Set 6",
+      "dueAt": "2026-11-06T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5108",
+      "title": "Lab 7 Report",
+      "dueAt": "2026-11-12T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5107",
+      "title": "Problem Set 7",
+      "dueAt": "2026-11-13T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5109",
+      "title": "Pre-lecture Reading 12",
+      "kind": "module_item"
+    },
+    {
+      "sourceID": "b-5110",
+      "title": "Problem Set 8",
+      "dueAt": "2026-11-20T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5111",
+      "title": "Final Exam",
+      "dueAt": "2026-12-15T09:00:00-05:00",
+      "kind": "quiz"
+    }
+  ],
+  "meetings": [
+    {
+      "weekday": "Mon",
+      "start": "10:15",
+      "end": "11:14",
+      "room": "DRL A8"
+    },
+    {
+      "weekday": "Wed",
+      "start": "10:15",
+      "end": "11:14",
+      "room": "DRL A8"
+    },
+    {
+      "weekday": "Fri",
+      "start": "10:15",
+      "end": "11:14",
+      "room": "DRL A8"
+    },
+    {
+      "weekday": "Thu",
+      "start": "14:00",
+      "end": "16:59",
+      "room": "DRL 2C8"
+    }
+  ],
+  "timezone": "America/New_York",
+  "now": "2026-10-14T14:12:00-04:00",
+  "expected": {
+    "facts": []
+  }
+}

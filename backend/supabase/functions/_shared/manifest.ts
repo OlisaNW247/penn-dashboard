@@ -201,6 +201,14 @@ export interface CourseDocumentWire {
   contentHash: string;
   dueAt?: string;
   pointsPossible?: number;
+  /** When the post was made (ISO 8601), optional and sent by no shipped
+   *  client yet. Ed's `updatedAt` is the last edit, not the post date, and
+   *  `extract-facts` resolves "by Friday" from the post date, so a client
+   *  that knows it should say. Stored in `course_documents.posted_at`.
+   *  Never served back in `download`: it is an input to extraction, not
+   *  something a phone needs. An unparseable value is dropped, not
+   *  rejected; see `validateDocument`. */
+  postedAt?: string;
   // Deliberately not a declared field: PROTOCOL.md principle 2 says
   // `submitted` is student-specific and must never reach the server.
   // `validateDocument` strips it from the raw input rather than the type
@@ -423,6 +431,18 @@ export function validateDocument(raw: unknown): CourseDocumentWire {
   const text = storableText(requireString(raw, "text").slice(0, MAX_TEXT_LENGTH));
   if (text.length === 0) throw new ManifestValidationError(`expected non-empty string field "text"`);
   const url = optionalString(raw, "url");
+  // `postedAt` is a hint for the fact extractor, so a bad one must cost the
+  // hint and never the document: rejecting here would drop the course
+  // material itself over a field the client was not required to send, and
+  // the client would resend the same document forever. Dropped unless it is
+  // a string `Date` can read, and normalized to UTC ISO so the column and
+  // the prompt see one format.
+  const postedRaw = raw["postedAt"];
+  let postedAt: string | undefined;
+  if (typeof postedRaw === "string") {
+    const ms = Date.parse(postedRaw);
+    if (!Number.isNaN(ms)) postedAt = new Date(ms).toISOString();
+  }
 
   return {
     id,
@@ -438,6 +458,9 @@ export function validateDocument(raw: unknown): CourseDocumentWire {
     contentHash,
     dueAt: optionalString(raw, "dueAt"),
     pointsPossible: optionalNumber(raw, "pointsPossible"),
+    // Present only when sent, so a document without one is shaped exactly as
+    // it was before the field existed.
+    ...(postedAt !== undefined ? { postedAt } : {}),
   };
 }
 
@@ -676,4 +699,102 @@ export function freshCourses(courses: CourseFreshnessInput[], now: Date): string
       return nowMs - lastSyncMs < FRESH_WINDOW_MS;
     })
     .map((course) => course.courseID);
+}
+
+// ---------------------------------------------------------------------
+// Facts in the manifest (PROTOCOL.md, "Facts")
+// ---------------------------------------------------------------------
+
+/** One accepted fact as the manifest serves it. Course-level and personal
+ * to nobody: it names a document and an item, never a student. `target` is
+ * the item sourceID the extractor was shown (an assignment's source id, or
+ * `module:<source id>`); `documentID` and `contentHash` say which revision
+ * of which document said it, so a client can drop facts of a revision that
+ * has since changed. */
+export interface CourseFactWire {
+  seq: number;
+  courseID: string;
+  documentID: string;
+  contentHash: string;
+  type: "new_task" | "cancel" | "reschedule" | "scope_change" | "note" | "needs_review";
+  target: string | null;
+  title: string | null;
+  dueAt: string | null;
+  kind: "submission" | "preparation" | "event" | null;
+  quote: string;
+  confidence: "high" | "medium";
+  postedAt: string | null;
+}
+
+/** `factsSince` on a manifest request: the cursor (a `seq`) the client last
+ * saw. Absent or null means "everything", which is also what a shipped
+ * phone gets because it never sends it. Anything but a non-negative safe
+ * integer is a 400 rather than a quiet 0: a typo that re-served every fact
+ * on every sync would be a silent bandwidth bug. */
+export function parseFactsSince(raw: unknown): number {
+  if (raw === undefined || raw === null) return 0;
+  if (typeof raw !== "number" || !Number.isSafeInteger(raw) || raw < 0) {
+    throw new ManifestValidationError(`"factsSince" must be a non-negative integer`);
+  }
+  return raw;
+}
+
+/** The row shape `db.selectFactWiresForCourses` reads: a `course_facts` row
+ * plus the `course_documents` row it came from (embedded), which is how a
+ * fact of a gone or since-edited document is told apart. */
+export interface FactRowWithDocument {
+  seq: number;
+  course_id: string;
+  document_id: string;
+  content_hash: string;
+  fact_type: CourseFactWire["type"];
+  target_source_id: string | null;
+  title: string | null;
+  due_at: string | null;
+  kind: CourseFactWire["kind"];
+  quote: string;
+  confidence: CourseFactWire["confidence"];
+  posted_at: string | null;
+  // PostgREST embeds a to-one relation as an object, but a client library
+  // version can hand back a one-element array; both are read.
+  course_documents: { content_hash: string; gone_at: string | null } | Array<{ content_hash: string; gone_at: string | null }> | null;
+}
+
+/** Turns the rows read for a manifest into `{ facts, factsCursor }`.
+ *
+ * A fact is served only while its document is live and its `content_hash` is
+ * still the document's current one: a post that was edited after extraction
+ * is extracted again under the new hash (a new extraction row), and serving
+ * the old revision's facts beside the new ones would show a student a
+ * cancellation the instructor has since taken back. Rows filtered out here
+ * still advance the cursor, otherwise a client would re-read them forever.
+ * `factsCursor` is the highest `seq` among ALL rows read (not only those
+ * served), or `since` when nothing was read, so it never goes backwards.
+ * Pure, so a test pins it with plain objects. */
+export function factsResponse(
+  rows: FactRowWithDocument[],
+  since: number,
+): { facts: CourseFactWire[]; factsCursor: number } {
+  const facts: CourseFactWire[] = [];
+  let cursor = since;
+  for (const row of [...rows].sort((a, b) => a.seq - b.seq)) {
+    if (row.seq > cursor) cursor = row.seq;
+    const document = Array.isArray(row.course_documents) ? row.course_documents[0] : row.course_documents;
+    if (!document || document.gone_at != null || document.content_hash !== row.content_hash) continue;
+    facts.push({
+      seq: row.seq,
+      courseID: row.course_id,
+      documentID: row.document_id,
+      contentHash: row.content_hash,
+      type: row.fact_type,
+      target: row.target_source_id,
+      title: row.title,
+      dueAt: row.due_at,
+      kind: row.kind,
+      quote: row.quote,
+      confidence: row.confidence,
+      postedAt: row.posted_at,
+    });
+  }
+  return { facts, factsCursor: cursor };
 }

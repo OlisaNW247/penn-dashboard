@@ -172,6 +172,20 @@ on-device alone:
   phone's Keychain like your Canvas session and deleted with it. (The
   "AI assist" switch below also covers these posts.)
 
+  **Changes found in that material.** Once a course's announcements, Ed
+  posts, pages, modules or syllabus are pooled, our server reads each one
+  once with an AI model (OpenRouter, the same route as the questions below)
+  and writes down the course-level changes it states: a cancelled
+  assignment, a new due date, a new task, each with the sentence it came
+  from. These notes belong to the class, not to anyone in it: they are shared
+  by classmates, say nothing about you, and are removed along with the course
+  material they were derived from.
+  The "AI assist" switch governs what this phone asks the model about its own
+  posts; it does not govern these notes, which are made from the copy of the
+  course material a classmate pooled, so your switch does not stop them.
+  Disconnecting Canvas removes your enrollment, so nothing further is pooled
+  from your phone.
+
   **What is never included in that upload:** your grades, completions,
   submission state, your work list, your name, or anything else specific to
   you. Only the shared, public-to-the-class content described above. The only

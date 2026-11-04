@@ -6,6 +6,7 @@ import {
   CAPABILITY_GATED_KINDS,
   capWindowDocuments,
   diffManifest,
+  factsResponse,
   filterByAcceptedKinds,
   freshCourses,
   goneIDs,
@@ -17,6 +18,7 @@ import {
   ManifestValidationError,
   parseAcceptsKinds,
   parseDocumentID,
+  parseFactsSince,
   parseSyncClient,
   profileStaleCourses,
   retirableCollector,
@@ -32,6 +34,7 @@ import {
   validateLink,
   type CourseDocumentWire,
   type DocumentKind,
+  type FactRowWithDocument,
 } from "../supabase/functions/_shared/manifest.ts";
 
 // Tiny local assertion helpers rather than pulling in std/assert -- keeps
@@ -583,4 +586,97 @@ Deno.test("complete-set: no client retires a server-written (crawled website) ro
   ];
   assertEquals(liveIDsRetirableBy(live, "phone"), ["page:1:1"]);
   assertEquals(liveIDsRetirableBy(live, "extension"), ["page:1:1"]);
+});
+
+// ---------------------------------------------------------------------
+// posted_at on an uploaded document
+// ---------------------------------------------------------------------
+
+Deno.test("validateDocument: postedAt is optional, and a document without one has no such key", () => {
+  const doc = validateDocument(validDocumentInput());
+  assertFalse("postedAt" in doc, "an absent postedAt must not appear as a key");
+});
+
+Deno.test("validateDocument: a valid postedAt is kept, normalized to UTC ISO", () => {
+  const doc = validateDocument(validDocumentInput({ postedAt: "2026-10-06T09:12:00-04:00" }));
+  assertEquals(doc.postedAt, "2026-10-06T13:12:00.000Z");
+});
+
+Deno.test("validateDocument: an unusable postedAt is dropped and the document still passes", () => {
+  for (const bad of ["not a date", "", 12345, {}, null]) {
+    const doc = validateDocument(validDocumentInput({ postedAt: bad }));
+    assertEquals(doc.id, "syllabus:100:1");
+    assertFalse("postedAt" in doc, `postedAt ${JSON.stringify(bad)} should be ignored`);
+  }
+});
+
+// ---------------------------------------------------------------------
+// Facts in the manifest
+// ---------------------------------------------------------------------
+
+Deno.test("parseFactsSince: absent or null is 0 (everything); a non-negative integer passes; anything else is refused", () => {
+  assertEquals(parseFactsSince(undefined), 0);
+  assertEquals(parseFactsSince(null), 0);
+  assertEquals(parseFactsSince(0), 0);
+  assertEquals(parseFactsSince(41), 41);
+  for (const bad of [-1, 1.5, "5", NaN, Infinity, {}, [], true]) {
+    assertThrows(() => parseFactsSince(bad), ManifestValidationError);
+  }
+});
+
+function factRow(seq: number, overrides: Partial<FactRowWithDocument> = {}): FactRowWithDocument {
+  return {
+    seq,
+    course_id: "100",
+    document_id: "announcement:100:7",
+    content_hash: "h1",
+    fact_type: "cancel",
+    target_source_id: "a-1",
+    title: null,
+    due_at: null,
+    kind: null,
+    quote: "HW3 is cancelled",
+    confidence: "high",
+    posted_at: "2026-10-06T13:12:00+00:00",
+    course_documents: { content_hash: "h1", gone_at: null },
+    ...overrides,
+  };
+}
+
+Deno.test("factsResponse: facts are camelCase wire objects in seq order and the cursor is the highest seq", () => {
+  const { facts, factsCursor } = factsResponse([factRow(9), factRow(4)], 0);
+  assertEquals(facts.map((f) => f.seq), [4, 9]);
+  assertEquals(factsCursor, 9);
+  assertEquals(facts[0], {
+    seq: 4,
+    courseID: "100",
+    documentID: "announcement:100:7",
+    contentHash: "h1",
+    type: "cancel",
+    target: "a-1",
+    title: null,
+    dueAt: null,
+    kind: null,
+    quote: "HW3 is cancelled",
+    confidence: "high",
+    postedAt: "2026-10-06T13:12:00+00:00",
+  });
+});
+
+Deno.test("factsResponse: with no rows the cursor stays where the client had it", () => {
+  assertEquals(factsResponse([], 57), { facts: [], factsCursor: 57 });
+  assertEquals(factsResponse([], 0), { facts: [], factsCursor: 0 });
+});
+
+Deno.test("factsResponse: a fact of a gone document or of an edited revision is not served, but still moves the cursor", () => {
+  const rows = [
+    factRow(1),
+    factRow(2, { course_documents: { content_hash: "h1", gone_at: "2026-10-20T00:00:00Z" } }),
+    factRow(3, { course_documents: { content_hash: "h2", gone_at: null } }),
+    factRow(4, { course_documents: null }),
+    factRow(5, { course_documents: [{ content_hash: "h1", gone_at: null }] }),
+  ];
+  const { facts, factsCursor } = factsResponse(rows, 0);
+  assertEquals(facts.map((f) => f.seq), [1, 5]);
+  assertEquals(factsCursor, 5, "filtered rows must not be re-read forever");
 });

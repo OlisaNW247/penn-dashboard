@@ -63,8 +63,16 @@ CourseSummaryWire   { courseID, code, name, url?, term?, sectionIDs?, section? }
 DocumentStub        { id, contentHash }
 CourseDocumentWire  { id, courseID, course, kind, sourceID, title, url?,
                       text, updatedAt?, fetchedAt, contentHash,
-                      dueAt?, pointsPossible? }        -- no `submitted`
+                      dueAt?, pointsPossible?, postedAt? }  -- no `submitted`
 FullySyncedCourse   { courseID, documentIDs: [string] }
+CourseFactWire      { seq, courseID, documentID, contentHash,
+                      type: "new_task" | "cancel" | "reschedule" | "scope_change"
+                            | "note" | "needs_review",
+                      target: string | null, title: string | null,
+                      dueAt: string | null,
+                      kind: "submission" | "preparation" | "event" | null,
+                      quote, confidence: "high" | "medium",
+                      postedAt: string | null }
 CatalogEntryWire    { courseID, catalogCode, title, credits,
                       meetings: [{ sectionID, activity, weekday,
                                    startMinutes, endMinutes }],
@@ -145,7 +153,7 @@ resolved `catalog_code` to label which site a course's material came from.
 
 ## `sync` — manifest exchange, then upload
 
-### Step 1: `{ "action": "manifest", "courses": [CourseSummaryWire], "documents": [DocumentStub], "acceptsKinds"?: [string], "client"?: "phone" | "extension" }`
+### Step 1: `{ "action": "manifest", "courses": [CourseSummaryWire], "documents": [DocumentStub], "acceptsKinds"?: [string], "client"?: "phone" | "extension", "factsSince"?: integer }`
 
 Server: upserts `courses`, upserts the caller's `enrollments` for every
 course listed (this is the enrollment proof; see Limitations), then answers
@@ -156,8 +164,11 @@ course listed (this is the enrollment proof; see Limitations), then answers
   "download":       [CourseDocumentWire], -- live docs whose (id, contentHash) the client didn't list
   "catalog":        [CatalogEntryWire],   -- one entry per manifest course with a resolved,
                                            -- fetched catalog_courses row (see "Catalog" below)
-  "profiles":       [CourseProfileWire] } -- one entry per manifest course with an extracted
+  "profiles":       [CourseProfileWire],  -- one entry per manifest course with an extracted
                                            -- course_profiles row (see "extract-profile" below)
+  "facts":          [CourseFactWire],     -- course-level facts newer than `factsSince`
+                                           -- (see "Facts" below)
+  "factsCursor":    integer }             -- send this back as `factsSince` next time
 ```
 
 `acceptsKinds` (optional, at most 32 strings of at most 32 characters;
@@ -197,6 +208,12 @@ the phone also read from the syllabus text replaces the on-device reading
 ignores the key and keeps reading the text. Additive: no existing field
 changed and no request changed.
 
+`facts` and `factsCursor` are additive (since 2026-11-04): an older client
+ignores both keys, and a client that never sends `factsSince` is sent every
+fact each time. `factsSince` is a non-negative integer (a `seq` the client
+saw); anything else is a 400. A failure reading facts degrades to `facts: []`
+and `factsCursor` equal to `factsSince`, never to a failed manifest.
+
 Client: applies `download` to local knowledge first, then fetches Canvas
 for every course NOT in `coursesFresh` (announcements are fetched for all
 courses in one call regardless; they are cheap and change daily). Local
@@ -233,6 +250,14 @@ accepted document kind on upload (extracted text of a Canvas File, at most
 200,000 characters like every kind). It is never profile input and does not
 set `profile_stale`.
 
+`postedAt` on a document (optional, ISO 8601, since 2026-11-04) is when the
+post was made, stored in `course_documents.posted_at`. It exists because Ed's
+`updatedAt` is the last edit, not the post date, and a fact such as "due
+Friday" resolves from the post date. An unparseable value is dropped and the
+document accepted; absent is the norm and no shipped client sends it. Without
+it the extractor falls back to an announcement's `updatedAt` and otherwise
+works without a post date. It is never sent back in `download`.
+
 `client: "extension"` from a caller that is not a linked device is refused
 `403 not_paired`: the extension pairs before it syncs, so it is one student
 with the phone rather than a second one.
@@ -260,6 +285,12 @@ batch: the rest are upserted and counted in `accepted`. `rejected` is `[]`
 when there are none. A rejected document is never upserted and never
 changes what the complete-set rule retires. Resending it unchanged will be
 rejected again, so a client should log it and move on.
+
+After the response is decided, an upload that inserted or changed any
+`announcement`, `ed`, `page`, `module` or `syllabus` document starts fact
+extraction for those courses on the server (`EdgeRuntime.waitUntil`; see
+"Facts"). The client does nothing and the response is unchanged; a failure
+there is logged and never fails the upload.
 
 Client then POSTs `extract-profile` for `profileStale` without awaiting,
 and fires `discover-websites` (at most 3 course ids per call; batch a
@@ -893,6 +924,119 @@ they're missing an expected item and to apply the syllabus's own drop rule
 when averaging a category, rather than the app guessing either from the
 grades it has actually seen post.
 
+## Facts and `extract-facts`
+
+A **fact** is one thing a pooled course document says that changes the
+course's work: a `new_task`, or a `cancel` / `reschedule` / `scope_change` /
+`note` on an item the course already has, or a `needs_review` (an item put
+in doubt; shown to the student, never applied). The prompt, the strict JSON
+schema and the checks are `_shared/facts.ts`, measured in
+`docs/EXTRACT_FACTS_BENCH_2026-11-03.md`. Facts are **course-level and carry
+nothing personal**: no user id is stored with a fact, an extraction or a
+budget counter, and which student's upload triggered an extraction is not
+recorded.
+
+**What gets read.** Live documents of kind `announcement`, `ed`, `page`,
+`module` and `syllabus`, once per `(document id, content_hash)`; an edited
+document is read again under its new hash. The model is shown the **item
+index** the server builds from the course's live documents: every
+`assignment` (id = its Canvas `sourceID`, with `dueAt`) and every `module`
+document that has a `dueAt` (id = `module:<sourceID>`), at most 200, plus the
+course's meeting pattern from the catalog when it has one (no room), in
+`America/New_York`. A fact's `target` is one of those ids, or null.
+`rejected` facts (a quote not in the title or text, an unknown target, a
+missing target or title, a `reschedule` more than 400 days from now) are
+counted by reason and never stored. A document that yields nothing is
+recorded as read, so it is not paid for again.
+
+**Model.** `LHF_FACTS_MODEL`, default `anthropic/claude-haiku-5.5`, through
+`chatCompletionJSON` with `response_format: { "type": "json_schema",
+"json_schema": { "name": "facts", "strict": true, "schema": FACTS_JSON_SCHEMA } }`,
+`reasoning: { "effort": "low" }`, `temperature: 0`, `max_tokens: 4000`, and
+the usual `provider: { "data_collection": "deny", "allow_fallbacks": true }`.
+`provider.require_parameters` is never sent: it makes OpenRouter 404 every
+Haiku 5.5 request (measured 2026-11-03). One call is cut off at 20 seconds.
+`LHF_FACTS_DISABLED=1` switches the whole thing off.
+
+**Budgets** (`claim_fact_extraction`, one atomic database call before every
+model call): at most 60 extractions per course per UTC day
+(`FACTS_COURSE_DAILY_LIMIT`), 400 per course per calendar month
+(`FACTS_COURSE_MONTHLY_LIMIT`) and 5000 per calendar month across all courses
+(`FACTS_MONTHLY_GLOBAL_LIMIT`). The per-course monthly cap is there so a few
+accounts uploading junk revisions of one course's material can spend that
+course's allowance but not the global one every other course shares. Exhausted
+means the document is recorded
+`skipped_budget` and picked up on a later call, never read for free. A failed
+call (HTTP error, timeout, an answer that is not the schema) is recorded
+`failed` and retried by later runs, at most 3 attempts in all, then given up.
+A document that is edited between being listed and being read is skipped
+without a row, so new text is never stored under the old hash. A call is never
+repeated while another is running it (a `running` row younger
+than 5 minutes is left alone).
+
+**Who runs it.** `sync` after an upload that changed eligible documents
+(above), and `extract-facts` on request. A run takes at most 10 documents
+(`FACTS_MAX_DOCUMENTS_PER_RUN`), newest first, inside a 50 second budget
+(`FACTS_RUN_BUDGET_MS`), three at a time. The newest-first order means a
+first sync of a big course reads this week's posts first and spreads the
+older backlog over the following days.
+
+**Trust and privacy.** Facts are suggestions: the client applies them with
+undo and shows their provenance (`quote`, `documentID`), never silently. They
+are derived from the pooled copy of a document, and an enrolled user can
+upload that text (enrollment is asserted, see Limitations), so the pool's
+existing trust model applies unchanged: a fact is only as trustworthy as
+course material any enrolled student could have uploaded. Fact extraction is
+course-level and ignores the announcement "AI assist" switch, which governs
+only what a phone asks the model about its own posts (`extract-announcement`);
+a student's switch does not stop facts being made from material a classmate
+pooled. Disconnecting Canvas removes the student's enrollment, so no further
+material is pooled from that phone.
+
+**Storage** (`20261104090000_course_facts.sql`): `course_fact_extractions`
+(one row per document revision: status `pending | running | done | failed |
+skipped_budget`, attempts, fact and rejected counts, reject reasons by
+count, model, prompt/completion/reasoning tokens, OpenRouter's own cost,
+latency; no text, no quote), `course_facts` (one row per accepted fact, with
+a bigint identity `seq`), `fact_extraction_budget` (per course per day), and
+the service-role-only `claim_fact_extraction` function. `course_facts` is
+readable by enrolled students through the same `is_enrolled` policy as
+`course_profiles`; the other tables are service-role only. All three cascade
+from the course / document, so facts go with the material they came from.
+
+**Serving.** The manifest sends `facts` (see `CourseFactWire`) for the
+caller's courses with `seq > factsSince`, in `seq` order, at most 1000 a
+call, and `factsCursor` = the highest `seq` it read. A fact is withheld
+while its document is gone or has since been edited to a different
+`content_hash` (the new revision gets its own extraction); withheld rows
+still advance the cursor. `seq` values become visible in commit order, which
+can differ from their number, so a fact committed late can sit below a
+cursor already handed out; a client that wants none missed re-reads from
+absent `factsSince` now and then. `documentID` and `contentHash` let a client
+drop the facts of a revision it knows is stale. `dueAt` is an ISO 8601
+instant (the model's local time is converted), `target` is an item id from
+the index above, and `quote` is the verbatim sentence from the document.
+The manifest is the filtered view: facts of gone or edited documents are
+withheld there. A direct PostgREST read of `course_facts` (allowed to enrolled
+students by RLS) is not filtered and can return them.
+
+### `extract-facts`
+
+POST, authenticated like the others (version header optional). Request
+`{ "courseId"?: string }`: that course (403 `not_enrolled` if the caller is
+not enrolled), or, absent, every course the caller is enrolled in (at most
+60). Runs one extraction pass as above and answers
+
+```
+{ "attempted": n, "done": n, "failed": n, "skippedBudget": n,
+  "facts": n,        -- facts accepted this pass
+  "remaining": n }   -- eligible documents still pending
+```
+
+It does not charge the student's `ask` quota: its cost is bounded per course
+and per month by the budgets above, and the work is shared by the class.
+Nothing is logged but course and document ids, statuses and counts.
+
 ## `extract-announcement`
 
 Request `{ "announcementID", "courseCode", "title", "message", "postedAt"?, "now": ISO8601 }`.
@@ -1126,9 +1270,13 @@ Hedge and fallback model: `LHF_ASK_FALLBACK_MODEL`, default
 `z-ai/glm-5.3-flash` at `reasoning.effort: low`. `OPENROUTER_API_KEY` is a function secret, never in
 the repo, never in the app.
 
-The two JSON-mode functions (`extract-announcement`, `extract-profile`) read
-`LHF_MODEL` and `LHF_FALLBACK_MODEL` (same defaults) and go through
-`chatCompletionJSON`, which does two things `ask` does not need. Each request
+The JSON-mode functions (`extract-announcement`, `extract-profile`,
+`map-categories`) read `LHF_MODEL` and `LHF_FALLBACK_MODEL` too, but with
+their own defaults: `z-ai/glm-5.3-flash` and `openai/gpt-5.6-luna`, not
+`ask`'s `openai/gpt-4.1-mini`, so setting `LHF_MODEL` moves `ask` and all
+three together. `extract-facts` is separate: `LHF_FACTS_MODEL`, default
+`anthropic/claude-haiku-5.5`, with no fallback model (see "Facts"). They go
+through `chatCompletionJSON`, which does two things `ask` does not need. Each request
 body carries `reasoning: { "effort": "low" }` when, and only when, the model
 that body targets has a `z-ai/` id (`_shared/fallback.ts`'s `reasoningFor`;
 the fallback body is built for the fallback model, not copied from the

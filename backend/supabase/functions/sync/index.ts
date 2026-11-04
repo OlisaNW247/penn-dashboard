@@ -23,6 +23,7 @@ import {
   selectCoursesForDiscovery,
   selectCourseWebsites,
   selectEnrolledCourseIDs,
+  selectFactWiresForCourses,
   selectLiveDocumentIDsForCourse,
   selectLiveDocumentSnapshots,
   selectLiveDocumentsForCourses,
@@ -37,6 +38,7 @@ import {
   upsertEnrollments,
   type NewCourseWebsiteCandidate,
 } from "../_shared/db.ts";
+import { FACT_ELIGIBLE_KINDS, scheduleFactExtraction } from "../_shared/factsExtraction.ts";
 import {
   diffManifest,
   filterByAcceptedKinds,
@@ -45,6 +47,7 @@ import {
   ManifestValidationError,
   MAX_WINDOW_DOWNLOAD_PER_COURSE,
   parseAcceptsKinds,
+  parseFactsSince,
   parseSyncClient,
   profileStaleCourses,
   retirableCollector,
@@ -54,6 +57,7 @@ import {
   validateFullySyncedCourse,
   validateLink,
   type CourseDocumentWire,
+  type CourseFactWire,
   type CourseSummaryWire,
   type DocumentKind,
   type DocumentStub,
@@ -92,6 +96,8 @@ interface ManifestResult {
   download: CourseDocumentWire[];
   catalog: CatalogEntryWire[];
   profiles: CourseProfileWire[];
+  facts: CourseFactWire[];
+  factsCursor: number;
 }
 
 interface UploadResult {
@@ -183,9 +189,17 @@ async function refreshCatalog(serviceClient: SupabaseClient, courses: CourseSumm
  * `ManifestValidationError` thrown from the older validators surfaces as a
  * 500 today; that is pre-existing and left alone so shipped clients see no
  * change). */
-function parseClientFields(body: Record<string, unknown>): { client: SyncClient; acceptsKinds: string[] } {
+function parseClientFields(
+  body: Record<string, unknown>,
+): { client: SyncClient; acceptsKinds: string[]; factsSince: number } {
   try {
-    return { client: parseSyncClient(body["client"]), acceptsKinds: parseAcceptsKinds(body["acceptsKinds"]) };
+    return {
+      client: parseSyncClient(body["client"]),
+      acceptsKinds: parseAcceptsKinds(body["acceptsKinds"]),
+      // Read for every action so a malformed value is a 400 up front; only
+      // the manifest uses it.
+      factsSince: parseFactsSince(body["factsSince"]),
+    };
   } catch (err) {
     if (err instanceof ManifestValidationError) throw new HttpError(400, "bad_request", err.message);
     throw err;
@@ -197,6 +211,7 @@ async function handleManifest(
   userId: string,
   body: Record<string, unknown>,
   acceptsKinds: string[],
+  factsSince: number,
 ): Promise<ManifestResult> {
   const rawCourses = body["courses"];
   const rawStubs = body["documents"];
@@ -270,7 +285,20 @@ async function handleManifest(
     console.error("sync: profile wires failed", message);
   }
 
-  return { coursesFresh, serverManifest, download, catalog, profiles };
+  // Facts are the third enrichment, with the same posture and the same
+  // reason: a failed read (the table not migrated yet, a transient error)
+  // degrades to "no facts this time" and an unmoved cursor, never a 500 on
+  // the exchange. Logs the message only, never a row.
+  let facts: CourseFactWire[] = [];
+  let factsCursor = factsSince;
+  try {
+    ({ facts, factsCursor } = await selectFactWiresForCourses(serviceClient, courseIDs, factsSince));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("sync: facts failed", message);
+  }
+
+  return { coursesFresh, serverManifest, download, catalog, profiles, facts, factsCursor };
 }
 
 async function handleUpload(
@@ -350,6 +378,19 @@ async function handleUpload(
 
   await upsertDocuments(serviceClient, documents, client);
 
+  // Which courses just received eligible material that is new or changed,
+  // decided from the same before-snapshot the profile staleness uses.
+  // Computed here, after the upsert has succeeded and before anything else
+  // can throw, but only ACTED on at the very end (below), so a failure
+  // anywhere in the rest of the upload can never leave extraction running
+  // for a request that answered 500.
+  const factCourseIDs = new Set<string>();
+  for (const doc of documents) {
+    if (FACT_ELIGIBLE_KINDS.includes(doc.kind) && beforeHashByID.get(doc.id) !== doc.contentHash) {
+      factCourseIDs.add(doc.courseID);
+    }
+  }
+
   const nowFullySyncedCourseIDs: string[] = [];
   for (const course of fullySyncedCourses) {
     // A phone's complete set only speaks for the rows a phone collected;
@@ -412,6 +453,8 @@ async function handleUpload(
   }
 
   const websitesPending = await computeWebsitesPending(serviceClient, [...affectedCourseIDs], courseInfoByID);
+
+  scheduleFactExtraction(serviceClient, [...factCourseIDs]);
 
   return { accepted: documents.length, rejected, profileStale: [...staleCourseIDs], websitesPending };
 }
@@ -477,7 +520,7 @@ Deno.serve(async (req: Request) => {
     const { userId, deviceOwnerLinked, serviceClient } = await requireUser(req);
     const body = await readJSON<Record<string, unknown>>(req);
     const action = body["action"];
-    const { client, acceptsKinds } = parseClientFields(body);
+    const { client, acceptsKinds, factsSince } = parseClientFields(body);
 
     // The extension pairs before it syncs, so it is one student with the
     // phone. An unpaired caller claiming to be the extension would
@@ -489,7 +532,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "manifest") {
-      const result = await handleManifest(serviceClient, userId, body, acceptsKinds);
+      const result = await handleManifest(serviceClient, userId, body, acceptsKinds, factsSince);
       return json(200, result);
     }
 

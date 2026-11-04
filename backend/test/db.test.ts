@@ -19,6 +19,7 @@ import {
   catalogNeedsFetch,
   dbRowToCatalogRow,
   profileRowToWire,
+  selectFactWiresForCourses,
   type CatalogCourseDBRow,
   type CourseProfileDBRow,
 } from "../supabase/functions/_shared/db.ts";
@@ -388,4 +389,52 @@ Deno.test("catalogNeedsFetch: a present room: null and instructorsBySection: {} 
   assert.equal(row.componentsLackSectionDetails, false);
   assert.equal(row.components[0].meetings[0].room, null);
   assert.equal(catalogNeedsFetch(row, NOW), false);
+});
+
+// ---------------------------------------------------------------------
+// selectFactWiresForCourses: the `factsSince` cursor reaches the query
+// ---------------------------------------------------------------------
+
+function fakeFactsClient(rows: unknown[]) {
+  const calls: Array<[string, ...unknown[]]> = [];
+  const query: Record<string, unknown> = {};
+  for (const name of ["select", "in", "gt", "order", "limit"]) {
+    query[name] = (...args: unknown[]) => {
+      calls.push([name, ...args]);
+      return name === "limit" ? Promise.resolve({ data: rows, error: null }) : query;
+    };
+  }
+  const client = { from: (table: string) => (calls.push(["from", table]), query) };
+  return { client: client as unknown as Parameters<typeof selectFactWiresForCourses>[0], calls };
+}
+
+Deno.test("selectFactWiresForCourses: asks for seq above the client's cursor, in order, and returns the wire", async () => {
+  const { client, calls } = fakeFactsClient([{
+    seq: 12,
+    course_id: "100",
+    document_id: "announcement:100:7",
+    content_hash: "h1",
+    fact_type: "reschedule",
+    target_source_id: "a-1",
+    title: null,
+    due_at: "2026-10-20T03:59:00+00:00",
+    kind: null,
+    quote: "moved to Monday",
+    confidence: "high",
+    posted_at: null,
+    course_documents: { content_hash: "h1", gone_at: null },
+  }]);
+  const result = await selectFactWiresForCourses(client, ["100"], 7);
+  assert.deepEqual(calls.find((c) => c[0] === "gt"), ["gt", "seq", 7]);
+  assert.deepEqual(calls.find((c) => c[0] === "in"), ["in", "course_id", ["100"]]);
+  assert.deepEqual(calls.find((c) => c[0] === "order"), ["order", "seq", { ascending: true }]);
+  assert.equal(result.factsCursor, 12);
+  assert.equal(result.facts[0].type, "reschedule");
+  assert.equal(result.facts[0].dueAt, "2026-10-20T03:59:00+00:00");
+});
+
+Deno.test("selectFactWiresForCourses: no courses means no query and an unmoved cursor", async () => {
+  const { client, calls } = fakeFactsClient([]);
+  assert.deepEqual(await selectFactWiresForCourses(client, [], 5), { facts: [], factsCursor: 5 });
+  assert.equal(calls.length, 0);
 });

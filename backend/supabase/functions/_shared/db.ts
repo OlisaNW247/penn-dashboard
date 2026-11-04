@@ -8,12 +8,14 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.115.0";
 import type {
   CourseDocumentWire,
+  CourseFactWire,
+  FactRowWithDocument,
   CourseSummaryWire,
   DocumentKind,
   DocumentStub,
   SyncClient,
 } from "./manifest.ts";
-import { WINDOW_KINDS, windowAgeOutFilter } from "./manifest.ts";
+import { factsResponse, WINDOW_KINDS, windowAgeOutFilter } from "./manifest.ts";
 import { isAuthUserGone } from "./devices.ts";
 import {
   catalogEntryWire,
@@ -62,6 +64,9 @@ export interface CourseDocumentRow {
   points_possible: number | null;
   first_seen_at: string;
   gone_at: string | null;
+  /** Only read by `extract-facts`, which selects it by name; the shared
+   *  column lists above leave it out on purpose. */
+  posted_at?: string | null;
   /** Who uploaded the row; absent on rows read by the explicit column
    *  lists above (the default, 'phone', applies in the database). */
   collector?: DocumentCollector;
@@ -97,7 +102,7 @@ export function rowToStub(row: Pick<CourseDocumentRow, "id" | "content_hash">): 
 function documentWireToInsertRow(
   doc: CourseDocumentWire,
   collector: DocumentCollector,
-): Omit<CourseDocumentRow, "first_seen_at"> {
+): Omit<CourseDocumentRow, "first_seen_at" | "posted_at"> & { posted_at?: string } {
   return {
     // Stamped on every upsert, so the row belongs to whoever uploaded it
     // last. A phone re-uploading a page the extension had pooled takes
@@ -122,6 +127,12 @@ function documentWireToInsertRow(
     // revives it -- "upserts docs by id (clearing gone_at)" per
     // PROTOCOL.md's description of the upload step.
     gone_at: null,
+    // Only when the client sent one. A key that is always present would put
+    // `posted_at` in every upsert, and then a `sync` deployed before
+    // 20261104090000_course_facts.sql would fail every upload on the missing
+    // column; left out, it fails nothing and, because an upsert only sets
+    // the columns it names, never overwrites a stored post date with null.
+    ...(doc.postedAt !== undefined ? { posted_at: doc.postedAt } : {}),
   };
 }
 
@@ -1392,4 +1403,80 @@ export async function selectDeviceBlobs(
     const r = row as { device_id: string; ciphertext: string; updated_at: string };
     return { deviceId: r.device_id, ciphertext: r.ciphertext, updatedAt: r.updated_at };
   });
+}
+
+// ---------------------------------------------------------------------
+// Facts (supabase/migrations/20261104090000_course_facts.sql)
+// ---------------------------------------------------------------------
+
+/** Most `course_facts` rows one manifest reads. A term's facts for a class
+ * are tens, so this is slack; if it is ever reached, `factsCursor` stops at
+ * the last row read and the next manifest carries on from there. */
+export const MAX_FACTS_PER_MANIFEST = 1000;
+
+/** The facts for the caller's courses with `seq` above `since`, in `seq`
+ * order, as `{ facts, factsCursor }` (see `factsResponse` for what is
+ * filtered and how the cursor moves). `courseIDs` is the caller's own
+ * enrolled-this-call list, trusted here for the same reason
+ * `selectProfileWiresForCourses` trusts it. Throws on a database error; the
+ * caller (`sync`) catches it, because facts are an enrichment and must never
+ * fail the exchange they decorate. */
+export async function selectFactWiresForCourses(
+  client: SupabaseClient,
+  courseIDs: string[],
+  since: number,
+): Promise<{ facts: CourseFactWire[]; factsCursor: number }> {
+  if (courseIDs.length === 0) return { facts: [], factsCursor: since };
+
+  const { data, error } = await client
+    .from("course_facts")
+    .select(
+      "seq, course_id, document_id, content_hash, fact_type, target_source_id, title, due_at, kind, quote, confidence, posted_at, course_documents(content_hash, gone_at)",
+    )
+    .in("course_id", courseIDs)
+    .gt("seq", since)
+    .order("seq", { ascending: true })
+    .limit(MAX_FACTS_PER_MANIFEST);
+  if (error) throw error;
+
+  return factsResponse((data ?? []) as unknown as FactRowWithDocument[], since);
+}
+
+/** What `extract-facts` needs about a course's live documents: everything
+ * but the text. One paged read serves both halves of its job -- which
+ * documents are candidates (their kind and hash) and the item index the
+ * model is shown (the assignments and their `due_at`) -- without pulling
+ * every document's body, up to 200,000 characters each, for the sake of the
+ * handful that actually get extracted (their text is read one at a time,
+ * `selectDocumentText`). The window kinds' age-out applies, so a 120-day-old
+ * announcement is not a candidate. */
+export type FactsDocumentMetaRow = Pick<
+  CourseDocumentRow,
+  "id" | "course_id" | "course_code" | "kind" | "source_id" | "title" | "content_hash" | "updated_at" | "fetched_at" | "due_at" | "posted_at"
+>;
+
+export async function selectLiveDocumentMetaForFacts(
+  client: SupabaseClient,
+  courseIDs: string[],
+  now: Date,
+): Promise<FactsDocumentMetaRow[]> {
+  return await pagedLiveRows<FactsDocumentMetaRow>(
+    client,
+    courseIDs,
+    now,
+    "id, course_id, course_code, kind, source_id, title, content_hash, updated_at, fetched_at, due_at, posted_at",
+  );
+}
+
+/** One document's text and the content hash it has right now, read
+ * together so the caller can tell whether it is still the revision it
+ * listed. */
+export async function selectDocumentText(
+  client: SupabaseClient,
+  id: string,
+): Promise<{ text: string; contentHash: string } | undefined> {
+  const { data, error } = await client.from("course_documents").select("text, content_hash").eq("id", id).maybeSingle();
+  if (error) throw error;
+  const row = data as { text: string; content_hash: string } | null;
+  return row ? { text: row.text, contentHash: row.content_hash } : undefined;
 }

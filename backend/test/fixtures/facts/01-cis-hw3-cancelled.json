@@ -1,0 +1,110 @@
+{
+  "id": "synthetic-01",
+  "source": "synthetic",
+  "course": "CIS 2400",
+  "kind": "announcement",
+  "title": "HW3 is cancelled",
+  "postedAt": "2026-10-06T09:12:00-04:00",
+  "text": "Hi all,\n\nQuick update on HW3. After going through the autograder results from the pilot section last night, the FSM problem is basically unsolvable as written (the spec for the traffic light has two contradictory transitions, thanks to the several of you who emailed). Rather than rush a fix, we are cancelling HW3 entirely. It will not count toward your grade and the points are redistributed across HW1, HW2 and HW4.\n\nPlease do NOT submit anything on Gradescope for it.\n\nApologies for the mess. See you Thursday.\n\nBest,\nProf. Ahn",
+  "index": [
+    {
+      "sourceID": "a-41801",
+      "title": "HW1: Bits and Bytes",
+      "dueAt": "2026-09-15T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41802",
+      "title": "HW2: Combinational Logic",
+      "dueAt": "2026-09-29T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41803",
+      "title": "HW3: Finite State Machines",
+      "dueAt": "2026-10-13T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41812",
+      "title": "Recitation 7",
+      "dueAt": "2026-10-16T12:00:00-04:00",
+      "kind": "event"
+    },
+    {
+      "sourceID": "a-41804",
+      "title": "Midterm Exam",
+      "dueAt": "2026-10-22T13:45:00-04:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "a-41805",
+      "title": "HW4: Assembly",
+      "dueAt": "2026-10-27T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41806",
+      "title": "Project Milestone 1",
+      "dueAt": "2026-11-03T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41807",
+      "title": "HW5: Caches",
+      "dueAt": "2026-11-10T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41809",
+      "title": "Quiz 3: Pipelining",
+      "dueAt": "2026-11-12T13:45:00-05:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "a-41808",
+      "title": "Project Milestone 2",
+      "dueAt": "2026-11-17T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41810",
+      "title": "HW6: Virtual Memory",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "a-41811",
+      "title": "Final Project Demo",
+      "dueAt": "2026-12-08T13:45:00-05:00",
+      "kind": "event"
+    }
+  ],
+  "meetings": [
+    {
+      "weekday": "Tue",
+      "start": "13:45",
+      "end": "15:14",
+      "room": "Towne 100"
+    },
+    {
+      "weekday": "Thu",
+      "start": "13:45",
+      "end": "15:14",
+      "room": "Towne 100"
+    }
+  ],
+  "timezone": "America/New_York",
+  "now": "2026-10-06T10:14:00-04:00",
+  "expected": {
+    "facts": [
+      {
+        "type": "cancel",
+        "target": "a-41803",
+        "title_any": [
+          "hw3"
+        ],
+        "note": "'we are cancelling HW3 entirely'"
+      }
+    ]
+  }
+}

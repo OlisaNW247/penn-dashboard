@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { chatCompletionJSON, chatCompletionStream, UpstreamError } from "../supabase/functions/_shared/openrouter.ts";
+import { chatCompletionJSON, chatCompletionJSONWithUsage, chatCompletionStream, UpstreamError } from "../supabase/functions/_shared/openrouter.ts";
 
 /** Builds a fake `fetch` that returns pre-scripted responses in order, one
  *  per call, and records every request it was given so a test can assert
@@ -503,4 +503,64 @@ Deno.test("chatCompletionJSON throws UpstreamError when the response has no mess
     }),
     UpstreamError,
   );
+});
+
+// ---------------------------------------------------------------------
+// chatCompletionJSON: strict json_schema (extract-facts)
+// ---------------------------------------------------------------------
+
+Deno.test("chatCompletionJSON with a schema sends strict json_schema, the explicit reasoning, and never provider.require_parameters", async () => {
+  const schema = { type: "object", additionalProperties: false, required: ["facts"], properties: { facts: { type: "array" } } };
+  const { fetchImpl, calls } = scriptedFetch([completion("{\"facts\":[]}")]);
+  await chatCompletionJSON({
+    apiKey: "k",
+    model: "anthropic/claude-haiku-5.5",
+    messages: [{ role: "user", content: "extract" }],
+    maxTokens: 4000,
+    temperature: 0,
+    reasoning: { effort: "low" },
+    jsonSchema: { name: "facts", schema },
+    fetchImpl,
+  });
+  const body = JSON.parse(await calls[0].clone().text());
+  assert.deepEqual(body.response_format, {
+    type: "json_schema",
+    json_schema: { name: "facts", strict: true, schema },
+  });
+  assert.deepEqual(body.reasoning, { effort: "low" });
+  assert.equal(body.temperature, 0);
+  assert.equal(body.max_tokens, 4000);
+  assert.equal(body.model, "anthropic/claude-haiku-5.5");
+  assert.deepEqual(body.provider, { data_collection: "deny", allow_fallbacks: true });
+  assert.equal("require_parameters" in body.provider, false);
+});
+
+Deno.test("chatCompletionJSON without a schema keeps json_object (the older extract functions are unchanged)", async () => {
+  const { fetchImpl, calls } = scriptedFetch([completion("{}")]);
+  await chatCompletionJSON({ apiKey: "k", model: "openai/gpt-4.1-mini", messages: [], maxTokens: 10, fetchImpl });
+  const body = JSON.parse(await calls[0].clone().text());
+  assert.deepEqual(body.response_format, { type: "json_object" });
+});
+
+Deno.test("chatCompletionJSONWithUsage reports tokens, reasoning tokens, cost and the answering model", async () => {
+  const response = new Response(
+    JSON.stringify({
+      choices: [{ message: { content: "{}" } }],
+      usage: { prompt_tokens: 900, completion_tokens: 80, completion_tokens_details: { reasoning_tokens: 12 }, cost: 0.0004 },
+    }),
+    { status: 200 },
+  );
+  const { fetchImpl } = scriptedFetch([response]);
+  const result = await chatCompletionJSONWithUsage({ apiKey: "k", model: "m", messages: [], maxTokens: 10, fetchImpl });
+  assert.deepEqual(result, {
+    content: "{}",
+    usage: { promptTokens: 900, completionTokens: 80, reasoningTokens: 12, cost: 0.0004 },
+    model: "m",
+  });
+});
+
+Deno.test("chatCompletionJSONWithUsage: absent usage fields stay absent, not zero", async () => {
+  const { fetchImpl } = scriptedFetch([completion("{}")]);
+  const result = await chatCompletionJSONWithUsage({ apiKey: "k", model: "m", messages: [], maxTokens: 10, fetchImpl });
+  assert.deepEqual(result.usage, {});
 });
