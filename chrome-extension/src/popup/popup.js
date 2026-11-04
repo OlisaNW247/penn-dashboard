@@ -9,6 +9,7 @@ import { loadWorkList, loadSnapshot, saveSnapshot, KEYS } from "../adapters/stor
 
 export const VIEWS = ["todo", "all", "prev"];
 export const CANVAS_URL = "https://canvas.upenn.edu";
+export const ED_URL = "https://edstem.org/us";
 export const GRADESCOPE_URL = "https://www.gradescope.com";
 
 // Same FNV-1a as courseAccentIndex(for:) in RedesignTokens.swift, so a class
@@ -149,6 +150,15 @@ export function render(state, root, handlers = {}) {
     ]));
   }
 
+  // Ed is read with a token only an Ed page can hand over (session-only, gone
+  // after a browser restart), so say so when the last run had none.
+  if (state.paired && (state.ed === "none" || state.ed === "out")) {
+    shell.append(el(doc, "div", { className: "note" }, [
+      el(doc, "p", { text: state.ed === "none" ? "open ed once to sync its posts" : "sign in to ed" }),
+      el(doc, "a", { className: "pill", href: ED_URL, target: "_blank", rel: "noopener", text: "ed" }),
+    ]));
+  }
+
   if (!state.paired) {
     const pair = el(doc, "button", { className: "pill pair quiet", type: "button", text: "pair with phone" });
     pair.addEventListener("click", () => on("pair"));
@@ -172,6 +182,7 @@ async function main() {
   let snapshot = await loadSnapshot();
   let stateItems = [];
   let remote = (await chrome.storage.local.get("remoteWorkListsV1")).remoteWorkListsV1 ?? [];
+  let edStatus = (await chrome.storage.local.get("collectSummaryV1")).collectSummaryV1?.ed ?? "unknown";
   let paired = !!(await chrome.storage.local.get("pairingKeyV1")).pairingKeyV1;
   const sess = await chrome.storage.session.get(["pairingStateV1", "pairingLinkV1"]);
   let pairState = sess.pairingStateV1 ?? null;
@@ -201,6 +212,7 @@ async function main() {
       remote,
       dueEdits: snapshot.dueEdits,
     });
+    state.ed = edStatus;
     state.pairing = pairingView();
     stateItems = state.items;
     render(state, root, handlers);
@@ -242,6 +254,7 @@ async function main() {
     }
     if (area !== "local") return;
     if (changes.pairingKeyV1) paired = !!changes.pairingKeyV1.newValue;
+    if (changes.collectSummaryV1) edStatus = changes.collectSummaryV1.newValue?.ed ?? "unknown";
     if (changes.remoteWorkListsV1) remote = changes.remoteWorkListsV1.newValue ?? [];
     if (changes[KEYS.workList]) workList = changes[KEYS.workList].newValue ?? null;
     if (changes[KEYS.snapshot]) snapshot = changes[KEYS.snapshot].newValue ?? snapshot;

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { collectRun, KEYS, INTERVAL_MS, RATE_LIMIT_BACKOFF_MS } from "../src/collectRun.js";
+import { collectRun, shouldCollectOnEdToken, KEYS, INTERVAL_MS, RATE_LIMIT_BACKOFF_MS } from "../src/collectRun.js";
 
 const T0 = new Date(2026, 9, 22, 15, 0, 0).getTime(); // local 15:00
 const MIDNIGHT = new Date(2026, 9, 23, 0, 0, 0).getTime();
@@ -159,4 +159,33 @@ test("never throws and never runs concurrently", async () => {
   const bad = await collectRun({ storage: { get: async () => { throw new Error("x"); } } });
   assert.equal(bad.status, "error");
   assert.deepEqual((await collectRun()).status, "error");
+});
+
+test("force skips the hourly throttle only", async () => {
+  const storage = paired(), c = canvas(), b = backend();
+  await run({ fetch: c.fetch, callFunction: b.callFunction, storage });
+  const soon = () => T0 + 1000;
+  assert.equal((await run({ fetch: c.fetch, callFunction: b.callFunction, storage, now: soon })).status, "throttled");
+  assert.equal((await run({ fetch: c.fetch, callFunction: b.callFunction, storage, now: soon, force: true })).status, "ok");
+});
+
+test("force still respects backoff and pairing", async () => {
+  const storage = paired(), c = canvas(), b = backend();
+  storage.data[KEYS.backoffUntil] = T0 + 5000;
+  assert.equal((await run({ fetch: c.fetch, callFunction: b.callFunction, storage, force: true })).status, "backoff");
+  const bare = fakeStorage();
+  assert.equal((await run({ fetch: c.fetch, callFunction: b.callFunction, storage: bare, force: true })).status, "unpaired");
+  assert.equal(c.log.urls.length, 0);
+});
+
+test("shouldCollectOnEdToken", () => {
+  const f = shouldCollectOnEdToken;
+  assert.equal(f({ token: "t" }), true);
+  assert.equal(f({ summary: undefined, token: "t", lastTriggeredToken: undefined }), true);
+  for (const ed of ["none", "out", "error"]) assert.equal(f({ summary: { ed }, token: "t" }), true, ed);
+  assert.equal(f({ summary: { ed: "in" }, token: "t" }), false);
+  assert.equal(f({ summary: { ed: "none" }, token: "t", lastTriggeredToken: "t" }), false);
+  assert.equal(f({ summary: { ed: "none" }, token: "t", lastTriggeredToken: "old" }), true);
+  assert.equal(f({ summary: { ed: "none" }, token: "" }), false);
+  assert.equal(f({ summary: { ed: "none" }, token: undefined }), false);
 });

@@ -479,3 +479,46 @@ test("forbidden: a dead session found while listing files is canvas out and disc
   assert.equal(c.canvas, "out");
   assert.deepEqual(c.documents, []);
 });
+
+// ------------------------------------------------------- Ed paging
+
+function pagedEd(canvas, { pages, failOffset }) {
+  const seen = [];
+  const fetchFn = async (url, init) => {
+    if (!url.startsWith("https://us.edstem.org/api/")) return canvas.fetch(url, init);
+    const u = new URL(url);
+    if (u.pathname === "/api/user") {
+      return reply(JSON.stringify({ courses: [{ course: { id: 5, code: "CIS 2400", name: "n", year: "2026", session: "Fall" }, role: { role: "student" } }] }), { raw: true });
+    }
+    const offset = Number(u.searchParams.get("offset"));
+    seen.push(offset);
+    if (offset === failOffset) return reply("", { status: 429, raw: true });
+    return reply(JSON.stringify({ threads: pages[offset / 100] ?? [], users: [{ id: 2, name: "S", course_role: "student" }] }), { raw: true });
+  };
+  return { fetch: fetchFn, seen };
+}
+
+const edThread = (id, over = {}) => ({ id, user_id: 2, course_id: 5, type: "question", title: `q ${id}`, document: "<document><paragraph>x</paragraph></document>", is_pinned: false, is_private: false, created_at: "2026-10-10T12:00:00.000000+00:00", ...over });
+const fullPage = (from) => Array.from({ length: 100 }, (_, i) => edThread(from + i));
+
+test("ed paging: a pinned announcement only on page 2 is read", async () => {
+  const canvas = fakeCanvas();
+  const ed = pagedEd(canvas, { pages: [fullPage(1000), [edThread(5000, { type: "announcement", is_pinned: true, user_id: 9, title: "pinned late" })]] });
+  const c = await collectCourseMaterial({ fetch: ed.fetch, now: NOW, sleep: noSleep, edToken: "tok-123" });
+  assert.deepEqual(ed.seen, [0, 100]);
+  assert.deepEqual(c.documents.filter((d) => d.kind === "ed").map((d) => d.sourceID), ["5000"]);
+  assert.equal(c.ed, "in");
+});
+
+test("ed paging: a 429 on page 2 drops the course's Ed threads entirely and Canvas still collects", async () => {
+  const canvas = fakeCanvas();
+  const first = fullPage(1000);
+  first[0] = edThread(1000, { type: "announcement", user_id: 9 });
+  const ed = pagedEd(canvas, { pages: [first, []], failOffset: 100 });
+  const c = await collectCourseMaterial({ fetch: ed.fetch, now: NOW, sleep: noSleep, edToken: "tok-123" });
+  assert.deepEqual(ed.seen, [0, 100]);
+  assert.equal(c.documents.filter((d) => d.kind === "ed").length, 0);
+  assert.deepEqual(c.edReadCourseIDs, []);
+  assert.equal(c.canvas, "in");
+  assert.ok(c.documents.length > 0);
+});

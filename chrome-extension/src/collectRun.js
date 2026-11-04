@@ -14,6 +14,18 @@ export const INTERVAL_MS = 60 * 60 * 1000;
 export const RATE_LIMIT_BACKOFF_MS = 6 * 60 * 60 * 1000;
 export const DISCOVER_BATCH = 3;
 
+// Whether a freshly delivered Ed token should start a collection now. The
+// worker's startup run happens before the student visits Ed (storage.session is
+// cleared on every browser restart), so the visit must start the read; but only
+// when the last run had no Ed, only once per token (an Ed page-load storm must
+// not start a Canvas pass each time, and a token Ed rejects must not retry on
+// every page load).
+export function shouldCollectOnEdToken({ summary, token, lastTriggeredToken } = {}) {
+  if (typeof token !== "string" || token === "") return false;
+  if (token === lastTriggeredToken) return false;
+  return !summary || summary.ed !== "in";
+}
+
 let inFlight = null;
 
 export function collectRun(opts) {
@@ -29,12 +41,12 @@ function nextLocalMidnight(nowMs) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
 }
 
-async function pass({ fetch: fetchFn, callFunction, storage, sessionStorage, now = () => Date.now(), extractText, sleep }) {
+async function pass({ force = false, fetch: fetchFn, callFunction, storage, sessionStorage, now = () => Date.now(), extractText, sleep }) {
   if (!(await get(storage, KEYS.pairingKey))) return { status: "unpaired" };
   const t = typeof now === "function" ? now() : now;
   const nowMs = t instanceof Date ? t.getTime() : t;
   const last = await get(storage, KEYS.lastRun);
-  if (typeof last === "number" && nowMs >= last && nowMs - last < INTERVAL_MS) return { status: "throttled" };
+  if (!force && typeof last === "number" && nowMs >= last && nowMs - last < INTERVAL_MS) return { status: "throttled" };
   const until = await get(storage, KEYS.backoffUntil);
   if (typeof until === "number" && nowMs < until) return { status: "backoff" };
   await storage.set({ [KEYS.lastRun]: nowMs });

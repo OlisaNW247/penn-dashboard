@@ -276,6 +276,15 @@ async function edGet(ctx, url, token) {
   try { return JSON.parse(await res.text()); } catch { throw new CollectError("decode"); }
 }
 
+// Threads are paged like the phone (EdClient.threadsWithinWindow, up to three
+// pages of 100 newest-first): a class's announcements and pinned posts are a
+// few threads among hundreds of student ones, and a pinned announcement older
+// than the 100th newest thread was never read when this took one page. An
+// error on any page (out, rateLimited, anything) discards every page read for
+// that course, because a course read for Ed replaces its whole Ed set in the
+// extension's holdings (syncCourseMaterial), and a partial union would drop
+// the posts on the pages not reached from what it lists as held.
+//
 // Match Ed courses to Canvas courses (as the phone: no link evidence, one
 // Canvas site per code gets the documents, the first), read threads, keep only
 // what ed.js keeps. Returns { status, matched, documents, readCourseIDs }.
@@ -302,7 +311,10 @@ async function collectEd(ctx, token, courses, now) {
     if (!target) continue;
     let response;
     try {
-      response = edCore.decodeThreadsResponse(await edGet(ctx, edCore.threadsURL(m.edCourseID), token));
+      response = await edCore.threadsWithinWindow({
+        now,
+        fetchPage: async (offset) => edCore.decodeThreadsResponse(await edGet(ctx, edCore.threadsURL(m.edCourseID, { offset }), token)),
+      });
     } catch (e) {
       if (e instanceof CollectError && e.kind === "out") { result.status = "out"; break; }
       if (e instanceof CollectError && e.kind === "rateLimited") break;
