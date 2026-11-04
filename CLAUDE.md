@@ -1175,9 +1175,10 @@ a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
 **Current on `v10` (2026-11-03): the merge of `v9` (3442 / 329 at the
 onboarding-polish merge, plus the sign-in work) and `origin/v8` `7e004c5`
-(3414 / 329, the tree's recency and follow-up work). Expected about
-3457 / 331; NOT YET RUN at the time of the merge commit, see the
-next line once it is.**
+(3414 / 329, the tree's recency and follow-up work): 3457 tests / 331
+suites, all green, `swift test --no-parallel` on Marco's Mac, 115 s,
+exactly the predicted sum (3442 + 15, 329 + 2). Deno 628, `deno task
+check` green.**
 
 Before it, on the two lines that merged:
 
