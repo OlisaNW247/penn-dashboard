@@ -584,3 +584,23 @@ Deno.test("complete-set: no client retires a server-written (crawled website) ro
   assertEquals(liveIDsRetirableBy(live, "phone"), ["page:1:1"]);
   assertEquals(liveIDsRetirableBy(live, "extension"), ["page:1:1"]);
 });
+
+Deno.test("validateDocument drops a student's Status line from an assignment, keeping the hash as sent", () => {
+  const doc = validateDocument(validDocumentInput({
+    kind: "assignment",
+    id: "assignment:100:1",
+    text: "Due: no due date\nStatus: submitted\nDo it.\nStatus: not submitted",
+    contentHash: "client-hash",
+  }));
+  assertEquals(doc.text, "Due: no due date\nDo it.");
+  assertEquals(doc.contentHash, "client-hash");
+});
+
+Deno.test("validateDocument leaves Status in prose, and in other kinds, alone", () => {
+  const prose = "Due: x\nStatus: submitted later\nThe Status: submitted flag.";
+  assertEquals(
+    validateDocument(validDocumentInput({ kind: "assignment", id: "assignment:100:1", text: prose })).text,
+    prose,
+  );
+  assertEquals(validateDocument(validDocumentInput({ text: "Status: submitted" })).text, "Status: submitted");
+});

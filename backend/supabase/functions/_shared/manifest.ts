@@ -420,7 +420,10 @@ export function validateDocument(raw: unknown): CourseDocumentWire {
   }
 
   // Cleaned after the cut, so a surrogate pair the cut splits is mended too.
-  const text = storableText(requireString(raw, "text").slice(0, MAX_TEXT_LENGTH));
+  const text = withoutPersonalStatus(
+    kindRaw,
+    storableText(requireString(raw, "text").slice(0, MAX_TEXT_LENGTH)),
+  );
   if (text.length === 0) throw new ManifestValidationError(`expected non-empty string field "text"`);
   const url = optionalString(raw, "url");
 
@@ -439,6 +442,25 @@ export function validateDocument(raw: unknown): CourseDocumentWire {
     dueAt: optionalString(raw, "dueAt"),
     pointsPossible: optionalNumber(raw, "pointsPossible"),
   };
+}
+
+/** Drops the student's own `Status: submitted` / `Status: not submitted` line
+ * from an assignment's text. `submitted` is deleted from the document above
+ * because it is one student's fact and the pool is read by classmates; builds
+ * before 2026-11-04 wrote the same fact into the text as a line, and about
+ * 2,400 stored documents carry it. Only a line that is exactly one of the two
+ * phrases goes, so a description that mentions "Status" is untouched. Like
+ * `storableText`, the client's `contentHash` is kept as sent: an old client
+ * hashes the same dirty text again and so never re-uploads in a loop, and a
+ * new client's hash (of the clean text) differs from a dirty stored one once,
+ * uploads once, and the row is then clean. Rewriting the hash here would make
+ * the server disagree with every client forever. */
+export function withoutPersonalStatus(kind: string, text: string): string {
+  if (kind !== "assignment" || !text.includes("Status: ")) return text;
+  return text
+    .split("\n")
+    .filter((line) => line !== "Status: submitted" && line !== "Status: not submitted")
+    .join("\n");
 }
 
 /** Text Postgres can store. A NUL (`\u0000`) or a lone UTF-16 surrogate in

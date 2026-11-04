@@ -112,6 +112,25 @@ public struct CourseDocument: Codable, Sendable, Hashable, Identifiable {
         self.submitted = submitted
     }
 
+    /// The text as it may leave this phone or enter the on-device pool: for an
+    /// assignment, without the student's own `Status: submitted` /
+    /// `Status: not submitted` line. Builds before 2026-11-04 wrote that line
+    /// into the text, and documents stored on phones still carry it until
+    /// re-fetched, so the upload and download boundaries clean them too.
+    public var sharedText: String {
+        kind == .assignment ? PersonalStatusLine.removed(from: text) : text
+    }
+
+    /// The hash of what is actually sent (`title` + `sharedText`). Equal to
+    /// `contentHash` whenever there was nothing to strip. The server stores the
+    /// hash as sent, so sending the old hash beside stripped text would make
+    /// the manifest disagree with itself and the phone re-upload every sync;
+    /// the manifest stub uses this too, for the same reason.
+    public var sharedContentHash: String {
+        let shared = sharedText
+        return shared == text ? contentHash : ContentHash.fnv1a(title + "\u{1F}" + shared)
+    }
+
     /// Rough word count, used to budget what fits in a small model context.
     public var wordCount: Int {
         text.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count
@@ -388,5 +407,20 @@ public enum ContentHash {
             hash = hash &* 0x100000001b3
         }
         return String(hash, radix: 16)
+    }
+}
+
+/// The student's own submission state, which older builds wrote into an
+/// assignment document's text as a line. `submitted` is stripped from the wire
+/// on purpose (`BackendWire.swift`), and a line carrying the same fact defeats
+/// that: the pool is shared with classmates. Only a line that is exactly one of
+/// the two phrases goes, so a description that mentions "Status" is untouched.
+/// The wrong fix is filtering every `Status:` prefix, which eats real prose.
+public enum PersonalStatusLine {
+    public static func removed(from text: String) -> String {
+        guard text.contains("Status: ") else { return text }
+        let lines = text.components(separatedBy: "\n")
+        let kept = lines.filter { $0 != "Status: submitted" && $0 != "Status: not submitted" }
+        return kept.count == lines.count ? text : kept.joined(separator: "\n")
     }
 }

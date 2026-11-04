@@ -122,7 +122,11 @@ export async function handleExtractAnnouncement(req: Request): Promise<Response>
         });
       } catch (err) {
         const status = err instanceof UpstreamError ? err.status : undefined;
-        console.error("extract-announcement: upstream failure, status:", status ?? "network");
+        // The message names the failure ("fetch failed", a timeout, an abort)
+        // and never carries request content; status alone left the ~25% of
+        // calls that fail as "network" undiagnosable.
+        const detail = err instanceof Error ? err.message : String(err);
+        console.error("extract-announcement: upstream failure, status:", status ?? "network", "detail:", detail);
         return errorResponse("upstream", "the model backend failed", 502);
       }
 

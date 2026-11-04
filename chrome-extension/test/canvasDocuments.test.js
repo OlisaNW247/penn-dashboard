@@ -52,15 +52,15 @@ test("builds an assignment document with due date, points, submission state, and
   assert.equal(doc.title, "PSet 3: caches");
   assert.equal(doc.dueAt, "2026-09-17T03:59:00.000Z");
   assert.equal(doc.pointsPossible, 100);
-  assert.ok(doc.text.includes("Status: not submitted"));
+  assert.ok(!doc.text.includes("Status:"));
   assert.ok(doc.text.includes("direct-mapped cache simulator"));
   assert.ok(doc.text.includes("• Part A"));
   assert.ok(!doc.text.includes("<"));
   assert.ok(!("submitted" in doc));
-  // the full text, in the phone's order: due, points, status, description
+  // the full text, in the phone's order: due, points, description (no status line: pooled text)
   assert.equal(
     doc.text,
-    "Due: Wed, Sep 16 at 11:59 PM\nPoints: 100\nStatus: not submitted\n" +
+    "Due: Wed, Sep 16 at 11:59 PM\nPoints: 100\n" +
       "Implement a direct-mapped cache simulator.\n• Part A\n• Part B",
   );
   assert.equal(doc.updatedAt, "2026-09-01T12:00:00.000Z");
@@ -68,10 +68,10 @@ test("builds an assignment document with due date, points, submission state, and
 });
 
 // No Swift test: the other branches of CourseDocumentBuilder.assignment.
-test("assignment: no due date, fractional points, no submission, submitted by timestamp", () => {
+test("assignment: no due date, fractional points, no submission; never a status line", () => {
   const [a] = decodeAssignments([{ id: 1, name: "N", points_possible: 12.5, submission: { workflow_state: "unsubmitted", submitted_at: "2026-09-10T03:59:59Z" } }]);
   const doc = assignmentDocument(a, course, { now, ...NY });
-  assert.equal(doc.text, "Due: no due date\nPoints: 12.5\nStatus: submitted");
+  assert.equal(doc.text, "Due: no due date\nPoints: 12.5");
   const [b] = decodeAssignments([{ id: 2, name: "M" }]);
   assert.equal(assignmentDocument(b, course, { now, ...NY }).text, "Due: no due date");
   assert.ok(!("dueAt" in assignmentDocument(b, course, { now })));

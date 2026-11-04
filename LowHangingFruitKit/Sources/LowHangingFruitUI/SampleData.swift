@@ -292,7 +292,7 @@ enum SampleData {
             CourseDocument(
                 courseID: cis.courseID, course: cis.code, kind: .assignment, sourceID: "s-6",
                 title: "PSet 6: hashing", url: nil,
-                text: "Due: \(DateText.long(days(3)))\nPoints: 100\nStatus: not submitted\nImplement an open-addressing hash table with linear probing and compare it against chaining on the provided workloads. Submit HashTable.java and a short writeup.",
+                text: "Due: \(DateText.long(days(3)))\nPoints: 100\nImplement an open-addressing hash table with linear probing and compare it against chaining on the provided workloads. Submit HashTable.java and a short writeup.",
                 fetchedAt: now, dueAt: days(3), pointsPossible: 100, submitted: false
             ),
             CourseDocument(

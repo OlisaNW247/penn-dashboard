@@ -285,9 +285,9 @@ public enum CourseDocumentBuilder {
         if let points = assignment.pointsPossible {
             lines.append("Points: \(DateText.trimmed(points))")
         }
-        if let submission = assignment.submission {
-            lines.append(submission.isSubmitted ? "Status: submitted" : "Status: not submitted")
-        }
+        // No "Status:" line: the text is pooled and served to classmates, so
+        // the student's own submission state lives only in `submitted` below,
+        // which the wire type has no field for.
         let description = HTMLText.plainText(from: assignment.description ?? "")
         if !description.isEmpty { lines.append(description) }
 

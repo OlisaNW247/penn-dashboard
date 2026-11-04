@@ -74,7 +74,7 @@ public struct DocumentStub: Codable, Sendable, Hashable {
 
     public init(document: CourseDocument) {
         self.id = document.id
-        self.contentHash = document.contentHash
+        self.contentHash = document.sharedContentHash
     }
 }
 
@@ -136,10 +136,12 @@ public struct CourseDocumentWire: Codable, Sendable, Equatable {
         self.sourceID = document.sourceID
         self.title = document.title
         self.url = document.url?.absoluteString
-        self.text = document.text
+        // Both the text and its hash come from the cleaned form, so what the
+        // server stores and what classmates download agree (see `sharedText`).
+        self.text = document.sharedText
         self.updatedAt = document.updatedAt
         self.fetchedAt = document.fetchedAt
-        self.contentHash = document.contentHash
+        self.contentHash = document.sharedContentHash
         self.dueAt = document.dueAt
         self.pointsPossible = document.pointsPossible
     }
@@ -168,7 +170,9 @@ public struct CourseDocumentWire: Codable, Sendable, Equatable {
             sourceID: sourceID,
             title: title,
             url: url.flatMap { URL(string: $0) },
-            text: text,
+            // A classmate's older upload may still carry their `Status:` line;
+            // it never reaches this student's answers or excerpts.
+            text: resolvedKind == .assignment ? PersonalStatusLine.removed(from: text) : text,
             updatedAt: updatedAt,
             fetchedAt: fetchedAt,
             dueAt: dueAt,

@@ -56,7 +56,7 @@ struct CourseContentAPITests {
         #expect(doc.dueAt != nil)
         #expect(doc.pointsPossible == 100)
         #expect(doc.submitted == false)
-        #expect(doc.text.contains("Status: not submitted"))
+        #expect(!doc.text.contains("Status:"))
         #expect(doc.text.contains("direct-mapped cache simulator"))
         #expect(doc.text.contains("• Part A"))
         #expect(!doc.text.contains("<"))

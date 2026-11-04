@@ -458,4 +458,60 @@ private extension JSONDecoder {
         guard let data = "{\"date\":\"\(string)\"}".data(using: .utf8) else { return nil }
         return try? decode(Wrapper.self, from: data).date
     }
+
+    // MARK: - The student's own status line never travels
+
+    @Test("the builder no longer writes a Status line, and keeps submitted on the model")
+    func builderWritesNoStatusLine() throws {
+        let json = """
+        [{"id": 9, "name": "HW", "points_possible": 10.0,
+          "description": "<p>Do it.</p>",
+          "submission": {"workflow_state": "submitted", "submitted_at": "2026-09-01T12:00:00Z"}}]
+        """
+        let assignments = try CourseContentAPI.decoder().decode([CourseContentAssignment].self, from: Data(json.utf8))
+        let doc = CourseDocumentBuilder.assignment(from: try #require(assignments.first), course: Self.course)
+        #expect(!doc.text.contains("Status:"))
+        #expect(doc.submitted == true)
+    }
+
+    @Test("the wire strips an old stored Status line and hashes the stripped text")
+    func wireStripsOldStatusLine() {
+        let old = assignmentDoc(text: "Due: no due date\nPoints: 100\nStatus: submitted\nImplement a cache.")
+        let clean = assignmentDoc(text: "Due: no due date\nPoints: 100\nImplement a cache.")
+        let wire = CourseDocumentWire(document: old)
+        #expect(wire.text == clean.text)
+        #expect(wire.contentHash == clean.contentHash)
+        #expect(DocumentStub(document: old) == DocumentStub(document: clean))
+        let notSubmitted = assignmentDoc(text: "Due: no due date\nStatus: not submitted\nx")
+        #expect(CourseDocumentWire(document: notSubmitted).text == "Due: no due date\nx")
+    }
+
+    @Test("an untouched document keeps its own hash on the wire")
+    func cleanDocumentHashUnchanged() {
+        let doc = assignmentDoc()
+        #expect(CourseDocumentWire(document: doc).contentHash == doc.contentHash)
+        #expect(DocumentStub(document: doc).contentHash == doc.contentHash)
+    }
+
+    @Test("a downloaded assignment with a classmate's Status line comes out without it")
+    func downloadStripsStatusLine() throws {
+        let dirty = "Due: no due date\nStatus: submitted\nImplement a cache."
+        let wire = CourseDocumentWire(
+            id: "assignment:1234:555", courseID: "1234", course: "CIS 2400", kind: "assignment",
+            sourceID: "555", title: "PSet 3", text: dirty,
+            fetchedAt: Date(timeIntervalSince1970: 1), contentHash: "whatever"
+        )
+        let doc = try #require(wire.document())
+        #expect(doc.text == "Due: no due date\nImplement a cache.")
+        #expect(doc.contentHash == assignmentDoc(text: doc.text).contentHash)
+    }
+
+    @Test("a mid-text or prose use of Status, or a non-assignment, is untouched")
+    func statusInProseUntouched() {
+        let prose = "Due: no due date\nThe Status: submitted flag is explained below.\nStatus: submitted later\nStatus report due."
+        #expect(CourseDocumentWire(document: assignmentDoc(text: prose)).text == prose)
+        let page = CourseDocument(courseID: "1234", course: "CIS 2400", kind: .page, sourceID: "p", title: "P", url: nil, text: "Status: submitted")
+        #expect(CourseDocumentWire(document: page).text == "Status: submitted")
+        #expect(CourseDocumentWire(document: page).contentHash == page.contentHash)
+    }
 }

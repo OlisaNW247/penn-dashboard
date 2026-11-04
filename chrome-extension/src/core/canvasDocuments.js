@@ -241,9 +241,8 @@ export function assignmentDocument(assignment, course, { now = new Date(), timeZ
   if (assignment.pointsPossible !== null) {
     lines.push(`Points: ${dateTextTrimmed(assignment.pointsPossible)}`);
   }
-  if (assignment.submission) {
-    lines.push(assignment.submission.isSubmitted ? "Status: submitted" : "Status: not submitted");
-  }
+  // No "Status:" line: the text is pooled and served to classmates, so the
+  // student's own submission state must not be in it (the Swift builder agrees).
   const description = html.plainText(assignment.description ?? "");
   if (description !== "") lines.push(description);
 
