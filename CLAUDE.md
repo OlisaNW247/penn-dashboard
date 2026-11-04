@@ -1136,8 +1136,10 @@ step in App Store Connect; there is no API key on the dev Mac.
 ## Test baseline
 
 **Chrome extension (a separate suite; never add it to the Swift or Deno
-counts): 500 tests, all green, on `v8` (2026-10-29, `cd chrome-extension
-&& npm test`, node 22 in the cloud container).** The pure core: term,
+counts): 517 tests, all green, on `v8` (2026-11-04, `cd chrome-extension
+&& npm test`, node 22 in the cloud container), plus the closed-loop
+harness `npm run e2e` (real Chromium, fake Ed/Canvas/backend; see
+`docs/CHROME_EXTENSION.md` → Status, 2026-11-04).** The pure core: term,
 course code, assignment ids, content hash, ICS (74), dedup (64),
 Gradescope parsing (51), the sync snapshot (18, pinned to the shared
 AES-GCM vector the Swift suite also pins), and the course-material
@@ -2851,6 +2853,14 @@ none is a ship line.
 
 ## Known gaps
 
+- **The extension's Ed read is proven only against a fake Ed** (2026-11-04).
+  Until that day it had never read Ed at all (every live run `ed: none`,
+  see `docs/CHROME_EXTENSION.md` → Status for the cause and fix). The
+  harness in `chrome-extension/e2e/` proves everything but a real Ed
+  login; the first store install that opens edstem.org and then shows
+  `collector = 'extension'` rows of kind `ed` on the server is the live
+  proof. Expect few: a phone that reads the same board uploads the same
+  ids and hashes first, and the planner skips what the server holds.
 - **No anonymous Ed post reached the pool through the extension**
   (checked 2026-10-29: every live `ed` row, 622, has `collector =
   'phone'`). Had one, it would have stayed: `ed` is a window kind

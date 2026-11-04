@@ -25,7 +25,7 @@ Olisa's answers to the scope questions, first exchange of the session:
 - **One identity.** The extension is paired to the phone before it talks to
   the backend for anything but pairing, so one student is one user.
 - **Penn only** (the backend is Penn-only; one Canvas host permission).
-- **Unpacked**, for the owner and friends. No Web Store listing in v1.
+- **Unpacked**, for the owner and friends; since 2026-11-04 the owner is submitting it to the Chrome Web Store (unlisted) from a store zip built in the cloud container, because his Mac was stolen.
 
 Rejected for v1: a laptop-only popup dashboard (the Mac app already is
 one), ask in a side panel (later, once the collector has proven itself),
@@ -546,6 +546,23 @@ build to the phone, apply the migration and deploy `sync`, `pair`,
   does; until then the extension kept anonymous announcements and pinned
   posts that the phone never uploads (SEC-10, caught by the Swift suite's
   `EdFilterParityTests`). 500 tests.
+- 2026-11-04: **Ed had never been read.** Every live run on the owner's
+  laptop reported `ed: none`: the token lives in `chrome.storage.session`,
+  which Chrome clears on every restart, and runs happened only at startup
+  (before any Ed tab) and hourly. Now an accepted token starts a
+  collection when the last run had no Ed (`shouldCollectOnEdToken`, once
+  per token, `force` skips only the hourly throttle), the popup says
+  "open ed once to sync its posts" / "sign in to ed", and threads are
+  paged like the phone (`threadsWithinWindow`, three pages of 100, the
+  2026-10-23 phone fix this port never got). 517 tests. Plus `npm run
+  e2e` (`e2e/`, about 30 s): the real packaged extension in headless
+  Chromium against a fake Ed, Canvas and backend served under the real
+  hostnames; it proves the token lift, the paging, the kept set, the
+  header text, that the token never reaches the backend or
+  `storage.local`, and the restart case. Checked to fail when paging or
+  the anonymous rule is broken. It cannot prove a real Ed login. The
+  store zip is stamped 0.1.1; `0.1.0` was sent to the owner before these
+  fixes and must not be uploaded.
 - 2026-10-27, later: the next run looked up 186 linked ids, found 23
   missing both ways and 3 refused, and had nothing new to extract. The
   remaining courses without PDFs link none the student can open.
