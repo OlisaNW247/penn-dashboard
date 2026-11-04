@@ -2940,7 +2940,9 @@ itself.
 
 ## Branches
 
-`v8` is the line. Marco's launch-prep work (2026-10-09/10) was merged
+`v10` is the line (2026-11-03): `v9` plus `origin/v8` `7e004c5` plus
+`phase0/extract-facts-bench`. Start at `docs/HANDOFF_V10_2026-11-03.md`.
+Before it, `v8` was the line. Marco's launch-prep work (2026-10-09/10) was merged
 into it on 2026-10-10 through pull request 9, at Marco's instruction;
 `v8-launch-prep` is the branch it was built on. So `v8` now carries work
 most of which has not been on a phone (Known gaps), and whatever ships
@@ -2949,6 +2951,9 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
+| `v10` | **Current line (2026-11-03 onward).** `v9` (the no-banner sign-in, the onboarding polish, the composed-day research) plus `origin/v8` `7e004c5` (the tree's recency and follow-up work) plus `phase0/extract-facts-bench`. The merge's Swift run is recorded under Test baseline. |
+| `phase0/extract-facts-bench` | 2026-11-03, off `v9`: the extract-facts bench, prompt, schema and parser; the model decision (Haiku 5.5, `docs/EXTRACT_FACTS_BENCH_2026-11-03.md`). In `v10`. |
+| `v9` | 2026-11-01 to 11-03: the no-banner sign-in and keepalive, proven on Marco's phone; the onboarding polish merged; the composed-day research. In `v10`. |
 | `v8-merge-marco` | **The merge of seven of Marco's branches into `origin/v8` at `63b228f`, 2026-10-23; not compiled, not pushed, not yet fast-forwarded into `v8` (the plan is `docs/MERGE_PLAN_MARCO_2026-10-23.md`).** In order: `fix/submission-status` (the module-row id veto and the Gradescope title scan), `fix/canvas-signin-bulletproof` (the analytics-cookie diagnosis and `-LHFSessionDiagnostics`; no behaviour), `v8-launch-prep` (its handoff doc only), `parked/missing-login-banner` (the banner and renew-on-open when the cookie item is gone), `parked/gradescope-unverified-submission`, `v8-server-exam-dates` (needs a `sync` deploy from `v8`, v14 or later, before the app sees anything) and `codex/automatic-canvas-login` (the PennKey saved automatically after a verified sign-in; the vault becomes a repair tool; the owner's reversal of 2026-10-23, see Stay signed in). Not merged: `parked/launch-submission-refresh` (would also post turned-in and grade notices at launch on `v8`) and `parked/ask-course-sync-fixes` (conflicts with the 2026-10-23 announcement window). Docs conflicts resolved by keeping both sides with their dates. Deno 428/0 here; Swift predicted 2723, unverified. Safe to delete once it has compiled and been fast-forwarded. |
 | `v8-merge-loud-alert` | **The merge of `origin/v8` (Olisa, 10 commits of 2026-10-19, through `55a9203`) and `origin/v8-loud-alert-actions` (Marco: `75dc7aa`, `e3f9af8`, `5cdb4cc`), 2026-10-20; fast-forwarded into `v8` at `4aab3eb` once it compiled green. Safe to delete.** Decisions made by the overseer: one Ed task pass (Marco's, given Olisa's posting day, twin check, quota stop and a summary), one past-due rule for announcement tasks (Marco's `isHiddenAnnouncementTask`; `isExpired` back to the `.event` rule), Olisa's retry cap, quota stop, back-off and summaries kept in the Canvas loop, Grade Watcher stays hidden, Marco's `project.yml` kept. Rows the brief `announcement-ed:` reading wrote stay as inert `.canvasAnnouncement` rows. |
 | `v8-launch-prep` | **Marco's launch-prep work, on `v8` at `e2672eb`** (2026-10-09/10): source links on cards, the 10-minute reminder, assignment names in reminders, the sign-up backlog rule, the real announcements list with Ed rows, the ask search / excerpt / follow-up / citation work, the copy cut, saved due-date edits, deleting your own tasks, the widget fixes and ten small fixes. It does not change sign-in or the sync: `sync()`, `syncGradescope` and `connectCanvas` are byte-identical to `e2672eb`. Compiled for iOS; only the first four items have been on a phone. Merged into `v8` on 2026-10-10 (pull request 9); kept as a branch because these notes cite it. |
