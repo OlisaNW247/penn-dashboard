@@ -226,8 +226,30 @@ Dec 14, medium confidence, quote still the bare "Final exam:" despite rule
 3), 13 `note`s each targeting a real assignment (Midterm 2 x5, Midterm 1 x2,
 Quiz 3, Quiz 4, Midterm 1 Upload, the three MT1 redemption items), and 3
 `needs_review` (Quiz 5's September date, "Quiz 2 moved to Sep 23" which the
-model wrongly says is not in the index, and Worksheet 3.1's second problem
-made optional). The two unwanted tasks are gone. Three identical notes
+model says is not in the index, and Worksheet 3.1's second problem made
+optional). The two unwanted tasks are gone. Three identical notes
 (seq 17-19) target the three MT1 redemption items from one announcement,
 which is the "at most one note per target per document" rule working as
 written; whether the phone should collapse them is a UI question.
+
+## "Quiz 2 is not in the item index" was true (checked 2026-11-05, 20:50 UTC)
+
+Suspected as model error, since the server holds assignment `15120154`
+"Quiz 2" for PHYS 0151. A read of the code found no cap or filter that
+could drop it: `buildItemIndex` (`_shared/factsExtraction.ts`) takes every
+live `assignment` row plus dated `module` rows, caps at 200 lines (dated
+first), and filters only on `gone_at is null`. The row itself answers it:
+`15120154` has `gone_at = 2026-09-11 20:19 UTC` (due `2026-09-21`), so
+Canvas stopped listing that quiz in the feed ten days before it was due,
+and the index excluded it as designed. The model reported the index it was
+given accurately.
+
+What this leaves open is a design choice, not a bug: should gone items stay
+in the index so that a reschedule or cancel can still target them? The
+phone's ledger keeps gone items flagged `isGoneFromFeed`, so such a fact
+would have something to land on, but the announcement here was from
+September, and a fact on a gone item would mostly describe work that is
+over. Left as is; if gone items are ever included, the index line should
+say `gone` so the model does not create a `new_task` for a vanished item.
+The other two `needs_review` facts (Quiz 5 against a September document,
+Worksheet 3.1) are the stale-document noise already noted above.

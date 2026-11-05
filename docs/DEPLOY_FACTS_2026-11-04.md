@@ -58,7 +58,12 @@ extracted yet.
    latency), then checks that every fact's `quote` appears in its document's
    `title + text` (the server's own folding: NFKC, straight quotes and dashes, whitespace and case; PROTOCOL.md → Facts → Quote folding). Exits
    non-zero on a missing quote. With no extraction yet it prints how to
-   trigger one and exits 2: a phone that has synced a course (that creates
+   trigger one and exits 2, unless `--trigger <courseId>` is given (optional
+   `--trigger-code`, `--trigger-name`; default `COURSE <id>` / `Course <id>`):
+   then a throwaway anonymous user enrolls that course with one manifest
+   call, `extract-facts` runs for it, the counts print, the user is deleted
+   (even if extract-facts fails) and the checks run again. `--dry-run` prints
+   that plan and sends nothing. By hand instead: a phone that has synced a course (that creates
    the enrollment) POSTs `extract-facts` with `{"courseId": "<canvas id>"}`,
    or just syncs, since `sync` runs it after an upload that changed
    documents. Then re-run `--step 3`. A fact whose document was edited
@@ -177,6 +182,6 @@ upload. If no phone has synced since the deploy, trigger one by hand with a
 one-off: create a throwaway anonymous user, make a manifest call that
 carries the course's `{courseID, code, name}` (this enrolls it), `POST`
 `extract-facts` with `{"courseId":"<id>"}` as that user, then delete the user
-through `delete-account`. Suggestion for a future `deploy-facts.mjs`: a
-`--trigger <courseId>` option that does exactly this inside step 3 when it
-finds no extraction (not implemented).
+through `delete-account`. `deploy-facts.mjs --step 3 --trigger <courseId>` does exactly this inside
+step 3 when it finds no extraction (implemented; tested with stubbed fetch,
+not yet run against the live project).

@@ -174,3 +174,63 @@ test("step 1 applies the migration, then deploys sync, then extract-facts, via t
   assert.match(calls[2].url, /slug=extract-facts$/);
   assert.ok(calls.every((c) => c.headers.Authorization === "Bearer tok-secret-123"));
 });
+
+// --- --trigger ---------------------------------------------------------------
+
+const triggerScenario = ({ extractStatus = 200 } = {}) => {
+  let extracted = false;
+  return recorder((url, init) => {
+    if (url.includes("/auth/v1/signup")) return { body: { access_token: "user-tok", user: { id: "u1" } } };
+    if (url.endsWith("/functions/v1/sync")) return { body: { facts: [], factsCursor: 0 } };
+    if (url.endsWith("/functions/v1/extract-facts")) {
+      extracted = extractStatus === 200;
+      return { status: extractStatus, body: { attempted: 2, done: 2, failed: 0, skippedBudget: 0, facts: 3, remaining: 0 } };
+    }
+    if (url.endsWith("/functions/v1/delete-account")) return { body: {} };
+    const q = JSON.parse(init.body).query;
+    if (q.includes("from public.course_fact_extractions")) {
+      return { body: extracted ? [{ id: 1, status: "done", model: "m", cost_usd: "0.001", fact_count: 0, rejected_count: 0, reject_reasons: {}, latency_ms: 9 }] : [] };
+    }
+    if (q.includes("from public.course_facts")) return { body: [] };
+    return { body: [] };
+  });
+};
+const trigger = { courseId: "1949400", code: "COURSE 1949400", name: "Course 1949400" };
+
+test("parseArgs: --trigger defaults code and name, takes overrides, rejects junk", () => {
+  assert.deepEqual(parseArgs(["--step", "3", "--trigger", "1949400"]).trigger, trigger);
+  assert.deepEqual(parseArgs(["--trigger", "7", "--trigger-code", "PHYS 151", "--trigger-name", "Physics"]).trigger, { courseId: "7", code: "PHYS 151", name: "Physics" });
+  assert.throws(() => parseArgs(["--trigger", "abc"]));
+  assert.throws(() => parseArgs(["--trigger-code", "X"]));
+});
+
+test("step 3 --trigger: enrolls, extracts, deletes the user, in that order, then re-checks", async () => {
+  const { calls, fetchImpl } = triggerScenario();
+  const { ctx, lines } = quietCtx({ fetchImpl, trigger });
+  assert.equal(await run([3], ctx), 0);
+  const fn = calls.map((c) => c.url.split("/").slice(-1)[0]).filter((n) => ["signup", "sync", "extract-facts", "delete-account"].includes(n));
+  assert.deepEqual(fn, ["signup", "sync", "extract-facts", "delete-account"]);
+  const body = (name) => JSON.parse(calls.find((c) => c.url.endsWith(`/${name}`)).body);
+  assert.deepEqual(body("sync").courses, [{ courseID: "1949400", code: "COURSE 1949400", name: "Course 1949400" }]);
+  assert.equal(body("sync").action, "manifest");
+  assert.deepEqual(body("extract-facts"), { courseId: "1949400" });
+  assert.equal(calls.find((c) => c.url.endsWith("/extract-facts")).headers.Authorization, "Bearer user-tok");
+  assert.ok(lines.some((l) => l.includes("attempted: 2, done: 2, failed: 0, skippedBudget: 0, facts: 3, remaining: 0")));
+  assert.ok(!lines.join("\n").includes("user-tok"));
+  assert.ok(!lines.join("\n").includes("sb_publishable"));
+});
+
+test("step 3 --trigger: extract-facts non-2xx still deletes the user and exits 1", async () => {
+  const { calls, fetchImpl } = triggerScenario({ extractStatus: 500 });
+  const { ctx } = quietCtx({ fetchImpl, trigger });
+  assert.equal(await run([3], ctx), 1);
+  assert.ok(calls.some((c) => c.url.endsWith("/delete-account")));
+});
+
+test("step 3 --trigger --dry-run prints the plan and sends nothing", async () => {
+  const { calls, fetchImpl } = triggerScenario();
+  const { ctx, lines } = quietCtx({ fetchImpl, dryRun: true, trigger });
+  assert.equal(await run([3], ctx), 0);
+  assert.equal(calls.length, 0);
+  assert.ok(lines.some((l) => l.includes("extract-facts") && l.includes("1949400")));
+});

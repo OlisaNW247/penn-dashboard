@@ -5,6 +5,7 @@
 //
 // Usage:
 //   node backend/scripts/deploy-facts.mjs [--step <n>] [--dry-run]
+//       [--trigger <canvasCourseId> [--trigger-code <code>] [--trigger-name <name>]]
 //
 // Steps (the owner's ordered checklist). With no --step they run in the order
 // 4, 1, 2, 3 -- secrets are checked BEFORE anything is deployed -- and the
@@ -20,7 +21,9 @@
 //      The user is deleted afterwards through `delete-account`.
 //   3  the most recent `course_fact_extractions`, each fact's quote checked
 //      against its document's title + text. Exit 2 when nothing has been
-//      extracted yet.
+//      extracted yet -- unless --trigger <courseId> is given, in which case a
+//      throwaway anonymous user enrolls that course (one manifest call),
+//      runs extract-facts for it, is deleted, and the checks run again.
 //
 // Exit codes: 0 all good, 1 a failure, 2 step 3 found no extraction yet.
 // --dry-run prints every request (method, URL, body size, first line of any
@@ -170,13 +173,14 @@ function table(rows, columns) {
 
 /** Context passed to every step. `request` is the single place a Management
  *  API call is made; in dry-run it prints the plan and returns `undefined`. */
-export function makeContext({ dryRun = false, fetchImpl = fetch, log = console.log, env = process.env } = {}) {
+export function makeContext({ dryRun = false, fetchImpl = fetch, log = console.log, env = process.env, trigger } = {}) {
   const { token, source } = resolveManagementToken(env);
   const ctx = {
     dryRun,
     fetchImpl,
     log,
     env,
+    trigger,
     token,
     tokenSource: source,
     async management(method, apiPath, body) {
@@ -258,6 +262,33 @@ async function functionCall(ctx, name, accessToken, body) {
   return { status: res.status, json, text };
 }
 
+/** Creates the throwaway anonymous user step 2 and --trigger both use. */
+async function signupThrowaway(ctx) {
+  const signup = await ctx.fetchImpl(`${SUPABASE_URL}/auth/v1/signup`, {
+    method: "POST",
+    headers: { apikey: PUBLISHABLE_KEY, "Content-Type": "application/json" },
+    body: "{}",
+  });
+  if (!signup.ok) throw new StepFailure(`anonymous signup failed: HTTP ${signup.status} ${await signup.text()}`);
+  const session = await signup.json();
+  const accessToken = session.access_token;
+  const userId = session.user?.id;
+  if (!accessToken) throw new StepFailure("anonymous signup returned no access_token");
+  ctx.log(`throwaway user ${userId}`);
+  return { accessToken, userId };
+}
+
+/** Deletes it through `delete-account`; never throws, tells the owner what to do by hand on failure. */
+async function deleteThrowaway(ctx, accessToken, userId) {
+  try {
+    const del = await functionCall(ctx, "delete-account", accessToken, {});
+    if (del.status === 200) ctx.log(`cleanup: throwaway user ${userId} deleted`);
+    else ctx.log(`cleanup FAILED (HTTP ${del.status}): delete anonymous user ${userId} by hand in the Supabase dashboard (Authentication > Users)`);
+  } catch (err) {
+    ctx.log(`cleanup FAILED (${err instanceof Error ? err.message : err}): delete anonymous user ${userId} by hand`);
+  }
+}
+
 export async function stepManifest(ctx) {
   ctx.log("== step 2: manifest with and without factsSince ==");
   const plan = [
@@ -270,17 +301,7 @@ export async function stepManifest(ctx) {
     for (const p of plan) ctx.log(`[dry-run] ${p}`);
     return;
   }
-  const signup = await ctx.fetchImpl(`${SUPABASE_URL}/auth/v1/signup`, {
-    method: "POST",
-    headers: { apikey: PUBLISHABLE_KEY, "Content-Type": "application/json" },
-    body: "{}",
-  });
-  if (!signup.ok) throw new StepFailure(`anonymous signup failed: HTTP ${signup.status} ${await signup.text()}`);
-  const session = await signup.json();
-  const accessToken = session.access_token;
-  const userId = session.user?.id;
-  if (!accessToken) throw new StepFailure("anonymous signup returned no access_token");
-  ctx.log(`throwaway user ${userId}`);
+  const { accessToken, userId } = await signupThrowaway(ctx);
 
   let failure;
   try {
@@ -301,13 +322,7 @@ export async function stepManifest(ctx) {
   }
 
   // Cleanup runs whether or not the checks passed.
-  try {
-    const del = await functionCall(ctx, "delete-account", accessToken, {});
-    if (del.status === 200) ctx.log(`cleanup: throwaway user ${userId} deleted`);
-    else ctx.log(`cleanup FAILED (HTTP ${del.status}): delete anonymous user ${userId} by hand in the Supabase dashboard (Authentication > Users)`);
-  } catch (err) {
-    ctx.log(`cleanup FAILED (${err instanceof Error ? err.message : err}): delete anonymous user ${userId} by hand`);
-  }
+  await deleteThrowaway(ctx, accessToken, userId);
   if (failure) throw failure;
 }
 
@@ -317,19 +332,59 @@ export const HOW_TO_TRIGGER = [
   "  2. POST ${SUPABASE_URL}/functions/v1/extract-facts with that user's bearer token and body {\"courseId\":\"<numeric Canvas course id>\"}",
   "     (omit courseId to run every enrolled course; at most 10 documents per run, newest first).",
   "  3. Re-run: node backend/scripts/deploy-facts.mjs --step 3",
+  "Or let the script do 1 and 2 with a throwaway user: node backend/scripts/deploy-facts.mjs --step 3 --trigger <courseId> [--trigger-code <code>] [--trigger-name <name>]",
 ].join("\n");
+
+/** Enrolls a throwaway user in `trigger.courseId`, runs extract-facts for it,
+ *  and deletes the user in a `finally`. */
+export async function triggerExtraction(ctx) {
+  const { courseId, code, name } = ctx.trigger;
+  ctx.log(`--trigger: extracting course ${courseId} as a throwaway user`);
+  const { accessToken, userId } = await signupThrowaway(ctx);
+  try {
+    const manifest = await functionCall(ctx, "sync", accessToken, {
+      action: "manifest",
+      courses: [{ courseID: courseId, code, name }],
+      documents: [],
+      factsSince: 0,
+    });
+    if (manifest.status !== 200) throw new StepFailure(`enrolling manifest -> HTTP ${manifest.status} ${manifest.text.slice(0, 300)}`);
+    ctx.log(`ok: course ${courseId} enrolled (manifest 200)`);
+    const ex = await functionCall(ctx, "extract-facts", accessToken, { courseId });
+    if (ex.status < 200 || ex.status >= 300) throw new StepFailure(`extract-facts -> HTTP ${ex.status} ${ex.text.slice(0, 300)}`);
+    const j = ex.json ?? {};
+    ctx.log(["attempted", "done", "failed", "skippedBudget", "facts", "remaining"].map((k) => `${k}: ${JSON.stringify(j[k])}`).join(", "));
+  } finally {
+    await deleteThrowaway(ctx, accessToken, userId);
+  }
+}
 
 export async function stepExtractions(ctx) {
   ctx.log("== step 3: recent extractions and their quotes ==");
   const extractionsSql =
     "select id, document_id, content_hash, course_id, status, model, cost_usd, fact_count, rejected_count, reject_reasons, latency_ms, updated_at " +
     "from public.course_fact_extractions order by updated_at desc limit 10";
-  const extractions = await ctx.sql(extractionsSql);
+  let extractions = await ctx.sql(extractionsSql);
   if (ctx.dryRun) {
+    if (ctx.trigger) {
+      ctx.log(`[dry-run] if no extraction exists, --trigger would, for course ${ctx.trigger.courseId} (code ${JSON.stringify(ctx.trigger.code)}, name ${JSON.stringify(ctx.trigger.name)}):`);
+      for (const p of [
+        `POST ${SUPABASE_URL}/auth/v1/signup (anonymous; apikey header)`,
+        `POST ${SUPABASE_URL}/functions/v1/sync {action:manifest, courses:[{courseID, code, name}], documents:[], factsSince:0}`,
+        `POST ${SUPABASE_URL}/functions/v1/extract-facts {courseId:"${ctx.trigger.courseId}"}`,
+        `POST ${SUPABASE_URL}/functions/v1/delete-account {}  (cleanup, even on failure)`,
+      ]) ctx.log(`[dry-run]   ${p}`);
+      ctx.log("[dry-run] then re-run the extraction query below");
+    }
     ctx.log("[dry-run] then: select course_facts rows for those extraction ids, and course_documents (id, title, text, content_hash) by document_id");
     return;
   }
-  if (!Array.isArray(extractions) || extractions.length === 0) {
+  const empty = () => !Array.isArray(extractions) || extractions.length === 0;
+  if (empty() && ctx.trigger) {
+    await triggerExtraction(ctx);
+    extractions = await ctx.sql(extractionsSql);
+  }
+  if (empty()) {
     ctx.log(HOW_TO_TRIGGER.replace("${SUPABASE_URL}", SUPABASE_URL));
     throw new StepFailure("no extraction yet", 2);
   }
@@ -387,13 +442,25 @@ export async function run(stepNumbers, ctx) {
 export function parseArgs(argv) {
   let step;
   let dryRun = false;
+  let triggerId;
+  let triggerCode;
+  let triggerName;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--dry-run") dryRun = true;
     else if (argv[i] === "--step") step = Number(argv[++i]);
+    else if (argv[i] === "--trigger") triggerId = argv[++i];
+    else if (argv[i] === "--trigger-code") triggerCode = argv[++i];
+    else if (argv[i] === "--trigger-name") triggerName = argv[++i];
     else throw new Error(`unknown argument: ${argv[i]}`);
   }
   if (step !== undefined && !Object.hasOwn(STEPS, step)) throw new Error("--step must be 1, 2, 3 or 4");
-  return { steps: step === undefined ? DEFAULT_ORDER : [step], dryRun };
+  if ((triggerCode || triggerName) && triggerId === undefined) throw new Error("--trigger-code and --trigger-name need --trigger <courseId>");
+  const parsed = { steps: step === undefined ? DEFAULT_ORDER : [step], dryRun };
+  if (triggerId !== undefined) {
+    if (!/^\d+$/.test(triggerId)) throw new Error("--trigger needs a numeric Canvas course id");
+    parsed.trigger = { courseId: triggerId, code: triggerCode || `COURSE ${triggerId}`, name: triggerName || `Course ${triggerId}` };
+  }
+  return parsed;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
@@ -402,9 +469,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
     parsed = parseArgs(process.argv.slice(2));
   } catch (err) {
     console.error(err.message);
-    console.error("Usage: node backend/scripts/deploy-facts.mjs [--step <1-4>] [--dry-run]");
+    console.error("Usage: node backend/scripts/deploy-facts.mjs [--step <1-4>] [--dry-run] [--trigger <courseId> [--trigger-code <code>] [--trigger-name <name>]]");
     process.exit(1);
   }
-  const ctx = makeContext({ dryRun: parsed.dryRun });
+  const ctx = makeContext({ dryRun: parsed.dryRun, trigger: parsed.trigger });
   process.exit(await run(parsed.steps, ctx));
 }
