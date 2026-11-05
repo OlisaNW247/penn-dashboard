@@ -414,6 +414,13 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         // lab/lecture word in the earlier question is not a claim about this
         // one.
         let preferredComponent = DocumentComponent.mentioned(in: question)
+        // What the question is about in time, decided once on the merged
+        // query (so "what about in the past week" after a news question is a
+        // 7-day window, as before) and in the student's zone. It does two
+        // jobs: the search weighs freshness (or the syllabus) by it, and its
+        // `recencyIntent` decides which posts lead below. `dueOn` and the
+        // standing-rule intents leave the newest-posts rule alone.
+        let timeFrame = AskTimeFrame.resolve(question: followUp.query, now: context.askedAt, timeZone: context.timeZone)
         let search = CourseSearch(knowledge: context.knowledge)
         func topHits(limit: Int) -> [SearchHit] {
             search.search(
@@ -421,7 +428,9 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
                 courseIDs: courseIDs,
                 preferredComponent: preferredComponent,
                 limit: limit,
-                perDocument: excerptsPerDocument
+                perDocument: excerptsPerDocument,
+                intent: timeFrame,
+                now: context.askedAt
             )
         }
         var hits = topHits(limit: excerptLimit)
@@ -449,7 +458,7 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         // days mentions a change" instead of reading the registrar's weekly
         // schedule as proof that nothing was announced.
         var recencyNote: String?
-        if let intent = RecencyIntent.detect(in: followUp.query) {
+        if let intent = timeFrame.recencyIntent {
             let picks = recencyPicks(intent: intent, courseIDs: courseIDs, context: context)
             if intent.kind == .meeting { recencyNote = meetingExcerptNote }
             if !picks.isEmpty {

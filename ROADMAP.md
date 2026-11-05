@@ -662,8 +662,11 @@ Roughly in priority order.
   per-intent slot budgets with the schedule and the newest post side by
   side, dated passage labels, a computed verdict line before the
   question, then one server prompt pass. A frozen regression set in
-  `swift test` measures it. Not started; needs a decision on how the
-  weekly schedule reaches the phone.
+  `swift test` measures it. Steps 1 and 2 (the resolver, `AskTimeFrame`,
+  and per-intent freshness in `CourseSearch`) and the frozen regression
+  set (`AskTimeFrameRegressionTests`) were written blind on 2026-11-05,
+  not compiled; steps 3 to 6 need a decision on how the weekly schedule
+  reaches the phone.
 - **Make ask cite titles, so more source chips link.** The server prompt
   asks for "a few words locating the fact"; a chip only links when the
   model happens to write a document's title. One prompt line, behind an

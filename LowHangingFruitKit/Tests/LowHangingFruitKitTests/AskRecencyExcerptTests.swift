@@ -275,7 +275,15 @@ struct AskRecencyExcerptTests {
         let block = BackendAssistantResponder.excerptBlock(question: question, context: Self.context(documents))
 
         let expected = CourseSearch(knowledge: CourseKnowledgeBase(courses: [Self.cis, Self.math], documents: documents))
-            .search(question, courseIDs: nil, limit: BackendAssistantResponder.excerptLimit, perDocument: BackendAssistantResponder.excerptsPerDocument)
+            .search(
+                question, courseIDs: nil, limit: BackendAssistantResponder.excerptLimit,
+                perDocument: BackendAssistantResponder.excerptsPerDocument,
+                // Since 2026-11-05 "when is the midterm" is a `policy` question,
+                // which lifts the syllabus to 1.5; the comparison search is given
+                // the same intent. The assertion itself is unchanged: the block
+                // is exactly the search's excerpts, with no recency note.
+                intent: AskTimeFrame.resolve(question: question, now: Self.asked, timeZone: .gmt), now: Self.asked
+            )
             .filter { !$0.isTextlessEdPost }
         try #require(!expected.isEmpty)   // premise: the search finds something to compare with
         #expect(block.sources.map(\.documentID) == expected.map(\.document.id))

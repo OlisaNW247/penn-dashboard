@@ -90,9 +90,14 @@ public struct CourseSearch: Sendable {
         kinds: Set<CourseDocument.Kind>? = nil,
         preferredComponent: DocumentComponent? = nil,
         limit: Int = 5,
-        perDocument: Int = 2
+        perDocument: Int = 2,
+        intent: AskTimeFrame? = nil,
+        now: Date? = nil
     ) -> [SearchHit] {
-        search(query, courseIDs: courseID.map { [$0] }, kinds: kinds, preferredComponent: preferredComponent, limit: limit, perDocument: perDocument)
+        search(
+            query, courseIDs: courseID.map { [$0] }, kinds: kinds, preferredComponent: preferredComponent,
+            limit: limit, perDocument: perDocument, intent: intent, now: now
+        )
     }
 
     /// Like the `courseID:` overload above, except a question can now be
@@ -122,18 +127,22 @@ public struct CourseSearch: Sendable {
         kinds: Set<CourseDocument.Kind>? = nil,
         preferredComponent: DocumentComponent? = nil,
         limit: Int = 5,
-        perDocument: Int = 2
+        perDocument: Int = 2,
+        intent: AskTimeFrame? = nil,
+        now: Date? = nil
     ) -> [SearchHit] {
         guard !index.isEmpty else { return [] }
         let candidates = index.matches(for: QueryExpansion.weightedTerms(for: query))
         let scoped = rank(
             candidates, query: query, courseIDs: courseIDs, kinds: kinds,
-            preferredComponent: preferredComponent, limit: limit, perDocument: perDocument
+            preferredComponent: preferredComponent, limit: limit, perDocument: perDocument,
+            intent: intent, now: now
         )
         guard scoped.isEmpty, let courseIDs, !courseIDs.isEmpty else { return scoped }
         return rank(
             candidates, query: query, courseIDs: nil, kinds: kinds,
-            preferredComponent: preferredComponent, limit: limit, perDocument: perDocument
+            preferredComponent: preferredComponent, limit: limit, perDocument: perDocument,
+            intent: intent, now: now
         )
     }
 
@@ -154,7 +163,9 @@ public struct CourseSearch: Sendable {
         kinds: Set<CourseDocument.Kind>?,
         preferredComponent: DocumentComponent?,
         limit: Int,
-        perDocument: Int
+        perDocument: Int,
+        intent: AskTimeFrame?,
+        now: Date?
     ) -> [SearchHit] {
         // Classify once per document per search, not once per passage: a
         // syllabus contributing two passages (the `perDocument` cap below)
@@ -173,7 +184,7 @@ public struct CourseSearch: Sendable {
             guard let passage = passages[hit.passageID], let document = documents[passage.documentID] else { continue }
             if let courseIDs, !courseIDs.contains(document.courseID) { continue }
             if let kinds, !kinds.contains(document.kind) { continue }
-            let kindBoost = kindBoostByKind[document.kind] ?? self.kindBoost(document.kind, query: query)
+            let kindBoost = kindBoostByKind[document.kind] ?? self.kindBoost(document.kind, query: query, intent: intent)
             kindBoostByKind[document.kind] = kindBoost
             // Only a question that names a component needs to know which
             // component each document is before the cut; otherwise the
@@ -181,7 +192,8 @@ public struct CourseSearch: Sendable {
             let componentBoost = preferredComponent == nil
                 ? 1.0
                 : self.componentBoost(component(of: document), preferredComponent: preferredComponent)
-            scored.append((passage, document, hit.score * kindBoost * componentBoost))
+            let freshness = Self.documentFreshness(document, intent: intent, now: now)
+            scored.append((passage, document, hit.score * kindBoost * componentBoost * freshness))
         }
 
         // Over-fetch so the rerank has something to work with.
@@ -240,12 +252,55 @@ public struct CourseSearch: Sendable {
         }
     }
 
-    private func kindBoost(_ kind: CourseDocument.Kind, query: String) -> Double {
+    /// The words that make a question about standing course rules. One list,
+    /// read by the syllabus boost below and by `AskTimeFrame`'s `policy`
+    /// classification, so the two cannot disagree about what a policy question
+    /// is.
+    public static let policyWords = ["policy", "late", "grading", "grade", "attendance", "office hours", "textbook", "exam", "midterm", "final", "weight", "percent", "curve", "extension", "collaboration", "honor", "absence"]
+
+    /// Half-life, in days, of the freshness decay for the two questions that
+    /// want the newest word (`AskTimeFrame.weighsFreshness`). Four days: a
+    /// cancellation from last week should lose to Monday's "we are back", but
+    /// a post from two days ago is still nearly as good as one from today.
+    /// The research (Grofsky 2025) warns the gain is parameter-sensitive, which
+    /// is why this applies per intent and never globally.
+    public static let freshnessHalfLifeDays = 4.0
+
+    /// `0.5 + 0.5 * 0.5^(age / halfLife)`: 1.0 for a post made just now, 0.75
+    /// at one half-life, and never below 0.5. The floor is the point. Decay is
+    /// a tie-breaker between posts that already match, not a filter: an old
+    /// post that is the only one to match the question must still reach the
+    /// model (it is how "the last post was in October" gets said), and with the
+    /// floor a strong BM25 match from last month still beats a weak match from
+    /// today. A pure exponential would let a weak fresh passage bury a strong
+    /// old one, which is the wrong fix the research warns about.
+    public static func freshnessFactor(ageDays: Double, halfLifeDays: Double = freshnessHalfLifeDays) -> Double {
+        let age = max(0, ageDays)
+        return 0.5 + 0.5 * pow(0.5, age / halfLifeDays)
+    }
+
+    /// The multiplier for one document: decay for a dated kind (Ed post,
+    /// announcement) under an intent that weighs freshness, 1.0 for everything
+    /// else, including a post whose date is unknown, an undated kind, no
+    /// intent, and no `now` (so every existing caller scores as before).
+    private static func documentFreshness(_ document: CourseDocument, intent: AskTimeFrame?, now: Date?) -> Double {
+        guard let intent, intent.weighsFreshness, let now else { return 1.0 }
+        guard document.kind == .ed || document.kind == .announcement,
+              let posted = document.shownPostedAt
+        else { return 1.0 }
+        return freshnessFactor(ageDays: now.timeIntervalSince(posted) / 86_400)
+    }
+
+    private func kindBoost(_ kind: CourseDocument.Kind, query: String, intent: AskTimeFrame?) -> Double {
         let q = query.lowercased()
         switch kind {
         case .syllabus:
-            let policyWords = ["policy", "late", "grading", "grade", "attendance", "office hours", "textbook", "exam", "midterm", "final", "weight", "percent", "curve", "extension", "collaboration", "honor", "absence"]
-            return policyWords.contains(where: q.contains) ? 1.35 : 1.1
+            guard Self.policyWords.contains(where: q.contains) else { return 1.1 }
+            // 1.5 for the standing-rule intents (2026-11-05): the syllabus is
+            // the authority for "what is the late policy", and a recent
+            // unrelated post must not outrank it. Every other caller keeps the
+            // 1.35 it always had, so nothing but a classified question changes.
+            return (intent?.favoursSyllabus ?? false) ? 1.5 : 1.35
         // An Ed Discussion announcement or pinned staff post is the same
         // kind of signal as a Canvas announcement: short, recent, and
         // usually the newest word on a deadline or a change. So it shares
