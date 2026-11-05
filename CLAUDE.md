@@ -1895,7 +1895,9 @@ client problem. The pieces, all exercised by tests:
   in the past week" after that question is a 7-day window. A question
   with neither leaves the block byte-identical. The wrong fix is a
   recency boost in BM25 itself, which would push a week-old post above
-  the syllabus for "what is the late policy".
+  the syllabus for "what is the late policy". Since 2026-11-05 the
+  keyword reading is the first classifier inside `AskTimeFrame` (below);
+  `RecencyIntent` is unchanged and its callers get the same answer.
 - **Follow-ups** (`FollowUpRetrieval`). A question that names no course
   searches within the course the nearest earlier question named (up to
   four back), and a question of six words or fewer is searched with the
@@ -1928,6 +1930,34 @@ client problem. The pieces, all exercised by tests:
   reasons poorly about *when*; a question about today or this week should
   put recent posts first, a general question should lean on the syllabus
   (`docs/TREE_CONTEXT_RESEARCH_2026-11-02.md`).
+- **The time frame of a question** (`AskTimeFrame`, 2026-11-05, blind, not
+  compiled; steps 1 and 2 of `docs/TREE_CONTEXT_RESEARCH_2026-11-02.md`
+  Part 3). `LowHangingFruitKit/Assistant/AskTimeFrame.swift` classifies a
+  question, on the follow-up-merged query like `RecencyIntent`, into
+  `classMeeting(range?)`, `dueOn(range)`, `recentNews(windowDays)`,
+  `policy` or `specific`, and resolves "today / tonight / tomorrow /
+  yesterday / this week (to Sunday) / next week (Monday to Sunday) / this
+  weekend / a weekday / past N days" to whole local days in the student's
+  zone (`context.timeZone`), never UTC: a start `Date`, an exclusive end
+  and the `yyyy-MM-dd` first and last day. `RecencyIntent`'s word lists
+  are consulted first and unchanged (`recencyIntent` maps back), so the
+  news and meeting picks fire exactly as before. `dueOn` is classified and
+  deliberately not acted on: its excerpts are byte-for-byte a plain
+  search's (a test pins it); it is there for the later step that filters
+  the work list by day. `CourseSearch.search` takes `intent:` and `now:`
+  (both defaulted, so every other caller scores as before): for
+  `classMeeting` and `recentNews` an Ed post or announcement's score is
+  multiplied by `0.5 + 0.5 * 0.5^(ageDays / 4)` on `shownPostedAt` (a
+  floor of one half so a lone old match still reaches the model); for
+  `policy` and `specific` there is no decay and a syllabus passage with a
+  policy word is boosted 1.5 instead of 1.35. The decay is per intent on
+  purpose: a global recency boost would put a week-old post above the
+  syllabus for "what is the late policy" (`AskTimeFrameRegressionTests`
+  pins that a policy ranking does not depend on post dates). Steps 3 to 6
+  (per-intent slot budgets, a computed schedule line, dated labels, the
+  server prompt) wait on the decision of how the weekly schedule reaches
+  the phone. Nothing leaves the phone differently: only the choice and
+  order of passages changes. The Mac has not compiled any of it.
 - **What the phone holds** is the limit. Canvas Files (slides, readings,
   any PDF not named "syllabus") are not ingested by the phone, only the 40
   newest pages get their bodies, and announcements reach the pool only
