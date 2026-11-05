@@ -107,9 +107,11 @@ struct DashItem: Identifiable, Equatable {
     /// in an Ed post says "from ed": it did not come from an announcement on
     /// Canvas, and the card's link opens Ed. An exam out of the syllabus says
     /// "from syllabus" for the same reason: it is no announcement's.
+    /// "Nothing to submit" is deliberately not here: the card shows it as
+    /// diagonal stripes (`showsNothingToSubmit`), because the extra line made
+    /// cards taller (owner, 2026-11-04).
     var caveatText: String? {
         var parts: [String] = fact?.caveatWords ?? []
-        if showsNothingToSubmit { parts.append("nothing to submit") }
         if isFromAnnouncement {
             switch assignment.announcementOrigin {
             case .ed: parts.append("from ed")

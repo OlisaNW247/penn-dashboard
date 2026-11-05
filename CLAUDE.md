@@ -575,8 +575,9 @@ Keep this current. It is the fastest way for a new session to know what exists.
   - **Exam cards** (2026-10-18, owner's call; not yet on a phone). "If
     you ever have a midterm, the class finds it from the syllabus or from
     an announcement. Either way, if a midterm is found, don't duplicate
-    it." An exam card is black with white type in light mode and white
-    with black type in dark (`SmoothExamPalette`, drawn when the title is
+    it." An exam card is a soft warm grey tint with normal ink type
+    (since 2026-11-04, owner's call from mockups: the earlier black card
+    with white type out-shouted overdue work) (`SmoothExamPalette`, drawn when the title is
     an exam by `ExamDetection.isExam`, or when the dashboard says so with
     `DashItem.examStyleOverride`). Three roads in, one card out:
     - **The syllabus.** `AppState+SyllabusExams.swift` runs
@@ -675,6 +676,12 @@ Keep this current. It is the fastest way for a new session to know what exists.
     `FeatureFlags.structuredCanvasSources`): Planner ticks and dismissals,
     met module requirements and section due-date overrides now move cards;
     module-only work gets rows. See Architecture.
+  - **Nothing to submit** (2026-11-04, branch
+    `design/grey-exams-striped-nosubmit`, not merged into `v10`): such a
+    card is drawn with 8pt diagonal stripes of its own fill
+    (`NothingToSubmitStripes`) instead of a "nothing to submit" caveat
+    line, so it is never taller than its neighbours (owner rule). The other
+    caveats still use the line; VoiceOver hears it as the card's value.
   - **Cards.** Tap a card to open it (full date, "edit date", and since
     2026-10-09 "open in canvas" / "open in gradescope", derived at display
     time by `Assignment.sourceLinks` from the URL the ledger already
@@ -3375,6 +3382,9 @@ itself.
 `phase0/extract-facts-bench`. Start at `docs/HANDOFF_V10_2026-11-04.md`
 (it replaces the 2026-11-03 one). The 2026-11-04 composed-day work
 (Phases 1-3) is committed on `v10`.
+`design/grey-exams-striped-nosubmit` (2026-11-04, local only, one commit on
+`v10` `61efed2`): grey exam cards and striped nothing-to-submit cards.
+Marco's rule: nothing merges or pushes to `v10` until he approves it.
 Before it, `v8` was the line. Marco's launch-prep work (2026-10-09/10) was merged
 into it on 2026-10-10 through pull request 9, at Marco's instruction;
 `v8-launch-prep` is the branch it was built on. So `v8` now carries work

@@ -2,8 +2,8 @@ import SwiftUI
 import Testing
 @testable import LowHangingFruitUI
 
-/// The exam card's palette: inverted against the page in each mode, and
-/// legible on its own fill.
+/// The exam card's palette: a soft warm grey in both modes, with
+/// legible type on its own fill.
 ///
 /// The type colours are checked as arithmetic on `SmoothExamPalette` rather
 /// than by resolving `Color`s, because a dynamic `Color` is opaque until a
@@ -47,48 +47,52 @@ struct ExamCardStyleTests {
     private static let light = (fill: composite(SmoothExamPalette.fill.light, over: rgb(lightPaper)), page: rgb(lightPaper))
     private static let dark = (fill: composite(SmoothExamPalette.fill.dark, over: rgb(darkPaper)), page: rgb(darkPaper))
 
-    @Test("the fill is dark on paper and light after sunset")
-    func fillInvertsThePage() {
-        #expect(Self.luminance(Self.light.fill) < 0.1, "light mode card should read near-black")
-        #expect(Self.luminance(Self.dark.fill) > 0.5, "dark mode card should read near-white")
-        #expect(SmoothExamPalette.fill.light != SmoothExamPalette.fill.dark)
-        // Inverse of the page, not just different from it.
+    @Test("the fill is a mid grey wash, darker than the page in light mode")
+    func fillIsGrey() {
+        // Owner's call 2026-11-04: grey, not the old inverted near-black.
+        #expect(SmoothExamPalette.fill.light == .init(hex: 0x8A8174, alpha: 0.34))
+        for fill in [Self.light.fill, Self.dark.fill] {
+            #expect(Self.luminance(fill) > 0.01 && Self.luminance(fill) < 0.9)
+        }
         #expect(Self.luminance(Self.light.fill) < Self.luminance(Self.light.page))
         #expect(Self.luminance(Self.dark.fill) > Self.luminance(Self.dark.page))
     }
 
-    @Test("the fill is slightly translucent, not clear and not solid")
+    @Test("the fill is translucent, not clear and not solid")
     func fillIsTranslucent() {
         for shade in [SmoothExamPalette.fill.light, SmoothExamPalette.fill.dark] {
-            #expect(shade.alpha > 0.8 && shade.alpha < 1)
+            #expect(shade.alpha > 0.2 && shade.alpha < 0.5)
         }
-        #expect(SmoothExamPalette.fill.light.alpha == 0.86)
-        #expect(SmoothExamPalette.fill.dark.alpha == 0.88)
     }
 
-    @Test("text is white on the dark card and near-black on the pale one")
-    func textInverts() {
-        #expect(SmoothExamPalette.text.light.hex == 0xFFFFFF)
-        #expect(Self.luminance(Self.rgb(SmoothExamPalette.text.dark.hex)) < 0.02)
-        #expect(SmoothExamPalette.text.light != SmoothExamPalette.text.dark)
+    @Test("text is dark on paper and cream after sunset")
+    func textIsOrdinary() {
+        #expect(SmoothExamPalette.text.light.hex == 0x1B1714)
+        #expect(SmoothExamPalette.text.dark.hex == 0xF8F1E5)
+        #expect(Self.luminance(Self.rgb(SmoothExamPalette.text.light.hex)) < 0.02)
+        #expect(Self.luminance(Self.rgb(SmoothExamPalette.text.dark.hex)) > 0.5)
         #expect(SmoothExamPalette.secondaryText.light != SmoothExamPalette.secondaryText.dark)
         #expect(SmoothExamPalette.destructive.light != SmoothExamPalette.destructive.dark)
     }
 
-    @Test("every text colour clears 4.5:1 on its fill, in both modes")
+    @Test("body type clears 4.5:1 and the destructive control 3.5:1, in both modes")
     func textIsLegible() {
-        let tiers: [(String, SmoothExamPalette.Pair)] = [
-            ("primary", SmoothExamPalette.text),
-            ("secondary", SmoothExamPalette.secondaryText),
-            ("destructive", SmoothExamPalette.destructive),
+        // The owner-approved destructive tomato (0xB63B23) is 3.9:1 on the
+        // grey in light mode: legible for a bold control label, short of the
+        // 4.5:1 body-text bar, so it gets its own floor rather than a
+        // weakened palette or a weakened bar for everything else.
+        let tiers: [(String, SmoothExamPalette.Pair, Double)] = [
+            ("primary", SmoothExamPalette.text, 4.5),
+            ("secondary", SmoothExamPalette.secondaryText, 4.5),
+            ("destructive", SmoothExamPalette.destructive, 3.5),
         ]
-        for (name, pair) in tiers {
+        for (name, pair, floor) in tiers {
             let onLight = Self.composite(pair.light, over: Self.light.fill)
             let onDark = Self.composite(pair.dark, over: Self.dark.fill)
             let lightRatio = Self.contrast(onLight, Self.light.fill)
             let darkRatio = Self.contrast(onDark, Self.dark.fill)
-            #expect(lightRatio >= 4.5, "\(name) in light mode is \(lightRatio):1")
-            #expect(darkRatio >= 4.5, "\(name) in dark mode is \(darkRatio):1")
+            #expect(lightRatio >= floor, "\(name) in light mode is \(lightRatio):1")
+            #expect(darkRatio >= floor, "\(name) in dark mode is \(darkRatio):1")
         }
     }
 

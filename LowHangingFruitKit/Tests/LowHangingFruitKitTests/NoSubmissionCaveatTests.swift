@@ -614,9 +614,17 @@ struct CardCaveatLineTests {
         #expect(item(source: .canvas, kind: .assignment).caveatText == nil)
     }
 
-    @Test("both caveats share one line")
-    func bothCaveatsJoin() {
+    @Test("nothing to submit is stripes, not a caveat line")
+    func nothingToSubmitHasNoText() {
         let dash = item(source: .canvasAnnouncement, kind: .event)
-        #expect(dash.caveatText == "nothing to submit \u{00B7} from announcements")
+        #expect(dash.showsNothingToSubmit)
+        #expect(dash.caveatText == "from announcements")
+    }
+
+    @Test("a nothing-to-submit item with no other caveat has no caveat line")
+    func nothingToSubmitAloneHasNilCaveat() {
+        let dash = item(source: .canvas, kind: .assignment, requiresNoSubmission: true)
+        #expect(dash.showsNothingToSubmit)
+        #expect(dash.caveatText == nil)
     }
 }

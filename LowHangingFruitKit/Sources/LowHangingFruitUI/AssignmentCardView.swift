@@ -111,15 +111,17 @@ struct AssignmentCardView: View {
 
     // MARK: Exam styling
     //
-    // An exam is the only card that leaves the urgency ramp: near-black with
-    // white type in light mode, near-white with black type in dark mode
-    // (`SmoothExamPalette`). Everything else about the card is unchanged, so
-    // the spine, `DueState` and the caveat logic still say what they always
+    // An exam is the only card that leaves the urgency ramp: a soft warm grey
+    // with ordinary dark type in light mode and cream type after sunset
+    // (`SmoothExamPalette`). Owner's call 2026-11-04: the previous near-black
+    // card was the loudest thing on screen; grey sets exams apart from
+    // homework without shouting. Everything else about the card is unchanged,
+    // so the spine, `DueState` and the caveat logic still say what they always
     // said. The decision is made here and nowhere else: every colour below
     // asks `isExam`, so the dashboard can later set `isExamOverride` and the
     // whole card follows. Reading `smoothInk` directly in any new text on this
-    // card would leave dark type on the dark fill, which is the bug this
-    // indirection exists to prevent.
+    // card would skip the exam palette's secondary and destructive shades,
+    // which is the drift this indirection exists to prevent.
 
     private var isExam: Bool {
         ExamDetection.isExam(title: item.assignment.title, override: isExamOverride)
@@ -199,7 +201,16 @@ struct AssignmentCardView: View {
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isButton)
         .accessibilityHint(isExpanded ? "double tap to collapse" : "double tap for details")
-        .background(cardFill(now: now))
+        .background {
+            // Nothing to submit is stripes of the card's own fill, not a
+            // text line (see the caveat comment in `content`).
+            if item.showsNothingToSubmit {
+                NothingToSubmitStripes(color: cardFill(now: now))
+            } else {
+                cardFill(now: now)
+            }
+        }
+        .accessibilityValue(item.showsNothingToSubmit ? "nothing to submit" : "")
         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
     }
 
@@ -246,18 +257,16 @@ struct AssignmentCardView: View {
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: isExpanded)
 
-                // Visible on the collapsed card, not only once expanded — a
-                // student scanning the list needs to know "nothing to turn in
-                // here" without opening every card. Kept to one small line
-                // under the title (not stacked onto the course-code row,
-                // which is already doing the "find your class" job) so it
-                // reads as a caveat about this one item rather than crowding
-                // the thing that actually identifies the card. Covers both
-                // Canvas no-submission assignments and readings/events —
-                // see `DashItem.showsNothingToSubmit` — and, since
-                // 2026-09-09, the "from announcements" caveat on tasks the
-                // Announcement Watcher extracted (`DashItem.isFromAnnouncement`),
-                // joined onto the same line by `DashItem.caveatText`.
+                // One small line under the title for the caveats about this
+                // one item: the "from announcements" / "from ed" / "from
+                // syllabus" origin of a task the Announcement Watcher
+                // extracted (`DashItem.isFromAnnouncement`) and any fact
+                // caveat, joined by `DashItem.caveatText`. "Nothing to
+                // submit" is NOT on this line any more: the card's
+                // background is diagonal stripes instead
+                // (`NothingToSubmitStripes`), because the extra line made
+                // cards taller (owner, 2026-11-04). VoiceOver still hears it
+                // through the card's accessibility value.
                 if let caveat = item.caveatText {
                     Text(caveat)
                         .font(.lhfSecondary(9, weight: .semibold))
@@ -413,9 +422,8 @@ struct AssignmentCardView: View {
                 }
             }
 
-            // No second "nothing to submit" here: the collapsed caveat line
-            // stays visible when the card opens, so repeating it below the
-            // date printed the same words twice on one card.
+            // No "nothing to submit" text here: the card's stripes already
+            // say it, and repeating it would make the card taller.
         }
         .transition(.opacity.combined(with: .move(edge: .top)))
     }

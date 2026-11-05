@@ -104,12 +104,13 @@ extension Color {
     static let v2DoneTitle   = Color.dynamic(light: 0x8A8478, dark: 0x7F8AA3)
     static let v2DoneCourse  = Color.dynamic(light: 0xAEA899, dark: 0x68738D)
 
-    // Exam cards: the one card that is not tinted by urgency. It inverts the
-    // page instead (near-black with white type on paper, near-white with
-    // near-black type after sunset), slightly translucent so it still reads
-    // as paper laid on the list rather than a hole in it. The numbers live in
-    // `SmoothExamPalette` so the contrast the type has to clear is a test, not
-    // an eyeball.
+    // Exam cards: the one card that is not tinted by urgency. It is a soft
+    // warm grey instead, in the same family as the urgency tints but with no
+    // hue of its own, and ordinary dark-on-light type. Owner's call
+    // 2026-11-04: the earlier near-black card (which inverted the page) was
+    // the loudest thing on screen; grey sets an exam apart from homework
+    // without shouting. The numbers live in `SmoothExamPalette` so the
+    // contrast the type has to clear is a test, not an eyeball.
     static let smoothExamFill = Color.dynamic(
         light: SmoothExamPalette.fill.light.hex, lightAlpha: SmoothExamPalette.fill.light.alpha,
         dark: SmoothExamPalette.fill.dark.hex, darkAlpha: SmoothExamPalette.fill.dark.alpha
@@ -124,11 +125,9 @@ extension Color {
         light: SmoothExamPalette.secondaryText.light.hex, lightAlpha: SmoothExamPalette.secondaryText.light.alpha,
         dark: SmoothExamPalette.secondaryText.dark.hex, darkAlpha: SmoothExamPalette.secondaryText.dark.alpha
     )
-    /// The destructive control ("delete", "stop repeating"). `smoothTomatoInk`
-    /// is a dark tomato for a pale card, so on an exam card, whose fill is the
-    /// opposite of every other card's, it would be dark red on near-black in
-    /// light mode and pale red on near-white after sunset. This is its
-    /// mirror.
+    /// The destructive control ("delete", "stop repeating"). The grey card is
+    /// as pale as the tinted ones, so this is `smoothTomatoInk`'s own pair,
+    /// kept here so every colour on an exam card comes from one palette.
     static let smoothExamDestructive = Color.dynamic(
         light: SmoothExamPalette.destructive.light.hex, lightAlpha: SmoothExamPalette.destructive.light.alpha,
         dark: SmoothExamPalette.destructive.dark.hex, darkAlpha: SmoothExamPalette.destructive.dark.alpha
@@ -191,27 +190,60 @@ struct SmoothExamPalette {
         let dark: Shade
     }
 
-    /// Light: `smoothInk`'s near-black. Dark: `smoothInk`'s near-white.
+    /// A warm grey wash (`0x8A8174`) at 0.34 over the paper in both modes.
     static let fill = Pair(
-        light: Shade(hex: 0x1B1714, alpha: 0.86),
-        dark: Shade(hex: 0xF8F1E5, alpha: 0.88)
+        light: Shade(hex: 0x8A8174, alpha: 0.34),
+        dark: Shade(hex: 0x8A8174, alpha: 0.34)
     )
-    /// White on the dark card; `smoothPaper`'s night blue-black on the pale one.
+    /// `smoothInk` on paper; the after-sunset cream on night.
     static let text = Pair(
-        light: Shade(hex: 0xFFFFFF, alpha: 1),
-        dark: Shade(hex: 0x0B1020, alpha: 1)
+        light: Shade(hex: 0x1B1714, alpha: 1),
+        dark: Shade(hex: 0xF8F1E5, alpha: 1)
     )
     static let secondaryText = Pair(
-        light: Shade(hex: 0xFFFFFF, alpha: 0.72),
-        dark: Shade(hex: 0x0B1020, alpha: 0.72)
+        light: Shade(hex: 0x5C5246, alpha: 1),
+        dark: Shade(hex: 0xC9C2B6, alpha: 1)
     )
-    /// Light: the pale tomato `smoothTomatoInk` uses after sunset. Dark: a
-    /// tomato deeper than `smoothTomatoInk`'s light value, which on the pale
-    /// fill is just under legible.
+    /// `smoothTomatoInk`'s light and dark values.
     static let destructive = Pair(
-        light: Shade(hex: 0xF59A85, alpha: 1),
-        dark: Shade(hex: 0x9E2F18, alpha: 1)
+        light: Shade(hex: 0xB63B23, alpha: 1),
+        dark: Shade(hex: 0xF59A85, alpha: 1)
     )
+}
+
+/// Diagonal stripes for the "nothing to submit" card, drawn as background
+/// only so the card's size never changes. Bands run perpendicular to a 135deg
+/// gradient line (CSS `repeating-linear-gradient(135deg, ...)`): 8pt wide,
+/// alternating `color` with the same colour at 45% of its opacity. Owner,
+/// 2026-11-04: the words "nothing to submit" made cards taller, so the
+/// stripes say it instead.
+struct NothingToSubmitStripes: View {
+    var color: Color
+    var bandWidth: CGFloat = 8
+
+    var body: some View {
+        Canvas { context, size in
+            // Along the 135deg direction (1,1)/sqrt2 a band of width w covers
+            // x + y in an interval of length w * sqrt2.
+            let step = bandWidth * 2.0.squareRoot()
+            let total = size.width + size.height
+            let h = size.height
+            var k = 0
+            var s: CGFloat = 0
+            while s < total {
+                var path = Path()
+                path.move(to: CGPoint(x: s, y: 0))
+                path.addLine(to: CGPoint(x: s + step, y: 0))
+                path.addLine(to: CGPoint(x: s + step - h, y: h))
+                path.addLine(to: CGPoint(x: s - h, y: h))
+                path.closeSubpath()
+                context.fill(path, with: .color(k % 2 == 0 ? color : color.opacity(0.45)))
+                s += step
+                k += 1
+            }
+        }
+        .accessibilityHidden(true)
+    }
 }
 
 // MARK: – Smooth fonts

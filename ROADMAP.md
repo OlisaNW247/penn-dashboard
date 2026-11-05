@@ -830,6 +830,10 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-04 (`design/grey-exams-striped-nosubmit`, awaiting Marco's
+  approval, not on `v10`).** Exam cards turn grey instead of black;
+  nothing-to-submit cards get diagonal stripes instead of a caveat line,
+  so they stay the same height. 3597/345 green, device build compiled.
 - **2026-11-06 (later).** Marco's two asks: a fact-created card shows the
   name of the work when collapsed ("Final exam") and the whole title when
   opened (`FactTitle.short`, display only; a matching prompt change lost two

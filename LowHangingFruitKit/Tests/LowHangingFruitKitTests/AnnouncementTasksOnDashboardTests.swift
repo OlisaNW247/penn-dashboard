@@ -465,8 +465,8 @@ struct AnnouncementTasksOnDashboardTests {
         )
         let edCard = DashItem(assignment: ed, dueOverride: nil, isCompleted: false, completedAt: nil)
         let canvasCard = DashItem(assignment: canvas, dueOverride: nil, isCompleted: false, completedAt: nil)
-        #expect(edCard.caveatText == "nothing to submit \u{00B7} from ed")
-        #expect(canvasCard.caveatText == "nothing to submit \u{00B7} from announcements")
+        #expect(edCard.caveatText == "from ed")
+        #expect(canvasCard.caveatText == "from announcements")
         #expect(ed.sourceLinks.map(\.label) == ["open in ed"])
         #expect(canvas.sourceLinks.map(\.label) == ["open in canvas"])
     }
