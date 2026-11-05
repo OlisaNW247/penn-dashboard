@@ -522,3 +522,54 @@ test("ed paging: a 429 on page 2 drops the course's Ed threads entirely and Canv
   assert.equal(c.canvas, "in");
   assert.ok(c.documents.length > 0);
 });
+
+// ---- timeouts and progress (2026-11-05)
+import { REQUEST_TIMEOUT_MS } from "../src/adapters/collector.js";
+
+test("a request that never resolves is abandoned at the timeout: the course fails, the run does not", async () => {
+  assert.equal(REQUEST_TIMEOUT_MS, 30000);
+  const keepAlive = setTimeout(() => {}, 5000); // AbortSignal.timeout's timer is unref'd
+  try {
+    const seenSignals = [];
+    const fetch = (url, init) => { seenSignals.push(init.signal); return new Promise(() => {}); };
+    const out = await collectCourseMaterial({
+      fetch, now: NOW, sleep: noSleep, limits: { requestTimeoutMs: 20 },
+      courses: [{ courseID: "111", code: "CIS 2400", name: "CIS 2400", url: "https://canvas.upenn.edu/courses/111" }],
+    });
+    assert.equal(out.canvas, "in");
+    assert.equal(out.failures["111"].length, 5);
+    assert.ok(seenSignals.length > 0 && seenSignals.every((s) => s instanceof AbortSignal));
+  } finally { clearTimeout(keepAlive); }
+});
+
+test("an Ed request that never resolves is a network failure, status error", async () => {
+  const keepAlive = setTimeout(() => {}, 5000);
+  try {
+    const fetch = (url) => (url.includes("edstem") ? new Promise(() => {}) : Promise.resolve(reply([])));
+    const out = await collectCourseMaterial({
+      fetch, now: NOW, sleep: noSleep, limits: { requestTimeoutMs: 20 }, edToken: "tok",
+      courses: [{ courseID: "111", code: "CIS 2400", name: "CIS 2400", url: "https://canvas.upenn.edu/courses/111" }],
+    });
+    assert.equal(out.ed, "error");
+  } finally { clearTimeout(keepAlive); }
+});
+
+test("progress is reported for each course, for ed and for the files pass", async () => {
+  const events = [];
+  const fetch = async (url) => (url.includes("edstem") ? reply({ user: { id: 1 }, courses: [] }) : reply([]));
+  await collectCourseMaterial({
+    fetch, now: NOW, sleep: noSleep, edToken: "tok",
+    onProgress: (p) => events.push(p),
+    files: { extractText: async () => "", seen: {} },
+    courses: [
+      { courseID: "111", code: "A 1", name: "A 1", url: "u" },
+      { courseID: "222", code: "B 2", name: "B 2", url: "u" },
+    ],
+  });
+  const phases = events.map((e) => `${e.phase}${e.course ? ":" + e.course : ""}`);
+  assert.ok(phases.includes("course:1/2") && phases.includes("course:2/2"));
+  assert.ok(phases.includes("files:1/2") && phases.includes("files:2/2"));
+  assert.ok(phases.includes("ed"));
+  assert.ok(events.every((e) => typeof e.requests === "number"));
+  assert.deepEqual(events.map((e) => Object.keys(e).sort()).filter((k) => k.join() !== "course,phase,requests"), []);
+});

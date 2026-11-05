@@ -580,6 +580,20 @@ build to the phone, apply the migration and deploy `sync`, `pair`,
   before pairing, so a fresh store install reads Canvas. Still unproven on
   real Canvas: the submission read and the feed to the phone; on real Ed:
   everything.
+- 2026-11-05, evening: **the first collection pass on the owner's 0.1.2
+  install hung** (`collectRunAtV1` 17:03 UTC, no summary, no holdings, no
+  files seen 50 minutes later, while the 5-minute device sync kept
+  pushing). The collector had no timeouts, and `collectRun` hands every
+  later caller the same stuck promise, so one request or one PDF that
+  never finishes blocks collection for the life of the worker; Ed never
+  got its turn. 0.1.3: a 30 s timeout on every collector, files and Ed
+  request (`adapters/timeout.js`), a 60 s cap per PDF (counted
+  `unparseable`, remembered), a 25-minute deadline on the whole pass
+  (`stopped: "deadline"` summary, the slot freed, an abandoned pass can
+  never overwrite a newer summary), and a progress marker
+  (`collectProgressV1`: phase, course i/n, request count; never a title
+  or URL) so the next stall says where it is. 542 tests. Where the
+  17:03 pass stuck is not known; the marker will say next time.
 - 2026-11-05, later: **the popup lost its dashboard** (owner's decision:
   the extension is not a product, it exists to gather data for the phone).
   Unpaired it is the pairing flow as before; paired it is the header, one
