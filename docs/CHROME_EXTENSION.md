@@ -563,6 +563,15 @@ build to the phone, apply the migration and deploy `sync`, `pair`,
   the anonymous rule is broken. It cannot prove a real Ed login. The
   store zip is stamped 0.1.1; `0.1.0` was sent to the owner before these
   fixes and must not be uploaded.
+- 2026-11-05: **submitted to the Chrome Web Store, unlisted**, as 0.1.1,
+  by the owner from a Windows loaner (his Mac was stolen). Store item id
+  `jkegbcingmdidfegpmhgcagfhnnacoil`; the public page, once approved, is
+  `https://chromewebstore.google.com/detail/jkegbcingmdidfegpmhgcagfhnnacoil`
+  (the developer-console link is the owner's, not for students). The
+  store assigns that id for good, so a store install has a different
+  extension id from an unpacked load; nothing in the code or the backend
+  keys on it. Listing: the 1280×800 screenshot and the 128px S mark were
+  rendered from the real popup in the cloud container. Review pending.
 - 2026-10-27, later: the next run looked up 186 linked ids, found 23
   missing both ways and 3 refused, and had nothing new to extract. The
   remaining courses without PDFs link none the student can open.
