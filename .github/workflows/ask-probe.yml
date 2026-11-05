@@ -1,0 +1,83 @@
+# ask-probe: run the ask-canary probe from a GitHub runner, on demand.
+#
+# Written 2026-11-05. The cloud sessions reach the project only through a
+# proxy, and once that proxy holds a credential for the functions host it
+# drops the client's own Authorization header, which is the anonymous JWT
+# every ask request needs; so from a cloud session the canary can be
+# gated open and still answer 401. A runner has no proxy. The probe secret
+# (`x-lhf-probe-secret`, the value of the LHF_PROBE_SECRET function secret)
+# lives in the repository secret of the same name, set by the owner in
+# GitHub's settings, and is never printed: the script sends it as a header
+# and logs only counts and timings.
+#
+# Each run creates one throwaway anonymous user (the script's own cache is
+# per machine, and a runner is fresh), asks the canary `runs` times, and
+# prints the set's grades at the end. Read a run with
+#   gh api repos/OlisaNW247/penn-dashboard/actions/workflows/ask-probe.yml/runs
+# and its log with `gh api .../actions/jobs/<id>/logs`.
+
+name: ask-probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      set:
+        description: "Probe set"
+        required: true
+        default: "meeting"
+        type: choice
+        options: [meeting, history, citations, mixed, exam, policy, short]
+      runs:
+        description: "How many questions to send"
+        required: true
+        default: "10"
+      tag:
+        description: "ask_outcomes probe tag for this run"
+        required: true
+        default: "runner"
+      model:
+        description: "Optional model override (probe.model), e.g. anthropic/claude-haiku-5.5"
+        required: false
+        default: ""
+      slug:
+        description: "Function to call"
+        required: true
+        default: "ask-canary"
+        type: choice
+        options: [ask-canary, ask]
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Probe
+        env:
+          LHF_PROBE_SECRET: ${{ secrets.LHF_PROBE_SECRET }}
+          SET: ${{ inputs.set }}
+          RUNS: ${{ inputs.runs }}
+          TAG: ${{ inputs.tag }}
+          MODEL: ${{ inputs.model }}
+          SLUG: ${{ inputs.slug }}
+        run: |
+          set -euo pipefail
+          if [ "$SLUG" = "ask-canary" ] && [ -z "$LHF_PROBE_SECRET" ]; then
+            echo "The repository secret LHF_PROBE_SECRET is not set; the canary answers 404 without it." >&2
+            exit 1
+          fi
+          args=(--slug "$SLUG" --runs "$RUNS" --set "$SET" --tag "$TAG")
+          if [ -n "$MODEL" ]; then args+=(--model "$MODEL"); fi
+          node backend/scripts/ask-probe.mjs "${args[@]}" | tee probe.log
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## ask-probe: ${{ inputs.set }} × ${{ inputs.runs }} on ${{ inputs.slug }} (tag ${{ inputs.tag }})"
+            echo '```'
+            tail -n 40 probe.log 2>/dev/null || echo "no log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
