@@ -572,6 +572,19 @@ build to the phone, apply the migration and deploy `sync`, `pair`,
   extension id from an unpacked load; nothing in the code or the backend
   keys on it. Listing: the 1280×800 screenshot and the 128px S mark were
   rendered from the real popup in the cloud container. Review pending.
+- 2026-11-05, later: **the popup lost its dashboard** (owner's decision:
+  the extension is not a product, it exists to gather data for the phone).
+  Unpaired it is the pairing flow as before; paired it is the header, one
+  status line ("synced 7m ago" / "synced just now" / "not synced yet", from
+  the newer of `workListV1.refreshedAt` and `deviceSyncAtV1`), the sign-in
+  and Ed notes when they apply, and "unpair". No todo · all · prev picker,
+  list, cards or tick buttons. The Canvas and Gradescope reads and the
+  encrypted sync are unchanged: the phone still receives the laptop's
+  list, completions and edits. `core/workList.js` stays for the worker, and
+  `visibleItems` stays exported from `popup.js` only because
+  `test/workList.test.js` imports it. 533 tests green (was 528; the four
+  Ed popup tests stay, five new ones for the status line, the pair button
+  and the no-list scan); `npm run e2e` all pass.
 - 2026-10-27, later: the next run looked up 186 linked ids, found 23
   missing both ways and 3 refused, and had nothing new to extract. The
   remaining courses without PDFs link none the student can open.
