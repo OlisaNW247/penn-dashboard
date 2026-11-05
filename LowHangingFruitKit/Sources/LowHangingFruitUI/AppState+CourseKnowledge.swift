@@ -182,7 +182,7 @@ extension AppState {
             canvasItems + gradescopeItems + moduleReadingItems + announcementItemsStillOpen()
                 + effectiveRecurringTasks.flatMap { $0.upcomingAssignments() }
                 + manualAssignments.map { $0.asAssignment() }
-        ).map(applyingTreeOverrides)
+        ).map { self.applyingTreeOverrides($0) }
         var seen: Set<String> = []
         return pool.compactMap { assignment in
             guard seen.insert(assignment.id).inserted else { return nil }

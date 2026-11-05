@@ -115,7 +115,7 @@ extension AppState {
         // Canvas's section dates reach the tree through the dashboard's own
         // stored results (`applyingTreeOverrides`, `isFactCancelled`), so the
         // card and the answer cannot disagree. Added 2026-11-05, blind.
-        let work = pool.map(applyingTreeOverrides).map { assignment in
+        let work = pool.map { self.applyingTreeOverrides($0) }.map { assignment in
             AssistantContextDocument.WorkFacts(
                 course: assignment.course,
                 title: assignment.title,
