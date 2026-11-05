@@ -27,3 +27,7 @@ LowHangingFruitKit/.build-*/
 .env
 *.local
 secrets/
+
+# Agent and developer worktrees live here (CLAUDE.md names several); they are
+# checkouts of this repo, never content to commit.
+.claude/worktrees/
