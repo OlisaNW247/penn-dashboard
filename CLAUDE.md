@@ -1211,7 +1211,17 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v10` (2026-11-04, evening): 3596 tests / 345 suites, all green,
+**Current on `v10` at `e0ab790` (2026-11-05): 3631 tests / 348 suites, all
+green, `swift test --no-parallel` on the GitHub macOS runner with Xcode 26.3
+in 111.5 s (the `tests` workflow, run 42084961566), the first runner compile
+of today's blind tree work: +35 tests and +3 suites over 3596 / 345 (the
+tree reading applied facts, `28e8803`; the time-frame resolver and per-intent
+freshness, `fae20bd`; a prediction of +37 was two high, the runner's count
+stands). Every push to `v10` that day compiled green (`e720b82`, `f4f17e9`,
+`28e8803`, `f398bd0`, `e0ab790`). The runner compiles neither the widget nor
+the iOS `xcodebuild`; nothing from today is on a phone.**
+
+Before it, **on `v10` (2026-11-04, evening): 3596 tests / 345 suites, all green,
 `swift test --no-parallel` alone on Marco's Mac in 64 s, after the contract
 and hostile-input tests below. Earlier that day: 3559 / 340,
 `swift test --no-parallel` on Marco's Mac, with all of the 2026-11-04 work
@@ -1318,6 +1328,11 @@ the quoted display names.
 
 History (newest first; each verified on a Mac). The notes say what moved
 the count, so a later drop can be traced:
+- 3631/348 `v10` at `e0ab790`, 2026-11-05, GitHub runner (Xcode 26.3, 111.5 s):
+  the tree's applied-facts work list (`AppliedFactsWiringTests` +5,
+  `AssistantContextDocumentTests` +3) and `AskTimeFrameRegressionTests` (3
+  suites); one test in `AskRecencyExcerptTests` rewritten because "when is
+  the midterm" is now a `policy` question (its syllabus boost is 1.5).
 - 3596/345 `v10`, 2026-11-04 evening: `ManifestContractTests` (a manifest the
   server's own `factsResponse` built, decoded by the phone), hostile-input
   suites for the wire and the structured decoders, a 500-round engine fuzz,

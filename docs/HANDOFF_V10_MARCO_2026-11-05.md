@@ -41,14 +41,12 @@ Mac's run: `gh api repos/OlisaNW247/penn-dashboard/actions/workflows/tests.yml/r
   set with a pinned clock. Steps 3 to 6 wait on one decision (how the
   weekly schedule reaches the phone), which is Olisa's and Marco's.
 
-Predicted Swift delta over 3596 / 345: about +37 tests and +3 suites
-(`AppliedFactsWiringTests` +5, `AssistantContextDocumentTests` +3,
-`AskTimeFrameRegressionTests` +29 in 3 suites; one test in
-`AskRecencyExcerptTests` rewritten because "when is the midterm" is now a
-policy question). Trust the runner and the Mac, not this arithmetic. If the
-runner is red, the Mac session fixes the compile errors in those commits
-(never by deleting a test), and the count must not drop below 3596 / 345
-without a named reason. The implementers' own lists of the lines they were
+**The runner compiled all of it green: 3631 tests / 348 suites at
+`e0ab790`** (2026-11-05, Xcode 26.3, 111.5 s; +35 / +3 over 3596 / 345; one
+test in `AskRecencyExcerptTests` rewritten because "when is the midterm" is
+now a policy question). So the Mac's `swift test` should match 3631 / 348;
+what the runner cannot do, and the Mac must, is the iOS `xcodebuild` (the
+widget) and the phone. The implementers' own lists of the lines they were
 least sure of are in the commit bodies of `28e8803` and `fae20bd`.
 
 ## 2. Paste this into a new Claude Code session on the Mac
@@ -66,8 +64,8 @@ least sure of are in the commit bodies of `28e8803` and `fae20bd`.
 >    then `cd LowHangingFruitKit && swift test --no-parallel` alone on the
 >    machine. Compare with the runner's latest `v10` verdict. Expected:
 >    3596 / 345 plus the blind additions listed in CLAUDE.md → Test
->    baseline for 2026-11-05. Fix compile errors in today's blind commits
->    in place; a test that pins old behaviour may be rewritten to the new
+>    baseline for 2026-11-05 (the runner read 3631 / 348 at `e0ab790`). Fix
+>    anything the Mac finds in today's commits in place; a test that pins old behaviour may be rewritten to the new
 >    intent, never loosened or deleted. Record the count, date, machine
 >    and seconds in Test baseline. Then
 >    `xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build`
