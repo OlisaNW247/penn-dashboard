@@ -108,18 +108,45 @@ export const FACTS_INSTRUCTIONS: string = [
   + `item by number or name, yields no fact. Extract only what THIS document `
   + `says.`,
 
-  `A new_task needs a requirement and a date: emit it only for something the `
-  + `instructor requires students to do that has a stated date, or a date `
-  + `resolvable from the posted date and CLASS MEETINGS. Study advice, "I `
-  + `recommend", "feel free", "it would be great if", optional reading, `
+  `A new_task needs an explicit instruction directed at students, with an `
+  + `action verb (submit, turn in, upload, complete, bring, take the exam or `
+  + `quiz, or attend when the document states that attendance is required), `
+  + `AND a stated date, or a date resolvable from the posted date and CLASS `
+  + `MEETINGS. A required exam or quiz is kind "event"; a required `
+  + `deliverable is kind "submission". A title that merely names something `
+  + `("Final exam:", "Homework 9") is not an instruction. Study advice, `
+  + `"I recommend", "feel free", "it would be great if", optional reading, `
   + `optional dated events (a career talk, a forum), social threads, and `
   + `account or admin chores ("accept the invitation", "sign up for the `
-  + `tool") yield no fact. Optional work that earns credit with a stated date `
-  + `(a resubmission window, a redemption session the instructor asks `
-  + `students to attend) is a new_task, kind "submission" or "event", with `
-  + `"optional" at the start of its title. Regrade, appeal and score-posting `
-  + `logistics, and advice conditional on the student's own score, yield no `
-  + `fact.`,
+  + `tool") yield no fact. Regrade, appeal and score-posting logistics, and `
+  + `advice conditional on the student's own score, yield no fact.`,
+
+  `Optional opportunities are NEVER a new_task, even when they earn credit `
+  + `and have a stated date: a point redemption session, an optional `
+  + `resubmission window, an extra-credit talk. If the opportunity concerns `
+  + `an indexed item, emit a "note" on that item with the opportunity in `
+  + `"title" (for example "optional resubmission by Thursday Nov 5"); `
+  + `otherwise emit no fact. Do not prefix a title with "optional" to make `
+  + `an optional thing a task. This rule only blocks CREATING a task: it `
+  + `never blocks a cancel, reschedule, scope_change or note on an item the `
+  + `index already holds, even when that item is itself optional -- giving `
+  + `an indexed "MT1 P3 Redemption" item its date is a reschedule.`,
+
+  // Exam assumption: the owner confirmed on 2026-11-04 that required exams
+  // and quizzes with a stated date are tasks, kind "event".
+  // Owner's answer: a line with a due date counts as clear action words even
+  // with no verb; the due date is the action word.
+  `A new_task quote must contain the instruction itself, verbatim -- the `
+  + `sentence with the action words and the requirement. A module, syllabus `
+  + `or announcement line that names the work and states its due date `
+  + `("Pipelining Worksheet (file). Due Tuesday, November 10 at 1:45 PM", `
+  + `"Final exam: Dec 15, 9am", "Quiz 2 for Chap. 22 on Friday") IS the `
+  + `instruction: the due date is the action word, and the quote must `
+  + `contain that line with its date. A bare title with no date and no verb `
+  + `such as "Final exam:" is not an instruction: extend the quote to a `
+  + `sentence that states the requirement and the date; if the document has `
+  + `no such sentence, emit needs_review (with no target unless an indexed `
+  + `item is meant) instead of a new_task.`,
 
   `Grade weights, late or submission policy, and other standing rules yield `
   + `no fact; a post that restates an indexed item's existing due date yields `

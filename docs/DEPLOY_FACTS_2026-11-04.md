@@ -1,8 +1,8 @@
 # Deploying extract-facts to production (runbook, 2026-11-04)
 
-Nothing here has been run. The scripts were written and tested with `fetch`
-stubbed on 2026-11-04; the live project, the Management API and OpenRouter
-have not been called. A green `--dry-run` proves the plan, not the deploy.
+Steps 1-4 were run on 2026-11-05 (01:20-01:45 UTC); see "Run record" at the
+end. The scripts were written and tested with `fetch` stubbed on 2026-11-04.
+A green `--dry-run` proves the plan, not the deploy.
 
 What goes live: migration `20261104090000_course_facts.sql` (three tables,
 one function, one column), the `sync` function (manifest now carries `facts`
@@ -111,3 +111,71 @@ results (cursor value, how many extractions, cost per extraction, reject
 reasons seen); whether `LHF_FACTS_MODEL` / `FACTS_COURSE_MONTHLY_LIMIT` were
 set; the kill switches above under Known gaps if the on-phone check was not
 done; and the Deno and script test counts. Revoke the token.
+
+## Run record (2026-11-05, 01:20-01:45 UTC)
+
+The evening of 2026-11-04 US Eastern (the Mac's clock is UTC-5). Project
+`ynetfjixexksxqrrkwsg`, with Olisa's go.
+
+- **Token.** A personal access token from Olisa's account is in
+  `~/lhf-bench/supabase.token` (mode 600), read by
+  `backend/scripts/deploy-function.mjs`. Two earlier strings failed: one
+  corrupted in transit (HTTP 401 "Invalid access token") and a project
+  *publishable* key, `sb_publishable_...` (HTTP 401 "JWT could not be
+  decoded"). A management token starts with `sbp_` and comes from
+  supabase.com/dashboard/account/tokens. A flat 401 means the string is
+  wrong. Revoke the token when the deploy work is finished.
+- **Step 4, secrets.** `OPENROUTER_API_KEY` present. `LHF_FACTS_MODEL`,
+  `LHF_FACTS_DISABLED` and `FACTS_COURSE_MONTHLY_LIMIT` not set, so the
+  defaults apply.
+- **Step 1.** Migration `20261104090000_course_facts.sql` applied (the
+  idempotency scan of its 305 lines passed). `sync` deployed as version 17
+  (id `07f14e56-81f9-41ed-8629-d32e5acfc7c5`), `extract-facts` as version 1
+  (id `2260e0fa-ae47-4e61-b25d-a9addac468d3`), both ACTIVE.
+- **Step 2.** From a throwaway anonymous user: `factsSince: 0` gave 200,
+  `facts: []`, `factsCursor` 0; an old-style request gave 200 with the usual
+  keys. The user was deleted through `delete-account`.
+- **Step 3 stopped at first** ("No extraction exists yet"): extraction is
+  scheduled only by a document upload, and no phone had uploaded since the
+  deploy. The overseer triggered the first one by hand: a throwaway
+  anonymous user enrolled in course 1949400 (PHYS 0151) through a manifest
+  call, one `POST` to `extract-facts` with `{"courseId":"1949400"}` gave 200
+  in 18989 ms, `{"attempted":10,"done":10,"failed":0,"skippedBudget":0,
+  "facts":6,"remaining":17}`; the manifest then returned 6 facts, cursor 6;
+  the user was deleted. Re-running step 3: ten `course_fact_extractions`
+  rows, all `done`, model `anthropic/claude-haiku-5.5`, cost 0.000403 to
+  0.001150 USD each (about 0.0067 USD in all), latency 999 to 6264 ms,
+  `rejected_count` 0 everywhere; six `course_facts` rows (seq 1-6) and all six
+  quotes found verbatim in their documents. Types: 2 `new_task`, 3 `note`,
+  1 `needs_review`.
+- **Quality finding.** Two of the six are `new_task` items the owner does not
+  want: `new_task high "Final exam"` (quote "Final exam:" only) and
+  `new_task high "optional: Midterm 2 point redemption session in DRL A1"`.
+  Rule (Marco, 2026-11-04): an announcement becomes a task only with clear
+  action words, an assignment that needs to be submitted. The prompt in
+  `_shared/facts.ts` was redrafted three times and benched that night; round
+  3 was deployed at 02:03 UTC as `extract-facts` v2 and `sync` v18, and step
+  3 re-run green (`docs/FACTS_PROMPT_OWNER_RULE_2026-11-05.md`). The `needs_review` fact came from a September
+  document ("Quiz 5 ... Sep 19th") read against today's index: a stale
+  document can raise review noise.
+- **Step 5 (phone), plist half done 02:17 UTC.** The Debug build from
+  `034767b` is on Marco's iPhone 17 Pro. At 01:45 UTC `factsCursorV1` was
+  still absent because the phone's course-material sync is hourly and had
+  last run at 01:15 UTC ("skipped: not stale"). The app was relaunched at
+  02:17 UTC, the manifest ran, and `verify-facts-on-phone.sh` read
+  `factsCursorV1: 23` with `structuredCompletedItemIDsV1` unchanged at 11.
+  Lesson: after a deploy, the first phone needs the hour to pass (or a
+  relaunch once it has); there is no force flag. The card check (undo,
+  nothing completed or deleted, manual date edit wins) is still to be done
+  by eye.
+
+### Lesson: step 3 needs a first extraction when no phone has uploaded
+
+Step 3 can only read what exists, and extraction starts from a document
+upload. If no phone has synced since the deploy, trigger one by hand with a
+one-off: create a throwaway anonymous user, make a manifest call that
+carries the course's `{courseID, code, name}` (this enrolls it), `POST`
+`extract-facts` with `{"courseId":"<id>"}` as that user, then delete the user
+through `delete-account`. Suggestion for a future `deploy-facts.mjs`: a
+`--trigger <courseId>` option that does exactly this inside step 3 when it
+finds no extraction (not implemented).

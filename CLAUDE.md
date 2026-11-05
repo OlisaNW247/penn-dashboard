@@ -134,11 +134,14 @@ items, retrieves policy and content answers from synced course materials
 (`CourseKnowledgeCollector` → `CourseKnowledgeStore`), and on iOS 26 /
 macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
 (`OnDeviceLanguageModel`). Eleven Edge Functions are in
-`backend/supabase/functions/` (ten were deployed before 2026-11-04): `ask`,
+`backend/supabase/functions/` (all eleven are deployed; `extract-facts` was
+the last, on 2026-11-05): `ask`,
 `ask-canary`, `delete-account`, `device-sync`, `discover-websites`,
 `extract-announcement`, **`extract-facts`**, `extract-profile`,
 `map-categories`, `pair`, `sync`. `extract-facts` (written 2026-11-04 on
-`v10`, **not deployed**) reads each pooled course document once per
+`v10`, **live since 2026-11-05 01:20-01:45 UTC**, the evening of
+2026-11-04 US Eastern; version 1, with the `sync` that serves its facts at
+version 17 and migration `20261104090000_course_facts.sql` applied) reads each pooled course document once per
 revision with Claude Haiku 5.5 and stores the course-level changes it states
 in `course_facts` (a cancelled item, a new date, a new task, each with a
 quote); the manifest serves them to every enrolled classmate. No user id is
@@ -650,8 +653,9 @@ Keep this current. It is the fastest way for a new session to know what exists.
       was left out before, as found in no announcement), and its card
       says "from syllabus".
   - **Facts on cards** (2026-11-04, `v10`, behind `FeatureFlags.appliedFacts`;
-    nothing has been watched on a device and no real fact has reached a
-    phone, because the backend is not deployed). A card the instructor
+    nothing has been watched on a device; the backend went live on
+    2026-11-05 and six real facts exist, but none had reached a phone when
+    this was written). A card the instructor
     cancelled leaves **todo**, stays in **all** tagged `cancelled`, and
     nothing is completed or deleted. A moved date shows the new date with
     the old one small and struck through, tagged `moved`; a changed scope
@@ -1963,7 +1967,7 @@ client problem. The pieces, all exercised by tests:
   posts, which the phone's search has to find. Nothing new leaves the
   phone; the section number was already sent.
 
-### Facts and structured sources (2026-11-04, `v10`, not on a device)
+### Facts and structured sources (2026-11-04, `v10`; backend live 2026-11-05, not yet seen on a device)
 
 The composed-day plan (`docs/DAY_PLANNER_RESEARCH_2026-11-03.md`; the
 decisions behind it are in `docs/HANDOFF_V10_2026-11-04.md`) has two halves,
@@ -2211,6 +2215,20 @@ itself.
   wait ten minutes between hidden-login tests.
 
 ## Traps that have already bitten
+
+- **A Supabase management token starts with `sbp_` and comes from
+  supabase.com/dashboard/account/tokens, not from the project's API keys
+  page.** The facts deploy (2026-11-05) lost two attempts to this. The first
+  token string was corrupted in transit and the Management API answered HTTP
+  401 "Invalid access token". The second was a project *publishable* key
+  (`sb_publishable_...`), which is a different credential for a different
+  API, and answered 401 "JWT could not be decoded". A flat 401 means the
+  string itself is wrong: a valid token from an account outside the
+  organisation would list no project rather than fail. The token now lives in
+  `~/lhf-bench/supabase.token` (mode 600), which
+  `backend/scripts/deploy-function.mjs` reads. The wrong fix is to keep
+  retrying or to widen the account's access; look at the prefix first, and
+  never paste the string into a chat, a log or a doc.
 
 - **A new SwiftData model goes in its own store file, never in the ledger's
   schema** (decided 2026-11-04 for `AppliedFact`). Adding `StoredAppliedFact`
@@ -3158,36 +3176,80 @@ none is a ship line.
 ## Known gaps
 
 - **Phase 1 of the composed day has run on a device once; Phases 2-3 have
-  not**, and no real fact has ever reached a phone, because `extract-facts`,
-  the `course_facts` migration and the `sync` changes are **not deployed**.
+  not**, and no real fact has reached a phone yet, although the backend is
+  live (2026-11-05, below).
   On 2026-11-04 at 20:15 UTC the Debug build from `034767b` (3.4.0 (17))
   was installed over the store copy on Marco's iPhone 17 Pro and launched;
   `verify-facts-on-phone.sh` then read
   `rows=0 completions=11 dismissals=0 dueOverrides=14 missing=1`,
-  `factsCursorV1` absent (expected: no manifest with facts fields yet), no
-  crash report, Canvas session alive. So the structured-sources fetch and
+  `factsCursorV1` absent (expected then: no manifest with facts fields yet),
+  no crash report, Canvas session alive. So the structured-sources fetch and
   reconcile work against real Canvas; whether the 11 completions and 14
   section dates show correctly on cards has not been checked by eye. The
   card/megaphone fact changes are proven only by fixtures. The migration SQL, `rls.test.sql` and
   `claim_fact_extraction.test.sql` passed in a Docker Postgres on
-  2026-11-04 (`backend/scripts/sql-check.sh`); the deploy itself is
-  prepared as `backend/scripts/deploy-facts.mjs` with
-  `docs/DEPLOY_FACTS_2026-11-04.md` as the runbook, and waits only on a
-  Supabase personal access token in `~/lhf-bench/supabase.token` (Olisa gave
-  his go on 2026-11-04). A live probe on 2026-11-04 showed OpenRouter accepting the exact
-  production request for `anthropic/claude-haiku-5.5` (strict `json_schema`,
-  `reasoning: low`, `provider: {data_collection: "deny", allow_fallbacks:
-  true}`, no `require_parameters`), routed via Azure, returning
-  `{"facts": []}` with 258 reasoning tokens for $0.0002. That proves the body,
-  not the extractions.
-- **Deploying `extract-facts` needs Olisa's go and a token this Mac lacks.**
-  Phases 2-3 replace the announcement watcher's output and change what `sync`
-  stores, both his area. The deploy script relies on a cloud session's proxy
-  injecting the Supabase management token, which the dev Mac does not have;
-  `LHF_PROBE_SECRET` is absent here too, so the `ask-canary` probe could not
-  run. Set `LHF_MODEL` on the canary, probe, promote: moving `ask` off
-  `openai/gpt-4.1-mini` (OpenAI shutdown 2027-01-14) is a deploy/secret
-  operation now, not a code change.
+  2026-11-04 (`backend/scripts/sql-check.sh`). A live probe on 2026-11-04
+  showed OpenRouter accepting the exact production request for
+  `anthropic/claude-haiku-5.5` (strict `json_schema`, `reasoning: low`,
+  `provider: {data_collection: "deny", allow_fallbacks: true}`, no
+  `require_parameters`), routed via Azure, returning `{"facts": []}` with 258
+  reasoning tokens for $0.0002.
+- **The facts backend is live (deployed 2026-11-05, 01:20-01:45 UTC, with
+  Olisa's go and a personal access token from his account; the evening of
+  2026-11-04 US Eastern) and has produced six facts, two of them wrong in
+  kind.** `docs/DEPLOY_FACTS_2026-11-04.md` ends with the run record. The
+  `sync` function is at version 17 and `extract-facts` at version 1; the
+  secrets check found `OPENROUTER_API_KEY` set and `LHF_FACTS_MODEL`,
+  `LHF_FACTS_DISABLED` and `FACTS_COURSE_MONTHLY_LIMIT` unset, so the
+  defaults apply. The first extraction was triggered by hand for PHYS 0151
+  (course 1949400), because extraction is scheduled only by a document
+  upload and no phone had uploaded since the deploy: ten documents, all
+  `done`, none rejected, about $0.0067 in total, 999-6264 ms each. Six facts
+  came back (2 `new_task`, 3 `note`, 1 `needs_review`) and all six quotes
+  were found verbatim in their documents. Two things are wrong:
+  1. **Two `new_task` facts are tasks the owner does not want:** `new_task
+     high "Final exam"`, supported only by the quote "Final exam:", and
+     `new_task high "optional: Midterm 2 point redemption session in DRL
+     A1"`. Marco's rule (2026-11-04): an announcement becomes a task only
+     when it has clear action words, an assignment that needs to be
+     submitted. Three prompt drafts were benched the same night
+     (`docs/FACTS_PROMPT_OWNER_RULE_2026-11-05.md` has the tables, the
+     drafts live in `docs/facts-prompt-drafts/`). Round 1 passed the gate
+     (0 false tasks) but cut task recall from 71% to 47%, because Canvas
+     module lines read "<Name> (file). Due <date>", a noun phrase and a
+     date with no verb, which a strict "action words" rule rejects; round
+     2 fell to 36% and added a false cancel. Marco ruled that a due date
+     counts as action words, and **round 3 is what runs now**: deployed
+     2026-11-05 02:03 UTC as `extract-facts` version 2 and `sync` version
+     18 (`sync` bundles the same prompt, since it extracts right after an
+     upload), after 686 Deno tests and two bench runs with 0 false tasks
+     and 0 false cancels, task recall 64% and 57% (the same prompt differs
+     on 12 of 121 documents between runs, so single-run numbers are
+     noisy). PHYS 0151's six old-rule facts were then deleted and the whole
+     course re-extracted under round 3 (27 documents, 17 facts, $0.0178):
+     one task (the final exam), 13 targeted notes, 3 review items, and the
+     two unwanted tasks gone.
+  2. **A stale document raises review noise.** The `needs_review` fact came
+     from a September document ("Quiz 5 ... Sep 19th") read against today's
+     index. No fix yet.
+  Phone side, **proven 2026-11-05 02:17 UTC**: the phone's course-material
+  sync is hourly and had last run at 01:15 UTC ("skipped: not stale"), so
+  the app was relaunched when the hour was up; the manifest ran
+  (`lastCourseKnowledgeSyncSummaryV1`: ok · courses 6 · manifest ok ·
+  uploaded 0 · errors 5) and `factsCursorV1` read **23**, the highest seq
+  on the server, so all 17 PHYS 0151 facts reached the phone in one pull.
+  `structuredCompletedItemIDsV1` stayed at 11, so applying facts wrote no
+  completion. Nobody has yet looked at a fact-touched card on the screen;
+  Marco left with the phone right after. The sync's `errors 5` (fetched 1,
+  partial 5) predates this work and is the same open item as Olisa's
+  `errors 7`.
+- **Phones on the live backend now receive facts, and the kill switches are
+  the only brake.** `LHF_FACTS_DISABLED=1` stops new extraction without
+  touching stored facts; the phone flag `FeatureFlags.appliedFacts` needs a
+  build (`docs/DEPLOY_FACTS_2026-11-04.md` -> "Kill switches"). The
+  management token is in `~/lhf-bench/supabase.token` (mode 600) and stays
+  there for the follow-up deploys (the tightened prompt, the `ask` model
+  move); Olisa revokes it from his dashboard when those are done.
 - **Known limits of the facts engine** (from the implementers, 2026-11-04):
   - A `module:<hash>` fact target cannot resolve to a `module-item-<id>` row
     and lands in `needs a look` until module documents carry item ids (the
@@ -3569,8 +3631,9 @@ none is a ship line.
   - Syllabus rows join the work list in the ask context document with the
     source label "announcement" (`assistantSourceLabel`; a disclosure
     boundary, left alone).
-  - Server exam dates have never run against the live `sync`, and the
-    backend half is not deployed. The extraction prompt gives the model no
+  - Server exam dates have never been watched against the live `sync`;
+    their backend half is deployed (the `sync` at version 17, 2026-11-05,
+    was built from `v10`, which contains `v8`). The extraction prompt gives the model no
     current date or term, so a syllabus line with no year gets the model's
     guess of the year. The 150-day cut-off drops a past-year guess, and a
     phone reading backed by a matching weekday beats a wrong guess, but a
@@ -3614,9 +3677,10 @@ none is a ship line.
   2026-10-23 (2606/237), not yet on a phone; the new `CourseKnowledgeCollectorAnnouncementTests` drive
   the collector through a `URLProtocol` stub whose other routes answer
   `[]`, which no one has seen every sub-client accept. The backend half
-  (Phase 2, Deno 419/0) is on `v8` and not deployed; until `sync` is
-  redeployed, a phone whose announcements fetch fails still cannot
-  retire classmates' announcements (the collector no longer reports the
+  (Phase 2, Deno 419/0) is on `v8` and went live with the `sync` at
+  version 17 on 2026-11-05 (built from `v10`, which contains `v8`), but
+  nobody has watched a phone retire classmates' announcements through it
+  yet (the collector no longer reports the
   course fully synced), but the 1000-row manifest cap and the batch-wide
   rejection remain live. `sync` v12 went live at about 16:00 UTC the same
   day. **Seen working on Olisa's iPhone at 18:09 UTC the same day**: the

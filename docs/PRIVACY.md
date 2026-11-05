@@ -1,6 +1,6 @@
 # Privacy Policy — Low Hanging Fruit (LHF)
 
-_Last updated: 2026-10-28_
+_Last updated: 2026-11-05_
 
 Low Hanging Fruit ("LHF", "the app") is a personal academic dashboard that shows
 your Canvas assignments and deadlines in one place. This policy explains what
@@ -181,8 +181,9 @@ on-device alone:
   by classmates, say nothing about you, and are removed along with the course
   material they were derived from.
   The "AI assist" switch governs what this phone asks the model about its own
-  posts; it does not govern these notes, which are made from the copy of the
-  course material a classmate pooled, so your switch does not stop them.
+  posts; it does not govern these notes. They are made from the copy of the
+  course material a classmate pooled, so a model reads those pooled course
+  posts to extract them even if you turned "AI assist" off.
   Disconnecting Canvas removes your enrollment, so nothing further is pooled
   from your phone.
 

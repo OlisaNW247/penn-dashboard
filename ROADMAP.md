@@ -7,8 +7,9 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-11-04 on `v10` (composed-day Phases 1-3 built, uncommitted,
-not deployed). Before that, 2026-10-28 on `release/3.4.0` (the 3.4.0 release,
+Last updated 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
+backend half went live 2026-11-05 01:20-01:45 UTC, the evening of 2026-11-04
+US Eastern). Before that, 2026-10-28 on `release/3.4.0` (the 3.4.0 release,
 renamed from 3.3.1 that afternoon when PR #16 was folded in). Before
 that, 2026-10-24 on `v8` (the tree research plan). Before that,
 2026-10-22, on `v8` (the Chrome extension). Before that,
@@ -47,28 +48,52 @@ These block shipping, or would make shipping risky. The launch-prep
 work of 2026-10-09/10 is summarised, with the order to take these in,
 in `docs/LAUNCH_PREP_HANDOFF.md`.
 
-- **Deploy `extract-facts` and the `course_facts` migration** (Olisa's go;
-  the Supabase management token). Built 2026-11-04 on `v10`; **Olisa gave
-  his go the same day** (Phases 2-3 replace the announcement watcher's
-  output and change what `sync` stores). Nothing deployed yet: this Mac has
-  no management token. `docs/DEPLOY_FACTS_2026-11-04.md` is the runbook and
-  `backend/scripts/deploy-facts.mjs` runs it, stopping at the first failure:
-  1. A Supabase personal access token in `~/lhf-bench/supabase.token`
-     (chmod 600), created at supabase.com/dashboard/account/tokens.
-  2. `bash backend/scripts/sql-check.sh` (Docker): stub, all migrations,
-     idempotency, `rls.test.sql`, `claim_fact_extraction.test.sql`. Passed
-     2026-11-04.
-  3. `node backend/scripts/deploy-facts.mjs --dry-run`, then without the
-     flag: secrets check, migration through the Management API, deploy
-     `sync`, deploy `extract-facts`, one manifest call old and new shape,
-     then the first real extraction's row and its quotes.
-  4. `LHF_FACTS_MODEL` only if it should differ from the default
-     `anthropic/claude-haiku-5.5`; `LHF_FACTS_DISABLED=1` is the off switch.
-  5. Phone: `bash backend/scripts/verify-facts-on-phone.sh <CoreDevice id>`
+- **Facts deploy: steps 1-3 done 2026-11-05 (01:20-01:45 UTC), 4-7 remain**
+  (`docs/DEPLOY_FACTS_2026-11-04.md` is the runbook and now ends with the run
+  record; `backend/scripts/deploy-facts.mjs` runs it). Done, with Olisa's go
+  and a token from his account in `~/lhf-bench/supabase.token`:
+  1. Token saved (after two failed strings, see CLAUDE.md -> Traps).
+  2. `sql-check.sh` passed 2026-11-04; the migration
+     `20261104090000_course_facts.sql` applied live (idempotent scan
+     passed), `sync` deployed as version 17, `extract-facts` as version 1.
+  3. A manifest from a throwaway anonymous user answered 200 in both
+     shapes (`factsSince: 0` gave `facts: []`, cursor 0). The first
+     extraction was triggered by hand for PHYS 0151 (course 1949400): ten
+     documents, all `done`, none rejected, about $0.0067, six facts, all six
+     quotes found verbatim. Throwaway users were deleted through
+     `delete-account`.
+
+  Remaining:
+  4. Secrets were checked: `OPENROUTER_API_KEY` present;
+     `LHF_FACTS_MODEL`, `LHF_FACTS_DISABLED`, `FACTS_COURSE_MONTHLY_LIMIT`
+     unset, so the defaults apply (Haiku 5.5). Set `LHF_FACTS_MODEL` only if
+     it should differ; `LHF_FACTS_DISABLED=1` is the off switch.
+  5. **Tighten the extraction prompt, then redeploy `extract-facts`.** Two of
+     the six real facts are `new_task` items the owner does not want ("Final
+     exam", supported only by the quote "Final exam:", and "optional:
+     Midterm 2 point redemption session in DRL A1"). Marco's rule
+     (2026-11-04): an announcement becomes a task only when it has clear
+     action words, an assignment that needs to be submitted. The prompt in
+     `_shared/facts.ts` was redrafted three times and benched; Marco ruled
+     a due date counts as action words, and round 3 went live 2026-11-05
+     02:03 UTC (`extract-facts` v2, `sync` v18; 0 false tasks in two runs,
+     recall 64%/57%): `docs/FACTS_PROMPT_OWNER_RULE_2026-11-05.md`. PHYS
+     0151 was cleared and re-extracted under it (17 facts, no false tasks).
+     Also open: the `needs_review` fact came from a September document
+     ("Quiz 5 ... Sep 19th") read against today's index, so a stale document
+     can raise review noise.
+  6. Phone: `bash backend/scripts/verify-facts-on-phone.sh <CoreDevice id>`
      after a sync, then one card a fact touched: `undo` works, nothing
-     completed or deleted, a manual date edit still wins. Step 5's plist
-     read ran on Marco's phone 2026-11-04 (Phase 1 live: 11 completions,
-     14 section dates, 1 missing; cursor absent until the deploy).
+     completed or deleted, a manual date edit still wins. The plist half is
+     done: at 02:17 UTC on 2026-11-05 `factsCursorV1` read 23 (all 17 PHYS
+     0151 facts on the phone) and the Canvas completion count stayed at 11.
+     The card half (look, undo, date edit wins) has not been done by eye;
+     Marco has the phone. Phase 1's plist read ran 2026-11-04 (11
+     completions, 14 section dates, 1 missing).
+  7. Record the result in `CLAUDE.md` and `docs/PRIVACY.md` in the same
+     commit. The token stays in `~/lhf-bench/supabase.token` for the
+     follow-up deploys (tightened prompt, `ask` model move); Olisa revokes
+     it afterwards.
   Also open: the phone's course-material sync reported `manifest failed ·
   uploaded 0 · errors 7` on 2026-11-03, which would starve extraction.
 - **Reminders for work already turned in, and a Sweeper that earns its
@@ -418,7 +443,7 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   the canary; Phase 1 and the identity layer can start, Phase 2 needs
   Olisa's go.
   **Built 2026-11-04 on `v10`** (Marco: "make all the decisions"; Phases 1-3
-  written, committed on `v10`, **not deployed**, nothing watched on a device; 3596 /
+  written, committed on `v10`, backend deployed 2026-11-05, nothing watched on a device; 3596 /
   345 green, Deno 686, `deno task check` clean; the SQL passed in a Docker
   Postgres the same day). *Phase 1*, phone only, no model:
   `CanvasStructuredSourcesClient`/`Reconciler` read Planner items, missing
@@ -784,13 +809,17 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
-- **2026-11-04.** Composed day, Phases 1-3 (`v10`, uncommitted, not deployed):
+- **2026-11-05 (01:20-01:45 UTC).** Facts backend live: migration
+  `20261104090000_course_facts.sql`, `sync` v17, `extract-facts` v1; first
+  extraction by hand gave six facts for $0.0067, two of them unwanted
+  `new_task` items (see Now). Not yet seen on a phone.
+- **2026-11-04.** Composed day, Phases 1-3 (`v10`, committed; backend deployed the next day):
   Canvas's structured sources and the identity layer on the phone; the
   `extract-facts` Edge Function, `course_facts` migration and manifest facts
   on the server; `AppliedFactStore`, the precedence engine, card tags with
   `undo` and the megaphone's `changed`/`needs a look` groups on the phone.
   3559/340 green, Deno 671. "Status: submitted" no longer goes into pooled
-  assignment text. Device verification and the deploy are open.
+  assignment text. Device verification is open.
 - **2026-11-01.** Probe before declaring the Canvas session expired
   (`v9`, `docs/SIGNOUT_2026-11-01.md`): the 24-hour cookie rule now
   starts a `GET /api/v1/users/self` check instead of the banner; alive
