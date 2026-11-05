@@ -25,7 +25,7 @@ Olisa's answers to the scope questions, first exchange of the session:
 - **One identity.** The extension is paired to the phone before it talks to
   the backend for anything but pairing, so one student is one user.
 - **Penn only** (the backend is Penn-only; one Canvas host permission).
-- **Unpacked**, for the owner and friends. No Web Store listing in v1.
+- **Unpacked**, for the owner and friends; since 2026-11-04 the owner is submitting it to the Chrome Web Store (unlisted) from a store zip built in the cloud container, because his Mac was stolen.
 
 Rejected for v1: a laptop-only popup dashboard (the Mac app already is
 one), ask in a side panel (later, once the collector has proven itself),
@@ -546,6 +546,53 @@ build to the phone, apply the migration and deploy `sync`, `pair`,
   does; until then the extension kept anonymous announcements and pinned
   posts that the phone never uploads (SEC-10, caught by the Swift suite's
   `EdFilterParityTests`). 500 tests.
+- 2026-11-04: **Ed had never been read.** Every live run on the owner's
+  laptop reported `ed: none`: the token lives in `chrome.storage.session`,
+  which Chrome clears on every restart, and runs happened only at startup
+  (before any Ed tab) and hourly. Now an accepted token starts a
+  collection when the last run had no Ed (`shouldCollectOnEdToken`, once
+  per token, `force` skips only the hourly throttle), the popup says
+  "open ed once to sync its posts" / "sign in to ed", and threads are
+  paged like the phone (`threadsWithinWindow`, three pages of 100, the
+  2026-10-23 phone fix this port never got). 517 tests. Plus `npm run
+  e2e` (`e2e/`, about 30 s): the real packaged extension in headless
+  Chromium against a fake Ed, Canvas and backend served under the real
+  hostnames; it proves the token lift, the paging, the kept set, the
+  header text, that the token never reaches the backend or
+  `storage.local`, and the restart case. Checked to fail when paging or
+  the anonymous rule is broken. It cannot prove a real Ed login. The
+  store zip is stamped 0.1.1; `0.1.0` was sent to the owner before these
+  fixes and must not be uploaded.
+- 2026-11-05: **submitted to the Chrome Web Store, unlisted**, as 0.1.1,
+  by the owner from a Windows loaner (his Mac was stolen). Store item id
+  `jkegbcingmdidfegpmhgcagfhnnacoil`; the public page, once approved, is
+  `https://chromewebstore.google.com/detail/jkegbcingmdidfegpmhgcagfhnnacoil`
+  (the developer-console link is the owner's, not for students). The
+  store assigns that id for good, so a store install has a different
+  extension id from an unpacked load; nothing in the code or the backend
+  keys on it. Listing: the 1280×800 screenshot and the 128px S mark were
+  rendered from the real popup in the cloud container. Review pending.
+- 2026-11-05, later: 0.1.2 (the dashboard removed, the Canvas
+  submission read and the 5-minute cadence) submitted to the store as an
+  update at about 14:20 UTC, at the owner's hand. 0.1.1 had been approved
+  and installed on his laptop, and paired, the same morning (one
+  `device_links` row, 14:05 UTC); its popup showed his real Canvas work
+  before pairing, so a fresh store install reads Canvas. Still unproven on
+  real Canvas: the submission read and the feed to the phone; on real Ed:
+  everything.
+- 2026-11-05, later: **the popup lost its dashboard** (owner's decision:
+  the extension is not a product, it exists to gather data for the phone).
+  Unpaired it is the pairing flow as before; paired it is the header, one
+  status line ("synced 7m ago" / "synced just now" / "not synced yet", from
+  the newer of `workListV1.refreshedAt` and `deviceSyncAtV1`), the sign-in
+  and Ed notes when they apply, and "unpair". No todo · all · prev picker,
+  list, cards or tick buttons. The Canvas and Gradescope reads and the
+  encrypted sync are unchanged: the phone still receives the laptop's
+  list, completions and edits. `core/workList.js` stays for the worker, and
+  `visibleItems` stays exported from `popup.js` only because
+  `test/workList.test.js` imports it. 533 tests green (was 528; the four
+  Ed popup tests stay, five new ones for the status line, the pair button
+  and the no-list scan); `npm run e2e` all pass.
 - 2026-10-27, later: the next run looked up 186 linked ids, found 23
   missing both ways and 3 refused, and had nothing new to extract. The
   remaining courses without PDFs link none the student can open.

@@ -3,7 +3,7 @@
 import { refresh } from "./run.js";
 import { defaultBackend } from "./adapters/backend.js";
 import { deviceSyncPass } from "./deviceSync.js";
-import { collectRun } from "./collectRun.js";
+import { collectRun, shouldCollectOnEdToken, KEYS as COLLECT_KEYS } from "./collectRun.js";
 import { handleEdTokenMessage } from "./adapters/collector.js";
 // Static import: this adds ~1.8 MB (pdf.js) to worker start. Accepted, because a
 // module service worker cannot `import()` lazily.
@@ -11,6 +11,7 @@ import { extractPdfText } from "./adapters/pdfText.js";
 import { startPairing, pairingLink, unpair } from "./core/pairing.js";
 
 const SYNC_ALARM = "sync";
+const ED_TRIGGERED = "edTokenTriggeredV1"; // storage.session only
 export const PAIRING_STATE = "pairingStateV1"; // storage.session, never holds the key
 export const PAIRING_LINK = "pairingLinkV1"; // storage.session, only while showing
 
@@ -26,7 +27,8 @@ const syncDevices = (force = false) => {
   });
 };
 
-const collect = () => collectRun({
+const collect = (force = false) => collectRun({
+  force,
   fetch: (...a) => fetch(...a),
   callFunction: defaultBackend().callFunction,
   storage: chrome.storage.local,
@@ -42,7 +44,7 @@ const refreshThenSync = async () => { await refresh(); await syncDevices(); };
 const alarmPass = async () => { await refreshThenSync(); await collect(); };
 
 function start() {
-  chrome.alarms.create(SYNC_ALARM, { periodInMinutes: 60 });
+  chrome.alarms.create(SYNC_ALARM, { periodInMinutes: 5 });
   alarmPass();
 }
 
@@ -55,6 +57,20 @@ chrome.runtime.onStartup.addListener(start);
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === SYNC_ALARM) alarmPass();
 });
+
+// storage.session is cleared on every browser restart, so the startup run finds
+// no Ed token and records ed "none"; the student's next Ed visit must be what
+// starts the read, not the next hourly alarm. Guarded (shouldCollectOnEdToken):
+// only when the last run had no Ed, and once per token, remembered in
+// storage.session so it vanishes with the token. Fire-and-forget; the response
+// to the content script never waits on it.
+async function collectOnEdToken(token) {
+  const summary = (await chrome.storage.local.get(COLLECT_KEYS.summary))[COLLECT_KEYS.summary];
+  const lastTriggeredToken = (await chrome.storage.session.get(ED_TRIGGERED))[ED_TRIGGERED];
+  if (!shouldCollectOnEdToken({ summary, token, lastTriggeredToken })) return;
+  await chrome.storage.session.set({ [ED_TRIGGERED]: token });
+  await collect(true);
+}
 
 // ---- pairing ----
 
@@ -108,7 +124,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message?.type) {
     case "edToken":
-      handleEdTokenMessage(message, sender, chrome.storage.session).then(sendResponse, () => sendResponse({ ok: false }));
+      handleEdTokenMessage(message, sender, chrome.storage.session).then((res) => {
+        sendResponse(res);
+        if (res?.ok) collectOnEdToken(message.token).catch(() => {});
+      }, () => sendResponse({ ok: false }));
       return true;
     case "refresh":
       refreshThenSync().then(() => sendResponse({ ok: true }));

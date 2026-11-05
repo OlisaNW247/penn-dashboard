@@ -727,6 +727,38 @@ export function text(thread, decision) {
 // EdIngestion.defaultMaxAge: about a semester.
 export const DEFAULT_MAX_AGE_DAYS = 120;
 
+// EdClient.maxWindowPages / maxLimit: three pages of 100, so a student with six
+// Ed classes costs at most 18 thread requests per run.
+export const MAX_WINDOW_PAGES = 3;
+export const PAGE_LIMIT = 100;
+
+// EdClient.threadsWithinWindow: page `sort=new` until the ingestion window
+// closes. `fetchPage(offset)` returns a decoded threads response. Stops, after
+// each page and in this order: the page is short (fewer than 100, empty
+// included); its oldest thread by last activity is older than now - maxAgeDays;
+// `pageLimit` pages read. A repeated thread id (a reply bumped it between two
+// requests) keeps its first copy, users merge by id. Any error propagates and
+// the pages already read are dropped with it: the caller replaces a class's
+// whole Ed set with what this returns, so a partial union would erase posts.
+export async function threadsWithinWindow({ fetchPage, now = new Date(), maxAgeDays = DEFAULT_MAX_AGE_DAYS, pageLimit = MAX_WINDOW_PAGES }) {
+  const cutoff = new Date(now).getTime() - maxAgeDays * 86_400_000;
+  const pages = Math.max(pageLimit, 1);
+  const threads = [];
+  const users = [];
+  const seenThreads = new Set();
+  const seenUsers = new Set();
+  for (let page = 0; page < pages; page += 1) {
+    const response = await fetchPage(page * PAGE_LIMIT);
+    for (const t of response.threads) if (!seenThreads.has(t.id)) { seenThreads.add(t.id); threads.push(t); }
+    for (const u of response.users) if (!seenUsers.has(u.id)) { seenUsers.add(u.id); users.push(u); }
+    if (response.threads.length < PAGE_LIMIT) break;
+    let oldest = Infinity;
+    for (const t of response.threads) oldest = Math.min(oldest, (t.updatedAt ?? t.createdAt).getTime());
+    if (oldest < cutoff) break;
+  }
+  return { threads, users };
+}
+
 // EdIngestion.documents: one `ed` wire document per kept, recent thread,
 // newest first (ties by source id). Recency is `updatedAt` when Ed sends one,
 // else `createdAt`, the same value stored as the document's `updatedAt`.

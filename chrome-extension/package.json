@@ -1,1 +1,1 @@
-{"name":"smooth-chrome-extension","private":true,"type":"module","scripts":{"test":"TZ=America/New_York node --test \"test/*.test.js\""}}
+{"name":"smooth-chrome-extension","private":true,"type":"module","scripts":{"test":"TZ=America/New_York node --test \"test/*.test.js\"","e2e":"node e2e/run.mjs"}}

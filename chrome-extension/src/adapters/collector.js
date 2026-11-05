@@ -42,7 +42,7 @@ export const ACCEPTED_KINDS = ["home", "syllabus", "assignment", "announcement",
 // and anything unknown are never replaced.
 const CANVAS_REPLACED_KINDS = new Set(["assignment", "announcement", "module", "page"]);
 
-class CollectError extends Error {
+export class CollectError extends Error {
   constructor(kind) {
     super(kind);
     this.kind = kind; // out | forbidden | rateLimited | network | http | decode | truncated | unsafeLink
@@ -53,7 +53,7 @@ const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ------------------------------------------------------------- requests
 
-function makeContext({ fetch: fetchFn, limits = {}, sleep }) {
+export function makeContext({ fetch: fetchFn, limits = {}, sleep }) {
   const delayMs = limits.delayMs ?? DEFAULT_DELAY_MS;
   const doSleep = sleep ?? limits.sleep ?? defaultSleep;
   let first = true;
@@ -142,11 +142,11 @@ async function canvasGet(ctx, url) {
 // All pages of a paginated listing, as parsed JSON, following Link rel="next"
 // on the same host only. More than MAX_PAGES pages is a failure, not a quiet
 // cut: a truncated listing must not count as a complete set.
-async function canvasPaged(ctx, url) {
+export async function canvasPaged(ctx, url, maxPages = MAX_PAGES) {
   const pages = [];
   let next = url;
   for (let i = 0; next !== null; i++) {
-    if (i >= MAX_PAGES) throw new CollectError("truncated");
+    if (i >= maxPages) throw new CollectError("truncated");
     const { json, link } = await canvasGet(ctx, next);
     pages.push(json);
     try {
@@ -188,7 +188,7 @@ export function courseFromCanvas(raw) {
   return course;
 }
 
-async function listCourses(ctx) {
+export async function listCourses(ctx) {
   const pages = await canvasPaged(ctx, `${DEFAULT_BASE_URL}/api/v1/courses?enrollment_state=active&per_page=100`);
   const out = [];
   const seen = new Set();
@@ -276,6 +276,15 @@ async function edGet(ctx, url, token) {
   try { return JSON.parse(await res.text()); } catch { throw new CollectError("decode"); }
 }
 
+// Threads are paged like the phone (EdClient.threadsWithinWindow, up to three
+// pages of 100 newest-first): a class's announcements and pinned posts are a
+// few threads among hundreds of student ones, and a pinned announcement older
+// than the 100th newest thread was never read when this took one page. An
+// error on any page (out, rateLimited, anything) discards every page read for
+// that course, because a course read for Ed replaces its whole Ed set in the
+// extension's holdings (syncCourseMaterial), and a partial union would drop
+// the posts on the pages not reached from what it lists as held.
+//
 // Match Ed courses to Canvas courses (as the phone: no link evidence, one
 // Canvas site per code gets the documents, the first), read threads, keep only
 // what ed.js keeps. Returns { status, matched, documents, readCourseIDs }.
@@ -302,7 +311,10 @@ async function collectEd(ctx, token, courses, now) {
     if (!target) continue;
     let response;
     try {
-      response = edCore.decodeThreadsResponse(await edGet(ctx, edCore.threadsURL(m.edCourseID), token));
+      response = await edCore.threadsWithinWindow({
+        now,
+        fetchPage: async (offset) => edCore.decodeThreadsResponse(await edGet(ctx, edCore.threadsURL(m.edCourseID, { offset }), token)),
+      });
     } catch (e) {
       if (e instanceof CollectError && e.kind === "out") { result.status = "out"; break; }
       if (e instanceof CollectError && e.kind === "rateLimited") break;
