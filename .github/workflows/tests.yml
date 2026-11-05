@@ -18,7 +18,7 @@ name: tests
 
 on:
   push:
-    branches: [v8, main]
+    branches: [v10, v8, main]
     paths:
       - "LowHangingFruitKit/**"
       - "backend/**"
