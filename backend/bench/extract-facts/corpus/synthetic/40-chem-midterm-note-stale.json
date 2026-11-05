@@ -1,0 +1,87 @@
+{
+  "id": "synthetic-40",
+  "source": "synthetic",
+  "course": "CHEM 1010",
+  "kind": "announcement",
+  "title": "Midterm 1 logistics",
+  "postedAt": "2026-10-01T09:30:00-04:00",
+  "text": "Midterm 1 covers chapters 1-4, bring a calculator; it is on Oct 10 in DRL A1. The periodic table will be provided. Office hours Thursday will be a review.\n\n- Prof. Nakamura",
+  "index": [
+    {
+      "sourceID": "c-6101",
+      "title": "Problem Set 1",
+      "dueAt": "2026-09-18T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-6102",
+      "title": "Problem Set 2",
+      "dueAt": "2026-10-02T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-6103",
+      "title": "Midterm 1",
+      "dueAt": "2026-10-14T10:15:00-04:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "c-6104",
+      "title": "Problem Set 3",
+      "dueAt": "2026-10-23T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-6105",
+      "title": "Lab Report 1",
+      "dueAt": "2026-10-30T17:00:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-6106",
+      "title": "Problem Set 4",
+      "dueAt": "2026-11-13T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "c-6107",
+      "title": "Midterm 2",
+      "dueAt": "2026-11-18T10:15:00-05:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "c-6108",
+      "title": "Final Exam",
+      "dueAt": "2026-12-16T09:00:00-05:00",
+      "kind": "quiz"
+    }
+  ],
+  "meetings": [
+    {
+      "weekday": "Tue",
+      "start": "10:15",
+      "end": "11:44",
+      "room": "DRL A1"
+    },
+    {
+      "weekday": "Thu",
+      "start": "10:15",
+      "end": "11:44",
+      "room": "DRL A1"
+    }
+  ],
+  "timezone": "America/New_York",
+  "now": "2026-11-05T12:00:00-05:00",
+  "expected": {
+    "facts": [
+      {
+        "type": "note",
+        "target": "c-6103",
+        "title_any": [
+          "midterm 1"
+        ],
+        "note": "Coverage and materials still apply; the Oct 10 date was superseded by the index (Oct 14), so no reschedule or needs_review."
+      }
+    ]
+  }
+}

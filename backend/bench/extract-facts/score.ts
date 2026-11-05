@@ -250,6 +250,7 @@ export interface ResultLine {
   parsed: ParsedFacts | null;
   expected: ExpectedFact[];
   score?: DocScore;
+  fresh?: boolean;
 }
 
 export interface Ratio {

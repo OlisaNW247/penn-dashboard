@@ -47,3 +47,9 @@ Labelling decisions:
 | 34-econ-memo-page.json | ECON 0100 | page | page: project milestones, one new (outline), two indexed | new_task |
 | 35-writ-portfolio-page.json | WRIT 0020 | page | page: date for undated index item | reschedule |
 | 36-phys-ed-midterm-time.json | PHYS 0151 | ed | ed: staff-pinned exam moved (also says that day's 10:15 lecture slot is cancelled; not labelled, no index item) | reschedule |
+| 38-phys-quiz5-stale-conflict.json | PHYS 0140 | announcement | stale (Sep 10 vs now Nov 5): stated Quiz 5 date superseded by index; coverage note still valid | note |
+| 39-biol-hw4-cancel-stale.json | BIOL 0200 | announcement | stale: HW4 cancel still valid, HW5 date superseded | cancel |
+| 40-chem-midterm-note-stale.json | CHEM 1010 | announcement | stale: coverage/materials note valid, Oct 10 date superseded | note |
+| 41-hist-quiz2-past-unindexed.json | HIST 0150 | announcement | stale: past-dated unindexed quiz reschedule | none |
+| 42-math-lab7-fresh-reschedule.json | MATH 1400 | announcement | control: fresh reschedule | reschedule |
+| 43-stat-syllabus-old-final.json | STAT 1020 | syllabus | control: old syllabus, unindexed dated final | new_task |

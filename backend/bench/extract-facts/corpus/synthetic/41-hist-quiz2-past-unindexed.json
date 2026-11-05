@@ -1,0 +1,78 @@
+{
+  "id": "synthetic-41",
+  "source": "synthetic",
+  "course": "HIST 0150",
+  "kind": "announcement",
+  "title": "Quiz 2 for Chap. 22 is rescheduled to Sep 23",
+  "postedAt": "2026-09-15T14:00:00-04:00",
+  "text": "Class,\n\nThe quiz will cover the reading on industrialisation. Please bring a pencil.\n\nProf. Adler",
+  "index": [
+    {
+      "sourceID": "h-7101",
+      "title": "Reading Response 1",
+      "dueAt": "2026-09-12T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "h-7102",
+      "title": "Reading Response 2",
+      "dueAt": "2026-09-26T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "h-7103",
+      "title": "Primary Source Essay",
+      "dueAt": "2026-10-10T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "h-7104",
+      "title": "Reading Response 3",
+      "dueAt": "2026-10-24T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "h-7105",
+      "title": "Midterm Exam",
+      "dueAt": "2026-10-29T10:15:00-04:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "h-7106",
+      "title": "Reading Response 4",
+      "dueAt": "2026-11-14T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "h-7107",
+      "title": "Research Paper",
+      "dueAt": "2026-12-04T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "h-7108",
+      "title": "Final Exam",
+      "dueAt": "2026-12-18T13:00:00-05:00",
+      "kind": "quiz"
+    }
+  ],
+  "meetings": [
+    {
+      "weekday": "Tue",
+      "start": "10:15",
+      "end": "11:14",
+      "room": "Williams 202"
+    },
+    {
+      "weekday": "Thu",
+      "start": "10:15",
+      "end": "11:14",
+      "room": "Williams 202"
+    }
+  ],
+  "timezone": "America/New_York",
+  "now": "2026-11-05T12:00:00-05:00",
+  "expected": {
+    "facts": []
+  }
+}

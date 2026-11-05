@@ -63,6 +63,8 @@ export type RejectReason =
   | "unknown_target"
   | "target_required"
   | "date_out_of_range"
+  | "due_in_past"
+  | "stale_document"
   | "title_required";
 
 export interface ParsedFacts {
@@ -163,6 +165,27 @@ export const FACTS_INSTRUCTIONS: string = [
   + `conditional poll, or a contradiction between a stated weekday and date, `
   + `yields no fact.`,
 
+  // Why this paragraph exists (2026-11-05, PHYS 0151, first sync): months of
+  // old posts were extracted against today's index. "Quiz 5 on capacitors
+  // will be on Sep 19th" (posted September) met an index already showing
+  // Oct 19 and came back as needs_review "date conflicts"; the index is
+  // newer than the post, so the right answer is no fact. "Quiz 2 for
+  // Chap.22 is rescheduled to Sep 23" (not indexed, now November) came back
+  // as a new_task for a date long past. The wrong fix is to skip old
+  // documents entirely: a syllabus is old and still the only source of an
+  // unindexed final exam, and a coverage note or a cancel on an item the
+  // index still holds stays true. The validator backs the two hard cases
+  // (stale_document, due_in_past).
+  `The ITEM INDEX is Canvas as of the current date. A document posted more `
+  + `than 7 days before the current date is older than the index: Canvas has `
+  + `had time to absorb whatever it announced. For such a document, a date `
+  + `it states for an indexed item that differs from the index was `
+  + `superseded, so emit no reschedule and no needs_review about that `
+  + `item's date; notes about coverage, format, materials or location still `
+  + `apply, and a cancel still applies when the index still holds the item. `
+  + `Work whose stated or resolved date is already before the current date `
+  + `is over: emit no new_task for it, whatever the document says.`,
+
   `What an exam or quiz covers or excludes ("covers chapters 5-6", "will not `
   + `test X"), stated for the first time, is a note on that item; `
   + `scope_change is only for assigned work whose requirement shrinks or `
@@ -243,6 +266,15 @@ export const FACTS_JSON_SCHEMA: Record<string, unknown> = {
 const MAX_TEXT_CHARS = 12000;
 const MAX_DUE_DATE_SKEW_MS = 400 * 24 * 60 * 60 * 1000;
 
+/** A document posted longer ago than this is older than the ITEM INDEX: Canvas
+ * has had time to absorb what it announced, so a reschedule it states was
+ * superseded (2026-11-05, PHYS 0151: a September "Quiz 5 will be on Sep 19th"
+ * against an index that already said Oct 19 produced a needs_review). Mirrors
+ * the 7 days in the prompt; the validator enforces it for reschedules because
+ * a model can miss it, while needs_review about the same date is left to the
+ * prompt, which can tell a date conflict from a coverage note. */
+export const STALE_DOCUMENT_MS = 7 * 24 * 60 * 60 * 1000;
+
 /** Weekday name of `iso` in `timeZone`, via Intl so it never depends on the
  *  host's zone or clock. `undefined` when the date or zone is unusable. */
 function weekdayName(iso: string, timeZone: string): string | undefined {
@@ -252,6 +284,19 @@ function weekdayName(iso: string, timeZone: string): string | undefined {
     return new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone }).format(date);
   } catch {
     return undefined;
+  }
+}
+
+/** Calendar day (YYYY-MM-DD) of `iso` in `timeZone`; a bare date is that day.
+ *  `null` when the date or zone is unusable. */
+function dayKey(iso: string, timeZone: string): string | null {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+  } catch {
+    return null;
   }
 }
 
@@ -415,6 +460,36 @@ export function parseFacts(text: string, doc: FactsDocument): ParsedFacts {
     if (type === "new_task" && (title === undefined || title.trim().length === 0)) {
       reject("title_required");
       continue;
+    }
+
+    // A reschedule from a document posted more than STALE_DOCUMENT_MS before
+    // `now` is rejected outright. Undated documents are untouched: without a
+    // post date there is no evidence the index is newer.
+    if (type === "reschedule" && doc.postedAt) {
+      const posted = new Date(doc.postedAt).getTime();
+      if (!Number.isNaN(posted) && !Number.isNaN(now) && now - posted > STALE_DOCUMENT_MS) {
+        reject("stale_document");
+        continue;
+      }
+    }
+    // Work due on an earlier calendar day than today is over, so a new_task
+    // for it is noise (2026-11-05: a September "Quiz 2 ... rescheduled to
+    // Sep 23" synced in November). Days in the document's zone, not
+    // instants: "due 23:59 today" and a date-only due_at for today (which
+    // parses as UTC midnight, hours before `now`) are still live work, and
+    // comparing instants would drop both. Only a plausible date counts: an
+    // unparseable or out-of-range one (1900, 9999) is garbage rather than
+    // "past", and keeps going to the null-the-date path below, as before.
+    if (type === "new_task" && typeof e.due_at === "string") {
+      const due = new Date(e.due_at).getTime();
+      if (!Number.isNaN(due) && !Number.isNaN(now) && Math.abs(now - due) <= MAX_DUE_DATE_SKEW_MS) {
+        const dueDay = dayKey(e.due_at, doc.timezone);
+        const today = dayKey(doc.now, doc.timezone);
+        if (dueDay !== null && today !== null && dueDay < today) {
+          reject("due_in_past");
+          continue;
+        }
+      }
     }
 
     let dueAt: string | null = null;

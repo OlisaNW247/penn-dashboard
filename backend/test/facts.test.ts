@@ -5,6 +5,7 @@ import {
   FACTS_JSON_SCHEMA,
   type FactsDocument,
   parseFacts,
+  STALE_DOCUMENT_MS,
 } from "../supabase/functions/_shared/facts.ts";
 
 // A Thursday-evening post, so "Friday" is resolvable from the posted weekday.
@@ -275,4 +276,86 @@ Deno.test("parseFacts: an unparseable `now` disables the range check instead of 
   const d: FactsDocument = { ...doc, now: "not a date" };
   const parsed = parseFacts(wrap([{ ...base, type: "reschedule", target: "a1", due_at: "2031-01-01T00:00:00Z", quote: "HW3" }]), d);
   assert.equal(parsed.facts.length, 1);
+});
+
+Deno.test("FACTS_INSTRUCTIONS carries the stale-document paragraph", () => {
+  for (const phrase of [
+    "The ITEM INDEX is Canvas as of the current date.",
+    "more than 7 days before the current date",
+    "emit no reschedule and no needs_review about that item's date",
+    "a cancel still applies when the index still holds the item",
+    "emit no new_task for it",
+  ]) {
+    assert.ok(FACTS_INSTRUCTIONS.includes(phrase), `missing "${phrase}"`);
+  }
+  assert.equal(STALE_DOCUMENT_MS, 7 * 24 * 60 * 60 * 1000);
+});
+
+Deno.test("parseFacts rejects a new_task whose date is already past", () => {
+  // doc.now is 2026-11-05T23:35Z.
+  const parsed = parseFacts(wrap([
+    { ...base, type: "new_task", title: "Quiz 2", due_at: "2026-09-23T13:45:00-04:00", quote: "read chapter 5" },
+  ]), doc);
+  assert.equal(parsed.facts.length, 0);
+  assert.equal(parsed.rejected[0].reason, "due_in_past");
+});
+
+Deno.test("parseFacts keeps a new_task due in the future", () => {
+  const parsed = parseFacts(wrap([
+    { ...base, type: "new_task", title: "Quiz 2", due_at: "2026-11-12T13:45:00-05:00", quote: "read chapter 5" },
+  ]), doc);
+  assert.equal(parsed.facts.length, 1);
+  assert.equal(parsed.rejected.length, 0);
+});
+
+Deno.test("parseFacts rejects a reschedule from a 30-day-old document", () => {
+  const old = { ...doc, postedAt: "2026-10-06T23:30:00Z" };
+  const parsed = parseFacts(wrap([
+    { ...base, type: "reschedule", target: "a1", due_at: "2026-11-06T23:59:00Z", quote: "HW3 is now due Friday" },
+  ]), old);
+  assert.equal(parsed.facts.length, 0);
+  assert.equal(parsed.rejected[0].reason, "stale_document");
+});
+
+Deno.test("parseFacts keeps a reschedule from a 2-day-old document", () => {
+  const recent = { ...doc, postedAt: "2026-11-03T23:30:00Z" };
+  const parsed = parseFacts(wrap([
+    { ...base, type: "reschedule", target: "a1", due_at: "2026-11-06T23:59:00Z", quote: "HW3 is now due Friday" },
+  ]), recent);
+  assert.equal(parsed.facts.length, 1);
+});
+
+Deno.test("parseFacts keeps a reschedule from a document with no postedAt", () => {
+  const undated = { ...doc, postedAt: undefined };
+  const parsed = parseFacts(wrap([
+    { ...base, type: "reschedule", target: "a1", due_at: "2026-11-06T23:59:00Z", quote: "HW3 is now due Friday" },
+  ]), undated);
+  assert.equal(parsed.facts.length, 1);
+});
+
+Deno.test("parseFacts keeps a new_task due 23:59 today in the document's zone", () => {
+  // 09:00 New York on 2026-11-05; 23:59 that evening is later today.
+  const d = { ...doc, now: "2026-11-05T14:00:00Z" };
+  const parsed = parseFacts(wrap([
+    { ...base, type: "new_task", title: "Quiz 2", due_at: "2026-11-05T23:59:00-05:00", quote: "read chapter 5" },
+  ]), d);
+  assert.equal(parsed.facts.length, 1);
+});
+
+Deno.test("parseFacts keeps a new_task whose date-only due_at is today", () => {
+  // Parses as UTC midnight, before `now`, but is still today in New York.
+  const d = { ...doc, now: "2026-11-05T14:00:00Z" };
+  const parsed = parseFacts(wrap([
+    { ...base, type: "new_task", title: "Quiz 2", due_at: "2026-11-05", quote: "read chapter 5" },
+  ]), d);
+  assert.equal(parsed.facts.length, 1);
+});
+
+Deno.test("parseFacts rejects a new_task due yesterday in the document's zone", () => {
+  const d = { ...doc, now: "2026-11-05T14:00:00Z" };
+  const parsed = parseFacts(wrap([
+    { ...base, type: "new_task", title: "Quiz 2", due_at: "2026-11-04T23:59:00-05:00", quote: "read chapter 5" },
+  ]), d);
+  assert.equal(parsed.facts.length, 0);
+  assert.equal(parsed.rejected[0].reason, "due_in_past");
 });

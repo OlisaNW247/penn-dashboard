@@ -1,0 +1,87 @@
+{
+  "id": "synthetic-39",
+  "source": "synthetic",
+  "course": "BIOL 0200",
+  "kind": "announcement",
+  "title": "HW4 and HW5 changes",
+  "postedAt": "2026-09-28T10:15:00-04:00",
+  "text": "Hello everyone,\n\nHW4 is cancelled; HW5 is now due Oct 15. Please use the extra time to review the cell-signalling lectures.\n\nBest,\nDr. Ruiz",
+  "index": [
+    {
+      "sourceID": "b-5101",
+      "title": "HW3",
+      "dueAt": "2026-09-24T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5102",
+      "title": "HW4",
+      "dueAt": "2026-10-08T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5103",
+      "title": "HW5",
+      "dueAt": "2026-10-22T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5104",
+      "title": "Midterm Exam",
+      "dueAt": "2026-10-30T11:00:00-04:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "b-5105",
+      "title": "HW6",
+      "dueAt": "2026-11-12T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5106",
+      "title": "Lab Report 2",
+      "dueAt": "2026-11-18T17:00:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5107",
+      "title": "HW7",
+      "dueAt": "2026-12-03T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "b-5108",
+      "title": "Final Exam",
+      "dueAt": "2026-12-17T09:00:00-05:00",
+      "kind": "quiz"
+    }
+  ],
+  "meetings": [
+    {
+      "weekday": "Tue",
+      "start": "11:00",
+      "end": "12:29",
+      "room": "Leidy 10"
+    },
+    {
+      "weekday": "Thu",
+      "start": "11:00",
+      "end": "12:29",
+      "room": "Leidy 10"
+    }
+  ],
+  "timezone": "America/New_York",
+  "now": "2026-11-05T12:00:00-05:00",
+  "expected": {
+    "facts": [
+      {
+        "type": "cancel",
+        "target": "b-5102",
+        "title_any": [
+          "hw4"
+        ],
+        "note": "'HW4 is cancelled' still holds: HW4 is in the index. The HW5 date was superseded (index says Oct 22), so no reschedule."
+      }
+    ]
+  }
+}

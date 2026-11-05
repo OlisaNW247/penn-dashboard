@@ -1,0 +1,87 @@
+{
+  "id": "synthetic-38",
+  "source": "synthetic",
+  "course": "PHYS 0140",
+  "kind": "announcement",
+  "title": "Quiz 5 on capacitors",
+  "postedAt": "2026-09-10T16:20:00-04:00",
+  "text": "Hi all,\n\nQuiz 5 on capacitors will be on Sep 19th at 1:45pm, during the usual lecture slot. It covers sections 3.1 through 3.4.\n\nSee you Friday,\nProf. Okafor",
+  "index": [
+    {
+      "sourceID": "p-4101",
+      "title": "Lab 3",
+      "dueAt": "2026-09-30T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "p-4102",
+      "title": "Problem Set 4",
+      "dueAt": "2026-10-02T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "p-4103",
+      "title": "Quiz 4",
+      "dueAt": "2026-10-09T13:45:00-04:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "p-4104",
+      "title": "Quiz 5",
+      "dueAt": "2026-10-19T13:45:00-04:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "p-4105",
+      "title": "Midterm",
+      "dueAt": "2026-10-28T19:00:00-04:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "p-4106",
+      "title": "Problem Set 6",
+      "dueAt": "2026-11-06T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "p-4107",
+      "title": "Lab 7",
+      "dueAt": "2026-11-10T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "p-4108",
+      "title": "Final Exam",
+      "dueAt": "2026-12-15T09:00:00-05:00",
+      "kind": "quiz"
+    }
+  ],
+  "meetings": [
+    {
+      "weekday": "Mon",
+      "start": "13:45",
+      "end": "14:44",
+      "room": "Towne 100"
+    },
+    {
+      "weekday": "Fri",
+      "start": "13:45",
+      "end": "14:44",
+      "room": "Towne 100"
+    }
+  ],
+  "timezone": "America/New_York",
+  "now": "2026-11-05T12:00:00-05:00",
+  "expected": {
+    "facts": [
+      {
+        "type": "note",
+        "target": "p-4104",
+        "title_any": [
+          "quiz 5"
+        ],
+        "note": "Coverage (sections 3.1-3.4) still applies; the Sep 19 date was superseded by the index (Oct 19), so no reschedule or needs_review."
+      }
+    ]
+  }
+}

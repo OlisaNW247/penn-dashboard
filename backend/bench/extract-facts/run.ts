@@ -35,6 +35,7 @@ interface Args {
   limit: number | null;
   concurrency: number;
   dryRun: boolean;
+  fresh: boolean;
   requireParameters: boolean;
   temperature: number;
   maxTokens: number;
@@ -49,6 +50,7 @@ function parseArgs(argv: string[]): Args {
     limit: null,
     concurrency: 4,
     dryRun: false,
+    fresh: false,
     requireParameters: false,
     temperature: 0,
     // 4000, not 1500: in round 1 gpt-6-luna spent its whole 1500-token budget
@@ -78,12 +80,13 @@ function parseArgs(argv: string[]): Args {
         break;
       }
       case "--dry-run": a.dryRun = true; break;
+      case "--fresh": a.fresh = true; break;
       case "--require-parameters": a.requireParameters = true; break;
       default: throw new Error(`unknown argument ${k}`);
     }
   }
   if (!a.corpus || !a.tag || a.models.length === 0) {
-    throw new Error("usage: run.ts --corpus <dir> --tag <name> --model <id> [--model <id> ...] [--limit N] [--concurrency 4] [--dry-run] [--temperature 0] [--max-tokens 4000] [--reasoning low|medium|high]");
+    throw new Error("usage: run.ts --corpus <dir> --tag <name> --model <id> [--model <id> ...] [--limit N] [--concurrency 4] [--dry-run] [--fresh] [--temperature 0] [--max-tokens 4000] [--reasoning low|medium|high]");
   }
   return a;
 }
@@ -113,10 +116,28 @@ async function loadCorpus(dir: string): Promise<{ docs: CorpusDoc[]; unlabelled:
 /** The document exactly as the production function will see it: the bench-only
  * `source` and `expected` fields are stripped so a label can never leak into
  * the prompt. */
-function toFactsDocument(d: CorpusDoc): FactsDocument {
+function toFactsDocument(d: CorpusDoc, fresh = false): FactsDocument {
   // deno-lint-ignore no-unused-vars
   const { source, expected, ...doc } = d;
+  if (fresh && doc.postedAt) doc.now = freshNow(doc.postedAt);
   return doc as FactsDocument;
+}
+
+/** `--fresh`: post-time extraction, which is what the phone-corpus labels
+ * assume (the live path extracts shortly after a post lands). The phone corpus
+ * sets `now` to the sync time, months after the post, so without this every
+ * old document is judged against today's index. The offset is kept so the
+ * prompt's "Current date" reads in the same zone as the post. */
+export function freshNow(postedAt: string): string {
+  const t = new Date(postedAt).getTime();
+  if (Number.isNaN(t)) return postedAt;
+  const m = /([+-])(\d{2}):?(\d{2})$/.exec(postedAt);
+  const offMin = m ? (m[1] === "-" ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3])) : 0;
+  const shifted = new Date(t + 3600_000 + offMin * 60_000).toISOString().slice(0, 19);
+  const sign = offMin < 0 ? "-" : "+";
+  const a = Math.abs(offMin);
+  const off = m ? `${sign}${String(Math.floor(a / 60)).padStart(2, "0")}:${String(a % 60).padStart(2, "0")}` : "Z";
+  return shifted + off;
 }
 
 function requestBody(model: string, doc: FactsDocument, args: Args) {
@@ -157,7 +178,7 @@ async function callOnce(body: unknown, key: string) {
 }
 
 async function runOne(model: string, d: CorpusDoc, args: Args, key: string): Promise<ResultLine> {
-  const doc = toFactsDocument(d);
+  const doc = toFactsDocument(d, args.fresh);
   const body = requestBody(model, doc, args);
   const started = performance.now();
   let status: number | null = null;
@@ -212,6 +233,7 @@ async function runOne(model: string, d: CorpusDoc, args: Args, key: string): Pro
     error,
     parsed,
     expected: d.expected!.facts,
+    ...(args.fresh ? { fresh: true } : {}),
   };
   line.score = scoreDoc(line.expected, parsed, d);
   return line;
@@ -249,7 +271,7 @@ if (import.meta.main) {
   if (args.dryRun) {
     const path = `${resultsDir}${args.tag}.requests.jsonl`;
     const rows = pairs.map(({ m, d }) =>
-      JSON.stringify({ model: m, docId: d.id, body: requestBody(m, toFactsDocument(d), args) })
+      JSON.stringify({ model: m, docId: d.id, body: requestBody(m, toFactsDocument(d, args.fresh), args) })
     );
     await Deno.writeTextFile(path, rows.join("\n") + (rows.length ? "\n" : ""));
     console.log(`dry run: wrote ${rows.length} request bodies to ${path} (no network call made)`);

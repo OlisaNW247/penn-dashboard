@@ -253,3 +253,112 @@ over. Left as is; if gone items are ever included, the index line should
 say `gone` so the model does not create a `new_task` for a vanished item.
 The other two `needs_review` facts (Quiz 5 against a September document,
 Worksheet 3.1) are the stale-document noise already noted above.
+
+## Round 4: stale documents (2026-11-05)
+
+**Problem.** On a first sync the function extracts months of old posts against
+today's ITEM INDEX. PHYS 0151, 2026-11-05: a September post said "Quiz 5 on
+capacitors will be on Sep 19th" while the index (Canvas, newer than the post)
+shows Quiz 5 due Oct 19, and the model emitted needs_review "date conflicts";
+a September post "Quiz 2 for Chap.22 is rescheduled to Sep 23" (Quiz 2 not
+indexed, now November) produced a new_task for a date long past. Both should
+be no fact. The bench could not see either: it rewinds the index per file and
+the phone corpus sets `now` to the sync time while its labels assume post-time
+extraction.
+
+**The rule.** One prompt paragraph after the "names an indexed item and gives
+or resolves a date" paragraph: a document posted more than 7 days before the
+current date is older than the index, so a differing stated date for an indexed
+item was superseded (no reschedule, no needs_review about that date); notes
+about coverage, format, materials or location and a cancel on a still-indexed
+item still apply; work dated before the current date is over (no new_task).
+The wrong fix, recorded in the code comment: skipping old documents outright,
+since a syllabus is old and still the only source of an unindexed final.
+
+**The guards** (`parseFacts`, `facts.ts`; both counted in `rejectReasons`
+generically, nothing else needed a change):
+- `due_in_past`: a new_task whose `due_at` is before `doc.now`. Only a
+  plausible date counts (within the existing 400-day skew); 1900 / 9999 /
+  unparseable still go to the existing null-the-date path, which an existing
+  test pins. A date-only `due_at` for today parses as UTC midnight and so reads
+  as past; not handled.
+- `stale_document`: a reschedule when `postedAt` parses and `now - postedAt >
+  STALE_DOCUMENT_MS` (exported, 7 days). Undated documents untouched.
+Tests: 6 added in `backend/test/facts.test.ts`.
+
+**Bench.** New `--fresh` flag in `run.ts`: `now` = `postedAt` + 1 hour, same
+offset, `"fresh": true` on each result line; documents without `postedAt`
+(all Ed documents) keep their `now`. Corpus for the three table columns: the
+phone corpus plus synthetic 01-36 (121 documents, the same set as Round 3; the
+six new documents run separately, since `--fresh` would turn the stale ones
+into fresh ones). Haiku 5.5, one run each, tags `round3-fresh` (HEAD prompt),
+`round4a-stale`, `round4b-stale`. Deno: 699 passed, 0 failed; check clean.
+
+| | round3-fresh | round4a | round4b | round4c |
+|---|---|---|---|---|
+| Gate | PASS | PASS | PASS | PASS |
+| Overall P / R | 74% / 88% | 79% / 83% | 81% / 85% | 76% / 90% |
+| new_task TP/FP/FN | 8/0/6 | 8/0/6 | 8/0/6 | 9/0/5 |
+| cancel TP/FP/FN | 4/0/0 | 4/0/0 | 4/0/0 | 4/0/0 |
+| reschedule TP/FP/FN | 19/2/0 | 16/1/3 | 17/1/2 | 19/1/0 |
+| scope_change TP/FP/FN | 4/8/0 | 4/1/0 | 4/1/0 | 4/8/0 |
+| note TP/FP/FN | 11/7/1 | 11/9/1 | 11/8/1 | 11/6/1 |
+| needs_review TP/FP/FN | 6/1/0 | 6/2/0 | 6/2/0 | 6/2/0 |
+
+**Six synthetic documents** (`corpus/synthetic/38-43`, tag
+`round4-synthetic-stale`, no `--fresh`, now 2026-11-05 except 42): gate PASS,
+overall P 100% / R 100%, 6 of 6 as labelled (after the 38 relabel below; rescored from the saved result, no new model call).
+- 38 stale Quiz 5 conflict: one note on Quiz 5 ("covers sections 3.1 through 3.4"), no reschedule or needs_review. Relabelled from "no facts" to exactly one note on Quiz 5: coverage still applies under the rule. As expected.
+- 39 HW4 cancel / HW5 superseded: cancel on HW4 only. As expected.
+- 40 Midterm 1 note: one note on Midterm 1, no reschedule, no needs_review.
+  As expected.
+- 41 past unindexed Quiz 2: none. As expected.
+- 42 fresh Lab 7 reschedule: reschedule to 2026-11-13T23:59-05:00. As expected.
+- 43 old syllabus final: new_task "Take the final exam" 2026-12-14T18:00-05:00.
+  As expected.
+
+**Changed outcomes vs round3-fresh, and which hold.** Identical prompts
+already differ by about twelve documents run to run (see 3a vs 3b). No
+`stale_document` or `due_in_past` rejection appears in any `--fresh` run,
+because `--fresh` makes nothing stale. A change is stable only if 4a, 4b and
+4c all show it.
+
+Stable across 4a / 4b / 4c:
+- 11298483: note -> none (the `new_task` label is a miss either way).
+- synthetic-23: none -> note FP.
+- synthetic-35: extra note FP (on d-9312 in 4a/4b, d-9311 in 4c).
+
+Stable in 4b and 4c only: 11313868 none -> `new_task` 2026-09-23 (a TP; 4a had
+`needs_review`).
+
+One-run noise (flips back or varies):
+- ed:1949818:8209157: seven `scope_change` FPs vanish in 4a and 4b, return in
+  4c (the 4c scope_change FP total, 8, is round3-fresh's).
+- ed:1949818:8251419, ed:1949818:8447254, ed:1947653:8378902: reschedule or
+  `new_task` TP lost in 4b only.
+- 11331706 (three reschedule TPs): lost in 4a only.
+- 11367332 note FP: absent in 4a only.
+- 11373672: reschedule FP -> none, none, `needs_review` (4c).
+- 11311145, syllabus:1947653, syllabus:1949400, ed:1947653:8211957,
+  ed:1947653:8397649, synthetic-03, synthetic-28, synthetic-30, synthetic-36:
+  an extra or missing note or `needs_review` in one run each.
+
+**Fixes after round 4a/4b.** `due_in_past` compares calendar days in
+`doc.timezone` (new `dayKey` helper in `facts.ts`), not instants, so work due
+later today and a date-only `due_at` for today are kept; only a due day
+strictly before today's is rejected (3 tests: 23:59 today kept, date-only
+today kept, yesterday rejected). Synthetic 38 was relabelled to expect one note
+on Quiz 5. Round 4c ran on the corrected `facts.ts`; Deno 702 passed, check
+clean.
+
+Reading: the stale paragraph does not move the headline numbers outside
+run-to-run noise: reschedule recall is back to 100% in 4c, so the 4a/4b dip was
+noise, not the paragraph. The stable effects are small (synthetic-23 and -35
+gain a note FP, 11298483 loses a note). Total spend for the five bench runs:
+about $0.27 (estimated by `score.ts`).
+
+The six stale cases were re-run once more against the corrected prompt and
+validator (tag `round4-synthetic-stale2`, $0.0032): 6 of 6 documents as
+labelled, 5 facts, 0 FP, 0 FN. Round 4 is committed on `v10` and NOT
+deployed; deploying it means `extract-facts` and `sync` both, since `sync`
+bundles `_shared/facts.ts`, and needs a person's go.

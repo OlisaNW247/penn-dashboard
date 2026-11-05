@@ -1,0 +1,75 @@
+{
+  "id": "synthetic-43",
+  "source": "synthetic",
+  "course": "STAT 1020",
+  "kind": "syllabus",
+  "title": "Syllabus",
+  "postedAt": "2026-08-25T08:00:00-04:00",
+  "text": "STAT 1020: Introduction to Statistical Methods\nInstructor: Dr. Patel. Office hours: Wednesday 2-4 PM.\n\nGrading: problem sets 30%, two midterms 40%, final exam 30%.\nLate policy: one late day per problem set, no credit afterwards.\nCollaboration: discuss freely, write up alone.\nCalculators: a basic scientific calculator is allowed on exams.\nFinal exam: Mon 12/14/26 6-8 PM, DRL A1\nAccommodations: contact the instructor in week one.",
+  "index": [
+    {
+      "sourceID": "s-9101",
+      "title": "Problem Set 4",
+      "dueAt": "2026-11-06T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "s-9102",
+      "title": "Problem Set 5",
+      "dueAt": "2026-11-20T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "s-9103",
+      "title": "Quiz 6",
+      "dueAt": "2026-11-23T10:15:00-05:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "s-9104",
+      "title": "Problem Set 6",
+      "dueAt": "2026-12-04T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "s-9105",
+      "title": "Midterm 2",
+      "dueAt": "2026-11-17T10:15:00-05:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "s-9106",
+      "title": "Course Survey",
+      "kind": "assignment"
+    }
+  ],
+  "meetings": [
+    {
+      "weekday": "Tue",
+      "start": "10:15",
+      "end": "11:44",
+      "room": "DRL A1"
+    },
+    {
+      "weekday": "Thu",
+      "start": "10:15",
+      "end": "11:44",
+      "room": "DRL A1"
+    }
+  ],
+  "timezone": "America/New_York",
+  "now": "2026-11-05T12:00:00-05:00",
+  "expected": {
+    "facts": [
+      {
+        "type": "new_task",
+        "title_any": [
+          "final"
+        ],
+        "kind": "event",
+        "due_at": "2026-12-14T18:00:00-05:00",
+        "due_tolerance": "exact"
+      }
+    ]
+  }
+}

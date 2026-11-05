@@ -1,0 +1,94 @@
+{
+  "id": "synthetic-42",
+  "source": "synthetic",
+  "course": "MATH 1400",
+  "kind": "announcement",
+  "title": "Lab 7 moved",
+  "postedAt": "2026-11-04T09:00:00-05:00",
+  "text": "Hi everyone,\n\nLab 7 is moved to Friday Nov 13 at 11:59pm because of the campus event next week. Nothing else changes.\n\nDr. Chen",
+  "index": [
+    {
+      "sourceID": "m-8101",
+      "title": "Lab 5",
+      "dueAt": "2026-10-20T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "m-8102",
+      "title": "Problem Set 6",
+      "dueAt": "2026-10-30T23:59:00-04:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "m-8103",
+      "title": "Lab 6",
+      "dueAt": "2026-11-03T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "m-8104",
+      "title": "Lab 7",
+      "dueAt": "2026-11-10T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "m-8105",
+      "title": "Quiz 4",
+      "dueAt": "2026-11-12T10:15:00-05:00",
+      "kind": "quiz"
+    },
+    {
+      "sourceID": "m-8106",
+      "title": "Problem Set 7",
+      "dueAt": "2026-11-20T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "m-8107",
+      "title": "Lab 8",
+      "dueAt": "2026-12-01T23:59:00-05:00",
+      "kind": "assignment"
+    },
+    {
+      "sourceID": "m-8108",
+      "title": "Final Exam",
+      "dueAt": "2026-12-19T09:00:00-05:00",
+      "kind": "quiz"
+    }
+  ],
+  "meetings": [
+    {
+      "weekday": "Mon",
+      "start": "10:15",
+      "end": "11:14",
+      "room": "Hill 201"
+    },
+    {
+      "weekday": "Wed",
+      "start": "10:15",
+      "end": "11:14",
+      "room": "Hill 201"
+    },
+    {
+      "weekday": "Fri",
+      "start": "10:15",
+      "end": "11:14",
+      "room": "Hill 201"
+    }
+  ],
+  "timezone": "America/New_York",
+  "now": "2026-11-04T10:00:00-05:00",
+  "expected": {
+    "facts": [
+      {
+        "type": "reschedule",
+        "target": "m-8104",
+        "title_any": [
+          "lab 7"
+        ],
+        "due_at": "2026-11-13T23:59:00-05:00",
+        "due_tolerance": "exact"
+      }
+    ]
+  }
+}
