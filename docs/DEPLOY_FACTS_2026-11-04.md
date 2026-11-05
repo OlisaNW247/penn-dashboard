@@ -165,9 +165,10 @@ The evening of 2026-11-04 US Eastern (the Mac's clock is UTC-5). Project
   02:17 UTC, the manifest ran, and `verify-facts-on-phone.sh` read
   `factsCursorV1: 23` with `structuredCompletedItemIDsV1` unchanged at 11.
   Lesson: after a deploy, the first phone needs the hour to pass (or a
-  relaunch once it has); there is no force flag. The card check (undo,
-  nothing completed or deleted, manual date edit wins) is still to be done
-  by eye.
+  relaunch once it has); there is no force flag. Card check, same day: Marco
+  reported the Midterm 2 notes and the Dec 14 final-exam task showing on
+  the PHYS 0151 cards. `undo` and "a manual date edit wins" remain untried
+  on a device.
 
 ### Lesson: step 3 needs a first extraction when no phone has uploaded
 

@@ -87,8 +87,10 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
      completed or deleted, a manual date edit still wins. The plist half is
      done: at 02:17 UTC on 2026-11-05 `factsCursorV1` read 23 (all 17 PHYS
      0151 facts on the phone) and the Canvas completion count stayed at 11.
-     The card half (look, undo, date edit wins) has not been done by eye;
-     Marco has the phone. Phase 1's plist read ran 2026-11-04 (11
+     Card half, 2026-11-05: Marco looked and reported that the Midterm 2
+     notes and the Dec 14 final-exam task both show on the PHYS 0151
+     cards. `undo` and "a manual date edit wins" are still unexercised on
+     a device. Phase 1's plist read ran 2026-11-04 (11
      completions, 14 section dates, 1 missing).
   7. Record the result in `CLAUDE.md` and `docs/PRIVACY.md` in the same
      commit. The token stays in `~/lhf-bench/supabase.token` for the

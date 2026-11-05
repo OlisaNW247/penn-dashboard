@@ -3357,8 +3357,10 @@ none is a ship line.
   uploaded 0 · errors 5) and `factsCursorV1` read **23**, the highest seq
   on the server, so all 17 PHYS 0151 facts reached the phone in one pull.
   `structuredCompletedItemIDsV1` stayed at 11, so applying facts wrote no
-  completion. Nobody has yet looked at a fact-touched card on the screen;
-  Marco left with the phone right after. The sync's `errors 5` (fetched 1,
+  completion. Later that day Marco looked at the PHYS 0151 cards and reported the
+  Midterm 2 notes and the Dec 14 final-exam task both showing. `undo` and
+  the rule that a manual date edit wins over a fact remain untried on a
+  device. The sync's `errors 5` (fetched 1,
   partial 5) predates this work and is the same open item as Olisa's
   `errors 7`.
 - **Phones on the live backend now receive facts, and the kill switches are
