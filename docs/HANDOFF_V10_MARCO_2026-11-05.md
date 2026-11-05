@@ -21,18 +21,18 @@ Mac's run: `gh api repos/OlisaNW247/penn-dashboard/actions/workflows/tests.yml/r
   lands on `v8`; `v10` is the only line.
 - `e720b82` the runner trigger for `v10`; `75b1139` `.claude/worktrees/`
   ignored.
-- **The probe script** (`backend/scripts/ask-probe.mjs`): two new sets,
+- `f4f17e9` **The probe script** (`backend/scripts/ask-probe.mjs`): two new sets,
   `history` (the recording's pair: the class-today question answered from
   the schedule, then "you should've said that in my original question") and
   `meeting` (the class-today question alone), and `--history-file`. Node
   only; nothing for the Mac to compile.
-- **The tree reads applied facts**: the context document the tree sends,
+- `28e8803` + `f398bd0` **The tree reads applied facts**: the context document the tree sends,
   and the on-device answerer's pool, take the dashboard's own fact
   application (a rescheduled item carries the new date; a cancelled one is
   rendered `cancelled`, never dropped; `undo` and a hand-edited date win as
   on the card). Before this a v10 phone showed "cancelled" on the card while
   the tree called the item outstanding with the feed date.
-- **The time-frame resolver and per-intent freshness** (steps 1 and 2 of
+- `fae20bd` (merged as `e0ab790`) **The time-frame resolver and per-intent freshness** (steps 1 and 2 of
   `docs/TREE_CONTEXT_RESEARCH_2026-11-02.md`, Marco's own research): a pure
   Kit resolver that turns "today / tomorrow / this week / Thursday / past N
   days" into absolute local date ranges and an intent (class meeting, due
@@ -41,10 +41,15 @@ Mac's run: `gh api repos/OlisaNW247/penn-dashboard/actions/workflows/tests.yml/r
   set with a pinned clock. Steps 3 to 6 wait on one decision (how the
   weekly schedule reaches the phone), which is Olisa's and Marco's.
 
-The commit hashes and the predicted test delta are in CLAUDE.md → Test
-baseline once the runner has spoken; if the runner is red, the Mac session
-fixes the compile errors in those commits (never by deleting a test), and
-the count must not drop below 3596 / 345 without a named reason.
+Predicted Swift delta over 3596 / 345: about +37 tests and +3 suites
+(`AppliedFactsWiringTests` +5, `AssistantContextDocumentTests` +3,
+`AskTimeFrameRegressionTests` +29 in 3 suites; one test in
+`AskRecencyExcerptTests` rewritten because "when is the midterm" is now a
+policy question). Trust the runner and the Mac, not this arithmetic. If the
+runner is red, the Mac session fixes the compile errors in those commits
+(never by deleting a test), and the count must not drop below 3596 / 345
+without a named reason. The implementers' own lists of the lines they were
+least sure of are in the commit bodies of `28e8803` and `fae20bd`.
 
 ## 2. Paste this into a new Claude Code session on the Mac
 
