@@ -372,6 +372,93 @@ struct AppliedFactsWiringTests {
         #expect(card.caveatText == "changed")
     }
 
+    // MARK: The tree's work list (2026-11-05, blind)
+
+    /// The item's line in the server context document, in UTC so the rendered
+    /// offset does not depend on the machine's zone.
+    private func documentLine(_ state: AppState, _ title: String) throws -> String {
+        let document = state.assistantContextDocument(timeZone: TimeZone(secondsFromGMT: 0)!)
+        return String(try #require(document.split(separator: "\n").first { $0.contains(title) }))
+    }
+
+    @Test("ask: a reschedule puts the new date in the context document and the on-device pool")
+    func treeSeesRescheduledDate() throws {
+        let (state, store, _, _) = try makeState([feedRow("55", title: "PSet Moved", due: "2026-11-06T17:00:00Z")])
+        let moved = date("2026-11-20T17:00:00Z")
+        state.ingestFacts([wire(1, .reschedule, dueAt: moved)], cursor: 1, now: now)
+        rebuild(state)
+
+        let line = try documentLine(state, "PSet Moved")
+        #expect(line.contains("due 2026-11-20T17:00:00Z"), "\(line)")
+        #expect(line.contains("outstanding"), "\(line)")
+        let work = try #require(state.assistantWorkItems().first { $0.title == "PSet Moved" })
+        #expect(work.dueAt == moved)
+        // Nothing was written to the ledger for it.
+        let row = try #require(ledgerRow(store, "event-assignment-55"))
+        #expect(row.dueAt == date("2026-11-06T17:00:00Z"))
+    }
+
+    @Test("ask: a cancel keeps the item in the context document with status cancelled")
+    func treeSeesCancelledItem() throws {
+        let (state, _, _, _) = try makeState([feedRow("55", title: "Quiz Cancelled"), feedRow("56", title: "Other Open")])
+        state.ingestFacts([wire(1, .cancel)], cursor: 1, now: now)
+        rebuild(state)
+
+        let line = try documentLine(state, "Quiz Cancelled")
+        #expect(line.contains("| cancelled |"), "\(line)")
+        #expect(!line.contains("outstanding"), "\(line)")
+        #expect(try documentLine(state, "Other Open").contains("| outstanding |"))
+    }
+
+    @Test("ask: an undone fact leaves the feed date and outstanding")
+    func treeIgnoresRejectedFacts() throws {
+        let (state, _, _, _) = try makeState([
+            feedRow("55", title: "Quiz Undone"),
+            feedRow("56", title: "PSet Undone", due: "2026-11-06T17:00:00Z"),
+        ])
+        state.ingestFacts([
+            wire(1, .cancel),
+            wire(2, .reschedule, target: "56", dueAt: date("2026-11-20T17:00:00Z")),
+        ], cursor: 2, now: now)
+        rebuild(state)
+        #expect(try documentLine(state, "Quiz Undone").contains("| cancelled |"))
+
+        state.rejectFact(factID: AppliedFact.factID(documentID: documentID, seq: 1), now: now)
+        state.rejectFact(factID: AppliedFact.factID(documentID: documentID, seq: 2), now: now)
+        #expect(try documentLine(state, "Quiz Undone").contains("| outstanding |"))
+        let line = try documentLine(state, "PSet Undone")
+        #expect(line.contains("due 2026-11-06T17:00:00Z"), "\(line)")
+    }
+
+    @Test("ask: the student's own edit still wins; the document keeps the feed date, the on-device pool the edit")
+    func treeKeepsEditSemantics() throws {
+        let item = feedRow("55", title: "PSet Edited", due: "2026-11-06T17:00:00Z")
+        let (state, _, _, _) = try makeState([item])
+        let mine = date("2026-11-07T17:00:00Z")
+        state.setDueDateEdit(mine, for: item)
+        state.ingestFacts([wire(1, .reschedule, dueAt: date("2026-11-20T17:00:00Z"))], cursor: 1, now: now)
+        rebuild(state)
+
+        // The engine stood the fact down for an edited row, so the document
+        // names the feed date and the fact's date appears nowhere.
+        let line = try documentLine(state, "PSet Edited")
+        #expect(line.contains("due 2026-11-06T17:00:00Z"), "\(line)")
+        #expect(!line.contains("2026-11-20"), "\(line)")
+        #expect(!line.contains("2026-11-07"), "\(line)")
+        let work = try #require(state.assistantWorkItems().first { $0.title == "PSet Edited" })
+        #expect(work.dueAt == mine)
+    }
+
+    @Test("ask: a section due-date override reaches the context document like the dashboard pool")
+    func treeSeesSectionDate() throws {
+        let item = feedRow("55", title: "PSet Section", due: "2026-11-06T17:00:00Z")
+        let (state, _, _, _) = try makeState([item])
+        state.structuredDueOverrides[item.id] = date("2026-11-09T17:00:00Z")
+        rebuild(state)
+        let line = try documentLine(state, "PSet Section")
+        #expect(line.contains("due 2026-11-09T17:00:00Z"), "\(line)")
+    }
+
     // MARK: Invariant
 
     @Test("the engine's cancel never completes the item")

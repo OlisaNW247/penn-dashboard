@@ -137,6 +137,14 @@ public enum AssistantContextDocument {
         /// the document can say "nothing to submit" instead of the
         /// misleading "done", which would imply the student did something.
         public let nothingToSubmit: Bool
+        /// True when an instructor fact the dashboard applied (and the
+        /// student has not undone) says this item was cancelled. Rendered as
+        /// its own status, `cancelled`, so the model can answer "was HW3
+        /// cancelled?" instead of calling a cancelled item outstanding. The
+        /// item stays in the list on purpose: dropping it would make the
+        /// honest answer "I have no HW3". A plain Bool, not a date or a
+        /// clock, so the rendering stays byte-stable.
+        public let isCancelled: Bool
         /// "canvas" | "gradescope" | "reading" | "manual" — free-form on
         /// purpose, matching `Assignment.Source`'s raw values loosely rather
         /// than importing that enum, so this file has no dependency on
@@ -149,6 +157,7 @@ public enum AssistantContextDocument {
             due: Date?,
             isCompleted: Bool,
             nothingToSubmit: Bool,
+            isCancelled: Bool = false,
             source: String
         ) {
             self.course = course
@@ -156,6 +165,7 @@ public enum AssistantContextDocument {
             self.due = due
             self.isCompleted = isCompleted
             self.nothingToSubmit = nothingToSubmit
+            self.isCancelled = isCancelled
             self.source = source
         }
     }
@@ -315,6 +325,12 @@ public enum AssistantContextDocument {
         let statusLabel: String
         if item.isCompleted {
             statusLabel = "done"
+        } else if item.isCancelled {
+            // After "done" (a finished item stays finished, as on the card),
+            // before "nothing to submit": a cancelled lecture or exam is
+            // an event with nothing to hand in, and "nothing to submit"
+            // would hide the one fact the student asked about.
+            statusLabel = "cancelled"
         } else if item.nothingToSubmit {
             statusLabel = "nothing to submit"
         } else {

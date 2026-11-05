@@ -111,7 +111,11 @@ extension AppState {
         let pool = droppingSignupBacklog(
             canvasItems + gradescopeItems + moduleReadingItems + announcementItemsStillOpen()
         )
-        let work = pool.map { assignment in
+        // Facts the dashboard applied (a reschedule's date, a cancel) and
+        // Canvas's section dates reach the tree through the dashboard's own
+        // stored results (`applyingTreeOverrides`, `isFactCancelled`), so the
+        // card and the answer cannot disagree. Added 2026-11-05, blind.
+        let work = pool.map(applyingTreeOverrides).map { assignment in
             AssistantContextDocument.WorkFacts(
                 course: assignment.course,
                 title: assignment.title,
@@ -133,6 +137,7 @@ extension AppState {
                 // itself flags that way. Both matter to the assistant: "what
                 // am I missing" must not list a lecture as outstanding work.
                 nothingToSubmit: assignment.kind == .event || isAutoFiledNoSubmission(assignment),
+                isCancelled: isFactCancelled(assignment),
                 source: Self.assistantSourceLabel(for: assignment.source)
             )
         }

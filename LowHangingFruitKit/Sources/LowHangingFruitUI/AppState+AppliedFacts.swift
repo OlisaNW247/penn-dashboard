@@ -50,6 +50,10 @@ struct FactItemDisplay: Equatable {
     /// The date Canvas still says, for the struck-through line. Nil when the
     /// source's own date is not known.
     var movedFrom: Date?
+    /// The date a reschedule moved the row to: what the card shows, and what
+    /// the tree's work list reads (`applyingTreeOverrides`), so both take the
+    /// engine's verdict from this one stored result.
+    var movedTo: Date?
     var changed = false
     var details: [Detail] = []
     /// Every fact applied to this row; what `undo` rejects.
@@ -308,6 +312,22 @@ extension AppState {
         )
     }
 
+    /// The Canvas-side dates the dashboard pool shows, for the tree's work
+    /// list (the server context document and the on-device answerer): the
+    /// section `all_dates` override first, then an applied fact's reschedule,
+    /// the order `rebuildDashboardItems` applies them in. It reads the stored
+    /// results of that rebuild (`structuredDueOverrides`, `factDisplay`) and
+    /// re-derives nothing, so a rejected fact or a hand-edited date (which
+    /// stood the engine down) is already absent from `factDisplay`. The
+    /// student's own edit is NOT applied here: the server document keeps the
+    /// feed date on purpose (docs/PRIVACY.md), and the on-device pool carries
+    /// the edit separately as `dueOverride`.
+    func applyingTreeOverrides(_ item: Assignment) -> Assignment {
+        let sectionDated = applyingStructuredDueOverride(item)
+        guard let moved = factDisplay[item.id]?.movedTo else { return sectionDated }
+        return Self.applyingFactReschedule(sectionDated, to: moved)
+    }
+
     /// The seen-state keys of the facts the megaphone lists as applied, which
     /// the badge counts while unread.
     var appliedFactKeys: [String] {
@@ -427,6 +447,7 @@ extension AppState {
                 if let from = moved.from, abs(from.timeIntervalSince(moved.to)) > FactApplication.sameDateTolerance {
                     shown.movedFrom = from
                 }
+                shown.movedTo = moved.to
                 pass.reschedules[itemID] = moved.to
                 add(moved.by, "moved")
             }

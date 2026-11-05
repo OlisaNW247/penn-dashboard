@@ -2037,6 +2037,15 @@ written onto the ledger row (the feed rewrites `dueAt` every sync). Only a
 new task is written to the ledger: a `.canvasAnnouncement` row with a
 `fact-<documentID>-<seq>` sourceID.
 
+Since 2026-11-05 (blind, not compiled) the tree's work list reflects the
+same results: `AppState.applyingTreeOverrides` gives the context document
+and the on-device pool the section date and an applied reschedule's date
+(read from `factDisplay.movedTo`, no second evaluation), and a cancelled
+item stays in the document with the status `cancelled` (a fourth word beside
+done / nothing to submit / outstanding). The student's own date edit is
+still withheld from the document (PRIVACY.md) and carried by the on-device
+pool as before. Canvas dismissals are not applied to the tree's list.
+
 ### Stay signed in (Penn only)
 
 Canvas signs students out from time to time, and reconnecting means PennKey

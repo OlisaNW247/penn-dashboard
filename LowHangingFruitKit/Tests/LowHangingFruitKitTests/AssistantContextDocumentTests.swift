@@ -175,6 +175,28 @@ struct AssistantContextDocumentTests {
         #expect(baseline == shuffled)
     }
 
+    // MARK: - Cancelled work
+
+    @Test("A cancelled item renders as cancelled, stays in the list, and done outranks it")
+    func cancelledStatus() {
+        let cancelled = AssistantContextDocument.WorkFacts(
+            course: "CIS 1210", title: "HW3", due: Self.utcDate(year: 2026, month: 9, day: 10),
+            isCompleted: false, nothingToSubmit: false, isCancelled: true, source: "canvas"
+        )
+        let finished = AssistantContextDocument.WorkFacts(
+            course: "CIS 1210", title: "HW4", due: Self.utcDate(year: 2026, month: 9, day: 11),
+            isCompleted: true, nothingToSubmit: false, isCancelled: true, source: "canvas"
+        )
+        let doc = AssistantContextDocument.build(courses: [], work: [finished, cancelled], announcements: [], timeZone: Self.utc)
+        let lines = Self.section("# WORK", in: doc)
+        #expect(lines.count == 2)
+        #expect(lines.first?.contains("| cancelled |") == true)
+        #expect(lines.last?.contains("| done |") == true)
+        // Byte-stable: the same input in another order renders the same bytes.
+        let again = AssistantContextDocument.build(courses: [], work: [cancelled, finished], announcements: [], timeZone: Self.utc)
+        #expect(doc == again)
+    }
+
     // MARK: - Undated work
 
     @Test("Undated work sorts after dated work and renders \"no due date\"")
