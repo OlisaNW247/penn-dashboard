@@ -1218,8 +1218,12 @@ of today's blind tree work: +35 tests and +3 suites over 3596 / 345 (the
 tree reading applied facts, `28e8803`; the time-frame resolver and per-intent
 freshness, `fae20bd`; a prediction of +37 was two high, the runner's count
 stands). Every push to `v10` that day compiled green (`e720b82`, `f4f17e9`,
-`28e8803`, `f398bd0`, `e0ab790`). The runner compiles neither the widget nor
-the iOS `xcodebuild`; nothing from today is on a phone.**
+`28e8803`, `f398bd0`, `e0ab790`). Re-verified on Marco's Mac at `09bec0d`
+later on 2026-11-05: 3631 / 348 green, `swift test --no-parallel`, 126.5 s
+of tests (373 s wall with the build), and the iOS Debug `xcodebuild` for
+`generic/platform=iOS` with `CODE_SIGNING_ALLOWED=NO` succeeded with no
+errors, so the widget and the iOS-only files compile too. Nothing from
+today's tree work is on a phone yet.**
 
 Before it, **on `v10` (2026-11-04, evening): 3596 tests / 345 suites, all green,
 `swift test --no-parallel` alone on Marco's Mac in 64 s, after the contract
