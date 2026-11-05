@@ -671,3 +671,15 @@ cd LowHangingFruitKit && LHF_BENCH_KNOWLEDGE=~/lhf-bench/course-knowledge.json s
   Marco's reading of the build: the model still does not weight recent
   posts by the question's time frame, nor lean on the syllabus for
   general questions; see `docs/TREE_CONTEXT_RESEARCH_2026-11-02.md`.
+- **2026-11-05, from the cloud with no Mac.** `v8` merged into `v10`
+  (the line); the runner now compiles `v10`; the probe gained `history`
+  and `meeting` sets and a GitHub `ask-probe` workflow (a cloud session
+  cannot run the probe: CLAUDE.md → Traps, the network-secret entry); the
+  tree's work list now reflects applied facts and section dates
+  (`28e8803`); steps 1 and 2 of `docs/TREE_CONTEXT_RESEARCH_2026-11-02.md`
+  landed (`fae20bd`: `AskTimeFrame`, per-intent freshness, a 29-case
+  regression set). Runner: 3631 / 348 green. Canary: `meeting` 10/10 from
+  the Ed post; `history` 10/10 corrected the earlier turn (none confused,
+  none apologised), first word p50 1.9 s, prompt cache hitting (14,848 of
+  14,974 tokens). Nothing on a phone yet; `docs/HANDOFF_V10_MARCO_2026-11-05.md`
+  is Marco's list.

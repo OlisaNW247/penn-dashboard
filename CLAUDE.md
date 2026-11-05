@@ -1853,8 +1853,22 @@ recording, `history` (the wrong schedule answer as an earlier turn, then
 not have cis 2620 class today?" against an Ed post saying no lectures),
 each graded by regex and counted at the end, and `--history-file <path>`
 (a JSON array of `{role, content}`) sends any pair as `history` with any
-set; `--model` compares candidates on them. Written without network
-access: the sets have not been run against the canary yet.
+set; `--model` compares candidates on them. **Run on 2026-11-05 from a
+GitHub runner** (`.github/workflows/ask-probe.yml`, `workflow_dispatch`,
+registered on `main`, dispatched with `ref: v10`; the repository secret
+`LHF_PROBE_SECRET` holds the header value): `meeting` 10/10 answered from
+the Ed post, 0/10 from the schedule, first word p50 1.9 s; `history` 10/10
+answered, 0/10 confused, and every reply corrected the earlier turn ("No,
+CIS 2620 does not have lectures this week, including today… from the
+latest course staff post on Nov 1"), which the bare question ("you
+should've said that in my original question") names neither course nor
+day for, so `history` reaches the server and the model reads it; none
+apologised, so the `acknowledged` regex read 0/10 and should be widened or
+read as "corrected". `cachedTokens` 14,848 of 14,974 on every run after
+the first: the byte-stable prefix holds. The runner exists because a
+cloud session cannot run the probe at all (Traps, the network-secret
+entry). Candidate models need `LHF_PROBE_MODELS` set on the project
+(`_shared/probe.ts`, `probePolicyFromEnv`); not yet set.
 
 **2026-11-02: the citation contract and the recording fixes went live,
 at Olisa's go.** `ask-canary` v8 (deployed with `--also ask` from `v8`
@@ -2279,6 +2293,24 @@ itself.
   wait ten minutes between hidden-login tests.
 
 ## Traps that have already bitten
+
+- **A network secret saved on the functions host strips every client
+  Authorization header from the cloud sessions** (2026-11-05). The canary
+  probe needs two headers: `x-lhf-probe-secret` (the gate) and
+  `Authorization: Bearer <anonymous JWT>` (the function's own sign-in).
+  Saving the probe secret as an environment network secret for
+  `ynetfjixexksxqrrkwsg.supabase.co` opened the gate and then every call
+  to that host, the probe's and a plain `curl` to `/auth/v1/user`,
+  answered as if no Authorization had been sent (`no_authorization` for a
+  fresh valid JWT and for a bogus one alike). The proxy that injects the
+  credential drops the client's own Authorization on that host; the
+  proxy README says nothing about it. The deploy session of 2026-11-02
+  probed fine on the same environment because no such secret existed
+  then. Fix: the probe runs on a GitHub runner (`ask-probe.yml`), where
+  the secret is a repository secret and nothing sits between the script
+  and Supabase; and the environment secret should be removed. The wrong
+  fix is a second credential for Authorization: the JWT changes per
+  anonymous user.
 
 - **A Supabase management token starts with `sbp_` and comes from
   supabase.com/dashboard/account/tokens, not from the project's API keys
@@ -3771,7 +3803,8 @@ none is a ship line.
   course-material sync at the owner's direct request; Marco has not been
   told yet.
 - **The recording fixes, on a phone 2026-11-02: the class-meeting half
-  passes; the history half is untested.** On Marco's iPhone 17 Pro
+  passes; the history half is proven on the canary (2026-11-05), not yet
+  on a phone.** On Marco's iPhone 17 Pro
   (`v8` `d434db8` Debug, `ask` v13) "Do I not have cis 2620 class
   today?" led with the quiz from the 2026-11-01 Ed post (the recording's
   failure, answering from the schedule, is gone); whether the chip showed
@@ -3779,9 +3812,15 @@ none is a ship line.
   `history` reaches the server with the earlier turn is known only from
   tests. To check it: read the `history` field of the request from a
   DEBUG build, or run `ask-probe.mjs` with a `history` pair against
-  `ask-canary` (needs `LHF_PROBE_SECRET`, which Olisa holds). The evening
-  "what's due tomorrow" check has not been done yet (the phone test ran
-  at 13:12 Eastern). Marco's verdict on the same build: recency is still
+  `ask-canary` (needs `LHF_PROBE_SECRET`, which Olisa holds). **Done on
+  2026-11-05 from the GitHub runner** (the `ask-probe` workflow, `history`
+  set, 10 runs): with the recording's wrong schedule answer sent as the
+  earlier turn, all 10 replies to "you should've said that in my original
+  question" answered the original question from the Nov 1 post and none
+  was confused, so the server reads `history`; what the phone sends is
+  what `ConversationHistoryTests` pins and has still not been read off a
+  device. The evening "what's due tomorrow" check has not been done yet
+  (the phone test ran at 13:12 Eastern). Marco's verdict on the same build: recency is still
   not prioritised by the question's time frame; the research for that is
   `docs/TREE_CONTEXT_RESEARCH_2026-11-02.md`.
 - **ask tells the model every date in UTC and never says so** (read

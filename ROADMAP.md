@@ -534,6 +534,13 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   (`v8` `d434db8` Debug): the class-meeting question now answers from the
   Ed post; the "you should've said that" follow-up was not asked, so the
   history half is unproven (CLAUDE.md → Known gaps).
+  **Status 2026-11-05:** the probe's new `history` set, run from the GitHub
+  runner (`ask-probe` workflow), answered 10/10 and corrected the earlier
+  turn every time, so `history` reaches the server and the model uses it;
+  `meeting` 10/10 from the Ed post. Both still owed on a phone. The same
+  day the tree's work list began reflecting applied facts and section
+  dates, and steps 1-2 of the temporal research landed, all blind, all
+  compiled green on the runner (3631 / 348).
 
 - **Merge Marco's branches into `v8`** (plan written 2026-10-23,
   `docs/MERGE_PLAN_MARCO_2026-10-23.md`, owner's request). Seven live

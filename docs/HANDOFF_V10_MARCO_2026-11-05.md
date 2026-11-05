@@ -130,8 +130,9 @@ least sure of are in the commit bodies of `28e8803` and `fae20bd`.
 
 ## 3. What Olisa does from the cloud meanwhile
 
-Canary measurements with the new probe sets (once the probe secret is
-saved in his environment), the candidate models for `ask` before
+Canary measurements with the new probe sets ran on 2026-11-05 from the
+`ask-probe` GitHub workflow (`meeting` 10/10 from the post; `history` 10/10
+corrected the earlier turn, so history works server-side); the candidate models for `ask` before
 `gpt-4.1-mini`'s shutdown on 2027-01-14 (a secret change and a deploy, at
 his tap), and the one-pass server prompt change measured on `ask-canary`
 before `ask`. None of it needs the Mac; all of it needs the phone results
