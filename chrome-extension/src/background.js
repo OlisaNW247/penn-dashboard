@@ -44,7 +44,7 @@ const refreshThenSync = async () => { await refresh(); await syncDevices(); };
 const alarmPass = async () => { await refreshThenSync(); await collect(); };
 
 function start() {
-  chrome.alarms.create(SYNC_ALARM, { periodInMinutes: 60 });
+  chrome.alarms.create(SYNC_ALARM, { periodInMinutes: 5 });
   alarmPass();
 }
 

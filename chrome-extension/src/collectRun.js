@@ -10,7 +10,10 @@ export const KEYS = {
   filesSeen: "fileSeenV1",
   summary: "collectSummaryV1",
 };
-export const INTERVAL_MS = 60 * 60 * 1000;
+// 30 minutes, not 5: the server's manifest calls a course fresh for an hour, so
+// a faster collection would re-read Canvas for nothing. 30 catches new
+// announcements and Ed posts twice as fast at a tolerable cost.
+export const INTERVAL_MS = 30 * 60 * 1000;
 export const RATE_LIMIT_BACKOFF_MS = 6 * 60 * 60 * 1000;
 export const DISCOVER_BATCH = 3;
 

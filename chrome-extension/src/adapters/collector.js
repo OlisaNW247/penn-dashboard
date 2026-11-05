@@ -42,7 +42,7 @@ export const ACCEPTED_KINDS = ["home", "syllabus", "assignment", "announcement",
 // and anything unknown are never replaced.
 const CANVAS_REPLACED_KINDS = new Set(["assignment", "announcement", "module", "page"]);
 
-class CollectError extends Error {
+export class CollectError extends Error {
   constructor(kind) {
     super(kind);
     this.kind = kind; // out | forbidden | rateLimited | network | http | decode | truncated | unsafeLink
@@ -53,7 +53,7 @@ const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ------------------------------------------------------------- requests
 
-function makeContext({ fetch: fetchFn, limits = {}, sleep }) {
+export function makeContext({ fetch: fetchFn, limits = {}, sleep }) {
   const delayMs = limits.delayMs ?? DEFAULT_DELAY_MS;
   const doSleep = sleep ?? limits.sleep ?? defaultSleep;
   let first = true;
@@ -142,11 +142,11 @@ async function canvasGet(ctx, url) {
 // All pages of a paginated listing, as parsed JSON, following Link rel="next"
 // on the same host only. More than MAX_PAGES pages is a failure, not a quiet
 // cut: a truncated listing must not count as a complete set.
-async function canvasPaged(ctx, url) {
+export async function canvasPaged(ctx, url, maxPages = MAX_PAGES) {
   const pages = [];
   let next = url;
   for (let i = 0; next !== null; i++) {
-    if (i >= MAX_PAGES) throw new CollectError("truncated");
+    if (i >= maxPages) throw new CollectError("truncated");
     const { json, link } = await canvasGet(ctx, next);
     pages.push(json);
     try {
@@ -188,7 +188,7 @@ export function courseFromCanvas(raw) {
   return course;
 }
 
-async function listCourses(ctx) {
+export async function listCourses(ctx) {
   const pages = await canvasPaged(ctx, `${DEFAULT_BASE_URL}/api/v1/courses?enrollment_state=active&per_page=100`);
   const out = [];
   const seen = new Set();
