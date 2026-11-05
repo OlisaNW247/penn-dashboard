@@ -1892,6 +1892,25 @@ hedge, which would otherwise fire on most Haiku requests. The decision
 waits on a canary run with caching live; billing the owner's Anthropic
 credit is an OpenRouter bring-your-own-key setting, not code.
 
+**2026-11-05: the code half of moving the primary to
+`anthropic/claude-haiku-5.5` (written, tests green, NOT deployed; the model
+switch itself, `LHF_MODEL`, is a person's call).** The canary showed three
+things and each has a change: (1) Haiku cached 0 of ~23,000 prompt tokens
+because Anthropic caches only where asked, so for an `anthropic/*` model
+`withCacheBreakpoint` (`_shared/prompt.ts`) puts one `cache_control:
+{ type: "ephemeral" }` on the last `system` message (COURSE PROFILES), the
+end of the stable prefix; history, the date line, excerpts and the question
+follow it, and any other model's body is byte-identical to before (pinned
+by a golden in `test/ask_model_tuning.test.ts`). (2) `reasoningFor` now
+gives `anthropic/` models `{ effort: "low" }` like `z-ai/`; `LHF_ASK_REASONING`
+(a JSON object, malformed ignored with one warning) overrides the primary's
+shape for any model, and `probe.reasoning` still beats both. (3)
+`LHF_HEDGE_AFTER_MS` (an integer 1,000 to 30,000, else 5,000) replaces the
+fixed hedge delay, because Haiku's first word takes 3 to 6 s and the owner's
+rule is ten seconds, not five; `probe.hedgeAfterMs` still wins. Nothing the
+phone sends changed. After deploying, read `usage.cachedTokens` on a canary
+run: it should be well above zero from the second request on.
+
 **2026-11-02: the citation contract and the recording fixes went live,
 at Olisa's go.** `ask-canary` v8 (deployed with `--also ask` from `v8`
 `dfb9d7f`, so it serves the new `prompt.ts`) answered the 20-run

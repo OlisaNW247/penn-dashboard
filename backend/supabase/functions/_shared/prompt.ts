@@ -266,6 +266,43 @@ export function buildMessages(input: BuildMessagesInput): ChatMessage[] {
 }
 
 /**
+ * The messages as sent to `model`. For an `anthropic/` model the last
+ * *stable* message carries `cache_control: { type: "ephemeral" }` (an
+ * OpenRouter content-parts array, "Prompt caching -> Anthropic"), because
+ * Anthropic caches only where asked; OpenAI-family models cache a stable
+ * prefix by themselves, which is why they got 14,848 of 14,974 tokens
+ * cached with no marker and Haiku got 0 on 2026-11-05. Any other model
+ * receives `messages` itself, so its body is byte-identical to before.
+ *
+ * Where the breakpoint goes: `buildMessages` emits every stable block as a
+ * `system` message (instructions, context document, COURSE STRUCTURE,
+ * COURSE PROFILES) and everything per-turn after them as `user` or
+ * `assistant` (history, then the user message with the date line,
+ * excerpts and question). So the last `system` message is exactly the end
+ * of the stable prefix, and it is found by role rather than by a count so
+ * an omitted COURSE STRUCTURE block moves nothing. The marker is on one
+ * message only: Anthropic caches the whole prefix up to it. The wrong
+ * placement is the user message, which changes every request and would
+ * write a cache entry nobody reads.
+ */
+export function withCacheBreakpoint(
+  messages: ChatMessage[],
+  model: string,
+): { role: string; content: string | { type: "text"; text: string; cache_control?: { type: "ephemeral" } }[] }[] {
+  if (!model.startsWith("anthropic/")) return messages;
+  let last = -1;
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i].role === "system") last = i;
+  }
+  if (last < 0) return messages;
+  return messages.map((m, i) =>
+    i === last
+      ? { role: m.role, content: [{ type: "text" as const, text: m.content, cache_control: { type: "ephemeral" as const } }] }
+      : m
+  );
+}
+
+/**
  * Collapses `rows` to at most one `CatalogCourseRow` per unique
  * `catalogCode`, keeping the first occurrence of each -- the fix for the
  * multi-site duplication `buildMessages` documents at its own call site

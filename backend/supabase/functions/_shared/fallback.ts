@@ -69,7 +69,48 @@ export const DEFAULT_REASONING = { effort: "low" };
  * to maintain.
  */
 export function reasoningFor(model: string): unknown {
-  return model.startsWith("z-ai/") ? DEFAULT_REASONING : undefined;
+  // `anthropic/` joined `z-ai/` on 2026-11-05: Haiku 5.5 reasons at its
+  // default effort when nothing is sent, and the canary showed 600-1,000
+  // completion tokens for answers of 400-750 characters, the rest hidden
+  // reasoning the student waits behind. OpenRouter accepts `effort: "low"`
+  // for it (`extract-facts` has sent exactly that since 2026-11-03).
+  return model.startsWith("z-ai/") || model.startsWith("anthropic/") ? DEFAULT_REASONING : undefined;
+}
+
+/**
+ * `LHF_ASK_REASONING`, parsed: a JSON object applied to the primary model
+ * of `ask` whatever the model, so the owner can tune effort without a code
+ * change. Unset or empty is `undefined` silently; anything that is not a
+ * JSON object (malformed, an array, a bare string, null) is ignored with
+ * one `console.warn` -- a typo in an env var must degrade to the built-in
+ * choice, never fail a student's question. The value itself is not logged.
+ */
+export function reasoningFromEnv(raw: string | undefined): unknown {
+  if (raw === undefined || raw.trim() === "") return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) return parsed;
+  } catch {
+    // fall through to the warning
+  }
+  console.warn("ask: LHF_ASK_REASONING is not a JSON object; ignoring it");
+  return undefined;
+}
+
+export const DEFAULT_HEDGE_AFTER_MS = 5_000;
+
+/**
+ * `LHF_HEDGE_AFTER_MS` as the hedge delay: a finite integer from 1,000 to
+ * 30,000 (the same ceiling a probe may ask for), else the 5,000 default.
+ * Haiku 5.5's first word arrives at 3-6 s, so a fixed 5 s starts the
+ * `glm` race on most requests; the owner's rule is "never more than a ten
+ * second wait", not "five", and this lets that be tuned without a code
+ * change.
+ */
+export function hedgeAfterMsFromEnv(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === "") return DEFAULT_HEDGE_AFTER_MS;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 1_000 && n <= 30_000 ? n : DEFAULT_HEDGE_AFTER_MS;
 }
 
 export interface ShouldStartHedgeInput {

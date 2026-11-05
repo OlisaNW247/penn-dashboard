@@ -7,9 +7,18 @@
 // are what pass the real global `fetch` in at the edges.
 import { reasoningFor } from "./fallback.ts";
 
+/** One part of an array-form message body. Only `ask`'s Anthropic path
+ *  uses it, to attach `cache_control` (see `prompt.ts`'s
+ *  `withCacheBreakpoint`). */
+export interface ChatContentPart {
+  type: "text";
+  text: string;
+  cache_control?: { type: "ephemeral" };
+}
+
 export interface ChatMessage {
   role: string;
-  content: string;
+  content: string | ChatContentPart[];
 }
 
 export interface ProviderPreferences {
@@ -114,9 +123,10 @@ export interface ChatCompletionJSONOptions {
    *  that ignores the schema. */
   jsonSchema?: { name: string; schema: Record<string, unknown> };
   /** Overrides `reasoningFor(model)` for every body this call builds. Left
-   *  unset, a `z-ai/` model gets `{ effort: "low" }` and anything else gets
-   *  no field, as before. `extract-facts` passes `{ effort: "low" }` for
-   *  Haiku, which `reasoningFor` would not send. */
+   *  unset, a `z-ai/` or (since 2026-11-05) `anthropic/` model gets
+   *  `{ effort: "low" }` and anything else gets no field. `extract-facts`
+   *  passes `{ effort: "low" }` explicitly, from before `reasoningFor`
+   *  covered Haiku; the two agree. */
   reasoning?: unknown;
 }
 

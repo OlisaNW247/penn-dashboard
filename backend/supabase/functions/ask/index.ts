@@ -25,7 +25,7 @@ import { HttpError, corsHeaders, errorResponse, json, readJSON } from "../_share
 import { enforceMinimumVersion } from "../_shared/version.ts";
 import { requireUser } from "../_shared/auth.ts";
 import { limitsFromEnv, NO_LEASE, reserveUsage, type UsageLease, type UsageReservation } from "../_shared/quota.ts";
-import { buildMessages } from "../_shared/prompt.ts";
+import { buildMessages, withCacheBreakpoint } from "../_shared/prompt.ts";
 import { parseAskRequestBody } from "../_shared/askRequest.ts";
 import { selectCatalogCoursesByCodes, selectCatalogCoursesForCourseIDs } from "../_shared/db.ts";
 import { academicSemester, activityForSection, rowsForSemester, siteLabel, type CatalogCourseRow } from "../_shared/catalog.ts";
@@ -42,7 +42,9 @@ import { classifyStreamOutcome, recordOutcome } from "../_shared/outcomes.ts";
 import {
   outcomeDetailForFallback,
   outcomeDetailForHedgeWin,
+  hedgeAfterMsFromEnv,
   reasoningFor,
+  reasoningFromEnv,
   remainingBudget,
   shouldStartHedge,
 } from "../_shared/fallback.ts";
@@ -87,7 +89,7 @@ const TEMPERATURE = 0.2;
  * reasoning, needs a few hundred of it, not the full cap the original
  * incident exhausted.
  */
-const HEDGE_AFTER_MS = 5_000;
+const HEDGE_AFTER_MS = hedgeAfterMsFromEnv(Deno.env.get("LHF_HEDGE_AFTER_MS"));
 
 /** The phone's `URLSession` gives up on `ask` at 60s; this is the backend's
  *  own tighter budget on the pre-stream race in `runHedgedRace` (the
@@ -368,7 +370,7 @@ export async function handleAsk(
       fetchImpl: fetch,
       apiKey,
       model: forModel,
-      messages,
+      messages: withCacheBreakpoint(messages, forModel),
       provider: providerFromEnv(),
       providerOverride: probeOverrides?.provider,
       maxTokens: probeOverrides?.maxTokens ?? MAX_TOKENS,
@@ -388,7 +390,10 @@ export async function handleAsk(
     timing.preRace = raceStartedAt - startedAt;
     const race = await runHedgedRace({
       buildStreamOptions,
-      primary: { model, reasoning: probeOverrides?.reasoning ?? reasoningFor(model) },
+      primary: {
+        model,
+        reasoning: probeOverrides?.reasoning ?? reasoningFromEnv(Deno.env.get("LHF_ASK_REASONING")) ?? reasoningFor(model),
+      },
       fallback: fallbackDisabled ? undefined : { model: resolvedFallbackModel, reasoning: reasoningFor(resolvedFallbackModel) },
       hedgeAfterMs,
       totalBudgetMs: TOTAL_BUDGET_MS,

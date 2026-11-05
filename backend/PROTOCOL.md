@@ -379,9 +379,16 @@ answered correctly about dates between 1.9s and 3.0s to first delta. The
 default fallback model is `z-ai/glm-5.3-flash` (`LHF_ASK_FALLBACK_MODEL`
 overrides it), with `reasoning: { effort: "low" }` (`_shared/fallback.ts`'s
 `reasoningFor`, applied to any model whose id starts with `z-ai/`,
-primary or fallback). Rather than waiting the primary out and only then
+primary or fallback). Since 2026-11-05 `reasoningFor` also gives
+`anthropic/` models `{ effort: "low" }`, `LHF_ASK_REASONING` (a JSON
+object) overrides the primary's reasoning for any model, and for an
+`anthropic/` model the last stable `system` message (COURSE PROFILES) is
+sent as a content-parts array carrying `cache_control: { type: "ephemeral" }`
+so Anthropic caches the prefix; the request shape the phone sends is
+unchanged. Rather than waiting the primary out and only then
 trying the fallback, `ask` hedges: if the primary hasn't produced a content
-delta within `HEDGE_AFTER_MS` (5s), the fallback is started *concurrently*,
+delta within `HEDGE_AFTER_MS` (5s by default; `LHF_HEDGE_AFTER_MS` sets it,
+an integer from 1000 to 30000), the fallback is started *concurrently*,
 and whichever model produces the first content delta wins — the other is
 aborted immediately, and once either has produced content the race is over
 for good (no switching mid-answer). A primary that fails outright or
