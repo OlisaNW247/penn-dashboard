@@ -572,6 +572,14 @@ build to the phone, apply the migration and deploy `sync`, `pair`,
   extension id from an unpacked load; nothing in the code or the backend
   keys on it. Listing: the 1280×800 screenshot and the 128px S mark were
   rendered from the real popup in the cloud container. Review pending.
+- 2026-11-05, later: 0.1.2 (the dashboard removed, the Canvas
+  submission read and the 5-minute cadence) submitted to the store as an
+  update at about 14:20 UTC, at the owner's hand. 0.1.1 had been approved
+  and installed on his laptop, and paired, the same morning (one
+  `device_links` row, 14:05 UTC); its popup showed his real Canvas work
+  before pairing, so a fresh store install reads Canvas. Still unproven on
+  real Canvas: the submission read and the feed to the phone; on real Ed:
+  everything.
 - 2026-11-05, later: **the popup lost its dashboard** (owner's decision:
   the extension is not a product, it exists to gather data for the phone).
   Unpaired it is the pairing flow as before; paired it is the header, one
