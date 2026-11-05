@@ -1868,7 +1868,29 @@ read as "corrected". `cachedTokens` 14,848 of 14,974 on every run after
 the first: the byte-stable prefix holds. The runner exists because a
 cloud session cannot run the probe at all (Traps, the network-secret
 entry). Candidate models need `LHF_PROBE_MODELS` set on the project
-(`_shared/probe.ts`, `probePolicyFromEnv`); not yet set.
+(`_shared/probe.ts`, `probePolicyFromEnv`), which Olisa set to
+`anthropic/claude-haiku-5.5` the same day.
+**Haiku 5.5 on the canary, 2026-11-05** (the owner's plan: the tree on
+Claude Haiku, billed to his Anthropic credit; `gpt-4.1-mini` is retired by
+OpenAI on 2027-01-14). Ten runs per set with `probe.model`: `meeting` 10/10
+from the post, `history` 10/10 with the correction acknowledged every time
+(gpt-4.1-mini: corrected but never acknowledged), `citations` identical
+counts to gpt-4.1-mini (sources 10/10, title 10/10, Meyerson 3/3), `mixed`
+10/10; answers two to four times longer, and better: one flagged three
+conflicting late-policy copies in the pool, one noted the asked-about
+midterm had passed. The catch is latency: first word mean 3.7 to 5.1 s and
+max 9.8 s against 1.4 to 1.9 s today, with 600 to 1,000 completion tokens
+(hidden reasoning) and **zero cached tokens on 23,000-token prompts**
+(gpt-4.1-mini caches 14,800 of 15,000). `probe.reasoning {effort: low}`
+plus `hedgeAfterMs 30000` changed little (first word 3.6 to 4.7 s mean,
+7.1 s max; about 530 completion tokens), so the time is the provider
+reading an uncached prompt, not thinking. Three server changes follow
+(not deployed): Anthropic `cache_control` on the stable prefix for
+`anthropic/` models, `{effort: low}` by default for them with an
+`LHF_ASK_REASONING` override, and `LHF_HEDGE_AFTER_MS` for the 5-second
+hedge, which would otherwise fire on most Haiku requests. The decision
+waits on a canary run with caching live; billing the owner's Anthropic
+credit is an OpenRouter bring-your-own-key setting, not code.
 
 **2026-11-02: the citation contract and the recording fixes went live,
 at Olisa's go.** `ask-canary` v8 (deployed with `--also ask` from `v8`

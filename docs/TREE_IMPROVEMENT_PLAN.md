@@ -683,3 +683,10 @@ cd LowHangingFruitKit && LHF_BENCH_KNOWLEDGE=~/lhf-bench/course-knowledge.json s
   none apologised), first word p50 1.9 s, prompt cache hitting (14,848 of
   14,974 tokens). Nothing on a phone yet; `docs/HANDOFF_V10_MARCO_2026-11-05.md`
   is Marco's list.
+- **2026-11-05, evening: Haiku 5.5 measured on the canary** (the owner's
+  plan). Quality equal or better on all four sets (CLAUDE.md → ask loop
+  section has the table); first word 2 to 3 times slower because the
+  server sends Anthropic no cache markers and no reasoning setting, and the
+  5-second hedge is fixed. Low effort alone did not close the gap. The
+  three server fixes are written for a canary deploy; the switch is then
+  one secret edit (`LHF_MODEL`).
