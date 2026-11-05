@@ -3316,9 +3316,26 @@ none is a ship line.
 
 ## Known gaps
 
-- **Phase 1 of the composed day has run on a device once; Phases 2-3 have
-  not**, and no real fact has reached a phone yet, although the backend is
-  live (2026-11-05, below).
+- **Phases 1-3 of the composed day run on Marco's phone; the tree's
+  applied-facts work and the time-frame resolver are installed there but
+  unexercised.** On 2026-11-05 at 20:15 UTC the Debug build from `08b2e77`
+  (today's `v10`, 3.4.0 (17)) was installed over the previous Debug build
+  and launched; at 20:16 UTC `verify-facts-on-phone.sh` read
+  `rows=0 completions=10 dismissals=0 dueOverrides=14 missing=1`,
+  `structuredCompletedItemIDsV1` 12 (up from 11 the night before, so Canvas
+  reported one more completed item; the set is additive), `factsCursorV1`
+  still 23 (no new facts on the server), and no crash report newer than
+  2026-10-26. The hourly course-material sync had not yet run on the new
+  build at that read, and the phone left the cable before a second one. The
+  last summary, from the previous build at 19:04 UTC the same day, was
+  `manifest failed · uploaded 0 · errors 19 · first failure other ·
+  couldn't read the tabs of 3 canvas course(s): cancel...`, against
+  `manifest ok · errors 5` at 02:17 UTC: the same open sync item as Olisa's
+  `errors 7`, now with a failed manifest once; not investigated (Olisa's
+  sync). Still to do by eye on that build: `undo` on a fact-touched card,
+  a hand-edited date winning over a fact's date, and the four tree
+  questions in `docs/HANDOFF_V10_MARCO_2026-11-05.md` step 4.
+  Earlier history of this entry:
   On 2026-11-04 at 20:15 UTC the Debug build from `034767b` (3.4.0 (17))
   was installed over the store copy on Marco's iPhone 17 Pro and launched;
   `verify-facts-on-phone.sh` then read
