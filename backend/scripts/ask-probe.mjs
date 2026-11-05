@@ -11,7 +11,23 @@
 // Usage:
 //   node backend/scripts/ask-probe.mjs --slug ask-canary --runs 5 --set exam \
 //     [--model X] [--max-tokens N] [--reasoning '<json>'] [--trim N] [--tag mytag] \
-//     [--temperature N] [--asked-at <ISO>]
+//     [--temperature N] [--asked-at <ISO>] [--history-file <path>]
+//
+// The `history` and `meeting` sets (2026-11-05) replay the owner's screen
+// recording of 2026-11-02, where "do I not have cis 2620 class today?" was
+// answered from the weekly schedule although an Ed post said "no lectures this
+// week", and the follow-up "you should've said that in my original question"
+// drew a confused reply. Both send the same excerpt block (the phone's real
+// shape: local-date line, Ed note, the `.meeting` note, a CIS 2620 Ed post and
+// two unrelated syllabus passages) and `askedAt` 2026-11-02T18:12:00Z, which is
+// 1:12 pm on Monday in New York (EST; daylight time ended the day before).
+// `meeting` asks the class question with empty history and counts answers that
+// came from the post (`fromPost`) against the schedule (`fromSchedule`);
+// `history` sends the recording's wrong answer as an earlier turn plus the
+// correction and counts `acknowledged`, `confused` and `mentionsPost`.
+// `--history-file` loads a JSON array of {role, content} and sends it as
+// `history` with any set, so a new pair needs no code change. `--model` sets
+// `probe.model`, which is how candidate models are compared on these sets.
 //
 // The `citations` set (2026-10-25) measures the citation contract in
 // `_shared/prompt.ts`: it sends excerpts in the exact line format the phone
@@ -38,6 +54,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const SUPABASE_URL = process.env.LHF_SUPABASE_URL ?? "https://ynetfjixexksxqrrkwsg.supabase.co";
 const PUBLISHABLE_KEY =
@@ -46,9 +63,9 @@ const PUBLISHABLE_KEY =
 function usageAndExit(message) {
   if (message) console.error(message);
   console.error(
-    "Usage: node backend/scripts/ask-probe.mjs --slug <slug> --runs <n> --set <exam|policy|short|mixed|citations> " +
+    "Usage: node backend/scripts/ask-probe.mjs --slug <slug> --runs <n> --set <exam|policy|short|mixed|citations|history|meeting> " +
       "[--model X] [--max-tokens N] [--reasoning '<json>'] [--trim N] [--probe '<json>'] [--tag mytag] " +
-      "[--temperature N] [--asked-at <ISO>]",
+      "[--temperature N] [--asked-at <ISO>] [--history-file <path>]",
   );
   process.exit(1);
 }
@@ -95,6 +112,9 @@ function parseArgs(argv) {
       case "--asked-at":
         opts.askedAt = next();
         break;
+      case "--history-file":
+        opts.historyFile = next();
+        break;
       default:
         usageAndExit(`unknown flag: ${arg}`);
     }
@@ -104,14 +124,21 @@ function parseArgs(argv) {
     usageAndExit(`${opts.slug} needs LHF_PROBE_SECRET set in the environment (the function's x-lhf-probe-secret)`);
   }
   if (!Number.isInteger(opts.runs) || opts.runs < 1) usageAndExit("--runs must be a positive integer");
-  if (!["exam", "policy", "short", "mixed", "citations"].includes(opts.set)) {
-    usageAndExit(`--set must be one of exam, policy, short, mixed, citations (got "${opts.set}")`);
+  if (!Object.hasOwn(PROMPT_SETS, opts.set)) {
+    usageAndExit(`--set must be one of ${Object.keys(PROMPT_SETS).join(", ")} (got "${opts.set}")`);
   }
   if (opts.temperature !== undefined && !Number.isFinite(opts.temperature)) {
     usageAndExit("--temperature must be a number");
   }
   if (opts.askedAt !== undefined && Number.isNaN(Date.parse(opts.askedAt))) {
     usageAndExit("--asked-at must be an ISO 8601 timestamp");
+  }
+  if (opts.historyFile !== undefined) {
+    try {
+      opts.history = parseHistory(JSON.parse(fs.readFileSync(opts.historyFile, "utf8")));
+    } catch (err) {
+      usageAndExit(`--history-file: ${err instanceof Error ? err.message : err}`);
+    }
   }
   return opts;
 }
@@ -301,6 +328,36 @@ function buildCitationExcerpts() {
   ].join("\n");
 }
 
+// The recording's excerpt block (see the header comment). The local-date line
+// and notes are copied word for word from `localDateLine`, `edExcerptNote` and
+// `meetingExcerptNote` in BackendAssistantResponder.swift (read 2026-11-05);
+// if those change, this fixture should follow or the probe tests a prompt the
+// phone no longer sends. The Ed post is first because the `.meeting` rule puts
+// the class's newest posts ahead of BM25 hits.
+const MEETING_ASKED_AT = "2026-11-02T18:12:00Z";
+
+function buildMeetingExcerpts() {
+  return [
+    "The student's local date and time: Monday, November 2, 2026, 1:12 PM (America/New_York, UTC-05:00). " +
+      'Due times in the work list carry this offset; "today" and "tomorrow" mean the student\'s calendar day.',
+    "RETRIEVED EXCERPTS (from the student's synced course materials):",
+    'Excerpts labelled "ed discussion" are posts by course staff on the class\'s Ed board, and carry the date they were posted.',
+    "The class's newest posts from the last 14 days, if any, come first. Answer whether the class meets from those posts before the registrar's weekly schedule: a post that cancels or moves a meeting overrides the schedule. If no post above mentions a change, say that no post from the last 14 days mentions one rather than asserting that nothing was announced.",
+    '[1] CIS 2620 · ed discussion · posted Nov 1 · "This week": No lectures this week but quiz on Monday.',
+    '[2] CIS 2620 · syllabus · "Course Syllabus": Lectures meet Monday and Wednesday 10:15 to 11:44 am in Towne 100. ' +
+      "Recitations are Thursday. Office hours are posted on the course calendar and change weekly.",
+    '[3] CIS 2620 · syllabus · "Course Syllabus": Grading is 40% exams, 40% homework and 20% quizzes. ' +
+      "Late homework loses 10% per day for up to three days.",
+  ].join("\n");
+}
+
+// The wrong answer the recording showed: right about the registrar's schedule,
+// blind to the post.
+const RECORDED_HISTORY = [
+  { role: "user", content: "Do I not have cis 2620 class today?" },
+  { role: "assistant", content: "Yes, CIS 2620 meets today (Monday) 10:15 to 11:44 in Towne 100." },
+];
+
 const PROMPT_SETS = {
   exam: ["when's my next exam?"],
   policy: ["what's the late policy in cis 2400?"],
@@ -311,24 +368,67 @@ const PROMPT_SETS = {
     "where is the cis 2400 midterm?",
     "what did staff post recently in cis 2400?",
   ],
+  history: ["you should've said that in my original question"],
+  meeting: ["Do I not have cis 2620 class today?"],
 };
 
-function questionForRun(set, runIndex) {
+// Only the two recording sets carry their own history; every other set sends
+// none unless --history-file says otherwise.
+const SET_HISTORY = { history: RECORDED_HISTORY };
+const SET_ASKED_AT = { history: MEETING_ASKED_AT, meeting: MEETING_ASKED_AT };
+
+// Validates a --history-file payload against the wire shape in PROTOCOL.md.
+export function parseHistory(value) {
+  if (!Array.isArray(value)) throw new Error("must be a JSON array of {role, content}");
+  return value.map((turn, i) => {
+    if (!turn || !["user", "assistant"].includes(turn.role) || typeof turn.content !== "string") {
+      throw new Error(`entry ${i} must be {role: "user"|"assistant", content: string}`);
+    }
+    return { role: turn.role, content: turn.content };
+  });
+}
+
+// Grading for the two recording sets. Regexes are kept loose on purpose: they
+// count a family of phrasings, and the full answer is printed beside them so a
+// count can be audited by eye.
+export function gradeHistoryAnswer(text) {
+  const t = text ?? "";
+  return {
+    acknowledged:
+      /you.?re right|apolog|sorry|should have|my mistake|missed|correct(ion|ed)|earlier (answer|question)|previous (answer|question)/i.test(t),
+    confused: /doesn.?t make sense|what do you mean|wdym|not sure what you|clarify/i.test(t),
+    mentionsPost: /no lecture|quiz on monday|no class/i.test(t),
+  };
+}
+
+export function gradeMeetingAnswer(text) {
+  const t = text ?? "";
+  const fromPost = /no lecture|quiz/i.test(t);
+  return { fromPost, fromSchedule: !fromPost && /meets today|10:15|towne/i.test(t) };
+}
+
+export function questionForRun(set, runIndex) {
   const pool = PROMPT_SETS[set];
   return pool[runIndex % pool.length];
 }
 
-function buildRequestBody({ set, runIndex, trim, model, maxTokens, reasoning, probeExtra, temperature, askedAt }) {
+export function buildRequestBody({ set, runIndex, trim, model, maxTokens, reasoning, probeExtra, temperature, askedAt, history }) {
   let contextDocument = buildContextDocument(55000);
   if (Number.isInteger(trim)) contextDocument = contextDocument.slice(0, trim);
 
   const body = {
     question: questionForRun(set, runIndex),
     contextDocument,
-    excerpts: set === "citations" ? buildCitationExcerpts() : buildExcerpts(),
-    askedAt: askedAt ?? new Date().toISOString(),
+    excerpts:
+      set === "citations"
+        ? buildCitationExcerpts()
+        : set === "history" || set === "meeting"
+          ? buildMeetingExcerpts()
+          : buildExcerpts(),
+    // An explicit --asked-at wins over the recording sets' fixed moment.
+    askedAt: askedAt ?? SET_ASKED_AT[set] ?? new Date().toISOString(),
     courseIDs: ["1000001", "1000002", "1000003"],
-    history: [],
+    history: history ?? SET_HISTORY[set] ?? [],
   };
 
   const probe = {};
@@ -481,6 +581,7 @@ async function main() {
       reasoning: opts.reasoning,
       temperature: opts.temperature,
       askedAt: opts.askedAt,
+      history: opts.history,
     });
 
     let result;
@@ -528,6 +629,13 @@ async function main() {
       console.log(`    answer (full):\n${answerBody(result.fullText).replace(/^/gm, "      ")}`);
       console.log(`    sources: ${sources ? sources.raw : "(none)"}`);
     }
+    if (opts.set === "history" || opts.set === "meeting") {
+      const grade = opts.set === "history" ? gradeHistoryAnswer(result.fullText) : gradeMeetingAnswer(result.fullText);
+      result.grade = grade;
+      console.log(`    question: ${questionForRun(opts.set, i)}`);
+      console.log(`    answer (full):\n${answerBody(result.fullText).replace(/^/gm, "      ")}`);
+      console.log(`    grade: ${Object.entries(grade).map(([k, v]) => `${k}=${v}`).join(" ")}`);
+    }
   }
 
   const answered = results.filter((r) => !r.errorEvent && r.deltaCount > 0).length;
@@ -574,10 +682,19 @@ async function main() {
     );
   }
 
+  if (opts.set === "history" || opts.set === "meeting") {
+    const ok = results.filter((r) => r.grade);
+    console.log(`--- ${opts.set}`);
+    for (const key of Object.keys(ok[0]?.grade ?? {})) {
+      console.log(`${key}: ${ok.filter((r) => r.grade[key]).length}/${ok.length}`);
+    }
+  }
+
   process.exit(empty > 0 || errored > 0 ? 1 : 0);
 }
 
-main().catch((err) => {
+// Importable for tests without starting a run.
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch((err) => {
   console.error("Probe script failed:", err instanceof Error ? err.stack ?? err.message : err);
   process.exit(1);
 });

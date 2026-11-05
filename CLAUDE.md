@@ -1832,6 +1832,14 @@ probe = '<tag>'` through `POST /v1/projects/<ref>/database/query` reads
 the result. Deploying `ask` itself is a production change and needs a
 person's go. The 2026-09-22 promotion was 55/55 on the canary (first
 word median 1.8 s, p95 3.9 s, max 6.5 s) and 5/5 on production.
+Since 2026-11-05 the probe also has two sets from the 2026-11-02
+recording, `history` (the wrong schedule answer as an earlier turn, then
+"you should've said that in my original question") and `meeting` ("Do I
+not have cis 2620 class today?" against an Ed post saying no lectures),
+each graded by regex and counted at the end, and `--history-file <path>`
+(a JSON array of `{role, content}`) sends any pair as `history` with any
+set; `--model` compares candidates on them. Written without network
+access: the sets have not been run against the canary yet.
 
 **2026-11-02: the citation contract and the recording fixes went live,
 at Olisa's go.** `ask-canary` v8 (deployed with `--also ask` from `v8`
