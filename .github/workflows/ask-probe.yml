@@ -45,6 +45,10 @@ on:
         default: "ask-canary"
         type: choice
         options: [ask-canary, ask]
+      extra_args:
+        description: "Extra probe flags, passed through verbatim (e.g. --reasoning '{\"effort\":\"low\"}' --probe '{\"hedgeAfterMs\":30000}')"
+        required: false
+        default: ""
 
 jobs:
   probe:
@@ -63,6 +67,7 @@ jobs:
           TAG: ${{ inputs.tag }}
           MODEL: ${{ inputs.model }}
           SLUG: ${{ inputs.slug }}
+          EXTRA_ARGS: ${{ inputs.extra_args }}
         run: |
           set -euo pipefail
           if [ "$SLUG" = "ask-canary" ] && [ -z "$LHF_PROBE_SECRET" ]; then
@@ -71,6 +76,10 @@ jobs:
           fi
           args=(--slug "$SLUG" --runs "$RUNS" --set "$SET" --tag "$TAG")
           if [ -n "$MODEL" ]; then args+=(--model "$MODEL"); fi
+          # Extra flags are split like a shell would, so a quoted JSON value
+          # stays one argument; the probe itself refuses anything the canary's
+          # policy does not allow, so nothing here widens what a run can do.
+          if [ -n "$EXTRA_ARGS" ]; then eval "args+=($EXTRA_ARGS)"; fi
           node backend/scripts/ask-probe.mjs "${args[@]}" | tee probe.log
       - name: Summary
         if: always()
