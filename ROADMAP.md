@@ -66,8 +66,9 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
      `anthropic/claude-haiku-5.5`; `LHF_FACTS_DISABLED=1` is the off switch.
   5. Phone: `bash backend/scripts/verify-facts-on-phone.sh <CoreDevice id>`
      after a sync, then one card a fact touched: `undo` works, nothing
-     completed or deleted, a manual date edit still wins. Nothing about this
-     path has been watched on a device.
+     completed or deleted, a manual date edit still wins. Step 5's plist
+     read ran on Marco's phone 2026-11-04 (Phase 1 live: 11 completions,
+     14 section dates, 1 missing; cursor absent until the deploy).
   Also open: the phone's course-material sync reported `manifest failed ·
   uploaded 0 · errors 7` on 2026-11-03, which would starve extraction.
 - **Reminders for work already turned in, and a Sweeper that earns its

@@ -3157,14 +3157,18 @@ none is a ship line.
 
 ## Known gaps
 
-- **Nothing in the composed day (Phases 1-3) has been watched on a device**,
-  and no real fact has ever reached a phone, because `extract-facts`, the
-  `course_facts` migration and the `sync` changes are **not deployed**. The
-  structured-sources path and the card/megaphone changes are proven only by
-  fixtures (3559 tests green, 2026-11-04). The Debug build for Marco's iPhone
-  17 Pro compiled on 2026-11-04 (`xcodebuild` to the device destination);
-  the install waited on the phone, which had dropped off the cable, so
-  nothing has been watched running. The migration SQL, `rls.test.sql` and
+- **Phase 1 of the composed day has run on a device once; Phases 2-3 have
+  not**, and no real fact has ever reached a phone, because `extract-facts`,
+  the `course_facts` migration and the `sync` changes are **not deployed**.
+  On 2026-11-04 at 20:15 UTC the Debug build from `034767b` (3.4.0 (17))
+  was installed over the store copy on Marco's iPhone 17 Pro and launched;
+  `verify-facts-on-phone.sh` then read
+  `rows=0 completions=11 dismissals=0 dueOverrides=14 missing=1`,
+  `factsCursorV1` absent (expected: no manifest with facts fields yet), no
+  crash report, Canvas session alive. So the structured-sources fetch and
+  reconcile work against real Canvas; whether the 11 completions and 14
+  section dates show correctly on cards has not been checked by eye. The
+  card/megaphone fact changes are proven only by fixtures. The migration SQL, `rls.test.sql` and
   `claim_fact_extraction.test.sql` passed in a Docker Postgres on
   2026-11-04 (`backend/scripts/sql-check.sh`); the deploy itself is
   prepared as `backend/scripts/deploy-facts.mjs` with
