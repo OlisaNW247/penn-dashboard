@@ -189,3 +189,61 @@ test("shouldCollectOnEdToken", () => {
   assert.equal(f({ summary: { ed: "none" }, token: "" }), false);
   assert.equal(f({ summary: { ed: "none" }, token: undefined }), false);
 });
+
+// ---- deadline and progress (2026-11-05)
+import { PASS_DEADLINE_MS } from "../src/collectRun.js";
+
+test("a pass that hangs hits the deadline, writes its summary, and the next call starts a fresh pass", async () => {
+  assert.equal(PASS_DEADLINE_MS, 25 * 60 * 1000);
+  const storage = paired(), b = backend();
+  let calls = 0;
+  const hang = () => { calls += 1; return new Promise(() => {}); };
+  const r = await run({ fetch: hang, callFunction: b.callFunction, storage, deadlineMs: 50, requestTimeoutMs: 100000 });
+  assert.deepEqual(r, { status: "deadline" });
+  const s = storage.data[KEYS.summary];
+  assert.equal(s.stopped, "deadline");
+  assert.equal(s.canvas, "error");
+  assert.equal(s.ed, "none");
+  assert.equal(s.at, T0);
+  const before = calls;
+  const c = canvas();
+  const again = await run({ fetch: c.fetch, callFunction: b.callFunction, storage, force: true, deadlineMs: 5000 });
+  assert.equal(again.status, "ok");
+  assert.ok(c.log.urls.length > 0 && calls === before);
+});
+
+test("an abandoned pass cannot overwrite a newer pass's summary", async () => {
+  const storage = paired(), b = backend();
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const c = canvas({ gate });
+  const first = await run({ fetch: c.fetch, callFunction: b.callFunction, storage, deadlineMs: 30 });
+  assert.equal(first.status, "deadline");
+  const T1 = T0 + INTERVAL_MS * 2;
+  const second = await collectRun({ sessionStorage: fakeStorage(), now: () => T1, sleep: noSleep, fetch: canvas().fetch, callFunction: b.callFunction, storage });
+  assert.equal(second.status, "ok");
+  release(); // the abandoned pass now runs to its end
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(storage.data[KEYS.summary].at, T1);
+  assert.equal(storage.data[KEYS.lastRun], T1);
+});
+
+test("progress is written with phase words and numbers only, ending in done", async () => {
+  const storage = paired(), c = canvas(), b = backend();
+  await run({ fetch: c.fetch, callFunction: b.callFunction, storage });
+  const p = storage.data[KEYS.progress];
+  assert.equal(p.phase, "done");
+  assert.deepEqual(Object.keys(p).sort(), ["at", "course", "phase", "requests"]);
+  assert.equal(typeof p.requests, "number");
+});
+
+test("the upload phase is always written, even inside the 2 s throttle", async () => {
+  const storage = paired(), c = canvas(), b = backend();
+  const phases = [];
+  const set = storage.set;
+  storage.set = async (o) => { if (o[KEYS.progress]) phases.push(o[KEYS.progress].phase); return set(o); };
+  await run({ fetch: c.fetch, callFunction: b.callFunction, storage });
+  assert.ok(phases.includes("upload"));
+  assert.equal(phases.at(-1), "done");
+  assert.ok(phases.length < 8);
+});

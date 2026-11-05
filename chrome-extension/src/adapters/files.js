@@ -31,10 +31,14 @@ import {
   DEFAULT_BASE_URL, MAX_PAGES, stripAntiHijackPrefix, looksLikeHTML, nextPageURL,
 } from "../core/canvasApi.js";
 import { fileDocument } from "../core/canvasDocuments.js";
+import { fetchWithTimeout } from "./timeout.js";
 
 export const FILES_DEFAULT_MAX = 60;
 export const FILES_DEFAULT_DELAY_MS = 250;
 export const FILE_MAX_BYTES = 25 * 1024 * 1024;
+export const FILES_REQUEST_TIMEOUT_MS = 30_000;
+// One PDF's text extraction gets this long; a PDF that hangs pdf.js counts as unparseable.
+export const EXTRACT_TIMEOUT_MS = 60_000;
 
 export function filePublicURLEndpoint(fileID, { baseURL = DEFAULT_BASE_URL } = {}) {
   return `${baseURL.replace(/\/+$/, "")}/api/v1/files/${fileID}/public_url`;
@@ -67,6 +71,22 @@ export function cleanFileText(raw) {
 }
 
 const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// extractText raced against a timer. On timeout the signal handed to extractText
+// is aborted (pdfText.js destroys its pdf.js task) and this throws, which the
+// caller files as an unparseable PDF.
+async function extractWithin(extractText, bytes, ms) {
+  const controller = new AbortController();
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => { controller.abort(); reject(new Error("extract timeout")); }, ms);
+  });
+  try {
+    return await Promise.race([extractText(bytes, { signal: controller.signal }), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 class Stop extends Error {
   constructor(kind) { super(kind); this.kind = kind; } // rateLimited | out | forbidden | http | network | decode | unsafe
@@ -126,6 +146,8 @@ export async function collectFiles({ fetch: fetchFn, courseID, course, extractTe
   const maxFiles = limits.maxFiles ?? FILES_DEFAULT_MAX;
   const maxBytes = limits.maxBytes ?? FILE_MAX_BYTES;
   const doSleep = sleep ?? limits.sleep ?? defaultSleep;
+  const requestTimeoutMs = limits.requestTimeoutMs ?? FILES_REQUEST_TIMEOUT_MS;
+  const extractTimeoutMs = limits.extractTimeoutMs ?? EXTRACT_TIMEOUT_MS;
   const counts = { listed: 0, unchanged: 0, skipped: 0, extracted: 0, empty: 0, failed: 0, attempted: 0, forbidden: 0, requests: 0, linked: 0, linkedForbidden: 0, linkedMissing: 0, unparseable: 0 };
   const result = { documents: [], seen: { ...seen }, stopped: null, counts };
   const fetchedAt = now === undefined ? new Date() : new Date(now);
@@ -135,7 +157,7 @@ export async function collectFiles({ fetch: fetchFn, courseID, course, extractTe
     counts.requests += 1;
     let res;
     try {
-      res = await fetchFn(url, { credentials: "include", redirect: "follow", headers: { Accept: accept } });
+      res = await fetchWithTimeout(fetchFn, url, { credentials: "include", redirect: "follow", headers: { Accept: accept } }, requestTimeoutMs);
     } catch {
       throw new Stop("network");
     }
@@ -226,7 +248,7 @@ export async function collectFiles({ fetch: fetchFn, courseID, course, extractTe
       counts.requests += 1;
       let res;
       try {
-        res = await fetchFn(publicURL, { credentials: "omit", redirect: "follow" });
+        res = await fetchWithTimeout(fetchFn, publicURL, { credentials: "omit", redirect: "follow" }, requestTimeoutMs);
       } catch {
         throw new Stop("network");
       }
@@ -235,7 +257,7 @@ export async function collectFiles({ fetch: fetchFn, courseID, course, extractTe
       if (bytes.byteLength === 0 || bytes.byteLength > maxBytes) { counts.skipped += 1; result.seen[e.id] = e.updatedAt; return null; }
       let text;
       try {
-        text = cleanFileText(await extractText(bytes));
+        text = cleanFileText(await extractWithin(extractText, bytes, extractTimeoutMs));
       } catch {
         counts.failed += 1; // unparseable PDF: retry next run only if it changes
         counts.unparseable += 1;

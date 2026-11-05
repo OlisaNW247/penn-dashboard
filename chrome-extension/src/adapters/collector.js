@@ -26,12 +26,15 @@ import {
   decodeModuleItems, moduleDocuments, linksFromModuleItems, dedupeLinks,
 } from "../core/canvasDocuments.js";
 import { collectFiles } from "./files.js";
+import { fetchWithTimeout } from "./timeout.js";
 import * as edCore from "../core/ed.js";
 import { match as matchEdCourses } from "../core/edMatch.js";
 import { parse as parseCourseCode } from "../core/courseCode.js";
 import { uploads, uploadBatches, fullyFetchedCourseIDs } from "../core/syncPlan.js";
 
 export const DEFAULT_DELAY_MS = 250;
+// No request waits longer than this (2026-11-05: a hung fetch blocked every collection).
+export const REQUEST_TIMEOUT_MS = 30_000;
 export const ED_HOST_ORIGIN = "https://edstem.org";
 export const ED_TOKEN_KEY = "edTokenV1";
 // Every document kind the extension can decode (PROTOCOL.md `acceptsKinds`).
@@ -56,9 +59,12 @@ const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export function makeContext({ fetch: fetchFn, limits = {}, sleep }) {
   const delayMs = limits.delayMs ?? DEFAULT_DELAY_MS;
   const doSleep = sleep ?? limits.sleep ?? defaultSleep;
+  const timeoutMs = limits.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
   let first = true;
   return {
     fetch: fetchFn,
+    // Every collector request goes through here: timeout, and an abort is a "network" failure.
+    send(url, init) { return fetchWithTimeout(fetchFn, url, init, timeoutMs); },
     async pace() {
       if (!first && delayMs > 0) await doSleep(delayMs);
       first = false;
@@ -98,7 +104,7 @@ async function checkSession(ctx) {
   await ctx.pace();
   ctx.requests += 1;
   try {
-    const res = await ctx.fetch(`${DEFAULT_BASE_URL}/api/v1/users/self`, { credentials: "include", redirect: "follow", headers: { Accept: "application/json" } });
+    const res = await ctx.send(`${DEFAULT_BASE_URL}/api/v1/users/self`, { credentials: "include", redirect: "follow", headers: { Accept: "application/json" } });
     if (typeof res.url === "string" && res.url !== "" && hostOf(res.url) !== CANVAS_HOST) return false;
     if (res.status !== 200) return false;
     const text = stripAntiHijackPrefix(await safeText(res));
@@ -119,7 +125,7 @@ async function canvasGet(ctx, url) {
   ctx.requests += 1;
   let res;
   try {
-    res = await ctx.fetch(url, { credentials: "include", redirect: "follow", headers: { Accept: "application/json" } });
+    res = await ctx.send(url, { credentials: "include", redirect: "follow", headers: { Accept: "application/json" } });
   } catch {
     throw new CollectError("network");
   }
@@ -264,7 +270,7 @@ async function edGet(ctx, url, token) {
   ctx.requests += 1;
   let res;
   try {
-    res = await ctx.fetch(url, { credentials: "omit", redirect: "follow", headers: { Accept: "application/json", "x-token": token } });
+    res = await ctx.send(url, { credentials: "omit", redirect: "follow", headers: { Accept: "application/json", "x-token": token } });
   } catch {
     throw new CollectError("network");
   }
@@ -355,15 +361,21 @@ function dedupeDocuments(documents) {
 //           failures: { [courseID]: [endpoint] }, ed, edReadCourseIDs, summary }
 // canvas "out" means the student is signed out of Canvas: nothing is returned
 // (documents is empty) so nothing can be uploaded.
-export async function collectCourseMaterial({ fetch: fetchFn, now, courses, edToken, limits = {}, sleep, files } = {}) {
+export async function collectCourseMaterial({ fetch: fetchFn, now, courses, edToken, limits = {}, sleep, files, onProgress } = {}) {
   const when = now === undefined ? new Date() : new Date(now);
   const ctx = makeContext({ fetch: fetchFn, limits, sleep });
+  // Phase words and numbers only; a throwing callback never stops the pass.
+  const progress = (phase, course) => {
+    if (typeof onProgress !== "function") return;
+    try { onProgress({ phase, course, requests: ctx.requests }); } catch { /* ignore */ }
+  };
   const empty = (canvas) => ({
     canvas, courses: [], documents: [], links: [], failures: {}, ed: "none", edReadCourseIDs: [], filesSeen: files?.seen ?? {},
     summary: { canvas, ed: "none", courses: 0, documents: 0, links: 0, failedEndpoints: 0, forbidden: 0, requests: ctx.requests, rateLimited: false },
   });
 
   let list = courses;
+  progress("courses", null);
   if (list === undefined || list === null) {
     try {
       list = await listCourses(ctx);
@@ -380,7 +392,9 @@ export async function collectCourseMaterial({ fetch: fetchFn, now, courses, edTo
   let filesForbidden = 0;
   const filesSeen = { ...(files?.seen ?? {}) };
   const fileCounts = { extracted: 0, empty: 0, failed: 0, linked: 0, linkedForbidden: 0, linkedMissing: 0, unparseable: 0 };
-  for (const course of list) {
+  for (const [index, course] of list.entries()) {
+    const where = `${index + 1}/${list.length}`;
+    progress("course", where);
     const failed = [];
     const courseLinks = [];
     const moduleFileIDs = [];
@@ -405,6 +419,7 @@ export async function collectCourseMaterial({ fetch: fetchFn, now, courses, edTo
     }
     failures[course.courseID] = failed;
     if (files && typeof files.extractText === "function" && !rateLimited) {
+      progress("files", where);
       const got = await collectFiles({
         fetch: fetchFn, courseID: course.courseID, course, extractText: files.extractText,
         seen: filesSeen[course.courseID] ?? {}, now: when, sleep: sleep ?? limits.sleep,
@@ -412,7 +427,7 @@ export async function collectCourseMaterial({ fetch: fetchFn, now, courses, edTo
         // File ids this run's own material for the course points at (2026-10-27):
         // the Files tab is usually hidden, the links are not.
         linkedFileIDs: [...new Set([...canvasFileIDsFromLinks(courseLinks), ...moduleFileIDs])],
-        limits: { delayMs: limits.delayMs, maxFiles: files.maxFiles },
+        limits: { delayMs: limits.delayMs, maxFiles: files.maxFiles, requestTimeoutMs: limits.requestTimeoutMs, extractTimeoutMs: limits.extractTimeoutMs },
       });
       ctx.requests += got.counts.requests;
       filesSeen[course.courseID] = got.seen;
@@ -426,6 +441,7 @@ export async function collectCourseMaterial({ fetch: fetchFn, now, courses, edTo
 
   let ed = { status: "none", matched: 0, documents: [], readCourseIDs: [] };
   if (typeof edToken === "string" && edToken !== "") {
+    progress("ed", null);
     ed = await collectEd(ctx, edToken, list, when);
     documents.push(...ed.documents);
   }

@@ -9,7 +9,11 @@ export const KEYS = {
   holdings: "courseHoldingsV1",
   filesSeen: "fileSeenV1",
   summary: "collectSummaryV1",
+  progress: "collectProgressV1",
 };
+// A pass that has not finished in this long is abandoned so the next alarm can start a fresh one.
+export const PASS_DEADLINE_MS = 25 * 60 * 1000;
+export const PROGRESS_MIN_GAP_MS = 2000;
 // 30 minutes, not 5: the server's manifest calls a course fresh for an hour, so
 // a faster collection would re-read Canvas for nothing. 30 catches new
 // announcements and Ed posts twice as fast at a tolerable cost.
@@ -33,8 +37,32 @@ let inFlight = null;
 
 export function collectRun(opts) {
   if (inFlight) return inFlight;
-  inFlight = pass(opts ?? {}).catch(() => ({ status: "error" })).finally(() => { inFlight = null; });
-  return inFlight;
+  const o = opts ?? {};
+  const deadlineMs = o.deadlineMs ?? PASS_DEADLINE_MS;
+  const mine = {};
+  let timer;
+  const deadline = new Promise((resolve) => {
+    timer = setTimeout(() => resolve({ status: "deadline" }), deadlineMs);
+  });
+  const run = pass(o, mine).catch(() => ({ status: "error" }));
+  const promise = Promise.race([run, deadline]).then(async (result) => {
+    if (result.status === "deadline") {
+      // Free the slot first, whatever the storage does.
+      if (inFlight === promise) inFlight = null;
+      try { await writeDeadlineSummary(o.storage, mine); } catch { /* never throws */ }
+    }
+    return result;
+  }).finally(() => { clearTimeout(timer); if (inFlight === promise) inFlight = null; });
+  inFlight = promise;
+  return promise;
+}
+
+// The abandoned pass's own counts, if it got far enough to have any.
+async function writeDeadlineSummary(storage, mine) {
+  if (!storage || mine.startedAt === undefined) return;
+  mine.abandoned = true;
+  if ((await get(storage, KEYS.lastRun)) !== mine.startedAt) return; // a newer pass owns the summary
+  await storage.set({ [KEYS.summary]: { at: mine.startedAt, canvas: "error", ed: "none", stopped: "deadline", requests: mine.requests ?? 0 } });
 }
 
 const get = async (storage, k) => (await storage.get(k))[k];
@@ -44,7 +72,7 @@ function nextLocalMidnight(nowMs) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
 }
 
-async function pass({ force = false, fetch: fetchFn, callFunction, storage, sessionStorage, now = () => Date.now(), extractText, sleep }) {
+async function pass({ force = false, fetch: fetchFn, callFunction, storage, sessionStorage, now = () => Date.now(), extractText, sleep, requestTimeoutMs, extractTimeoutMs }, mine = {}) {
   if (!(await get(storage, KEYS.pairingKey))) return { status: "unpaired" };
   const t = typeof now === "function" ? now() : now;
   const nowMs = t instanceof Date ? t.getTime() : t;
@@ -53,6 +81,24 @@ async function pass({ force = false, fetch: fetchFn, callFunction, storage, sess
   const until = await get(storage, KEYS.backoffUntil);
   if (typeof until === "number" && nowMs < until) return { status: "backoff" };
   await storage.set({ [KEYS.lastRun]: nowMs });
+  mine.startedAt = nowMs;
+
+  // Progress: phase words and numbers only. At most one write per 2 s, and the
+  // last report is always written (flushed before the upload and at the end).
+  let lastWrite = -Infinity;
+  let latest = null;
+  const writeProgress = async () => {
+    if (!latest || mine.abandoned) return;
+    const body = latest;
+    latest = null;
+    lastWrite = Date.now();
+    await storage.set({ [KEYS.progress]: body }).catch(() => {});
+  };
+  const report = (p) => {
+    mine.requests = p.requests;
+    latest = { at: Date.now(), phase: p.phase, course: p.course, requests: p.requests };
+    if (Date.now() - lastWrite >= PROGRESS_MIN_GAP_MS) writeProgress();
+  };
 
   const edToken = sessionStorage ? await readEdToken(sessionStorage).catch(() => undefined) : undefined;
   const seen = (await get(storage, KEYS.filesSeen)) ?? {};
@@ -60,11 +106,15 @@ async function pass({ force = false, fetch: fetchFn, callFunction, storage, sess
 
   const collected = await collectCourseMaterial({
     fetch: fetchFn, now: nowMs, edToken, sleep, // sleep: tests only
+    onProgress: report,
+    limits: { requestTimeoutMs, extractTimeoutMs },
     files: typeof extractText === "function" ? { extractText, seen } : undefined,
   });
   // Persist what the file pass learned even if the upload stops.
   if (collected.filesSeen) await storage.set({ [KEYS.filesSeen]: collected.filesSeen });
 
+  report({ phase: "upload", course: null, requests: collected.summary?.requests ?? 0 });
+  await writeProgress();
   const synced = await syncCourseMaterial({ callFunction, collected, holdings });
   await storage.set({ [KEYS.holdings]: synced.holdings });
 
@@ -102,6 +152,11 @@ async function pass({ force = false, fetch: fetchFn, callFunction, storage, sess
     profileStale: stale.length,
     websitesPending: pending.length,
   };
-  await storage.set({ [KEYS.summary]: summary });
+  // An abandoned pass (the deadline won) must not clobber a newer pass's summary.
+  if (!mine.abandoned && (await get(storage, KEYS.lastRun)) === nowMs) {
+    await storage.set({ [KEYS.summary]: summary });
+    report({ phase: "done", course: null, requests: summary.requests });
+    await writeProgress();
+  }
   return { status: "ok", summary };
 }

@@ -416,3 +416,29 @@ test("collector: a File module item's content id reaches collectFiles", async ()
   });
   assert.deepEqual(got.documents.filter((d) => d.kind === "file").map((d) => d.id), ["file:111:77"]);
 });
+
+// ---- timeouts (2026-11-05)
+import { EXTRACT_TIMEOUT_MS } from "../src/adapters/files.js";
+
+test("a PDF whose extraction never finishes is abandoned, counted unparseable and remembered", async () => {
+  assert.equal(EXTRACT_TIMEOUT_MS, 60000);
+  const { fn } = fake({ pages: [[entry(1), entry(2)]], download: () => res("") });
+  let aborted = 0;
+  const extractText = (bytes, { signal } = {}) => new Promise(() => { signal?.addEventListener("abort", () => { aborted += 1; }); });
+  const out = await collectFiles({ fetch: fn, courseID: "111", course: COURSE, extractText, now: NOW, ...noSleep, limits: { extractTimeoutMs: 20 } });
+  assert.equal(out.counts.unparseable, 2);
+  assert.equal(aborted, 2);
+  assert.equal(out.documents.length, 0);
+  assert.ok(out.seen["1"] && out.seen["2"]);
+  assert.equal(out.stopped, null);
+});
+
+test("a file request that never resolves is a network failure, not a sign-out", async () => {
+  const keepAlive = setTimeout(() => {}, 5000);
+  try {
+    const fn = () => new Promise(() => {});
+    const out = await collectFiles({ fetch: fn, courseID: "111", course: COURSE, extractText: extract, now: NOW, ...noSleep, limits: { requestTimeoutMs: 20 } });
+    assert.equal(out.stopped, null);
+    assert.equal(out.documents.length, 0);
+  } finally { clearTimeout(keepAlive); }
+});
