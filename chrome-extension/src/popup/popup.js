@@ -108,6 +108,24 @@ export function render(state, root, handlers = {}) {
   }
   shell.append(picker);
 
+  // The one thing an unpaired popup needs the student to do sits above the
+  // list, not under it: on 2026-11-05 the owner scrolled past a term of work
+  // to find "pair with phone" at the foot. The Ed note sits here for the same
+  // reason. "unpair" stays at the foot, where a stray tap cannot reach it.
+  if (!state.paired) {
+    const pair = el(doc, "button", { className: "pill pair quiet", type: "button", text: "pair with phone" });
+    pair.addEventListener("click", () => on("pair"));
+    shell.append(pair);
+  }
+  // Ed is read with a token only an Ed page can hand over (session-only, gone
+  // after a browser restart), so say so when the last run had none.
+  if (state.paired && (state.ed === "none" || state.ed === "out")) {
+    shell.append(el(doc, "div", { className: "note" }, [
+      el(doc, "p", { text: state.ed === "none" ? "open ed once to sync its posts" : "sign in to ed" }),
+      el(doc, "a", { className: "pill", href: ED_URL, target: "_blank", rel: "noopener", text: "ed" }),
+    ]));
+  }
+
   // A signed-out Canvas keeps the last list on screen under the sign-in
   // line: run.js keeps each source's last good pool for exactly this, and
   // an empty popup would read as "nothing due". "all clear" is only said
@@ -150,20 +168,7 @@ export function render(state, root, handlers = {}) {
     ]));
   }
 
-  // Ed is read with a token only an Ed page can hand over (session-only, gone
-  // after a browser restart), so say so when the last run had none.
-  if (state.paired && (state.ed === "none" || state.ed === "out")) {
-    shell.append(el(doc, "div", { className: "note" }, [
-      el(doc, "p", { text: state.ed === "none" ? "open ed once to sync its posts" : "sign in to ed" }),
-      el(doc, "a", { className: "pill", href: ED_URL, target: "_blank", rel: "noopener", text: "ed" }),
-    ]));
-  }
-
-  if (!state.paired) {
-    const pair = el(doc, "button", { className: "pill pair quiet", type: "button", text: "pair with phone" });
-    pair.addEventListener("click", () => on("pair"));
-    shell.append(pair);
-  } else {
+  if (state.paired) {
     const unpair = el(doc, "button", { className: "textbtn foot", type: "button", text: "unpair" });
     unpair.addEventListener("click", () => on("unpair"));
     shell.append(unpair);
