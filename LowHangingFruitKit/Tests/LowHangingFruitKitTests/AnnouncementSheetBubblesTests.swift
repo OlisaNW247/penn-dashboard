@@ -155,152 +155,109 @@ struct AnnouncementSheetSelectionNarrowingTests {
     }
 }
 
-@Suite("Announcements sheet bubbles: the one list for the selected classes")
-struct AnnouncementSheetCompiledTests {
+@Suite("Announcements sheet: the to-do and brief sections")
+struct AnnouncementSheetSectionsTests {
     static let day: TimeInterval = 24 * 60 * 60
     static let now = Date(timeIntervalSince1970: 1_800_000_000)
 
-    private func post(_ id: String, daysAgo: Double, course: String = "COMP 100", ed: Bool = false) -> AnnouncementRecord {
+    private func post(_ id: String, daysAgo: Double) -> AnnouncementRecord {
         let when = Self.now.addingTimeInterval(-daysAgo * Self.day)
         return AnnouncementRecord(
-            id: id, courseID: "1", courseCode: course, title: "Post \(id)", postedAt: when,
+            id: id, courseID: "1", courseCode: "COMP 100", title: "Post \(id)", postedAt: when,
             url: nil, snippet: "", recordedAt: when
         )
     }
 
-    /// A find: `announcement-<post>-<index>` for a Canvas post, due `dueInDays` from now.
-    private func find(
-        post: String?,
-        index: Int = 0,
-        sourceID: String? = nil,
-        dueInDays: Double?,
-        override: Double? = nil
-    ) -> DashItem {
-        let id = sourceID ?? "announcement-\(post ?? "none")-\(index)"
-        return DashItem(
+    private func find(sourceID: String, dueInDays: Double?) -> DashItem {
+        DashItem(
             assignment: Assignment(
-                source: .canvasAnnouncement, sourceID: id, kind: .assignment, course: "COMP 100",
-                title: "Task \(id)", dueAt: dueInDays.map { Self.now.addingTimeInterval($0 * Self.day) }, url: nil
+                source: .canvasAnnouncement, sourceID: sourceID, kind: .assignment, course: "COMP 100",
+                title: "Task \(sourceID)", dueAt: dueInDays.map { Self.now.addingTimeInterval($0 * Self.day) }, url: nil
             ),
-            dueOverride: override.map { Self.now.addingTimeInterval($0 * Self.day) },
-            isCompleted: false, completedAt: nil
+            dueOverride: nil, isCompleted: false, completedAt: nil
         )
     }
 
-    private func ids(_ entries: [AnnouncementSheetEntry]) -> [String] {
+    private func change(_ id: String, daysAgo: Double?) -> FactChangeGroup {
+        FactChangeGroup(
+            id: id, courseCode: "COMP 100", title: "Change \(id)",
+            rows: [FactChangeRow(
+                id: "f-\(id)", word: "moved",
+                postedAt: daysAgo.map { Self.now.addingTimeInterval(-$0 * Self.day) }, url: nil
+            )]
+        )
+    }
+
+    private func review(_ id: String, daysAgo: Double) -> FactReviewRow {
+        FactReviewRow(
+            id: id, courseCode: "COMP 100", quote: "q", url: nil,
+            postedAt: Self.now.addingTimeInterval(-daysAgo * Self.day)
+        )
+    }
+
+    private func todoIDs(_ entries: [AnnouncementTodoEntry]) -> [String] {
         entries.map { entry in
             switch entry {
             case .found(let item): return "find:" + item.assignment.sourceID
-            case .post(let record): return "post:" + record.id
+            case .change(let group): return "change:" + group.id
             }
         }
     }
 
-    @Test("posts alone come out newest first")
-    func postsNewestFirst() {
-        let entries = AppState.announcementSheetCompiled(
-            found: [], records: [post("1", daysAgo: 5), post("2", daysAgo: 1), post("3", daysAgo: 3)]
+    @Test("a found card is dated by its post, so it sorts by that post's date and not its due date")
+    func foundDatedByPost() {
+        // Found in a 5-day-old post but due in 9 days; a change sits at 3 days.
+        let entries = AppState.announcementSheetTodo(
+            found: [find(sourceID: "announcement-1-0", dueInDays: 9)],
+            changes: [change("c", daysAgo: 3)],
+            records: [post("1", daysAgo: 5)]
         )
-        #expect(ids(entries) == ["post:2", "post:3", "post:1"])
+        #expect(todoIDs(entries) == ["change:c", "find:announcement-1-0"])
     }
 
-    @Test("a find is dated by its post, not by its own due date, and sits directly above that post")
-    func findFollowsItsPost() {
-        // Task found in the 5-day-old post but due in 9 days; another post sits between.
-        let entries = AppState.announcementSheetCompiled(
-            found: [find(post: "1", dueInDays: 9)],
-            records: [post("2", daysAgo: 1), post("3", daysAgo: 3), post("1", daysAgo: 5), post("4", daysAgo: 7)]
+    @Test("a change group newer than a found card's post comes first")
+    func newerChangeFirst() {
+        let entries = AppState.announcementSheetTodo(
+            found: [find(sourceID: "syllabus-1-final", dueInDays: -4)],
+            changes: [change("c", daysAgo: 1)],
+            records: []
         )
-        #expect(ids(entries) == ["post:2", "post:3", "find:announcement-1-0", "post:1", "post:4"])
+        #expect(todoIDs(entries) == ["change:c", "find:syllabus-1-final"])
     }
 
-    @Test("on a tie nothing wedges between a find and its post, and equal dates keep the order they came in")
-    func tiesKeepAFindAbovePost() {
-        let a = post("1", daysAgo: 2)
-        let b = post("2", daysAgo: 2)
-        let c = post("3", daysAgo: 2)
-        let entries = AppState.announcementSheetCompiled(
-            found: [find(post: "3", dueInDays: 1), find(post: "2", dueInDays: 5)],
-            records: [a, b, c]
+    @Test("undated entries go last, in the order they came in")
+    func undatedLast() {
+        let entries = AppState.announcementSheetTodo(
+            found: [find(sourceID: "syllabus-1-x", dueInDays: nil), find(sourceID: "syllabus-1-z", dueInDays: -30)],
+            changes: [change("u", daysAgo: nil), change("d", daysAgo: 2)],
+            records: []
         )
-        #expect(ids(entries) == ["post:1", "find:announcement-2-0", "post:2", "find:announcement-3-0", "post:3"])
-        // Deterministic: the same inputs, the same list.
-        #expect(AppState.announcementSheetCompiled(found: [find(post: "3", dueInDays: 1), find(post: "2", dueInDays: 5)], records: [a, b, c]) == entries)
+        #expect(todoIDs(entries) == ["change:d", "find:syllabus-1-z", "find:syllabus-1-x", "change:u"])
     }
 
-    @Test("two finds from one post stay together above it, in the order the found list gave them")
-    func severalFindsOfOnePost() {
-        let entries = AppState.announcementSheetCompiled(
-            found: [find(post: "1", index: 1, dueInDays: 3), find(post: "9", dueInDays: 1), find(post: "1", index: 0, dueInDays: 2)],
-            records: [post("2", daysAgo: 1), post("1", daysAgo: 4)]
+    @Test("every todo entry has its own id, and nothing in is nothing out")
+    func todoIDsDistinct() {
+        #expect(AppState.announcementSheetTodo(found: [], changes: [], records: []).isEmpty)
+        let entries = AppState.announcementSheetTodo(
+            found: [find(sourceID: "a", dueInDays: 1)], changes: [change("a", daysAgo: 1)], records: []
         )
-        // "9" is not a listed post: its find is dated by its card (due in 1 day, newer than everything).
-        #expect(ids(entries) == [
-            "find:announcement-9-0", "post:2",
-            "find:announcement-1-1", "find:announcement-1-0", "post:1",
-        ])
+        #expect(Set(entries.map(\.id)).count == 2)
     }
 
-    @Test("a find with no listed post, like a syllabus exam, is dated by its card, and the student's edited date wins")
-    func loneFindsUseTheirCardDate() {
-        let exam = find(post: nil, sourceID: "syllabus-1-midterm-1", dueInDays: -2)
-        let moved = find(post: nil, sourceID: "syllabus-1-final", dueInDays: -10, override: -4)
-        let entries = AppState.announcementSheetCompiled(
-            found: [moved, exam],
-            records: [post("1", daysAgo: 1), post("2", daysAgo: 3), post("3", daysAgo: 6)]
+    @Test("brief: a review newer than a post comes first, posts stay newest first")
+    func briefNewestFirst() {
+        let entries = AppState.announcementSheetBrief(
+            records: [post("1", daysAgo: 4), post("2", daysAgo: 2)],
+            reviews: [review("r", daysAgo: 1), review("old", daysAgo: 3)]
         )
-        // exam: 2 days ago (between posts 1 and 2). moved: edited to 4 days ago (between 2 and 3).
-        #expect(ids(entries) == ["post:1", "find:syllabus-1-midterm-1", "post:2", "find:syllabus-1-final", "post:3"])
-    }
-
-    @Test("a lone find equal in date to a post comes after the post, and lone finds of equal date keep their order")
-    func equalDatesWithLoneFinds() {
-        let sameDay = find(post: nil, sourceID: "syllabus-1-a", dueInDays: -2)
-        let alsoSame = find(post: nil, sourceID: "syllabus-1-b", dueInDays: -2)
-        let entries = AppState.announcementSheetCompiled(
-            found: [sameDay, alsoSame], records: [post("1", daysAgo: 2)]
-        )
-        #expect(ids(entries) == ["post:1", "find:syllabus-1-a", "find:syllabus-1-b"])
-    }
-
-    @Test("an entry with no date at all goes last, in order")
-    func datelessLast() {
-        let undatedA = find(post: nil, sourceID: "syllabus-1-x", dueInDays: nil)
-        let undatedB = find(post: nil, sourceID: "syllabus-1-y", dueInDays: nil)
-        let dated = find(post: nil, sourceID: "syllabus-1-z", dueInDays: -30)
-        let entries = AppState.announcementSheetCompiled(
-            found: [undatedA, dated, undatedB], records: [post("1", daysAgo: 20)]
-        )
-        #expect(ids(entries) == ["post:1", "find:syllabus-1-z", "find:syllabus-1-x", "find:syllabus-1-y"])
-    }
-
-    @Test("an undated find of a listed post is dated by the post, so it is not last")
-    func undatedFindOfAListedPost() {
-        let entries = AppState.announcementSheetCompiled(
-            found: [find(post: "1", dueInDays: nil)],
-            records: [post("2", daysAgo: 1), post("1", daysAgo: 3), post("3", daysAgo: 6)]
-        )
-        #expect(ids(entries) == ["post:2", "find:announcement-1-0", "post:1", "post:3"])
-    }
-
-    @Test("an Ed find joins its Ed post")
-    func edFindJoinsItsPost() {
-        let edPost = post("ed:9301:77", daysAgo: 2)
-        let entries = AppState.announcementSheetCompiled(
-            found: [find(post: nil, sourceID: "ed-9301-77-0", dueInDays: 8)],
-            records: [post("1", daysAgo: 1), edPost, post("2", daysAgo: 4)]
-        )
-        #expect(ids(entries) == ["post:1", "find:ed-9301-77-0", "post:ed:9301:77", "post:2"])
-    }
-
-    @Test("nothing in, nothing out; and every entry has its own id")
-    func emptyAndIDs() {
-        #expect(AppState.announcementSheetCompiled(found: [], records: []).isEmpty)
-        let entries = AppState.announcementSheetCompiled(
-            found: [find(post: "1", dueInDays: 1), find(post: nil, sourceID: "syllabus-1-final", dueInDays: 4)],
-            records: [post("1", daysAgo: 1)]
-        )
-        #expect(Set(entries.map(\.id)).count == entries.count)
-        #expect(entries.count == 3)
+        let ids = entries.map { entry -> String in
+            switch entry {
+            case .post(let record): return "post:" + record.id
+            case .review(let row): return "review:" + row.id
+            }
+        }
+        #expect(ids == ["review:r", "post:2", "review:old", "post:1"])
+        #expect(Set(entries.map(\.id)).count == 4)
+        #expect(AppState.announcementSheetBrief(records: [], reviews: []).isEmpty)
     }
 }

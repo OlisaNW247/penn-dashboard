@@ -684,9 +684,17 @@ Keep this current. It is the fastest way for a new session to know what exists.
     announcements" card. Caveats: a cancelled item already overdue appears
     nowhere (todo hides it, all excludes overdue, prev is completed-only);
     a medium-confidence cancel is never applied.
-    The **megaphone** sheet now opens with a `changed` group (what facts did
-    to which cards) and a `needs a look` group (facts the app held back:
-    the quote and the post), then the announcement finds as before.
+    The **megaphone** sheet is one list in two sections since 2026-11-06
+    (Marco, on the phone: "should just be one tab"): **to-do** (the found
+    tasks and exams as dashboard cards, and the items a fact changed),
+    then **brief** (every post and every fact the app held back), each
+    newest first, the class bubbles filtering both. Every row that opens
+    elsewhere shows an arrow with `go to canvas` or `go to ed` under it.
+    There is no undo on the sheet; the card's own undo on the dashboard is
+    the place for it. Before that day it had four groups (`changed`,
+    `needs a look`, `found`, `announcements`) and a different single list
+    while a class was selected. Ranking to-do by urgency is in ROADMAP →
+    Next.
   - **Canvas's own signals** (2026-11-04, behind
     `FeatureFlags.structuredCanvasSources`): Planner ticks and dismissals,
     met module requirements and section due-date overrides now move cards;
@@ -1241,7 +1249,15 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v10` (2026-11-06, the merge for production): 3708 tests / 353
+**Current on `v10` (2026-11-06, evening, the megaphone's two sections): 3700
+tests / 352 suites, all green, `swift test --no-parallel` on Marco's Mac
+(89 s); the signed iOS Debug device build succeeded and is on his phone.**
+-8 / -1 over 3708 / 353 on purpose: `AnnouncementSheetUndoTests` (3) went
+with the sheet's undo and `AnnouncementSheetCompiledTests` (10) with
+`announcementSheetCompiled`; `AnnouncementSheetSectionsTests` (5) pins the
+to-do and brief ordering instead.
+
+Before it: **on `v10` (2026-11-06, the merge for production): 3708 tests / 353
 suites, all green, `swift test --no-parallel` on Marco's Mac (53 s), the only
 run on the machine; iOS Debug simulator build (`iPhone 17 Pro`) succeeded
 twice on the same tree; Deno 713 and `deno task check` clean.** +10 / +1
@@ -3482,20 +3498,22 @@ none is a ship line.
   A planner-tick or module completion can still be swiped back. Open: a
   student who wants to re-do submitted work has no way to make it active,
   by design; and the fix is unseen on a device.
-- **"open in canvas" may not reach the Canvas Student app** (Marco,
-  2026-11-06: "it hasn't been for me"). `CanvasAppLink.result(for:)` tries
-  the universal link, then `canvas-courses://<host>/courses/...` (the scheme
-  Canvas documents for its Student app), then Safari; cards and megaphone
-  rows use it, and since 2026-11-06 ask's answer links do too (they went
-  to Safari by policy before). Which branch fires on his phone is unknown:
-  a DEBUG build now prints one `LHF-LINK <branch> <host><path>` line per
-  tap (never query, fragment or token) and a `canOpenURL canvas-courses:`
-  line, which reads false when `LSApplicationQueriesSchemes` is undeclared
-  (it is) even where `open(_:)` would succeed. Two candidate causes from
-  the code: a card whose stored URL has no `#assignment_<id>` fragment
-  (override rows, `#quiz_`) keeps a calendar-shaped URL that `appURL`
-  rejects, so it opens Safari by design; or the Student app does not map
-  `canvas.upenn.edu` paths. One tap on a debug build settles it.
+- **"open in canvas" reaches the Canvas Student app through the
+  `canvas-courses://` scheme, confirmed on Marco's phone 2026-11-06.** Marco
+  had reported it "hasn't been" opening the app. With the 3.4.1 (18) Debug
+  build and the console attached, four taps on a PHYS 0151 card each
+  printed `LHF-LINK canOpenURL canvas-courses: false` (expected: the scheme
+  is not in `LSApplicationQueriesSchemes`, which only gates `canOpenURL`)
+  and `LHF-LINK scheme canvas.upenn.edu/courses/1949400/assignments/syllabus`:
+  the universal link was refused (Penn's association file claims only
+  `/canvas/login`) and `open(_:)` of the scheme URL opened Canvas Student,
+  which Marco confirmed ("it takes you to it, which it did properly").
+  `CanvasAppLink.result(for:)` is shared by cards, megaphone rows and, since
+  2026-11-06, ask's answer links (which went to Safari by policy before).
+  What failed for him earlier is unexplained; the two candidates stand: a
+  card whose stored URL has no `#assignment_<id>` fragment keeps a
+  calendar-shaped URL that `appURL` rejects and opens Safari by design, or
+  an older build. The DEBUG `LHF-LINK` lines stay for the next report.
 - **The 2026-11-05 bug-hunt fixes (facts, structured sources, silent
   re-login, backend) are on Marco's phone and looked right to him, and the
   `finish_fact_extraction` migration is not applied in production.** The

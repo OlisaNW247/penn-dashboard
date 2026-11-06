@@ -402,6 +402,13 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
 
 ## Next: features
 
+- **Megaphone: judge what is urgent** (Marco, 2026-11-06, on the phone,
+  after asking for the sheet to be one list with "to-do" and "brief"): once
+  the sheet is two sections, rank what lands in to-do by recency and by
+  what the post's text says ("we'll assess what's necessary and what's
+  urgent, based on recency and what the text says"). The inputs exist
+  (facts carry `postedAt`, `type` and `confidence`; the tree's freshness
+  scoring is in `CourseSearch`); the rule and the look are undecided.
 - **A composed day: facts applied to the ledger, not a list built by a
   model** (Marco's idea, 2026-11-03; research only, nothing agreed or
   built). `docs/DAY_PLANNER_RESEARCH_2026-11-03.md` maps what is already
@@ -830,6 +837,10 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-06 (evening).** The megaphone sheet is two sections, to-do and
+  brief, newest first, with `go to canvas` / `go to ed` under each arrow and
+  no undo (Marco, from the phone). The Canvas-app link was confirmed working
+  on his phone through the `canvas-courses://` scheme (`LHF-LINK` lines).
 - **2026-11-06 (shipped to App Store Connect).** The facts backend
   redeployed from `bd9d20c` with the `finish_fact_extraction` migration
   (`sync` v22, `extract-facts` v6; steps 1-3 green), and **3.4.1 (18)**

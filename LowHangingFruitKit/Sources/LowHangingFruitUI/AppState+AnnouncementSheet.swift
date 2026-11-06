@@ -76,17 +76,31 @@ enum AnnouncementFindState: Sendable, Equatable {
     case allDone
 }
 
-/// One row of the sheet's combined list (`AppState.announcementSheetCompiled`):
-/// a found card or a post.
-enum AnnouncementSheetEntry: Equatable, Identifiable {
+/// One row of the sheet's "to-do" section (`AppState.announcementSheetTodo`):
+/// a found card or a fact change group.
+enum AnnouncementTodoEntry: Equatable, Identifiable {
     case found(DashItem)
-    case post(AnnouncementRecord)
+    case change(FactChangeGroup)
 
-    /// Distinct across the two kinds, so a find and a post can share a list.
+    /// Distinct across the two kinds, so a card and a change can share a list.
     var id: String {
         switch self {
         case .found(let item): return "found:" + item.id
+        case .change(let group): return "change:" + group.id
+        }
+    }
+}
+
+/// One row of the sheet's "brief" section (`AppState.announcementSheetBrief`):
+/// a post or a fact the app held back for review.
+enum AnnouncementBriefEntry: Equatable, Identifiable {
+    case post(AnnouncementRecord)
+    case review(FactReviewRow)
+
+    var id: String {
+        switch self {
         case .post(let record): return "post:" + AnnouncementReadState.key(for: record)
+        case .review(let row): return "review:" + row.id
         }
     }
 }
@@ -490,77 +504,72 @@ extension AppState {
         announcementSheetNarrowed(records, toCourses: course.map { [$0] } ?? [])
     }
 
-    // MARK: One list for the selected classes
+    // MARK: The sheet's two sections
 
-    /// The found cards and the posts of the selected classes as one list,
-    /// newest first (`AnnouncementSheetEntry`). Drawn instead of the "found"
-    /// and "announcements" sections while any class is selected; with all
-    /// classes the two sections are drawn as they always were.
-    ///
-    /// **A post's date** is its `sortDate`. **A find's date is the date of the
-    /// post it came from** (`AnnouncementRecord.recordID(fromFindSourceID:)`,
-    /// matched against `records`, the posts the sheet is listing), so a task
-    /// found in Monday's post sits with Monday's post and not at its due date;
-    /// the card still shows its due date. A find with no listed post (a
-    /// syllabus exam, which no post carries, or a find whose post the sheet is
-    /// not listing) has no post to be dated by and uses its card's date,
-    /// `dueOverride ?? assignment.dueAt`. An entry with no date at all goes
-    /// last.
-    ///
-    /// **A find sits directly above its post**, however many other entries
-    /// share their date: the list is built from units (a post with its finds,
-    /// or a lone find), and the units are ordered, so nothing can wedge itself
-    /// between a find and its post. Within a unit the finds keep the order
-    /// `found` gave them. Equal dates keep the order the inputs came in (posts
-    /// as `records` has them, then lone finds as `found` has them), by an
-    /// explicit index and not by trusting the sort to be stable.
-    ///
-    /// The wrong version sorts finds and posts together by their own dates: a
-    /// task due Friday found in Monday's post would land among Friday's posts,
-    /// away from the post that said it, and the combined list would read as
-    /// two lists shuffled.
-    nonisolated static func announcementSheetCompiled(
+    /// Orders (date, input index) pairs newest first; undated last; equal
+    /// dates keep input order by an explicit index, not by trusting the sort
+    /// to be stable.
+    nonisolated private static func announcementSheetOrder(_ dates: [Date?]) -> [Int] {
+        dates.indices.sorted { l, r in
+            switch (dates[l], dates[r]) {
+            case let (a?, b?) where a != b: return a > b
+            case (nil, .some): return false
+            case (.some, nil): return true
+            default: return l < r
+            }
+        }
+    }
+
+    /// The "to-do" section: the found cards and the fact change groups as one
+    /// list, newest first. A found card is dated by the post it came from
+    /// (`AnnouncementRecord.recordID(fromFindSourceID:)` matched against
+    /// `records`), so a task found in Monday's post sits with Monday's
+    /// changes and not at its due date; with no listed post (a syllabus exam)
+    /// it falls back to its card's date, `dueOverride ?? assignment.dueAt`. A
+    /// change group is dated by its `postedAt`. Undated entries go last, in
+    /// the order they came in (cards, then changes).
+    nonisolated static func announcementSheetTodo(
         found: [DashItem],
+        changes: [FactChangeGroup],
         records: [AnnouncementRecord]
-    ) -> [AnnouncementSheetEntry] {
-        var postIndexByID: [String: Int] = [:]
-        for (index, record) in records.enumerated() where postIndexByID[record.id] == nil {
-            postIndexByID[record.id] = index
+    ) -> [AnnouncementTodoEntry] {
+        var postDates: [String: Date] = [:]
+        for record in records where postDates[record.id] == nil {
+            postDates[record.id] = record.sortDate
         }
-        var findsByPost: [Int: [DashItem]] = [:]
-        var loneFinds: [DashItem] = []
+        var entries: [AnnouncementTodoEntry] = []
+        var dates: [Date?] = []
         for item in found {
-            if let recordID = AnnouncementRecord.recordID(fromFindSourceID: item.assignment.sourceID),
-               let index = postIndexByID[recordID] {
-                findsByPost[index, default: []].append(item)
-            } else {
-                loneFinds.append(item)
-            }
+            entries.append(.found(item))
+            let post = AnnouncementRecord.recordID(fromFindSourceID: item.assignment.sourceID)
+                .flatMap { postDates[$0] }
+            dates.append(post ?? item.due)
         }
+        for group in changes {
+            entries.append(.change(group))
+            dates.append(group.postedAt)
+        }
+        return announcementSheetOrder(dates).map { entries[$0] }
+    }
 
-        struct Unit {
-            let date: Date?
-            let order: Int
-            let entries: [AnnouncementSheetEntry]
+    /// The "brief" section: every listed post and every needs-review row,
+    /// newest first (`sortDate` for a post, `postedAt` for a review); undated
+    /// last, input order (posts, then reviews) on ties.
+    nonisolated static func announcementSheetBrief(
+        records: [AnnouncementRecord],
+        reviews: [FactReviewRow]
+    ) -> [AnnouncementBriefEntry] {
+        var entries: [AnnouncementBriefEntry] = []
+        var dates: [Date?] = []
+        for record in records {
+            entries.append(.post(record))
+            dates.append(record.sortDate)
         }
-        var units: [Unit] = []
-        for (index, record) in records.enumerated() {
-            let finds = (findsByPost[index] ?? []).map(AnnouncementSheetEntry.found)
-            units.append(Unit(date: record.sortDate, order: units.count, entries: finds + [.post(record)]))
+        for review in reviews {
+            entries.append(.review(review))
+            dates.append(review.postedAt)
         }
-        for item in loneFinds {
-            units.append(Unit(date: item.due, order: units.count, entries: [.found(item)]))
-        }
-        return units
-            .sorted { lhs, rhs in
-                switch (lhs.date, rhs.date) {
-                case let (l?, r?) where l != r: return l > r
-                case (nil, .some): return false
-                case (.some, nil): return true
-                default: return lhs.order < rhs.order
-                }
-            }
-            .flatMap(\.entries)
+        return announcementSheetOrder(dates).map { entries[$0] }
     }
 
     // MARK: What the sheet and the badge read

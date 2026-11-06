@@ -1058,11 +1058,7 @@ struct ContentView: View {
             onComplete: { state.markCompleted($0.assignment) },
             onSetDue: { assignment, date in state.setDueDateEdit(date, for: assignment) },
             factChanges: state.factChangeGroups,
-            factReviews: state.factReviewRows,
-            onUndoFacts: { ids in
-                state.rejectFacts(ids)
-                rescheduleNotifications()
-            }
+            factReviews: state.factReviewRows
         )
     }
 

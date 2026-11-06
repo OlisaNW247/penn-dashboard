@@ -706,40 +706,48 @@ struct AnnouncementSheetStructureTests {
         #expect(!source.contains("Button(\"done\")"))
     }
 
-    @Test("the section words are short and lowercase, and an empty list still says one short line")
+    @Test("the two section words, the link captions and the empty line are short and lowercase")
     func sectionCopy() {
-        #expect(AnnouncementSheetCopy.foundHeader == "found")
-        #expect(AnnouncementSheetCopy.announcementsHeader == "announcements")
+        #expect(AnnouncementSheetCopy.todoHeader == "to-do")
+        #expect(AnnouncementSheetCopy.briefHeader == "brief")
+        #expect(AnnouncementSheetCopy.goToCanvas == "go to canvas")
+        #expect(AnnouncementSheetCopy.goToEd == "go to ed")
         #expect(AnnouncementSheetCopy.emptyState == "no announcements")
         for line in [
-            AnnouncementSheetCopy.foundHeader, AnnouncementSheetCopy.announcementsHeader,
+            AnnouncementSheetCopy.todoHeader, AnnouncementSheetCopy.briefHeader,
+            AnnouncementSheetCopy.goToCanvas, AnnouncementSheetCopy.goToEd,
             AnnouncementSheetCopy.emptyState, AnnouncementSheetCopy.dismiss,
         ] {
             #expect(line == line.lowercased())
         }
     }
 
-    @Test("found comes before announcements, as dashboard cards, hidden when empty, under the sheet's own class bubbles")
+    @Test("to-do comes before brief, found cards are dashboard cards, no undo, and ContentView passes no onUndoFacts")
     func viewStructure() throws {
         let source = try GradeWatcherRemovalTests.uiSource("AnnouncementFindsView.swift")
         guard !source.isEmpty else { return }
 
-        let found = try #require(source.range(of: "SmoothSectionHeader(AnnouncementSheetCopy.foundHeader"))
-        let announcements = try #require(source.range(of: "SmoothSectionHeader(AnnouncementSheetCopy.announcementsHeader"))
-        #expect(found.lowerBound < announcements.lowerBound)
+        let todo = try #require(source.range(of: "SmoothSectionHeader(AnnouncementSheetCopy.todoHeader"))
+        let brief = try #require(source.range(of: "SmoothSectionHeader(AnnouncementSheetCopy.briefHeader"))
+        #expect(todo.lowerBound < brief.lowerBound)
         #expect(source.contains("AssignmentCardView("))
         #expect(source.contains("isExamOverride: item.examStyleOverride"))
-        #expect(source.contains("if !foundNow.isEmpty"))
-        // The sheet's class filter is a row of bubbles, not the dashboard's
-        // menu and chip, which are the dashboard's own.
+        #expect(source.contains("if !todo.isEmpty"))
+        #expect(source.contains("AppState.announcementSheetTodo("))
+        #expect(source.contains("AppState.announcementSheetBrief("))
         #expect(source.contains("AppState.announcementSheetTap("))
-        #expect(source.contains("AppState.announcementSheetCompiled("))
         #expect(source.contains(".sensoryFeedback(.selection, trigger: selection)"))
         #expect(!source.contains("ClassFilterMenu("))
         #expect(!source.contains("ClassFilterChip("))
-        // The old plain rows and headers are gone.
-        #expect(!source.contains("SmoothSectionHeader(\"tasks found\""))
-        #expect(!source.contains("SmoothSectionHeader(\"all announcements\""))
+        #expect(!source.contains("onUndo"))
+        #expect(!source.contains("announcementSheetCompiled"))
+        // Both row kinds draw the arrow through the one shared mark.
+        #expect(source.contains("LinkOutMark(caption: AnnouncementSheetCopy.goToCanvas)"))
+        #expect(source.contains("AnnouncementSheetCopy.goToEd"))
+
+        let content = try GradeWatcherRemovalTests.uiSource("ContentView.swift")
+        guard !content.isEmpty else { return }
+        #expect(!content.contains("onUndoFacts"))
     }
 
     @Test("the header megaphone is marigold and the dashboard's class filter is cobalt, and nothing else was repointed")
@@ -759,40 +767,5 @@ struct AnnouncementSheetStructureTests {
 
         // The sheet's own teal is where it was.
         #expect(tokens.contains("static let smoothAnnouncementAccent = Color.dynamic(light: 0x087D86, dark: 0x69DCE3)"))
-    }
-}
-
-/// The changed row's `undo`: which facts it takes back, and that the sheet is
-/// wired to the same rejection the card's `undo` makes.
-@Suite("Announcements sheet: undo on a changed row")
-struct AnnouncementSheetUndoTests {
-    private func row(_ id: String, _ word: String) -> FactChangeRow {
-        FactChangeRow(id: id, word: word, postedAt: nil, url: nil)
-    }
-
-    @Test("a group's undoable ids are its rows' ids in order, and never an undone row's")
-    func undoableIDs() {
-        let both = FactChangeGroup(id: "a", courseCode: "X 1", title: "t",
-                                   rows: [row("f1", "cancelled"), row("f2", "moved")])
-        #expect(both.undoableFactIDs == ["f1", "f2"])
-
-        let mixed = FactChangeGroup(id: "a", courseCode: "X 1", title: "t",
-                                    rows: [row("f1", "cancelled"), row("f2", "undone")])
-        #expect(mixed.undoableFactIDs == ["f1"])
-    }
-
-    @Test("an undone group offers nothing to undo")
-    func undoneGroup() {
-        let group = FactChangeGroup(id: "a", courseCode: "X 1", title: "t",
-                                    rows: [row("f1", "cancelled")], isUndone: true)
-        #expect(group.undoableFactIDs.isEmpty)
-    }
-
-    @Test("ContentView hands the sheet an undo that rejects the facts")
-    func sheetIsWired() throws {
-        let content = try GradeWatcherRemovalTests.uiSource("ContentView.swift")
-        guard !content.isEmpty else { return }
-        #expect(content.contains("onUndoFacts: { ids in"))
-        #expect(content.contains("state.rejectFacts(ids)"))
     }
 }

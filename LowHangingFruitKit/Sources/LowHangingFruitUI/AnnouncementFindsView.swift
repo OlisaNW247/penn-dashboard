@@ -2,37 +2,26 @@ import SwiftUI
 import LowHangingFruitKit
 
 /// The megaphone sheet. A row of class bubbles at the top ("all" first, then
-/// one per class), and under it either two lists or one:
+/// one per class), and under it exactly two sections, whatever the bubbles say:
 ///
-/// - **All classes** (the preset, and every time the sheet opens): two
-///   sections, top to bottom.
-///   - **found**: tasks the Announcement Watcher found in Canvas
-///     announcements and Ed posts, and the exams the class has found (the
-///     syllabus's too), that are still ahead of the student. Drawn as the
-///     dashboard's own `AssignmentCardView`, so an exam keeps its
-///     black-on-white (or inverted) exam card and a card can be swiped done or
-///     have its date edited right here. Hidden altogether when there are none.
-///   - **announcements**: the Canvas announcements and the Ed posts the sheet
-///     lists, newest first, whether or not the extractor found anything in
-///     them. Which posts those are (the standing set and the keep-check) is
-///     decided in `AppState+AnnouncementSheet.swift`, not here.
-/// - **One or more classes selected**: no sections. The found cards and the
-///   posts of those classes are compiled into one list, newest first, each
-///   find directly above the post it came from
-///   (`AppState.announcementSheetCompiled`). The rows are the same rows.
+/// - **to-do**: the tasks and exams the app found (drawn as the dashboard's own
+///   `AssignmentCardView`, so a card can be swiped done or have its date
+///   edited right here) and the changes the server's facts made to cards,
+///   merged newest first (`AppState.announcementSheetTodo`). Hidden when empty.
+/// - **brief**: every post the sheet lists (Canvas announcements and Ed posts)
+///   and every fact the app held back for a look, newest first
+///   (`AppState.announcementSheetBrief`). Which posts those are is decided in
+///   `AppState+AnnouncementSheet.swift`, not here.
 ///
-/// The bubbles: tapping a class from "all" switches to just that class,
-/// tapping another adds it, tapping a selected one removes it, and removing
-/// the last goes back to all (`AppState.announcementSheetTap`). The selection
-/// is the sheet's own, not the dashboard's class filter, which a student may
-/// have set for a different reason, and it starts at all each time the sheet
-/// opens. What decides each list's rows is `AppState+AnnouncementSheet.swift`;
-/// this view only draws what it is given, plus the selection.
+/// The bubbles filter both sections: tapping a class from "all" switches to
+/// just that class, tapping another adds it, tapping a selected one removes
+/// it, and removing the last goes back to all
+/// (`AppState.announcementSheetTap`). The selection is the sheet's own, not the
+/// dashboard's class filter, and it starts at all each time the sheet opens.
 ///
-/// An announcement row is deliberately plain: class, date, a "NEW" mark, the
-/// title, and one line of preview. The arrow alone says a row opens elsewhere;
-/// an Ed row also carries the word "ed" in its meta line so it is not mistaken
-/// for Canvas.
+/// A post row is deliberately plain: class, date, a "NEW" mark, the title, and
+/// one line of preview. The arrow and its "go to canvas" / "go to ed" caption
+/// say a row opens elsewhere.
 ///
 /// Rows marked "new" were unread when the sheet opened
 /// (`AnnouncementReadState`).
@@ -56,15 +45,11 @@ struct AnnouncementFindsView: View {
     var onSetDue: (Assignment, Date?) -> Void = { _, _ in }
 
     /// What facts from the server changed, grouped by the item they changed
-    /// (`AppState.factChangeGroups`). The sheet's first group.
+    /// (`AppState.factChangeGroups`). Part of the to-do section.
     var factChanges: [FactChangeGroup] = []
     /// Facts the app would not apply on its own (`AppState.factReviewRows`).
-    /// The group after it.
+    /// Part of the brief section.
     var factReviews: [FactReviewRow] = []
-    /// The student tapped `undo` on a changed row: the fact ids behind it
-    /// (`FactChangeGroup.undoableFactIDs`), to reject together as the card's
-    /// own `undo` does. Defaulted so previews and tests need not pass one.
-    var onUndoFacts: ([String]) -> Void = { _ in }
 
     /// The classes the sheet is narrowed to (class keys), empty for all of
     /// them. Starts empty every time the sheet opens, and is the sheet's own:
@@ -111,53 +96,43 @@ struct AnnouncementFindsView: View {
                         classBubbles
                     }
 
-                    let foundNow = visibleFound
-                    let shown = visibleRecords
-                    // Which of these posts a find came from, for the small
-                    // "task found" tag. Joined on the id inside the find's
-                    // ledger `sourceID`: a Canvas announcement id, or an Ed
-                    // document id.
-                    let withFinds = Set(found.compactMap {
-                        AnnouncementRecord.recordID(fromFindSourceID: $0.assignment.sourceID)
-                    })
                     let now = Date()
+                    let todo = AppState.announcementSheetTodo(
+                        found: visibleFound, changes: visibleChanges, records: records
+                    )
+                    let brief = AppState.announcementSheetBrief(
+                        records: visibleRecords, reviews: visibleReviews
+                    )
 
-                    // Facts first: what changed, then what needs a look, then
-                    // the posts themselves.
-                    factSections(now: now)
-
-                    if selection.isEmpty {
-                        if !foundNow.isEmpty {
-                            SmoothSectionHeader(AnnouncementSheetCopy.foundHeader, accent: .smoothAnnouncementAccent)
-                                .padding(.top, 4)
-                            ForEach(foundNow) { item in
-                                foundCard(item)
+                    // Two sections, whatever the bubbles say: "one tab", in
+                    // the owner's words (2026-11-06), after the sheet had
+                    // grown four groups (changed, needs a look, found,
+                    // announcements) plus a different single list while a
+                    // class was selected, and "the sections don't make
+                    // sense". Keeping four groups was rejected: a student
+                    // asks "what do I have to do" and "what was said", not
+                    // "what did a fact change". There is no undo here; the
+                    // card's own undo on the dashboard is the place for it.
+                    if !todo.isEmpty {
+                        SmoothSectionHeader(AnnouncementSheetCopy.todoHeader, accent: .smoothAnnouncementAccent)
+                            .padding(.top, 4)
+                        ForEach(todo) { entry in
+                            switch entry {
+                            case .found(let item): foundCard(item)
+                            case .change(let group): factChangeRow(group, now: now)
                             }
                         }
+                    }
 
-                        SmoothSectionHeader(AnnouncementSheetCopy.announcementsHeader, accent: .smoothAnnouncementAccent)
-                            .padding(.top, foundNow.isEmpty ? 4 : 12)
-                        if shown.isEmpty {
-                            emptyLine
-                        } else {
-                            ForEach(shown) { record in
-                                recordRow(for: record, now: now, hasFind: withFinds.contains(record.id))
-                            }
-                        }
+                    SmoothSectionHeader(AnnouncementSheetCopy.briefHeader, accent: .smoothAnnouncementAccent)
+                        .padding(.top, todo.isEmpty ? 4 : 12)
+                    if brief.isEmpty {
+                        emptyLine
                     } else {
-                        // One list for the selected classes: the finds and the
-                        // posts together, newest first, each find above its post.
-                        let compiled = AppState.announcementSheetCompiled(found: foundNow, records: shown)
-                        if compiled.isEmpty {
-                            emptyLine
-                        } else {
-                            ForEach(compiled) { entry in
-                                switch entry {
-                                case .found(let item):
-                                    foundCard(item)
-                                case .post(let record):
-                                    recordRow(for: record, now: now, hasFind: withFinds.contains(record.id))
-                                }
+                        ForEach(brief) { entry in
+                            switch entry {
+                            case .post(let record): recordRow(for: record, now: now)
+                            case .review(let review): factReviewRow(review, now: now)
                             }
                         }
                     }
@@ -189,26 +164,6 @@ struct AnnouncementFindsView: View {
 
     // MARK: Facts
 
-    @ViewBuilder
-    private func factSections(now: Date) -> some View {
-        let changes = visibleChanges
-        let reviews = visibleReviews
-        if !changes.isEmpty {
-            SmoothSectionHeader(AnnouncementSheetCopy.changedHeader, accent: .smoothAnnouncementAccent)
-                .padding(.top, 4)
-            ForEach(changes) { group in
-                factChangeRow(group, now: now)
-            }
-        }
-        if !reviews.isEmpty {
-            SmoothSectionHeader(AnnouncementSheetCopy.reviewHeader, accent: .smoothAnnouncementAccent)
-                .padding(.top, changes.isEmpty ? 4 : 12)
-            ForEach(reviews) { review in
-                factReviewRow(review, now: now)
-            }
-        }
-    }
-
     /// Today, yesterday, else "nov 5": the post's date, in the record rows' style.
     private func factDateLabel(_ date: Date?, now: Date) -> String? {
         guard let date else { return nil }
@@ -221,22 +176,15 @@ struct AnnouncementFindsView: View {
 
     @ViewBuilder
     private func factRowChrome<Content: View>(
-        url: URL?, hint: String, onUndo: (() -> Void)? = nil, @ViewBuilder content: () -> Content
+        url: URL?, hint: String, @ViewBuilder content: () -> Content
     ) -> some View {
         let inner = HStack(spacing: 12) {
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
             if url != nil {
-                Image(systemName: "arrow.up.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.smoothMuted)
-                    .accessibilityHidden(true)
+                LinkOutMark(caption: AnnouncementSheetCopy.goToCanvas)
             }
         }
-        // The `undo` is a sibling of the Link, never inside it: a Button
-        // nested in a Link label loses the tap to the link and opens Canvas.
-        // So the Link wraps only the text and arrow, and the chrome (capsule,
-        // padding, card) wraps both.
         HStack(spacing: 12) {
             Capsule()
                 .fill(Color.smoothAnnouncementAccent)
@@ -250,20 +198,6 @@ struct AnnouncementFindsView: View {
                     .accessibilityHint(hint)
             } else {
                 inner
-            }
-            if let onUndo {
-                Button { onUndo() } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "arrow.uturn.backward")
-                            .font(.system(size: 12, weight: .medium))
-                        Text("undo")
-                            .font(.lhfAssignmentTitle(12))
-                    }
-                    .foregroundStyle(Color.smoothInk)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("undo this change")
             }
         }
         .padding(14)
@@ -294,14 +228,10 @@ struct AnnouncementFindsView: View {
     }
 
     /// One item and the one-word changes made to it. An undone fact is the
-    /// same row, dimmed and struck through, so a wrong tap can be seen.
+    /// same row, dimmed and struck through.
     private func factChangeRow(_ group: FactChangeGroup, now: Date) -> some View {
         let isNew = group.rows.contains { newIDs.contains(AnnouncementReadState.factKey($0.id)) }
-        let undoable = group.undoableFactIDs
-        return factRowChrome(
-            url: group.url, hint: AnnouncementSheetCopy.canvasLinkHint,
-            onUndo: undoable.isEmpty ? nil : { onUndoFacts(undoable) }
-        ) {
+        return factRowChrome(url: group.url, hint: AnnouncementSheetCopy.canvasLinkHint) {
             VStack(alignment: .leading, spacing: 6) {
                 factChip(group.courseCode, date: group.postedAt, isNew: isNew, now: now)
                 Text(group.title)
@@ -422,7 +352,7 @@ struct AnnouncementFindsView: View {
     }
 
     @ViewBuilder
-    private func recordRow(for record: AnnouncementRecord, now: Date, hasFind: Bool) -> some View {
+    private func recordRow(for record: AnnouncementRecord, now: Date) -> some View {
         let link = record.safeWebURL
         let isNew = newIDs.contains(AnnouncementReadState.key(for: record))
         let content = HStack(spacing: 12) {
@@ -459,15 +389,6 @@ struct AnnouncementFindsView: View {
                             .padding(.vertical, 2)
                             .background(Capsule().fill(Color.smoothAnnouncementAccent))
                     }
-                    if hasFind {
-                        Text("task found")
-                            .font(.lhfMono(8, weight: .bold))
-                            .tracking(0.4)
-                            .foregroundStyle(Color.smoothAnnouncementAccent)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .overlay(Capsule().stroke(Color.smoothAnnouncementAccent, lineWidth: 1))
-                    }
                 }
                 Text(AnnouncementSheetCopy.title(for: record))
                     .font(.lhfAssignmentTitle(17))
@@ -486,10 +407,7 @@ struct AnnouncementFindsView: View {
             // Only when the URL is https with a host (`safeWebURL`): the arrow
             // appears exactly when the whole row is a working link.
             if link != nil {
-                Image(systemName: "arrow.up.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.smoothMuted)
-                    .accessibilityHidden(true)
+                LinkOutMark(caption: record.isEd ? AnnouncementSheetCopy.goToEd : AnnouncementSheetCopy.goToCanvas)
             }
         }
         .padding(14)
@@ -502,6 +420,26 @@ struct AnnouncementFindsView: View {
         } else {
             content
         }
+    }
+}
+
+/// The arrow that says a row opens elsewhere, with where under it. One view
+/// for fact rows and post rows so the two cannot drift. Fixed-size so the
+/// caption never wraps; VoiceOver already gets the row's own hint.
+private struct LinkOutMark: View {
+    let caption: String
+
+    var body: some View {
+        VStack(spacing: 3) {
+            Image(systemName: "arrow.up.right")
+                .font(.system(size: 11, weight: .semibold))
+            Text(caption)
+                .font(.lhfMono(8))
+                .multilineTextAlignment(.center)
+                .fixedSize()
+        }
+        .foregroundStyle(Color.smoothMuted)
+        .accessibilityHidden(true)
     }
 }
 
@@ -537,12 +475,12 @@ enum AnnouncementSheetCopy {
     static let dismiss = "back to assignments"
     /// The first bubble, before the classes. Drawn uppercased like the others.
     static let allBubble = "all"
-    static let foundHeader = "found"
-    static let announcementsHeader = "announcements"
-    /// The facts group: what changed on the student's cards.
-    static let changedHeader = "changed"
-    /// The facts the app held back for the student to judge.
-    static let reviewHeader = "needs a look"
+    /// The sheet's two sections: what to do, and what was said.
+    static let todoHeader = "to-do"
+    static let briefHeader = "brief"
+    /// Under the arrow on a row that opens elsewhere.
+    static let goToCanvas = "go to canvas"
+    static let goToEd = "go to ed"
     /// A row whose post came without a title.
     static let untitled = "untitled"
 
