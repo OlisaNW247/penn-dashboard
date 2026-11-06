@@ -48,7 +48,7 @@ These block shipping, or would make shipping risky. The launch-prep
 work of 2026-10-09/10 is summarised, with the order to take these in,
 in `docs/LAUNCH_PREP_HANDOFF.md`.
 
-- **Facts deploy: steps 1-3 done 2026-11-05 (01:20-01:45 UTC), 4-7 remain**
+- **Facts deploy: re-run 2026-11-06 18:56 UTC from `bd9d20c` (`finish_fact_extraction` applied, `sync` v22, `extract-facts` v6; `docs/DEPLOY_FACTS_2026-11-04.md` → Run 3); first done 2026-11-05 (01:20-01:45 UTC)**
   (`docs/DEPLOY_FACTS_2026-11-04.md` is the runbook and now ends with the run
   record; `backend/scripts/deploy-facts.mjs` runs it). Done, with Olisa's go
   and a token from his account in `~/lhf-bench/supabase.token`:
@@ -830,6 +830,11 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-06 (shipped to App Store Connect).** The facts backend
+  redeployed from `bd9d20c` with the `finish_fact_extraction` migration
+  (`sync` v22, `extract-facts` v6; steps 1-3 green), and **3.4.1 (18)**
+  archived and uploaded at 14:00 EST. Marco submits in App Store Connect.
+  Not yet on a phone: the prev swipe-back fix and the `LHF-LINK` read.
 - **2026-11-06 (the merge for production).** On top of the design pass:
   the prev swipe-back hang from `docs/TEST_REPORT_2026-11-06.md` finding 6
   fixed both ways (the latch resets; a Canvas-submitted item offers no

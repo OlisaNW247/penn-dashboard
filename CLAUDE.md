@@ -177,9 +177,19 @@ mode, the S app mark, and bundled type registered at runtime by
   Olisa holds. There is deliberately no licence file in the repo; the
   agreement is Olisa's to produce if it is ever asked for.
 
-**Release state.** Live on the App Store: **3.3.0 (build 16)** (App Store
-id `6783911002`), released 2026-10-27 at 22:37 UTC per the public iTunes
-lookup, read 2026-10-28. It still carries the launch crash recorded in
+**Release state.** Live on the App Store: **3.4.0 (build 17)**, released
+2026-10-28 at 21:43 UTC per the public iTunes lookup, read 2026-11-06. **3.4.1
+(build 18) was archived from `v10` `bd9d20c` and uploaded at 14:00 EST (19:00
+UTC) on 2026-11-06** ("Upload succeeded"), after 3708/353 Swift, Deno 713 and
+the iOS simulator build on the same tree, and after the facts backend was
+redeployed from the same commit (`sync` v22, `extract-facts` v6, the
+`finish_fact_extraction` migration applied). Marco creates the 3.4.1 version
+record, attaches build 18, pastes `docs/appstore/LISTING.md` → What's New in
+3.4.1 and submits; the floor automation raises `update-manifest` six hours
+after it is live. What 3.4.1 carries beyond 3.4.0 is listed in
+`docs/appstore/CHECKLIST.md` → "3.4.1 (18) submission". Before 3.4.0: **3.3.0
+(build 16)** (App Store id `6783911002`), released 2026-10-27 at 22:37 UTC per
+the public iTunes lookup, read 2026-10-28. It still carries the launch crash recorded in
 `docs/LAUNCH_CRASH_2026-10-26.md` (Known gaps) and the notification-tap
 crash; **3.4.0 (17)** from `release/3.4.0` fixes both (it also carries the
 onboarding work of PR #16; 3.3.1 was stamped but never uploaded). Before
@@ -2161,7 +2171,7 @@ client problem. The pieces, all exercised by tests:
   posts, which the phone's search has to find. Nothing new leaves the
   phone; the section number was already sent.
 
-### Facts and structured sources (2026-11-04, `v10`; backend live 2026-11-05, not yet seen on a device)
+### Facts and structured sources (2026-11-04, `v10`; backend live 2026-11-05, redeployed 2026-11-06 as `sync` v22 / `extract-facts` v6 with `finish_fact_extraction` applied)
 
 The composed-day plan (`docs/DAY_PLANNER_RESEARCH_2026-11-03.md`; the
 decisions behind it are in `docs/HANDOFF_V10_2026-11-04.md`) has two halves,

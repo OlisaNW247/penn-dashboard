@@ -1,6 +1,10 @@
 # App Store submission checklist — LHF (iOS + macOS)
 
-## 3.4.1 (18) submission, prepared 2026-11-06 (Marco submits)
+## 3.4.1 (18) submission, 2026-11-06 (uploaded 14:00 EST from `bd9d20c`; Marco submits)
+
+Steps 1, 2, 4 and 5 below were done on 2026-11-06: backend deployed (`sync`
+v22, `extract-facts` v6, migration applied), gate green, archive and export
+"Upload succeeded" at 14:00 EST. Step 3 (phone) not done. Step 6 is Marco's.
 
 What ships beyond 3.4.0 (17), from `v10`: the `v9` sign-in rewrite (no
 banner, a session probe, silent re-login on every open, Duo auto-tap), the

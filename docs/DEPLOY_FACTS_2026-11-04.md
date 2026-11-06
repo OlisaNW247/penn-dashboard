@@ -181,6 +181,33 @@ The evening of 2026-11-04 US Eastern (the Mac's clock is UTC-5). Project
   the PHYS 0151 cards. `undo` and "a manual date edit wins" remain untried
   on a device.
 
+### Run 3 (2026-11-06 18:56 UTC): the `finish_fact_extraction` migration, `sync` v22, `extract-facts` v6
+
+From `v10` `bd9d20c`, with Marco's go ("Deploy and archive"), token still
+`~/lhf-bench/supabase.token`. `--dry-run` earlier in the day had passed.
+
+- **Step 1.** Both migrations scanned idempotent (305 and 111 lines) and
+  applied: `20261104090000_course_facts.sql` (re-run, no-op) and
+  `20261105090000_finish_fact_extraction.sql` (new in production; the
+  2026-11-06 test report had found `pg_proc` without it). `sync` deployed
+  as version 22, `extract-facts` as version 6, both ACTIVE, same function
+  ids as before. This is the first `extract-facts` whose finish is one
+  transaction (bug hunt item 18), and it carries the `new_task` title strip
+  (round 5, validator half only), the item index around now (item 19),
+  the timezone rule for offset-less dates (item 20), the reschedule and
+  title validation (item 21) and the 8 s floor (item 23).
+- **Step 2.** Throwaway anonymous user: `factsSince: 0` gave 200, `facts: []`,
+  `factsCursor 0`; the old shape gave 200 with the usual keys; the user was
+  deleted.
+- **Step 3.** The ten newest `course_fact_extractions` are unchanged since
+  2026-11-05 02:08 UTC (ids 28-37, all `done`, Haiku 5.5, 0.00044-0.00082
+  USD, 602-4663 ms); the two facts they produced (seq 22 `note`, seq 23
+  `needs_review`) still have their quotes verbatim. **Nothing has
+  extracted under v6 yet**, so `finish_fact_extraction` is live but
+  unexercised until a course posts a new eligible document; the next phone
+  sync that uploads one will run it. Re-run `--step 3` after that and
+  expect new rows with `extraction_id` above 37.
+
 ### Lesson: step 3 needs a first extraction when no phone has uploaded
 
 Step 3 can only read what exists, and extraction starts from a document
