@@ -684,17 +684,24 @@ Keep this current. It is the fastest way for a new session to know what exists.
     announcements" card. Caveats: a cancelled item already overdue appears
     nowhere (todo hides it, all excludes overdue, prev is completed-only);
     a medium-confidence cancel is never applied.
-    The **megaphone** sheet is one list in two sections since 2026-11-06
-    (Marco, on the phone: "should just be one tab"): **to-do** (the found
-    tasks and exams as dashboard cards, and the items a fact changed),
-    then **brief** (every post and every fact the app held back), each
-    newest first, the class bubbles filtering both. Every row that opens
-    elsewhere shows an arrow with `go to canvas` or `go to ed` under it.
-    There is no undo on the sheet; the card's own undo on the dashboard is
-    the place for it. Before that day it had four groups (`changed`,
-    `needs a look`, `found`, `announcements`) and a different single list
-    while a class was selected. Ranking to-do by urgency is in ROADMAP →
-    Next.
+    The **megaphone** sheet mirrors the dashboard's controls since
+    2026-11-06 (Marco, from the phone, in two rounds: "should just be one
+    tab", then "like on the dashboard where it's todo and prev"): a
+    to-do · brief capsule switch (`SmoothSegmentPicker`, the same view the
+    dashboard's todo · all · prev is built on) with the dashboard's class
+    filter menu to its right and the same chip under the row. **to-do** is
+    the found tasks and exams as dashboard cards plus the items a fact
+    changed, newest first; **brief** is every post and every fact the app
+    held back, newest first. Rows are flat and uniform (no accent bar), and
+    every row that opens elsewhere shows an arrow with `go to canvas` or
+    `go to ed` under it; Canvas rows open the Canvas Student app. There is
+    no undo on the sheet; the card's own undo on the dashboard is the place
+    for it. Earlier that day it had class bubbles and four groups
+    (`changed`, `needs a look`, `found`, `announcements`). A new-task fact
+    whose shortened title and date match an item the course already lists
+    (the watcher's "Final Exam" against the fact's "Take the final exam
+    (Dec 14, ...)") is redundant and makes no second card. Ranking to-do by
+    urgency is in ROADMAP → Next.
   - **Canvas's own signals** (2026-11-04, behind
     `FeatureFlags.structuredCanvasSources`): Planner ticks and dismissals,
     met module requirements and section due-date overrides now move cards;
@@ -1249,7 +1256,15 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v10` (2026-11-06, evening, the megaphone's two sections): 3700
+**Current on `v10` (2026-11-06, night, the megaphone's dashboard controls):
+3698 tests / 351 suites, all green, `swift test --no-parallel` on Marco's Mac
+(87 s); the signed iOS Debug device build succeeded (built 14:55 EST; the
+phone was unreachable for the install).** -2 / -1 over 3700 / 352 on
+purpose: `AnnouncementSheetTapTests` (6) went with the class bubbles;
+`FactApplicationTests` +3 (the shortened-title duplicate rule) and the
+switch-label test +1.
+
+Before it: **on `v10` (2026-11-06, evening, the megaphone's two sections): 3700
 tests / 352 suites, all green, `swift test --no-parallel` on Marco's Mac
 (89 s); the signed iOS Debug device build succeeded and is on his phone.**
 -8 / -1 over 3708 / 353 on purpose: `AnnouncementSheetUndoTests` (3) went

@@ -245,6 +245,41 @@ struct FactApplicationTests {
         #expect(second.newTasks.map(\.assignment.id) == [row.id])
     }
 
+    private func announcementItem(_ title: String, due: Date) -> FactItem {
+        FactItem(Assignment(
+            source: .canvasAnnouncement, sourceID: "announcement-\(title)", kind: .event, course: "CIS 2400",
+            title: title, dueAt: due, url: nil
+        ))
+    }
+
+    private static let finalDue = Date(timeIntervalSince1970: 1_797_289_200) // 2026-12-14 23:00Z
+    private static let paddedFinal = "Take the final exam (Dec 14, 6:00-8:00 PM, ANNS 110)"
+
+    @Test("a padded new_task title is a duplicate of the same exam an announcement already filed as Final Exam")
+    func paddedTitleDuplicatesShortItem() {
+        let existing = announcementItem("Final Exam", due: Self.finalDue.addingTimeInterval(-3600))
+        let out = run([fact(1, .newTask, target: nil, title: Self.paddedFinal, dueAt: Self.finalDue, kind: .event)], [existing])
+        #expect(out.newTasks.isEmpty)
+        #expect(out.redundant.map(\.reason) == [.appliedByCanvas])
+    }
+
+    @Test("the same padded fact beside a different exam on the same day is still a new task")
+    func paddedTitleKeepsTitleAgreement() {
+        let existing = announcementItem("Midterm 2", due: Self.finalDue)
+        let out = run([fact(1, .newTask, target: nil, title: Self.paddedFinal, dueAt: Self.finalDue, kind: .event)], [existing])
+        #expect(out.redundant.isEmpty)
+        #expect(out.newTasks.count == 1)
+        #expect(out.newTasks.first?.assignment.title == Self.paddedFinal)
+    }
+
+    @Test("the item side is normalised too: Final Exam (Cumulative) matches a fact Final exam")
+    func itemSideNormalised() {
+        let existing = announcementItem("Final Exam (Cumulative)", due: Self.finalDue)
+        let out = run([fact(1, .newTask, target: nil, title: "Final exam", dueAt: Self.finalDue, kind: .event)], [existing])
+        #expect(out.newTasks.isEmpty)
+        #expect(out.redundant.map(\.reason) == [.appliedByCanvas])
+    }
+
     // MARK: Rule 3, newest wins
 
     @Test("newest by postedAt then seq wins; older ones are superseded")

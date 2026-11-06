@@ -3,74 +3,13 @@ import Testing
 @testable import LowHangingFruitKit
 @testable import LowHangingFruitUI
 
-/// The megaphone sheet's class bubbles, as pure rules: what a tap does to the
-/// set of selected classes, which rows a selection keeps, and the one combined
-/// list drawn while any class is selected. Nothing here builds a view or an
+/// The megaphone sheet's class filter, as pure rules: which rows a selection
+/// keeps, and the to-do and brief lists. Nothing here builds a view or an
 /// `AppState`; the rules are `nonisolated static`, and these suites are not
 /// `@MainActor`, which is how the main-actor isolation trap (CLAUDE.md,
 /// `decidedText`) would show up if one were not.
 
-@Suite("Announcements sheet bubbles: what a tap does")
-struct AnnouncementSheetTapTests {
-    private typealias Sheet = AppState
-
-    @Test("\"all\" clears the selection, whatever it held")
-    func allClears() {
-        #expect(Sheet.announcementSheetTap(nil, selection: []) == [])
-        #expect(Sheet.announcementSheetTap(nil, selection: ["A"]) == [])
-        #expect(Sheet.announcementSheetTap(nil, selection: ["A", "B", "C"]) == [])
-    }
-
-    @Test("a class tapped while all are shown selects just that class")
-    func classFromAll() {
-        #expect(Sheet.announcementSheetTap("A", selection: []) == ["A"])
-        #expect(Sheet.announcementSheetTap("PHYS 151", selection: []) == ["PHYS 151"])
-    }
-
-    @Test("an unselected class tapped while some are selected is added")
-    func addAnother() {
-        #expect(Sheet.announcementSheetTap("B", selection: ["A"]) == ["A", "B"])
-        #expect(Sheet.announcementSheetTap("C", selection: ["A", "B"]) == ["A", "B", "C"])
-    }
-
-    @Test("a selected class tapped is removed, and removing the last goes back to all")
-    func removeOne() {
-        #expect(Sheet.announcementSheetTap("A", selection: ["A", "B"]) == ["B"])
-        #expect(Sheet.announcementSheetTap("B", selection: ["A", "B"]) == ["A"])
-        #expect(Sheet.announcementSheetTap("A", selection: ["A", "B", "C"]) == ["B", "C"])
-        #expect(Sheet.announcementSheetTap("A", selection: ["A"]) == [], "the last one out is all")
-    }
-
-    @Test("a sequence of taps lands where each step says")
-    func sequence() {
-        var selection: Set<String> = []
-        func tap(_ course: String?) { selection = Sheet.announcementSheetTap(course, selection: selection) }
-        tap("A"); #expect(selection == ["A"])
-        tap("B"); #expect(selection == ["A", "B"])
-        tap("A"); #expect(selection == ["B"])
-        tap("B"); #expect(selection == [])
-        tap("C"); #expect(selection == ["C"])
-        tap("A"); tap("B"); #expect(selection == ["A", "B", "C"])
-        tap(nil); #expect(selection == [])
-        tap(nil); #expect(selection == [], "all again is still all")
-    }
-
-    @Test("a tap never leaves a class selected that was not tapped, and touches only the tapped class")
-    func touchesOnlyTheTappedClass() {
-        for start in [Set<String>(), ["A"], ["A", "B"], ["B", "C"]] as [Set<String>] {
-            for tapped in ["A", "B", "C"] {
-                let next = Sheet.announcementSheetTap(tapped, selection: start)
-                if start.isEmpty {
-                    #expect(next == [tapped])
-                } else {
-                    #expect(next.symmetricDifference(start).isSubset(of: [tapped]), "\(start) tap \(tapped)")
-                }
-            }
-        }
-    }
-}
-
-@Suite("Announcements sheet bubbles: narrowing by a selection of classes")
+@Suite("Announcements sheet class filter: narrowing by a selection of classes")
 struct AnnouncementSheetSelectionNarrowingTests {
     private static let now = Date(timeIntervalSince1970: 1_800_000_000)
 

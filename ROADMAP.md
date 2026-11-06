@@ -837,6 +837,11 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-06 (night).** The megaphone sheet takes the dashboard's own
+  controls (to-do · brief switch, class filter menu and chip), one view at a
+  time, flat uniform rows; a fact's new task no longer duplicates an exam the
+  watcher already found (titles compared through `FactTitle.short`). Marco's
+  phone had shown two Dec 14 final exams.
 - **2026-11-06 (evening).** The megaphone sheet is two sections, to-do and
   brief, newest first, with `go to canvas` / `go to ed` under each arrow and
   no undo (Marco, from the phone). The Canvas-app link was confirmed working

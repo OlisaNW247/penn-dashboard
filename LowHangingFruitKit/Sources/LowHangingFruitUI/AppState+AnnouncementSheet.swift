@@ -76,6 +76,23 @@ enum AnnouncementFindState: Sendable, Equatable {
     case allDone
 }
 
+/// The sheet's two views, switched by the same capsule switch the dashboard
+/// uses for todo · all · prev (`SmoothSegmentPicker`). Owner's call,
+/// 2026-11-06: the sheet learns the dashboard's controls instead of its own.
+enum AnnouncementSheetView: String, CaseIterable, Identifiable {
+    case todo
+    case brief
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .todo: return "to-do"
+        case .brief: return "brief"
+        }
+    }
+}
+
 /// One row of the sheet's "to-do" section (`AppState.announcementSheetTodo`):
 /// a found card or a fact change group.
 enum AnnouncementTodoEntry: Equatable, Identifiable {
@@ -408,33 +425,6 @@ extension AppState {
     }
 
     // MARK: Class filter
-
-    /// What a tap on a class bubble does to the set of selected classes
-    /// (`selection`, class keys as the dashboard's class menu hands them out;
-    /// empty means every class). `course` is the tapped bubble's key, or nil
-    /// for the "all" bubble.
-    ///
-    /// - "all" clears the set, whatever it held.
-    /// - A class while the sheet shows all of them selects **just that class**:
-    ///   from "all", a tap means "show me this one", not "add one to nothing".
-    /// - An unselected class while some are selected is **added**, so any
-    ///   subset can be built.
-    /// - A selected class is **removed**, and removing the last one goes back
-    ///   to all (an empty set already means all; the alternative is a sheet
-    ///   that shows nothing and a row with no bubble lit).
-    ///
-    /// Pure and `nonisolated`, so a test pins every transition.
-    nonisolated static func announcementSheetTap(_ course: String?, selection: Set<String>) -> Set<String> {
-        guard let course else { return [] }
-        if selection.isEmpty { return [course] }
-        var next = selection
-        if next.contains(course) {
-            next.remove(course)
-        } else {
-            next.insert(course)
-        }
-        return next
-    }
 
     /// A predicate for "does a row of this class survive the selection", with
     /// the selected classes turned into course identities once and each row's

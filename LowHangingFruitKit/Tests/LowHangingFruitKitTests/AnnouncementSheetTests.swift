@@ -706,6 +706,12 @@ struct AnnouncementSheetStructureTests {
         #expect(!source.contains("Button(\"done\")"))
     }
 
+    @Test("the switch labels are to-do and brief, in that order")
+    func switchLabels() {
+        #expect(AnnouncementSheetView.allCases.map(\.label) == ["to-do", "brief"])
+        #expect(AnnouncementSheetCopy.emptyTodo == "nothing to do")
+    }
+
     @Test("the two section words, the link captions and the empty line are short and lowercase")
     func sectionCopy() {
         #expect(AnnouncementSheetCopy.todoHeader == "to-do")
@@ -716,33 +722,35 @@ struct AnnouncementSheetStructureTests {
         for line in [
             AnnouncementSheetCopy.todoHeader, AnnouncementSheetCopy.briefHeader,
             AnnouncementSheetCopy.goToCanvas, AnnouncementSheetCopy.goToEd,
-            AnnouncementSheetCopy.emptyState, AnnouncementSheetCopy.dismiss,
+            AnnouncementSheetCopy.emptyState, AnnouncementSheetCopy.emptyTodo, AnnouncementSheetCopy.dismiss,
         ] {
             #expect(line == line.lowercased())
         }
     }
 
-    @Test("to-do comes before brief, found cards are dashboard cards, no undo, and ContentView passes no onUndoFacts")
+    @Test("the sheet wears the dashboard's switch and class menu, one view at a time, flat rows, and ContentView passes no onUndoFacts")
     func viewStructure() throws {
         let source = try GradeWatcherRemovalTests.uiSource("AnnouncementFindsView.swift")
         guard !source.isEmpty else { return }
 
-        let todo = try #require(source.range(of: "SmoothSectionHeader(AnnouncementSheetCopy.todoHeader"))
-        let brief = try #require(source.range(of: "SmoothSectionHeader(AnnouncementSheetCopy.briefHeader"))
-        #expect(todo.lowerBound < brief.lowerBound)
+        #expect(source.contains("SmoothSegmentPicker(selection: $view)"))
+        #expect(source.contains("AnnouncementSheetView"))
+        #expect(source.contains("ClassFilterMenu("))
+        #expect(source.contains("ClassFilterChip("))
+        #expect(!source.contains("classBubbles"))
+        #expect(!source.contains("SmoothSectionHeader("))
+        // The 4pt teal accent bar is gone from every row. (The NEW badge is
+        // still a capsule, so the bar is pinned by its shape, not by the word.)
+        #expect(!source.contains(".frame(width: 4)"))
         #expect(source.contains("AssignmentCardView("))
         #expect(source.contains("isExamOverride: item.examStyleOverride"))
-        #expect(source.contains("if !todo.isEmpty"))
         #expect(source.contains("AppState.announcementSheetTodo("))
         #expect(source.contains("AppState.announcementSheetBrief("))
-        #expect(source.contains("AppState.announcementSheetTap("))
-        #expect(source.contains(".sensoryFeedback(.selection, trigger: selection)"))
-        #expect(!source.contains("ClassFilterMenu("))
-        #expect(!source.contains("ClassFilterChip("))
         #expect(!source.contains("onUndo"))
         #expect(!source.contains("announcementSheetCompiled"))
         // Both row kinds draw the arrow through the one shared mark.
-        #expect(source.contains("LinkOutMark(caption: AnnouncementSheetCopy.goToCanvas)"))
+        #expect(source.contains("LinkOutMark(caption: caption)"))
+        #expect(source.contains("caption: AnnouncementSheetCopy.goToCanvas"))
         #expect(source.contains("AnnouncementSheetCopy.goToEd"))
 
         let content = try GradeWatcherRemovalTests.uiSource("ContentView.swift")

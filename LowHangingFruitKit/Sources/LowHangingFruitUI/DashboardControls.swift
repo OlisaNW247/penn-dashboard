@@ -10,13 +10,25 @@ import LowHangingFruitKit
 /// on in the `v8-dice-toggle` branch.)
 struct DashViewPicker: View {
     @Binding var selection: DashFilter
+
+    var body: some View {
+        SmoothSegmentPicker(selection: $selection) { $0.label }
+    }
+}
+
+/// The capsule switch itself, generic over its options so the megaphone sheet
+/// (to-do · brief) wears the same control as the dashboard.
+struct SmoothSegmentPicker<Option: Hashable & CaseIterable & Identifiable>: View
+    where Option.AllCases: RandomAccessCollection {
+    @Binding var selection: Option
+    let label: (Option) -> String
     @Namespace private var indicator
 
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(DashFilter.allCases) { filter in
+            ForEach(Option.allCases) { filter in
                 let isActive = filter == selection
-                Text(filter.label)
+                Text(label(filter))
                     .font(.lhfSans(14, weight: isActive ? .semibold : .medium))
                     .foregroundStyle(isActive ? Color.smoothInk : Color.smoothMuted)
                     .lineLimit(1)
@@ -44,7 +56,7 @@ struct DashViewPicker: View {
                     .padding(.vertical, -6)
                     .onTapGesture { select(filter) }
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(filter.label)
+                    .accessibilityLabel(label(filter))
                     .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
             }
         }
@@ -54,7 +66,7 @@ struct DashViewPicker: View {
         .overlay { Capsule().stroke(Color.smoothRule.opacity(0.72), lineWidth: 1.25) }
     }
 
-    private func select(_ filter: DashFilter) {
+    private func select(_ filter: Option) {
         guard filter != selection else { return }
         lhfHapticLight()
         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {

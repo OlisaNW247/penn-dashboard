@@ -354,11 +354,29 @@ public enum FactApplication {
         // this very fact produced last time is excluded by sourceID, or the
         // second evaluation would call its own output a duplicate and the
         // task would vanish from the list.
+        //
+        // Both sides are compared by `FactTitle.short`, because the model pads
+        // a new_task title with the when and where. On 2026-11-06 PHYS 0151
+        // showed two Dec 14 final-exam cards: the fact read "Take the final
+        // exam (Dec 14, 6:00-8:00 PM, ANNS 110)" and the announcement watcher
+        // had already filed the same exam from the syllabus as "Final Exam",
+        // same day. Raw, those are not a title match, so the fact became a
+        // second row. The wrong fix is loosening the matcher's title
+        // threshold, which `WorkItemMatcher`'s header warns against: it moves
+        // every path (Canvas against Gradescope, announcements, targets) for a
+        // padding problem that only new-task facts have. The normalisation
+        // stays here. The row written below keeps the fact's full title; the
+        // card shortens it for display only.
         if !confirmed {
-            let identity = WorkItemIdentity(ref: "fact:\(fact.id)", aliases: [.fact(fact.id)], title: title, dueAt: fact.dueAt, course: code)
+            let identity = WorkItemIdentity(ref: "fact:\(fact.id)", aliases: [.fact(fact.id)], title: FactTitle.short(title), dueAt: fact.dueAt, course: code)
             let duplicate = items.contains { item in
                 guard item.assignment.course == code, !item.isGoneFromFeed, item.assignment.sourceID != sourceID else { return false }
-                if case .merge = WorkItemMatcher.match(identity, WorkItemIdentity.from(item.assignment)) { return true }
+                let raw = WorkItemIdentity.from(item.assignment)
+                let candidate = WorkItemIdentity(
+                    ref: raw.ref, aliases: raw.aliases, title: FactTitle.short(item.assignment.title),
+                    dueAt: raw.dueAt, course: raw.course
+                )
+                if case .merge = WorkItemMatcher.match(identity, candidate) { return true }
                 return false
             }
             if duplicate {

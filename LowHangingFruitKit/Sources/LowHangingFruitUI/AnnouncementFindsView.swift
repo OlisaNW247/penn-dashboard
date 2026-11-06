@@ -1,23 +1,22 @@
 import SwiftUI
 import LowHangingFruitKit
 
-/// The megaphone sheet. A row of class bubbles at the top ("all" first, then
-/// one per class), and under it exactly two sections, whatever the bubbles say:
+/// The megaphone sheet. Under the header, one control row laid out like the
+/// dashboard's: the capsule switch (to-do · brief, `SmoothSegmentPicker`) and
+/// the class filter menu (`ClassFilterMenu`), with the same chip under the row
+/// while a class is picked. The body is the selected view alone:
 ///
 /// - **to-do**: the tasks and exams the app found (drawn as the dashboard's own
 ///   `AssignmentCardView`, so a card can be swiped done or have its date
 ///   edited right here) and the changes the server's facts made to cards,
-///   merged newest first (`AppState.announcementSheetTodo`). Hidden when empty.
+///   merged newest first (`AppState.announcementSheetTodo`).
 /// - **brief**: every post the sheet lists (Canvas announcements and Ed posts)
 ///   and every fact the app held back for a look, newest first
 ///   (`AppState.announcementSheetBrief`). Which posts those are is decided in
 ///   `AppState+AnnouncementSheet.swift`, not here.
 ///
-/// The bubbles filter both sections: tapping a class from "all" switches to
-/// just that class, tapping another adds it, tapping a selected one removes
-/// it, and removing the last goes back to all
-/// (`AppState.announcementSheetTap`). The selection is the sheet's own, not the
-/// dashboard's class filter, and it starts at all each time the sheet opens.
+/// The class filter is the sheet's own, not the dashboard's, and starts at all
+/// each time the sheet opens.
 ///
 /// A post row is deliberately plain: class, date, a "NEW" mark, the title, and
 /// one line of preview. The arrow and its "go to canvas" / "go to ed" caption
@@ -36,7 +35,7 @@ struct AnnouncementFindsView: View {
     /// "new" even though opening the sheet has just marked them seen. A
     /// find's `Assignment.id`, or a row's `AnnouncementReadState.key(for:)`.
     var newIDs: Set<String> = []
-    /// (class key, display name) for the bubbles, as the dashboard's own class
+    /// (class key, display name) for the class menu, as the dashboard's own class
     /// menu is given them.
     var courses: [(key: String, name: String)] = []
     /// A found card was swiped done.
@@ -45,20 +44,23 @@ struct AnnouncementFindsView: View {
     var onSetDue: (Assignment, Date?) -> Void = { _, _ in }
 
     /// What facts from the server changed, grouped by the item they changed
-    /// (`AppState.factChangeGroups`). Part of the to-do section.
+    /// (`AppState.factChangeGroups`). Part of the to-do view.
     var factChanges: [FactChangeGroup] = []
     /// Facts the app would not apply on its own (`AppState.factReviewRows`).
-    /// Part of the brief section.
+    /// Part of the brief view.
     var factReviews: [FactReviewRow] = []
 
-    /// The classes the sheet is narrowed to (class keys), empty for all of
-    /// them. Starts empty every time the sheet opens, and is the sheet's own:
-    /// it is not the dashboard's filter, which a student may have set for a
+    /// The one class the sheet is narrowed to (a class key), nil for all of
+    /// them. Starts nil every time the sheet opens, and is the sheet's own: it
+    /// is not the dashboard's filter, which a student may have set for a
     /// different reason.
-    @State private var selection: Set<String> = []
+    @State private var classFilter: String?
+    @State private var view: AnnouncementSheetView = .todo
     @State private var editing: Assignment?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.courseNameOverrides) private var courseNameOverrides
+
+    private var selection: Set<String> { classFilter.map { [$0] } ?? [] }
 
     private var visibleFound: [DashItem] {
         AppState.announcementSheetNarrowed(found, toCourses: selection)
@@ -92,47 +94,56 @@ struct AnnouncementFindsView: View {
                     )
                     .padding(.bottom, 4)
 
-                    if !courses.isEmpty {
-                        classBubbles
-                    }
+                    controlRow
 
-                    let now = Date()
-                    let todo = AppState.announcementSheetTodo(
-                        found: visibleFound, changes: visibleChanges, records: records
-                    )
-                    let brief = AppState.announcementSheetBrief(
-                        records: visibleRecords, reviews: visibleReviews
-                    )
-
-                    // Two sections, whatever the bubbles say: "one tab", in
-                    // the owner's words (2026-11-06), after the sheet had
-                    // grown four groups (changed, needs a look, found,
-                    // announcements) plus a different single list while a
-                    // class was selected, and "the sections don't make
-                    // sense". Keeping four groups was rejected: a student
-                    // asks "what do I have to do" and "what was said", not
-                    // "what did a fact change". There is no undo here; the
-                    // card's own undo on the dashboard is the place for it.
-                    if !todo.isEmpty {
-                        SmoothSectionHeader(AnnouncementSheetCopy.todoHeader, accent: .smoothAnnouncementAccent)
-                            .padding(.top, 4)
-                        ForEach(todo) { entry in
-                            switch entry {
-                            case .found(let item): foundCard(item)
-                            case .change(let group): factChangeRow(group, now: now)
-                            }
+                    if let classFilter {
+                        ClassFilterChip(name: courses.first(where: { $0.key == classFilter })?.name ?? classFilter) {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) { self.classFilter = nil }
                         }
                     }
 
-                    SmoothSectionHeader(AnnouncementSheetCopy.briefHeader, accent: .smoothAnnouncementAccent)
-                        .padding(.top, todo.isEmpty ? 4 : 12)
-                    if brief.isEmpty {
-                        emptyLine
-                    } else {
-                        ForEach(brief) { entry in
-                            switch entry {
-                            case .post(let record): recordRow(for: record, now: now)
-                            case .review(let review): factReviewRow(review, now: now)
+                    let now = Date()
+
+                    // One view at a time, switched and filtered by the same
+                    // controls as the dashboard. The owner's words
+                    // (2026-11-06): "put at the top of announcements, like on
+                    // the dashboard where it's todo and prev ... and to the
+                    // right of that have the same sorting from the main
+                    // dashboard", and "each announcement should look the
+                    // same, remove the green line". So a student learns one
+                    // set of controls; the class bubbles were a second
+                    // vocabulary and were rejected, and the teal accent bar
+                    // is gone so every row reads as one list. The switch
+                    // names the view, so there are no section headers.
+                    // There is no undo here; the card's own undo on the
+                    // dashboard is the place for it.
+                    switch view {
+                    case .todo:
+                        let todo = AppState.announcementSheetTodo(
+                            found: visibleFound, changes: visibleChanges, records: records
+                        )
+                        if todo.isEmpty {
+                            emptyLine(AnnouncementSheetCopy.emptyTodo)
+                        } else {
+                            ForEach(todo) { entry in
+                                switch entry {
+                                case .found(let item): foundCard(item)
+                                case .change(let group): factChangeRow(group, now: now)
+                                }
+                            }
+                        }
+                    case .brief:
+                        let brief = AppState.announcementSheetBrief(
+                            records: visibleRecords, reviews: visibleReviews
+                        )
+                        if brief.isEmpty {
+                            emptyLine(AnnouncementSheetCopy.emptyState)
+                        } else {
+                            ForEach(brief) { entry in
+                                switch entry {
+                                case .post(let record): recordRow(for: record, now: now)
+                                case .review(let review): factReviewRow(review, now: now)
+                                }
                             }
                         }
                     }
@@ -174,34 +185,57 @@ struct AnnouncementFindsView: View {
         return date.formatted(.dateTime.month(.abbreviated).day()).lowercased()
     }
 
+    /// The dashboard's control row: the switch takes the width, the class menu
+    /// sits flush right (`ContentView`'s own layout).
+    private var controlRow: some View {
+        HStack(spacing: 10) {
+            SmoothSegmentPicker(selection: $view) { $0.label }
+            if !courses.isEmpty {
+                ClassFilterMenu(courses: courses, selection: $classFilter)
+            }
+        }
+    }
+
+    /// The one chrome every brief row wears, so a post row and a review row
+    /// cannot differ: padding 14 on a rounded `v2DoneCard`, content leading
+    /// and the link-out mark trailing. `link` makes the whole row a link.
     @ViewBuilder
-    private func factRowChrome<Content: View>(
-        url: URL?, hint: String, @ViewBuilder content: () -> Content
+    private func rowChrome<Content: View>(
+        url: URL?, caption: String, hint: String, canvasAction: Bool,
+        @ViewBuilder content: () -> Content
     ) -> some View {
         let inner = HStack(spacing: 12) {
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
             if url != nil {
-                LinkOutMark(caption: AnnouncementSheetCopy.goToCanvas)
+                LinkOutMark(caption: caption)
             }
         }
-        HStack(spacing: 12) {
-            Capsule()
-                .fill(Color.smoothAnnouncementAccent)
-                .frame(width: 4)
-                .frame(maxHeight: .infinity)
-                .accessibilityHidden(true)
+        Group {
             if let url {
-                Link(destination: url) { inner }
-                    .buttonStyle(.plain)
-                    .environment(\.openURL, CanvasAppLink.action)
-                    .accessibilityHint(hint)
+                if canvasAction {
+                    Link(destination: url) { inner }
+                        .buttonStyle(.plain)
+                        .environment(\.openURL, CanvasAppLink.action)
+                        .accessibilityHint(hint)
+                } else {
+                    Link(destination: url) { inner }
+                        .buttonStyle(.plain)
+                        .accessibilityHint(hint)
+                }
             } else {
                 inner
             }
         }
         .padding(14)
         .background(Color.v2DoneCard, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func factRowChrome<Content: View>(
+        url: URL?, hint: String, @ViewBuilder content: () -> Content
+    ) -> some View {
+        rowChrome(url: url, caption: AnnouncementSheetCopy.goToCanvas, hint: hint, canvasAction: true, content: content)
     }
 
     private func factChip(_ code: String, date: Date?, isNew: Bool, now: Date) -> some View {
@@ -262,8 +296,8 @@ struct AnnouncementFindsView: View {
         }
     }
 
-    private var emptyLine: some View {
-        Text(AnnouncementSheetCopy.emptyState)
+    private func emptyLine(_ text: String) -> some View {
+        Text(text)
             .font(.lhfSecondary(14))
             .foregroundStyle(Color.smoothMuted)
             .frame(maxWidth: .infinity, alignment: .center)
@@ -285,83 +319,19 @@ struct AnnouncementFindsView: View {
         )
     }
 
-    /// "all" and then one bubble per class, wrapped onto as many rows as the
-    /// width needs (two, for a usual term): the same capsules and the same
-    /// flow layout the add sheet's class picker uses (`CoursePicker`), so a
-    /// class is the same colour here as there. A selected class is filled in
-    /// its own colour; "all" is the sheet's teal. Which bubbles are lit and
-    /// what a tap does is `AppState.announcementSheetTap`.
-    ///
-    /// Wrapped, not one scrolling row: the owner's call on first sight
-    /// (2026-10-23). A row that scrolls hides the classes past the screen's
-    /// edge, so a class you cannot see is a class you cannot pick.
-    private var classBubbles: some View {
-        CoursePickerFlowLayout(spacing: 6) {
-            bubble(
-                AnnouncementSheetCopy.allBubble, isSelected: selection.isEmpty,
-                accent: .smoothAnnouncementAccent, ink: .smoothAnnouncementAccent, onFill: .smoothPaper
-            ) { tap(nil) }
-            ForEach(courses, id: \.key) { course in
-                bubble(
-                    course.name, isSelected: selection.contains(course.key),
-                    accent: courseAccent(for: course.key), ink: courseAccentInk(for: course.key),
-                    onFill: Color(hex: 0x1B1714)
-                ) { tap(course.key) }
-            }
-        }
-        .padding(.vertical, 2)
-        .sensoryFeedback(.selection, trigger: selection)
-    }
-
-    private func tap(_ course: String?) {
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
-            selection = AppState.announcementSheetTap(course, selection: selection)
-        }
-    }
-
-    /// One capsule, drawn as `CoursePicker`'s chips are: uppercased mono label,
-    /// a solid pastel when selected and a quiet tint with a hairline when not.
-    /// A selected capsule's label is `onFill` and an unselected one's is `ink`:
-    /// the pastels are fills, and type on them takes a fixed colour in both
-    /// modes (the pastels do not change after sunset) where type on the page
-    /// takes the accent's ink.
-    private func bubble(
-        _ label: String,
-        isSelected: Bool,
-        accent: Color,
-        ink: Color,
-        onFill: Color,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            // A size down from `CoursePicker`'s chips so a usual term's
-            // classes and "all" fit in one or two rows (the owner's ask).
-            Text(label.uppercased())
-                .font(.lhfMono(11, weight: .semibold))
-                .tracking(0.3)
-                .lineLimit(1)
-                .foregroundStyle(isSelected ? onFill : ink)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Capsule().fill(isSelected ? accent : accent.opacity(0.14)))
-                .overlay(Capsule().stroke(accent.opacity(isSelected ? 0 : 0.4), lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-        .accessibilityLabel(label)
-    }
-
     @ViewBuilder
     private func recordRow(for record: AnnouncementRecord, now: Date) -> some View {
         let link = record.safeWebURL
         let isNew = newIDs.contains(AnnouncementReadState.key(for: record))
-        let content = HStack(spacing: 12) {
-            Capsule()
-                .fill(Color.smoothAnnouncementAccent)
-                .frame(width: 4)
-                .frame(maxHeight: .infinity)
-                .accessibilityHidden(true)
-
+        rowChrome(
+            url: link,
+            caption: record.isEd ? AnnouncementSheetCopy.goToEd : AnnouncementSheetCopy.goToCanvas,
+            hint: AnnouncementSheetCopy.linkHint(for: record),
+            // A Canvas post opens the Canvas Student app like a card's link
+            // does (the scheme branch, confirmed on Marco's phone 2026-11-06);
+            // an Ed post keeps the system's own opening.
+            canvasAction: !record.isEd
+        ) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     Text(record.displayCourse(overrides: courseNameOverrides).uppercased())
@@ -402,23 +372,6 @@ struct AnnouncementFindsView: View {
                         .lineLimit(1)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            // Only when the URL is https with a host (`safeWebURL`): the arrow
-            // appears exactly when the whole row is a working link.
-            if link != nil {
-                LinkOutMark(caption: record.isEd ? AnnouncementSheetCopy.goToEd : AnnouncementSheetCopy.goToCanvas)
-            }
-        }
-        .padding(14)
-        .background(Color.v2DoneCard, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-        if let link {
-            Link(destination: link) { content }
-                .buttonStyle(.plain)
-                .accessibilityHint(AnnouncementSheetCopy.linkHint(for: record))
-        } else {
-            content
         }
     }
 }
@@ -473,9 +426,10 @@ enum AnnouncementSheetCopy {
     /// The sheet's dismiss button. The owner's wording: it names where the
     /// student lands, which "done" did not.
     static let dismiss = "back to assignments"
-    /// The first bubble, before the classes. Drawn uppercased like the others.
-    static let allBubble = "all"
-    /// The sheet's two sections: what to do, and what was said.
+    /// Shown in the to-do view when nothing is to do.
+    static let emptyTodo = "nothing to do"
+    /// The sheet's two views: what to do, and what was said. (Their labels on
+    /// the switch are `AnnouncementSheetView.label`.)
     static let todoHeader = "to-do"
     static let briefHeader = "brief"
     /// Under the arrow on a row that opens elsewhere.
