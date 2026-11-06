@@ -843,8 +843,9 @@ Kept so nobody rebuilds them blind.
   and undated-post freshness in the tree; the ask-probe workflow's `eval`
   and the `ask` deploy gate). 3688/350 Swift, Deno 711, Node 29, iOS build
   green. Parked: per-user extraction cap (schema), Olisa's extension items
-  29-31 and 33. **Nothing on a phone yet; the new migration is not applied
-  in production.**
+  29-31 and 33. On Marco's phone since 2026-11-06 16:26 UTC (Debug from
+  `8d2dd35`): launched clean, syncs ran, flags clear; **nothing checked by
+  eye yet, and the new migration is not applied in production.**
 - **2026-11-05 (01:20-01:45 UTC).** Facts backend live: migration
   `20261104090000_course_facts.sql`, `sync` v17, `extract-facts` v1; first
   extraction by hand gave six facts for $0.0067, two of them unwanted
