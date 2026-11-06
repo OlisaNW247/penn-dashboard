@@ -314,7 +314,9 @@ Keep this current. It is the fastest way for a new session to know what exists.
 - **Dashboard** (`ContentView`):
   - **Header.** The "Smooth" wordmark and the weekday. Tapping the wordmark
     ripples its squiggle and sweeps a shine across it. The **megaphone**
-    and a profile button sit beside it, both 48pt circles. Since
+    and a profile button sit beside it, both 48pt squircles
+    (continuous corners, radius 0.32 × size; owner's call 2026-11-06; the
+    control row's filter and + stay round). Since
     2026-10-18 the megaphone is here, where the grades button was, and
     always shows (an empty list says "no announcements"); the grades
     button is gone with Grade Watcher (below).
@@ -445,9 +447,10 @@ Keep this current. It is the fastest way for a new session to know what exists.
     owner's phone filled with tasks already taken; they now leave the
     dashboard entirely, see the tasks bullet below.) A *finished*
     announcement task is ordinary finished work and stays.
-    When the sign-up rule above is withholding anything, a quiet last line
-    reads "N older hidden" with "show", or "older shown" with "hide"
-    (`signupBacklogRevealedV1`).
+    Work the sign-up rule withholds has no way back from prev since
+    2026-11-06: the owner removed the "N older hidden · show" line as
+    ugly. `signupBacklogRevealedV1` still holds whatever a phone had
+    chosen before.
   - **Tasks found in announcements** (2026-10-18, owner's call; not yet on
     a phone). Canvas announcements (`syncAnnouncements`) and Ed
     announcements and pinned posts (`AppState+EdAnnouncementTasks.swift`,
@@ -676,12 +679,18 @@ Keep this current. It is the fastest way for a new session to know what exists.
     `FeatureFlags.structuredCanvasSources`): Planner ticks and dismissals,
     met module requirements and section due-date overrides now move cards;
     module-only work gets rows. See Architecture.
-  - **Nothing to submit** (2026-11-04, branch
-    `design/grey-exams-striped-nosubmit`, not merged into `v10`): such a
-    card is drawn with 8pt diagonal stripes of its own fill
-    (`NothingToSubmitStripes`) instead of a "nothing to submit" caveat
-    line, so it is never taller than its neighbours (owner rule). The other
-    caveats still use the line; VoiceOver hears it as the card's value.
+  - **Nothing to submit** (2026-11-06, owner's call from mockups and a
+    phone pass): such a card reads `in class` in the small line under its
+    due value, where "late" sits (`SmoothDueValue.secondaryLabel`), so it
+    is never taller than its neighbours. Overdue, "late" wins; undated,
+    "no date" does. The old "nothing to submit" caveat line under the
+    title is gone. Diagonal stripes were tried on the phone the same day
+    and rejected as too busy. VoiceOver hears "nothing to submit" as the
+    card's value.
+  - **Where a card came from** ("from announcements", "from ed", "from
+    syllabus", `DashItem.sourceText`) shows only in the opened card, under
+    the full due date (2026-11-06). The collapsed card's caveat line now
+    carries only the fact words: cancelled, moved, changed.
   - **Cards.** Tap a card to open it (full date, "edit date", and since
     2026-10-09 "open in canvas" / "open in gradescope", derived at display
     time by `Assignment.sourceLinks` from the URL the ledger already
@@ -1220,7 +1229,16 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v10` (2026-11-06, later): 3696 tests / 352 suites, all green,
+**Current on `v10` (2026-11-06, dashboard design pass): 3698 tests / 352
+suites, all green, `swift test --no-parallel` on Marco's Mac (55 s); iOS
+Debug device build succeeded and is on Marco's phone.** +2 over 3696:
++1 `ExamCardStyleTests` (grey palette), +2 `NoSubmissionCaveatTests`
+(`sourceText`), +3 `DueValueSecondaryLabelTests` ("in class"), and 4
+removed on purpose with the "older hidden" line (`SignupBacklogCopyTests`,
+which only pinned that line's words; its suite went with them, the new
+label suite replaced the count).
+
+**Before it, on `v10` (2026-11-06, later): 3696 tests / 352 suites, all green,
 `swift test --no-parallel` on Marco's Mac (52 s), the only test run on the
 machine; the iOS Debug simulator build (`iPhone 17 Pro`) succeeded on the
 same tree; Deno 713 and `deno task check` clean.** +5 tests / +1 suite over
@@ -3382,9 +3400,11 @@ itself.
 `phase0/extract-facts-bench`. Start at `docs/HANDOFF_V10_2026-11-04.md`
 (it replaces the 2026-11-03 one). The 2026-11-04 composed-day work
 (Phases 1-3) is committed on `v10`.
-`design/grey-exams-striped-nosubmit` (2026-11-04, local only, one commit on
-`v10` `61efed2`): grey exam cards and striped nothing-to-submit cards.
-Marco's rule: nothing merges or pushes to `v10` until he approves it.
+`design/grey-exams-striped-nosubmit` (2026-11-04 to 11-06): grey exam
+cards, "in class" under the due value, source words only in the opened
+card, squircle header buttons, no "older hidden" line. Merged into `v10`
+(fast-forward) at Marco's go on 2026-11-06. His standing rule: design work
+waits on its own branch until he approves it.
 Before it, `v8` was the line. Marco's launch-prep work (2026-10-09/10) was merged
 into it on 2026-10-10 through pull request 9, at Marco's instruction;
 `v8-launch-prep` is the branch it was built on. So `v8` now carries work

@@ -230,8 +230,8 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   5. ask: a question about a class's Ed post, a follow-up without the
      class name, a tappable source chip.
   6. The widget when caught up ("all clear") and at a due time.
-  7. A fresh install in mid-semester: old overdue work withheld, "N
-     older hidden · show" at the foot of prev.
+  7. A fresh install in mid-semester: old overdue work withheld (since
+     2026-11-06 with no "older hidden" line in prev to bring it back).
 - **Ship 3.1.0 (13)** (stamped 2026-10-20; the owner's call that evening:
   straight to App Review, no TestFlight round, the song kept under a
   licence he says he holds). **Build 13 was archived from `1450fdc` and
@@ -830,10 +830,13 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
-- **2026-11-04 (`design/grey-exams-striped-nosubmit`, awaiting Marco's
-  approval, not on `v10`).** Exam cards turn grey instead of black;
-  nothing-to-submit cards get diagonal stripes instead of a caveat line,
-  so they stay the same height. 3597/345 green, device build compiled.
+- **2026-11-06 (dashboard design pass, merged into `v10` at Marco's go).**
+  Exam cards are grey instead of black. Nothing-to-submit cards say "in
+  class" under the due value instead of a caveat line (stripes were tried
+  and rejected). "from announcements / ed / syllabus" moved into the opened
+  card. Megaphone and profile buttons are squircles; filter and + stay
+  round. The "N older hidden · show" line is gone from prev. On Marco's
+  phone; 3698/352 green.
 - **2026-11-06 (later).** Marco's two asks: a fact-created card shows the
   name of the work when collapsed ("Final exam") and the whole title when
   opened (`FactTitle.short`, display only; a matching prompt change lost two
