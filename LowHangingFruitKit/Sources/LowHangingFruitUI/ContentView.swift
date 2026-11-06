@@ -466,17 +466,11 @@ struct ContentView: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Color.smoothTomatoInk)
                 .frame(width: 38, height: 38)
-                .background(
-                    RoundedRectangle(cornerRadius: 38 * 0.32, style: .continuous)
-                        .fill(Color.smoothTomato.opacity(0.22))
-                )
-                // Drawn 38pt, tappable 44pt: the same inset `DashButtonIcon`
+                .background(Circle().fill(Color.smoothTomato.opacity(0.22)))
+                // Drawn 38pt, tappable 44pt: the same inset `DashCircleIcon`
                 // gives the filter button next to it, so the three controls
                 // share one hit size without widening the row.
-                .contentShape(
-                    RoundedRectangle(cornerRadius: 38 * 0.32, style: .continuous)
-                        .inset(by: -3)
-                )
+                .contentShape(Circle().inset(by: -3))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("add assignment or recurring task")

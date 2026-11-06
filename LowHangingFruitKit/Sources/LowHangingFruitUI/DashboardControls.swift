@@ -116,7 +116,7 @@ struct ClassFilterMenu: View {
             // be the cobalt pastel itself on a 16% tint of it, which left the
             // control barely blue at a glance; the pastels are fills, and
             // type or glyphs on them use their ink.
-            DashButtonIcon(
+            DashCircleIcon(
                 systemName: selection == nil ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill",
                 foreground: Color.smoothCobaltInk,
                 fill: Color.smoothCobalt.opacity(selection == nil ? 0.30 : 0.46)
@@ -163,28 +163,26 @@ struct ClassFilterChip: View {
     }
 }
 
-/// The 38pt squircle every button on the control row shares.
-struct DashButtonIcon: View {
+/// The 38pt circle every button on the control row shares. The header's
+/// buttons are squircles (owner's call, 2026-11-06), but the owner kept the
+/// filter and add buttons round after seeing both on the phone: the control
+/// row reads as part of the list, the header as the app's own chrome.
+struct DashCircleIcon: View {
     let systemName: String
     let foreground: Color
     let fill: Color
-
-    /// Continuous corners make a squircle; a plain rounded square would not.
-    private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: 38 * 0.32, style: .continuous)
-    }
 
     var body: some View {
         Image(systemName: systemName)
             .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(foreground)
             .frame(width: 38, height: 38)
-            .background(shape.fill(fill))
-            // Drawn squircle stays 38pt; the hit region is a 44pt one
-            // (inset by -3 on all sides = +6 per side) so it reaches the
+            .background(Circle().fill(fill))
+            // Drawn circle stays 38pt; the hit region is a 44pt circle
+            // (inset by -3 on all sides = +6 diameter) so it reaches the
             // minimum without widening the frame the control row lays out
             // — that would nudge every sibling in the row's HStack.
-            .contentShape(shape.inset(by: -3))
+            .contentShape(Circle().inset(by: -3))
     }
 }
 
