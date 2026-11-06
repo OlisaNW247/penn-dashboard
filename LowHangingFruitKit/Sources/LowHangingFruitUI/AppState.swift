@@ -474,6 +474,12 @@ final class AppState: ObservableObject {
     /// Rows Canvas says are done (planner tick, module requirement). Additive:
     /// nothing in here is ever removed by a later run.
     var structuredCompletedItemIDs: Set<String> = []
+    /// Ids in `structuredCompletedItemIDs` the student has marked active
+    /// again. `isCompleted` ignores a structured completion for these, so an
+    /// un-tick lasts; the entry leaves when the student completes the item
+    /// themselves or when Canvas stops reporting it done
+    /// (`AppState+StructuredSources`). Persisted as `structuredCompletionOverridesV1`.
+    var structuredCompletionOverrides: Set<String> = []
     /// Rows the student dismissed in Canvas's Planner. Hidden from todo and all,
     /// never deleted from the ledger.
     var structuredDismissedItemIDs: Set<String> = []
@@ -2488,25 +2494,142 @@ final class AppState: ObservableObject {
     @discardableResult
     func enableStayLoggedIn(username: String, password: String) -> Bool {
         guard !username.isEmpty, !password.isEmpty else { return false }
-        guard PennKeyCredentialStore.save(username: username, password: password) else {
-            // Do not reuse an older account/password if replacing it failed.
-            setAutoLoginDisabledReason("Couldn't save your login securely. Reconnect Canvas in Settings to try again.")
+        let saved = credentialSaveForTesting?(username, password)
+            ?? PennKeyCredentialStore.save(username: username, password: password)
+        guard saved else {
+            // A Keychain write that failed is not a rejected password
+            // (2026-11-05 review, item 17). It used to go through
+            // `setAutoLoginDisabledReason`, which the status line and
+            // Profile read as "penn rejected the password": the student was
+            // told their password changed and renewal was switched off for
+            // good, over a storage hiccup. It now has its own flag and its
+            // own short status line (`credentialSaveFailed`); nothing about
+            // renewal is disabled, and the "save pennkey" row in Profile is
+            // the retry path. The wrong fix is reusing the disabled-reason
+            // string with different wording: every reader of that field
+            // treats "non-nil" as "rejected".
+            credentialSaveFailed = true
             return false
         }
+        credentialSaveFailed = false
         stayLoggedInEnabled = true
-        UserDefaults.lhf.set(true, forKey: Self.stayLoggedInEnabledKey)
-        setAutoLoginDisabledReason(nil)
-        setAutoLoginAwaitingDuo(false)
+        if persistsConfirmedDeadFlag {
+            UserDefaults.lhf.set(true, forKey: Self.stayLoggedInEnabledKey)
+            setAutoLoginDisabledReason(nil)
+            setAutoLoginAwaitingDuo(false)
+        } else {
+            // A state under test (`disablePersistenceForTesting`) keeps this
+            // in memory: a `true` written to the shared domain is read by
+            // every `AppState.init` running alongside (CLAUDE.md, the
+            // shared-`UserDefaults` trap).
+            autoLoginDisabledReason = nil
+            autoLoginAwaitingDuo = false
+            autoLoginAwaitingDuoSince = nil
+        }
         // A newly saved (or corrected) password is a new credential: the
         // six-hour clock was measuring the old one. The renewer is rebuilt
         // so its in-memory copy of that clock goes too.
-        UserDefaults.lhf.removeObject(forKey: Self.lastCredentialSubmissionAtKey)
+        if persistsConfirmedDeadFlag {
+            UserDefaults.lhf.removeObject(forKey: Self.lastCredentialSubmissionAtKey)
+        }
+        // The 60-minute failed-submission wait was also measuring the OLD
+        // password (item 12). Left set, a Duo timeout blocked a corrected
+        // password for up to an hour ("within credential spacing").
+        clearFailedSubmissionClock()
+        // A saved password is something silent renewal can finally fill.
+        silentRenewalCannotProceed = false; credentiallessLandings = 0
         // And a freshly saved password is a human acting, so it lifts the
         // background's Duo stand-down too. Left set, the new password would
         // stay blocked in the background until a manual login.
         clearBackgroundDuoStandDown()
-        canvasSessionRenewer = nil
+        // An attempt still running was started with the old credential; its
+        // verdict (a `.passwordRejected` for the OLD password) must not
+        // disable the new one, so it is aborted and its result ignored.
+        retireCanvasSessionRenewer()
         return true
+    }
+
+    /// Set when `enableStayLoggedIn` could not write the Keychain. In
+    /// memory only: it describes this launch's failed save, not a fact about
+    /// the account. Cleared by the next successful save and by disconnect.
+    @Published private(set) var credentialSaveFailed = false
+
+    /// Per-instance seam for the Keychain write, so a test can fail it.
+    var credentialSaveForTesting: ((_ username: String, _ password: String) -> Bool)?
+
+    /// Bumped whenever the Canvas account the renewer was working for stops
+    /// being the current one (disconnect, school switch, a replaced
+    /// password). `performSilentCanvasRenewal` compares it after its await
+    /// and drops the result of an attempt from an earlier generation.
+    private(set) var canvasAccountGeneration = 0
+
+    /// Pure rule behind that comparison.
+    nonisolated static func renewalResultIsStale(startedGeneration: Int, currentGeneration: Int) -> Bool {
+        startedGeneration != currentGeneration
+    }
+
+    /// Aborts the running silent attempt, drops the renewer and moves to a
+    /// new account generation (2026-11-05 review, item 14). Dropping the
+    /// renewer alone, which is what disconnect and school switch used to do,
+    /// leaves its attempt running: it landed, merged its cookies into the
+    /// Keychain and set `canvasLoginEverCaptured`, resurrecting the account
+    /// the student had just removed. The abort stops the attempt's
+    /// continuations (`CanvasSessionRenewer.attemptIsNotAborted`) and the
+    /// generation makes `performSilentCanvasRenewal` ignore whatever it
+    /// still returns.
+    private func retireCanvasSessionRenewer() {
+        canvasSessionRenewer?.abort()
+        canvasSessionRenewer = nil
+        canvasAccountGeneration += 1
+    }
+
+    /// Test seams for the two halves of that.
+    func installSessionRenewerForTesting(_ renewer: CanvasSessionRenewer?) {
+        canvasSessionRenewer = renewer
+    }
+
+    func retireCanvasSessionRenewerForTesting() {
+        retireCanvasSessionRenewer()
+    }
+
+    /// Test seam for the history reset that disconnect runs; the rest of
+    /// `disconnectCanvas` touches the Keychain and cannot run under a test.
+    func resetSilentRenewalHistoryForTesting() {
+        resetSilentRenewalHistory()
+    }
+
+    /// Per-process state (item 15): a silent attempt with nothing to fill
+    /// the login form with has landed on the login page. Nothing more can be
+    /// done silently, so no further silent attempt runs until the next
+    /// launch or an interactive login (or a saved password). Before this the
+    /// session was retried every 90 seconds forever, each time landing on the
+    /// same login page, with nothing on screen. The status line shows its
+    /// "sign in to canvas" row in this state. Deliberately not persisted: a
+    /// relaunch is a free retry, which is also the owner's rule that the
+    /// app, not the student, fixes things when it can.
+    @Published private(set) var silentRenewalCannotProceed = false
+
+    /// Consecutive positive, credential-less foreground landings; in memory.
+    /// Reset by a renewal, an interactive login, a saved password, disconnect.
+    private(set) var credentiallessLandings = 0
+    nonisolated static let credentiallessLandingsToLatch = 3
+
+    /// Test seam for `CanvasSessionRenewer.lastLandingWasPositive`.
+    var landingWasPositiveForTesting: Bool?
+
+    /// Whether a silent attempt has a credential it may fill: Penn only
+    /// (the sheet that saves it asks for a PennKey), and a saved password.
+    private var silentRenewalHasCredential: Bool {
+        canvasInstallation.id == CanvasInstallation.penn.id
+            && PennKeyCredentialStore.hasCredentials
+            && stayLoggedInEnabled
+    }
+
+    /// Test seam: pins `silentRenewalHasCredential` for this instance.
+    var silentRenewalHasCredentialForTesting: Bool?
+
+    private var hasCredentialForSilentRenewal: Bool {
+        silentRenewalHasCredentialForTesting ?? silentRenewalHasCredential
     }
 
     /// Settings → "stay signed in", turned off — and the one path
@@ -2521,6 +2644,7 @@ final class AppState: ObservableObject {
     /// off.
     func disableStayLoggedIn() {
         PennKeyCredentialStore.clear()
+        credentialSaveFailed = false
         stayLoggedInEnabled = false
         UserDefaults.lhf.set(false, forKey: Self.stayLoggedInEnabledKey)
         setAutoLoginAwaitingDuo(false)
@@ -2750,6 +2874,8 @@ final class AppState: ObservableObject {
     /// attempt rather than a redundant instant `.notAttempted`.
     func startSilentCanvasRenewal(cooldown: TimeInterval? = nil) {
         guard pendingSilentRenewal == nil else { return }
+        // Nothing left to try silently (item 15); see the property.
+        guard !silentRenewalCannotProceed else { return }
         silentRenewalGeneration += 1
         let generation = silentRenewalGeneration
         isSilentRenewalInFlight = true
@@ -3069,6 +3195,34 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// The failed-submission clock (`CanvasSessionRenewer.failedSubmissionSpacing`)
+    /// as this instance sees it, seeded from the persisted copy at init and
+    /// mirrored back by `setFailedSubmissionClock`. Held per instance so a
+    /// test can seed and read it without writing the shared defaults domain.
+    private(set) var failedCredentialSubmissionAt: Date? = AppState.persistedFailedCredentialSubmissionAt()
+
+    private func setFailedSubmissionClock(_ date: Date) {
+        failedCredentialSubmissionAt = date
+        if persistsConfirmedDeadFlag {
+            UserDefaults.lhf.set(date.timeIntervalSince1970, forKey: Self.lastFailedCredentialSubmissionAtKey)
+        }
+    }
+
+    /// Forgets the failed-submission wait everywhere it lives: this
+    /// instance, the persisted copy, and the running renewer's copy (which
+    /// only ever takes the later of two clocks, so would keep it otherwise).
+    private func clearFailedSubmissionClock() {
+        failedCredentialSubmissionAt = nil
+        if persistsConfirmedDeadFlag {
+            UserDefaults.lhf.removeObject(forKey: Self.lastFailedCredentialSubmissionAtKey)
+        }
+        canvasSessionRenewer?.clearFailedSubmissionClock()
+    }
+
+    func seedFailedSubmissionClockForTesting(_ date: Date?) {
+        failedCredentialSubmissionAt = date
+    }
+
     private static func persistedFailedCredentialSubmissionAt() -> Date? {
         (UserDefaults.lhf.object(forKey: lastFailedCredentialSubmissionAtKey) as? Double)
             .map { Date(timeIntervalSince1970: $0) }
@@ -3088,6 +3242,12 @@ final class AppState: ObservableObject {
         lastBackgroundSilentRenewalAttemptAt = nil
         silentRenewalConsecutiveLandings = 0
         backgroundDuoStandDown = false
+        clearFailedSubmissionClock()
+        silentRenewalCannotProceed = false
+        credentiallessLandings = 0
+        // Honours the persistence flag like `recordSilentRenewal`: a state
+        // under test must not delete keys in the shared domain either.
+        guard persistsConfirmedDeadFlag else { return }
         let defaults = UserDefaults.lhf
         defaults.removeObject(forKey: Self.backgroundDuoStandDownKey)
         defaults.removeObject(forKey: Self.lastSilentRenewalSummaryKey)
@@ -3377,7 +3537,16 @@ final class AppState: ObservableObject {
                 }
                 return
             }
+            // The probe's `.dead` verdict is a server-side fact like
+            // `canvasSessionConfirmedDead` (item 13). Left out, this
+            // recompute, which about a dozen sites run, set the flag back to
+            // false a moment after `applySessionProbeResult(.dead)` raised
+            // it whenever the cookies were under 24 hours old, so the
+            // retry policy saw "not expired" and the dead verdict was
+            // forgotten. It clears only on a successful renewal, an alive
+            // answer or a new interactive login (`invalidateSessionProbe`).
             canvasSessionExpired = cookieSessionExpired || loginMissing || canvasSessionConfirmedDead
+                || sessionProbeSaidDead
             // Keepalive (2026-11-02): Canvas expires the session a day after
             // its LAST REQUEST, so a student who opens the app every few
             // hours but whose only fetches fail or are skipped would still
@@ -3712,6 +3881,9 @@ final class AppState: ObservableObject {
         /// The Canvas login is gone and there is no saved password to
         /// restore it with.
         case signInNeeded
+        /// The Keychain refused the PennKey password write (item 17). Not a
+        /// rejected password; nothing about renewal is disabled.
+        case couldntSavePassword
     }
 
     /// Pure rule behind the status line, in priority order. What never
@@ -3731,9 +3903,11 @@ final class AppState: ObservableObject {
         passwordRejected: Bool,
         loginMissing: Bool,
         hasSavedCredentials: Bool,
-        sessionExpired: Bool = true
+        sessionExpired: Bool = true,
+        saveFailed: Bool = false
     ) -> CanvasSessionStatusLine {
         if passwordRejected { return .passwordChanged }
+        if saveFailed { return .couldntSavePassword }
         // Only over a session the app believes dead: a latch left over from
         // a missed push must not speak over a live one (2026-11-02 review).
         if awaitingDuo && sessionExpired && !renewalInFlight { return .duoNeedsYou }
@@ -3766,7 +3940,10 @@ final class AppState: ObservableObject {
     /// asks on every body pass.
     func canvasSessionStatusLine(at now: Date = Date()) -> CanvasSessionStatusLine {
         guard !isUsingFixtureData else { return .none }
-        let missing = canvasSessionExpired && canvasLoginIsMissing
+        // "Missing" also covers a session that silent renewal has given up on
+        // for lack of anything to fill (item 15): the same row, no new
+        // banner.
+        let missing = canvasSessionExpired && (canvasLoginIsMissing || silentRenewalCannotProceed)
         return Self.canvasSessionStatusLine(
             renewalInFlight: isSilentRenewalInFlight,
             inFlightFor: silentRenewalStartedAt.map { now.timeIntervalSince($0) } ?? 0,
@@ -3774,8 +3951,9 @@ final class AppState: ObservableObject {
             awaitingDuo: autoLoginAwaitingDuo,
             passwordRejected: autoLoginDisabledReason != nil,
             loginMissing: missing,
-            hasSavedCredentials: missing ? PennKeyCredentialStore.hasCredentials : false,
-            sessionExpired: canvasSessionExpired
+            hasSavedCredentials: missing ? hasCredentialForSilentRenewal : false,
+            sessionExpired: canvasSessionExpired,
+            saveFailed: credentialSaveFailed
         )
     }
 
@@ -3982,9 +4160,9 @@ final class AppState: ObservableObject {
             onDuoPushSent: { [weak self] in
                 self?.duoPushSent = true
             },
-            lastFailedCredentialSubmissionAt: Self.persistedFailedCredentialSubmissionAt(),
-            onFailedCredentialSubmission: { date in
-                UserDefaults.lhf.set(date.timeIntervalSince1970, forKey: Self.lastFailedCredentialSubmissionAtKey)
+            lastFailedCredentialSubmissionAt: failedCredentialSubmissionAt,
+            onFailedCredentialSubmission: { [weak self] date in
+                self?.setFailedSubmissionClock(date)
             }
         )
         canvasSessionRenewer = renewer
@@ -3993,7 +4171,7 @@ final class AppState: ObservableObject {
         // unless it is told; without this a foreground retry could resubmit
         // the password inside the six-hour window.
         renewer.refreshCredentialSubmissionClock(Self.persistedCredentialSubmissionAt())
-        renewer.refreshFailedSubmissionClock(Self.persistedFailedCredentialSubmissionAt())
+        renewer.refreshFailedSubmissionClock(failedCredentialSubmissionAt)
         // Decided before the foreground flag below flips, so "the first try
         // of this process" is still true for this very attempt.
         let isForegroundAttempt = renewalContext == .foreground
@@ -4016,11 +4194,18 @@ final class AppState: ObservableObject {
         let attemptSpacing = cooldown ?? (renewalContext == .background
             ? CanvasSessionRenewer.cooldown
             : CanvasSessionRenewer.foregroundSpacing)
+        let startedGeneration = canvasAccountGeneration
         let outcome = await renewer.renewIfNeeded(
             timeout: attemptTimeout,
             cooldown: attemptSpacing,
             isBackground: renewalContext == .background
         )
+        // The account may have been disconnected, switched or re-keyed while
+        // the attempt ran (item 14): its verdict is about an account that is
+        // gone and must change nothing here.
+        guard !Self.renewalResultIsStale(startedGeneration: startedGeneration, currentGeneration: canvasAccountGeneration) else {
+            return .abortedByLoginPane
+        }
         applyRenewalOutcome(outcome)
 
         guard outcome == .renewed else { return outcome }
@@ -4043,7 +4228,15 @@ final class AppState: ObservableObject {
         // comment) must reach `canvasSessionExpired` too, not just a
         // successful renewal.
         let context = renewalContext
-        if case .renewed = outcome { sessionProbeSaidDead = false }
+        if case .renewed = outcome {
+            sessionProbeSaidDead = false
+            // A success ends the 60-minute failed-submission wait (item 12):
+            // a Duo timeout earlier must not block a corrected password or
+            // the next legitimate fill.
+            clearFailedSubmissionClock()
+            silentRenewalCannotProceed = false
+            credentiallessLandings = 0
+        }
         setCanvasSessionConfirmedDead(Self.confirmedDeadAfterRenewal(
             current: canvasSessionConfirmedDead,
             outcome: outcome,
@@ -4086,7 +4279,26 @@ final class AppState: ObservableObject {
             // few lines down from reading "no login yet" over live cookies.
             setCanvasLoginEverCaptured(true)
             if context == .foreground { setAutoLoginAwaitingDuo(false) }
-        case .landedOnLoginPage, .timedOut, .abortedByLoginPane, .notAttempted:
+        case .landedOnLoginPage:
+            // A foreground attempt that had nothing to fill the login form
+            // with and still landed there: stop trying silently (item 15).
+            // A background landing is weak evidence and never latches.
+            //
+            // Only after three such landings that were positively the login
+            // page (`CanvasSessionRenewer.lastLandingWasPositive`): the same
+            // outcome is what a network error produces, and one blip must
+            // not stop silent renewal for the run on exactly the installs
+            // whose hidden WebView can still renew from live identity-
+            // provider cookies. A network-failure landing neither counts
+            // nor resets the streak.
+            if context == .foreground, !hasCredentialForSilentRenewal,
+               landingWasPositiveForTesting ?? canvasSessionRenewer?.lastLandingWasPositive ?? false {
+                credentiallessLandings += 1
+                if credentiallessLandings >= Self.credentiallessLandingsToLatch {
+                    silentRenewalCannotProceed = true
+                }
+            }
+        case .timedOut, .abortedByLoginPane, .notAttempted:
             break
         }
         recordSilentRenewal(kind: Self.renewalOutcomeKind(outcome), context: context, at: Date())
@@ -4403,6 +4615,8 @@ final class AppState: ObservableObject {
         setCanvasLoginEverCaptured(true)
         invalidateSessionProbe()
         noteCanvasSessionProvenAlive()
+        silentRenewalCannotProceed = false
+        credentiallessLandings = 0
         setAutoLoginAwaitingDuo(false)
         // A real login is the human action the background's Duo stand-down
         // was waiting for. (A token mint or a Grade Watcher success proves
@@ -4439,6 +4653,10 @@ final class AppState: ObservableObject {
     /// because it seeds the renewer's cooldown.
     private func noteCanvasSessionProvenAlive() {
         setCanvasSessionConfirmedDead(false)
+        // Positive server-side evidence (an alive probe, a token mint, a
+        // Grade Watcher fetch) outranks an older dead verdict; otherwise the
+        // verdict above would outlive the session it described.
+        sessionProbeSaidDead = false
         silentRenewalConsecutiveLandings = 0
         lastSilentRenewalAttemptOutcome = nil
         guard persistsConfirmedDeadFlag else { return }
@@ -4728,8 +4946,10 @@ final class AppState: ObservableObject {
         }
         UserDefaults.lhf.set(true, forKey: Self.canvasInstallationChosenKey)
         // A renewer owns the origin it was constructed with. Never carry its
-        // cooldown or WebView across an institution change.
-        canvasSessionRenewer = nil
+        // cooldown or WebView across an institution change; and abort it, or
+        // its attempt lands in the new school's session (item 14).
+        retireCanvasSessionRenewer()
+        silentRenewalCannotProceed = false; credentiallessLandings = 0
     }
 
     var canvasBaseURL: URL { canvasInstallation.baseURL }
@@ -4795,6 +5015,9 @@ final class AppState: ObservableObject {
     /// came from (hardening plan B1, second bullet), which does not exist yet.
     func disconnectCanvas(keepingStudentWork: Bool = true) {
         invalidateSessionProbe()
+        // Before anything is deleted: a running silent attempt must not land
+        // after the cookies are gone and write them back (item 14).
+        retireCanvasSessionRenewer()
         let websiteDataHints = canvasInstallation.websiteDataDomainHints
         // Disconnecting Canvas is the student saying "forget my Canvas" —
         // the stored PennKey password goes with it. Called first, ahead of
@@ -8857,6 +9080,7 @@ final class AppState: ObservableObject {
     func markCompleted(_ assignment: Assignment, at date: Date = Date()) {
         var touched: Set<String> = [assignment.id]
         if let linkedID = assignment.linkedID { touched.insert(linkedID) }
+        releaseStructuredCompletionOverride(ids: touched)
         let alreadyCommitted = committedCompletionIDs.remove(assignment.id) != nil
             && assignmentStore?.completionRecord()?.ids.contains(assignment.id) == true
         if !alreadyCommitted { recordSyncChange(.completion, ids: Array(touched)) }
@@ -8902,6 +9126,7 @@ final class AppState: ObservableObject {
         guard let store = assignmentStore else { return false }
         var touched: Set<String> = [assignment.id]
         if let linkedID = assignment.linkedID { touched.insert(linkedID) }
+        releaseStructuredCompletionOverride(ids: touched)
         guard store.setCompleted(ids: touched, at: date, prototypes: rowsNeededToComplete(assignment)) else {
             return false
         }
@@ -8930,11 +9155,13 @@ final class AppState: ObservableObject {
             // no store there is nowhere for the un-tick to be recorded either.
             completedAssignmentIDs.subtract(cleared)
             for id in cleared { completionDates[id] = nil }
+            overrideStructuredCompletionIfItWasTheOnlyReason(assignment, ids: cleared)
             rebuildDashboardItems()
             return
         }
         assignmentStore?.setCompleted(ids: [], at: nil, clearing: cleared)
         reloadCompletionFromLedger()
+        overrideStructuredCompletionIfItWasTheOnlyReason(assignment, ids: cleared)
         rebuildDashboardItems()
     }
 
@@ -9007,8 +9234,14 @@ final class AppState: ObservableObject {
         if let linkedID = assignment.linkedID, completedAssignmentIDs.contains(linkedID) { return true }
         // Canvas's own structured say-so (planner tick, module requirement):
         // done on the card without the student's `userCompleted` ever being set.
-        if structuredCompletedItemIDs.contains(assignment.id) { return true }
-        if let linkedID = assignment.linkedID, structuredCompletedItemIDs.contains(linkedID) { return true }
+        // Unless the student has since marked it active again: that un-tick
+        // must outlast the next rebuild (`structuredCompletionOverrides`).
+        // The wrong fix was removing the id from the structured set, which
+        // the very next run would re-add from the same planner tick.
+        if structuredCompletedItemIDs.contains(assignment.id),
+           !structuredCompletionOverrides.contains(assignment.id) { return true }
+        if let linkedID = assignment.linkedID, structuredCompletedItemIDs.contains(linkedID),
+           !structuredCompletionOverrides.contains(linkedID) { return true }
         if let canvasID = assignment.canvasAssignmentID,
            submittedCanvasAssignmentIDs.contains(canvasID) {
             return true

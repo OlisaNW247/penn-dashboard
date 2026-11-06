@@ -275,6 +275,95 @@ final class CanvasSessionRenewer {
     /// `handleNonCanvasFinish` to pick the credential spacing.
     private var attemptIsBackground = false
 
+    /// Identity of the attempt in progress (2026-11-05 review, item 11/14).
+    /// Bumped once per attempt in `renewIfNeeded`. Every `await` inside an
+    /// attempt (the form-detect script, the error-text script, the cookie
+    /// harvest) can outlive the attempt that started it: an abort, the hard
+    /// timeout or a newer attempt may all land while the script runs. The
+    /// continuation must therefore re-ask `attemptIsLive(_:)` before doing
+    /// anything it cannot take back (submitting the password, merging
+    /// cookies). The wrong fix is a single boolean "cancelled" flag: the
+    /// next attempt resets it, and the stale continuation of the old one
+    /// then reads "live" and submits into a WebView nothing tracks.
+    private var attemptSerial = 0
+
+    /// Every attempt with a serial at or below this was aborted
+    /// (`abort()`). Monotonic: it only ever rises.
+    private var abortedThroughSerial = 0
+
+    /// What the credential form coming back after this attempt's one
+    /// submission turned out to say; see `SubmissionBounce`. Reset at the
+    /// top of every attempt.
+    private(set) var lastSubmissionBounce: SubmissionBounce?
+
+    /// True only when the last attempt's `.landedOnLoginPage` came from a
+    /// navigation that finished on a login host with no session minted. A
+    /// network failure (`SettleWaiter`'s `.failed`) also returns
+    /// `.landedOnLoginPage` but leaves this false: it is not evidence the
+    /// identity-provider session is dead. Reset at the top of every attempt.
+    private(set) var lastLandingWasPositive = false
+
+    /// Why the login form reappeared after the one credential submission.
+    enum SubmissionBounce: Equatable {
+        /// The page's error text names the credential itself
+        /// (`PennKeyLoginForm.credentialErrorWords`).
+        case credentialError
+        /// The form is back but nothing says the credential was refused: a
+        /// Duo denial or failure that returns to the form looks like this.
+        case other
+    }
+
+    /// The outcome for "the login form was showing again after our one
+    /// submission". Only an error text that names the credential settles
+    /// `.passwordRejected` (which disables auto-login for good and tells the
+    /// student their password changed). Anything else is a plain landing:
+    /// the session is not renewed, the 60-minute failed-submission spacing
+    /// applies, and auto-login stays armed.
+    static func postSubmissionFormOutcome(_ bounce: SubmissionBounce?) -> Outcome {
+        bounce == .credentialError ? .passwordRejected : .landedOnLoginPage
+    }
+
+    /// True while `serial` names the attempt now running and nothing has
+    /// aborted, timed out or settled it. The re-check every continuation
+    /// makes before an irreversible step.
+    func attemptIsLive(_ serial: Int) -> Bool {
+        isInFlight && serial == attemptSerial && serial > abortedThroughSerial
+            && !(activeWaiter?.isSettled ?? false)
+    }
+
+    /// `attemptIsLive` without the settled check: for the step after the
+    /// wait has already returned (the cookie harvest), where the waiter is
+    /// settled by definition and only an abort should stop the merge.
+    func attemptIsNotAborted(_ serial: Int) -> Bool {
+        serial > abortedThroughSerial
+    }
+
+    /// Test seam: marks an attempt as running without touching WebKit, and
+    /// returns its serial. The gate (`renewIfNeeded`) refuses to run under
+    /// the test runner, so this is the only way to reach the continuation
+    /// rules. `endAttemptForTesting()` undoes it.
+    func beginAttemptForTesting(isBackground: Bool = false) -> Int {
+        attemptSerial += 1
+        isInFlight = true
+        attemptIsBackground = isBackground
+        hasSubmittedCredentialsThisAttempt = false
+        lastSubmissionBounce = nil
+        return attemptSerial
+    }
+
+    func endAttemptForTesting() {
+        isInFlight = false
+    }
+
+    var hasSubmittedForTesting: Bool { hasSubmittedCredentialsThisAttempt }
+
+    /// Forgets the failed-submission clock (a corrected password, a
+    /// disconnect, a successful renewal). In memory only; the persisted copy
+    /// is `AppState`'s to remove.
+    func clearFailedSubmissionClock() {
+        lastFailedCredentialSubmissionAt = nil
+    }
+
     /// Wall-clock time of the most recent credential submission across ALL
     /// attempts (unlike `hasSubmittedCredentialsThisAttempt`, this outlives
     /// a single `performAttempt()` call) — what `autoLoginCooldown` is
@@ -410,8 +499,14 @@ final class CanvasSessionRenewer {
     /// expiry abort the name is misleading but the meaning ("proves nothing,
     /// changes nothing") is exactly right, so the case was deliberately not
     /// renamed. A no-op when no attempt is in flight.
+    ///
+    /// Also marks the attempt aborted for its continuations (item 14): the
+    /// waiter signal alone does nothing once the wait has returned, and an
+    /// attempt in its cookie harvest would still merge the dead account's
+    /// cookies into the Keychain after a disconnect.
     func abort() {
         guard isInFlight else { return }
+        abortedThroughSerial = attemptSerial
         activeWebView?.stopLoading()
         activeWaiter?.signal(.aborted)
     }
@@ -518,6 +613,7 @@ final class CanvasSessionRenewer {
             lastAttemptAt = now
         }
         isInFlight = true
+        attemptSerial += 1
         defer { isInFlight = false }
 
         let outcome = await performAttempt(timeout: timeout, isBackground: isBackground)
@@ -766,9 +862,12 @@ final class CanvasSessionRenewer {
         // calls) doesn't carry a stale `true` from an earlier attempt into
         // this one and skip a submission it should actually make.
         hasSubmittedCredentialsThisAttempt = false
+        lastSubmissionBounce = nil
+        lastLandingWasPositive = false
         duoPushSent = false
         duoPushAnnounced = false
         attemptIsBackground = isBackground
+        let serial = attemptSerial
 
         let configuration = WKWebViewConfiguration()
         // Bound to the SAME persistent, isolated store the visible Canvas
@@ -871,6 +970,13 @@ final class CanvasSessionRenewer {
         }
         let signal = await waiter.wait()
         timeoutTask.cancel()
+        // An abort that landed after the waiter had already settled (it
+        // cannot signal twice) is still an abort: nothing below may merge
+        // cookies or report a verdict for it.
+        if !attemptIsNotAborted(serial) {
+            Self.logAttempt(host: webView.url?.host, status: "aborted-for-login-pane", outcome: .abortedByLoginPane)
+            return .abortedByLoginPane
+        }
 
         #if DEBUG
         lastSettledOrTimedOutURL = Self.hostPathString(webView.url)
@@ -912,8 +1018,15 @@ final class CanvasSessionRenewer {
             // actually made is strictly more informative than the generic
             // "landed on login" catch-all below.
             if hasSubmittedCredentialsThisAttempt, PennKeyLoginForm.isLoginForm(webView.url) {
-                Self.logAttempt(host: finalHost, status: "password-rejected", outcome: .passwordRejected)
-                return .passwordRejected
+                // Only an error text that names the credential is a
+                // rejection; see `postSubmissionFormOutcome`.
+                let outcome = Self.postSubmissionFormOutcome(lastSubmissionBounce)
+                Self.logAttempt(
+                    host: finalHost,
+                    status: outcome == .passwordRejected ? "password-rejected" : "form-returned-no-credential-error",
+                    outcome: outcome
+                )
+                return outcome
             }
             if PennKeyLoginForm.isDuo(webView.url) {
                 Self.logAttempt(host: finalHost, status: "needs-duo", outcome: .needsDuo)
@@ -924,6 +1037,8 @@ final class CanvasSessionRenewer {
             // either way, no session was confirmed, so behave identically:
             // give up silently and let the existing banner do its job.
             Self.logAttempt(host: finalHost, status: "landed-on-login", outcome: .landedOnLoginPage)
+            lastLandingWasPositive = PennKeyLoginForm.isLoginForm(webView.url)
+                || Self.classifyFinalHost(finalHost, canvasHost: installation.host) == .loginPage
             return .landedOnLoginPage
         }
 
@@ -938,6 +1053,14 @@ final class CanvasSessionRenewer {
         let canvasCookies = installation.host == CanvasInstallation.penn.host
             ? cookies.filter { $0.domain.localizedCaseInsensitiveContains("canvas") }
             : cookies.filter { Self.cookie($0, belongsTo: installation.host) }
+        // The harvest awaited the cookie store; an abort (disconnect, school
+        // switch, the login pane) may have landed meanwhile. Merging now
+        // would write the account the student just left back into the
+        // Keychain and `AppState` would mark a login captured (item 14).
+        guard attemptIsNotAborted(serial) else {
+            Self.logAttempt(host: finalHost, status: "aborted-before-merge", outcome: .abortedByLoginPane)
+            return .abortedByLoginPane
+        }
         guard canvasCookies.contains(where: { Self.isCanvasSessionCookie($0, canvasHost: installation.host) }) else {
             // Landed back on canvas.upenn.edu but minted no recognizable
             // session cookie — e.g. an anonymous/public page. Treat the same
@@ -982,7 +1105,75 @@ final class CanvasSessionRenewer {
     /// JavaScript sense; the navigation that follows (or doesn't) is what
     /// `performAttempt`'s classification above actually reasons about.
     private func handleNonCanvasFinish(_ webView: WKWebView) async -> Bool {
-        if PennKeyLoginForm.isDuo(webView.url) {
+        // A callback from a WebView that is not the live attempt's (a late
+        // `didFinish` from a discarded attempt) does nothing at all.
+        guard isInFlight, activeWebView === webView else { return false }
+        let serial = attemptSerial
+        return await evaluateNonCanvasFinish(
+            url: webView.url,
+            serial: serial,
+            detect: {
+                // The script returns a short string; narrow WebKit's `Any?`
+                // to `String?` INSIDE the completion handler, before it
+                // crosses the continuation. `Any?` is not `Sendable`, and the
+                // first Mac compile of this code stopped exactly here with
+                // "sending 'value' risks causing data races". A `String?` is
+                // `Sendable`, so it may cross.
+                await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
+                    webView.evaluateJavaScript(PennKeyLoginForm.detectFormScript) { value, _ in
+                        continuation.resume(returning: value as? String)
+                    }
+                }
+            },
+            errorText: {
+                await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
+                    webView.evaluateJavaScript(PennKeyLoginForm.errorTextScript) { value, _ in
+                        continuation.resume(returning: value as? String)
+                    }
+                }
+            },
+            submit: { username, password in
+                let script = PennKeyLoginForm.fillAndSubmitScript(username: username, password: password)
+                #if DEBUG
+                webView.evaluateJavaScript(script) { value, _ in
+                    // Narrow to `String?` before use; only the outcome word is logged.
+                    let text = value as? String
+                    DebugRenewalLog.record("credential fill result: \(PennKeyLoginForm.outcome(from: text).rawValue)")
+                }
+                #else
+                webView.evaluateJavaScript(script, completionHandler: nil)
+                #endif
+            }
+        )
+    }
+
+    /// The decision body of `handleNonCanvasFinish`, with the three WebKit
+    /// touches (`detect`, `errorText`, `submit`) injected so the rules
+    /// around them can be tested without a WebView.
+    ///
+    /// **Every `await` is followed by `attemptIsLive(serial)`** (2026-11-05
+    /// review, item 11). The detect script is an asynchronous round trip
+    /// into the page; an abort (login pane, disconnect), the hard timeout or
+    /// even a whole newer attempt can land while it runs. Without the
+    /// re-check, the continuation went on to fill and submit the saved
+    /// password into a WebView no attempt tracked any more, and the newer
+    /// attempt (whose submission flag `performAttempt` had reset) could
+    /// submit again: two submissions, the one thing the owner's rule forbids.
+    /// The check and the submit have no `await` between them, so nothing can
+    /// interleave. The wrong fix is only checking before the await, which is
+    /// the state of affairs the bug lived in. The submission flag stays
+    /// per-attempt because each attempt owns exactly one WebView; a stale
+    /// callback is excluded by serial and by `activeWebView ===` in the
+    /// wrapper, not by the flag.
+    func evaluateNonCanvasFinish(
+        url: URL?,
+        serial: Int,
+        detect: () async -> String?,
+        errorText: () async -> String?,
+        submit: (_ username: String, _ password: String) -> Void
+    ) async -> Bool {
+        guard attemptIsLive(serial) else { return false }
+        if PennKeyLoginForm.isDuo(url) {
             // Arriving on Duo after this attempt submitted the password means
             // Duo is (or is about to be) pushing: it often sends the push by
             // itself with no button to tap, so the click alone cannot be the
@@ -1020,7 +1211,7 @@ final class CanvasSessionRenewer {
             return false
         }
 
-        guard PennKeyLoginForm.isLoginForm(webView.url) else {
+        guard PennKeyLoginForm.isLoginForm(url) else {
             // Some other page — most often a mid-chain IdP hop that isn't
             // the credential form itself. Keep waiting, exactly as this
             // class already did for every non-Canvas host before "stay
@@ -1028,15 +1219,12 @@ final class CanvasSessionRenewer {
             return false
         }
 
-        // The script returns a short string; narrow WebKit's `Any?` to
-        // `String?` INSIDE the completion handler, before it crosses the
-        // continuation. `Any?` is not `Sendable`, and the first Mac compile
-        // of this code stopped exactly here with "sending 'value' risks
-        // causing data races". A `String?` is `Sendable`, so it may cross.
-        let scriptResult = await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
-            webView.evaluateJavaScript(PennKeyLoginForm.detectFormScript) { value, _ in
-                continuation.resume(returning: value as? String)
-            }
+        let scriptResult = await detect()
+        guard attemptIsLive(serial) else {
+            #if DEBUG
+            DebugRenewalLog.record("form check finished after the attempt ended; nothing submitted")
+            #endif
+            return false
         }
         let presenceResult = PennKeyLoginForm.presence(from: scriptResult)
         #if DEBUG
@@ -1058,11 +1246,19 @@ final class CanvasSessionRenewer {
             #if DEBUG
             DebugRenewalLog.record("login form present again after submission")
             #endif
-            // The credential form is ACTUALLY present a second time after
-            // the one submission this attempt is allowed to make —
-            // Shibboleth re-rendering its own login form is exactly what a
-            // wrong password looks like. Settle now; rule 1 forbids a
-            // second submission regardless.
+            // The credential form is present a second time after the one
+            // submission this attempt is allowed to make. Settle now; rule 1
+            // forbids a second submission regardless. WHY it came back is
+            // read from the page's error text: a wrong password names the
+            // credential, a Duo denial or failure that bounces to the form
+            // does not (item 16). `performAttempt` turns the recorded
+            // reading into `.passwordRejected` or a plain landing.
+            let text = await errorText()
+            guard attemptIsLive(serial) else { return false }
+            lastSubmissionBounce = PennKeyLoginForm.errorTextIndicatesBadCredential(text) ? .credentialError : .other
+            #if DEBUG
+            DebugRenewalLog.record("form bounce: \(lastSubmissionBounce == .credentialError ? "credential error" : "no credential error")")
+            #endif
             return true
         }
 
@@ -1098,16 +1294,7 @@ final class CanvasSessionRenewer {
         let submittedAt = Date()
         lastCredentialSubmissionAt = submittedAt
         onCredentialSubmission?(submittedAt)
-        let script = PennKeyLoginForm.fillAndSubmitScript(username: credentials.username, password: credentials.password)
-        #if DEBUG
-        webView.evaluateJavaScript(script) { value, _ in
-            // Narrow to `String?` before use; only the outcome word is logged.
-            let text = value as? String
-            DebugRenewalLog.record("credential fill result: \(PennKeyLoginForm.outcome(from: text).rawValue)")
-        }
-        #else
-        webView.evaluateJavaScript(script, completionHandler: nil)
-        #endif
+        submit(credentials.username, credentials.password)
         // Keep waiting: the submission's own resulting navigation (Canvas,
         // Duo, or the login form again) is what actually resolves this
         // attempt, on a LATER call into this same method or the Canvas
@@ -1186,6 +1373,11 @@ final class SettleWaiter {
 
     private var continuation: CheckedContinuation<Signal, Never>?
     private var hasResumed = false
+
+    /// True once any signal has won. A continuation that was awaiting
+    /// something else (a form-detect script) reads this to learn the attempt
+    /// was already settled by a timeout or an abort.
+    var isSettled: Bool { hasResumed }
 
     func wait() async -> Signal {
         await withCheckedContinuation { continuation in

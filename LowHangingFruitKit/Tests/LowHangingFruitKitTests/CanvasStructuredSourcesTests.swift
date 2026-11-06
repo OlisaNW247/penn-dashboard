@@ -283,8 +283,8 @@ struct CanvasStructuredReconcilerTests {
         let signals = run { c, _ in
             c.discussionTopics = [.init(id: "900", assignmentID: "66")]
             c.modules = [.init(id: "1", name: "W1", items: [
-                .init(id: "21", type: "Quiz", contentID: "55", title: "Quiz 1", completionCompleted: true, dueAt: date("2026-11-10T04:59:00Z")),
-                .init(id: "22", type: "Discussion", contentID: "900", title: "Post", completionCompleted: true, dueAt: date("2026-11-11T04:59:00Z")),
+                .init(id: "21", type: "Quiz", contentID: "55", title: "Quiz 1", completionRequirementType: "must_submit", completionCompleted: true, dueAt: date("2026-11-10T04:59:00Z")),
+                .init(id: "22", type: "Discussion", contentID: "900", title: "Post", completionRequirementType: "must_contribute", completionCompleted: true, dueAt: date("2026-11-11T04:59:00Z")),
             ])]
         }
         let quiz = signals.rows.first { $0.sourceID == "module-item-21" }!.assignment
@@ -299,13 +299,99 @@ struct CanvasStructuredReconcilerTests {
     func completionAndUndated() {
         let signals = run { c, _ in
             c.modules = [.init(id: "1", name: "W1", items: [
-                .init(id: "11", type: "Assignment", contentID: "55", title: "Done", completionCompleted: true),
-                .init(id: "12", type: "Assignment", contentID: "56", title: "Open", completionCompleted: false),
+                .init(id: "11", type: "Assignment", contentID: "55", title: "Done", completionRequirementType: "must_submit", completionCompleted: true),
+                .init(id: "12", type: "Assignment", contentID: "56", title: "Open", completionRequirementType: "must_submit", completionCompleted: false),
                 .init(id: "13", type: "Page", title: "Reading"),
             ])]
         }
         #expect(signals.completions.map(\.ref) == [.assignment("55")])
         #expect(signals.rows.isEmpty)
+    }
+
+    // MARK: Completion requirement types
+
+    @Test("only requirement types that need an act complete a module item; must_view and unknown never do")
+    func requirementTypes() {
+        let due = date("2026-11-10T04:59:00Z")
+        let signals = run { c, _ in
+            c.modules = [.init(id: "1", name: "W1", items: [
+                .init(id: "11", type: "Assignment", contentID: "1", title: "submit", completionRequirementType: "must_submit", completionCompleted: true, dueAt: due),
+                .init(id: "12", type: "Assignment", contentID: "2", title: "mark", completionRequirementType: "must_mark_done", completionCompleted: true, dueAt: due),
+                .init(id: "13", type: "Assignment", contentID: "3", title: "score", completionRequirementType: "min_score", completionCompleted: true, dueAt: due),
+                .init(id: "14", type: "Assignment", contentID: "4", title: "contribute", completionRequirementType: "must_contribute", completionCompleted: true, dueAt: due),
+                .init(id: "15", type: "Assignment", contentID: "5", title: "view", completionRequirementType: "must_view", completionCompleted: true, dueAt: due),
+                .init(id: "16", type: "Assignment", contentID: "6", title: "unknown", completionRequirementType: "must_teleport", completionCompleted: true, dueAt: due),
+                .init(id: "17", type: "Assignment", contentID: "7", title: "none", completionCompleted: true, dueAt: due),
+                .init(id: "18", type: "Assignment", contentID: "8", title: "unmet", completionRequirementType: "must_submit", completionCompleted: false, dueAt: due),
+            ])]
+        }
+        #expect(signals.completions.map(\.ref) == [.assignment("1"), .assignment("2"), .assignment("3"), .assignment("4")])
+        // The row's own `submitted` follows the same rule, so opening an item never reads as handing it in.
+        let submitted = Dictionary(uniqueKeysWithValues: signals.rows.map { ($0.title, $0.submitted) })
+        #expect(submitted["submit"] == true && submitted["mark"] == true && submitted["score"] == true && submitted["contribute"] == true)
+        #expect(submitted["view"] == false && submitted["unknown"] == false && submitted["none"] == false && submitted["unmet"] == false)
+    }
+
+    // MARK: Quizzes in the planner
+
+    @Test("a planner quiz tick resolves to the quiz's module row, not a reference no row carries")
+    func plannerQuizResolvesToModuleRow() {
+        let signals = run { c, r in
+            c.modules = [.init(id: "1", name: "W1", items: [
+                .init(id: "21", type: "Quiz", contentID: "555", title: "Quiz 1", dueAt: date("2026-11-10T04:59:00Z")),
+                .init(id: "22", type: "Quiz", contentID: "556", title: "Quiz 2", dueAt: date("2026-11-11T04:59:00Z")),
+            ])]
+            r.planner = [
+                .init(plannableType: "quiz", plannableID: "555", courseID: "7", markedComplete: true),
+                .init(plannableType: "quiz", plannableID: "556", courseID: "7", dismissed: true),
+            ]
+        }
+        #expect(signals.completions.map(\.ref) == [.source("module-item-21")])
+        #expect(signals.dismissals.map(\.ref) == [.source("module-item-22")])
+        // And that is a sourceID a row really carries.
+        #expect(signals.rows.contains { $0.sourceID == "module-item-21" })
+    }
+
+    @Test("a planner quiz that states its assignment id also resolves to the feed row's identity")
+    func plannerQuizAssignmentID() throws {
+        let json = #"[{"plannable_type":"quiz","plannable_id":555,"course_id":7,"plannable":{"title":"Quiz 1","assignment_id":901},"planner_override":{"marked_complete":true}}]"#
+        let decoded = CanvasStructuredDecoding.decode(CanvasPlannerItem.self, fromPages: [Data(json.utf8)])
+        #expect(decoded.elements.first?.assignmentID == "901")
+        let signals = run { c, r in
+            c.modules = [.init(id: "1", name: "W1", items: [
+                .init(id: "21", type: "Quiz", contentID: "555", title: "Quiz 1", dueAt: date("2026-11-10T04:59:00Z")),
+            ])]
+            r.planner = decoded.elements
+        }
+        let refs = signals.completions.map(\.ref)
+        #expect(refs.contains(.assignment("901")))
+        #expect(refs.contains(.source("module-item-21")))
+    }
+
+    @Test("a quiz known nowhere else keeps its bare reference, which matches nothing rather than someone else's row")
+    func plannerQuizUnknown() {
+        let signals = run { _, r in
+            r.planner = [.init(plannableType: "quiz", plannableID: "777", courseID: "7", markedComplete: true)]
+        }
+        #expect(signals.completions.map(\.ref) == [.source("quiz_777")])
+    }
+
+    // MARK: Pages across courses
+
+    @Test("two courses' pages with the same slug are two rows, and the planner reference matches its own course's")
+    func pagesAreCourseScoped() {
+        let other = CourseSummary(courseID: "8", code: "MATH 1400", name: "Math", url: nil)
+        var result = CanvasStructuredSourcesClient.RunResult()
+        var a = CanvasStructuredSourcesClient.CourseResult(courseID: "7")
+        a.pages = [.init(url: "week-1", title: "Week 1 physics", todoDate: date("2026-11-08T05:00:00Z"))]
+        var b = CanvasStructuredSourcesClient.CourseResult(courseID: "8")
+        b.pages = [.init(url: "week-1", title: "Week 1 math", todoDate: date("2026-11-09T05:00:00Z"))]
+        result.courses = [a, b]
+        result.planner = [.init(plannableType: "wiki_page", plannableID: "9", pageURL: "week-1", courseID: "8", markedComplete: true)]
+        let signals = CanvasStructuredSourcesReconciler.signals(from: result, courses: [course, other], baseURL: base)
+        #expect(Set(signals.rows.map(\.sourceID)) == ["page_7_week-1", "page_8_week-1"])
+        #expect(signals.rows.count == 2)
+        #expect(signals.completions.map(\.ref) == [.source("page_8_week-1")])
     }
 
     @Test("planner: marked_complete completes, dismissed hides, nothing deletes, notes become rows")
@@ -374,7 +460,7 @@ struct CanvasStructuredReconcilerTests {
                 .init(url: "plain", title: "Plain"),
             ]
         }
-        #expect(signals.rows.map(\.sourceID).sorted() == ["discussion_900", "discussion_901", "page_week-5-notes"])
+        #expect(signals.rows.map(\.sourceID).sorted() == ["discussion_900", "discussion_901", "page_7_week-5-notes"])
         let graded = signals.rows.first { $0.sourceID == "discussion_901" }!.assignment
         #expect(graded.canvasAssignmentID == "66")
         #expect(graded.kind == .discussion)

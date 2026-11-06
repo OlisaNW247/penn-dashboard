@@ -30,11 +30,12 @@ const FACT = {
 interface Recorded {
   claims: number;
   factInserts: number;
+  finishes: Array<{ p_status: string; p_fact_count: number; p_facts: unknown[] }>;
   extractionUpdates: Array<Record<string, unknown>>;
 }
 
 function install(enrolled: string[], options: { unauthorized?: boolean } = {}) {
-  const recorded: Recorded = { claims: 0, factInserts: 0, extractionUpdates: [] };
+  const recorded: Recorded = { claims: 0, factInserts: 0, finishes: [], extractionUpdates: [] };
   const stub = installStub({
     reserve: () => GRANTED,
     openrouter: { kind: "json", content: JSON.stringify({ facts: [FACT] }) },
@@ -46,6 +47,14 @@ function install(enrolled: string[], options: { unauthorized?: boolean } = {}) {
       if (rpc?.[1] === "claim_fact_extraction") {
         recorded.claims += 1;
         return json(200, "claimed");
+      }
+      if (rpc?.[1] === "finish_fact_extraction") {
+        // The whole finish is one rpc now (one transaction in the database).
+        const args = JSON.parse(body) as { p_status: string; p_fact_count: number; p_facts: unknown[] };
+        recorded.finishes.push(args);
+        recorded.factInserts += args.p_facts.length;
+        recorded.extractionUpdates.push({ status: args.p_status, fact_count: args.p_fact_count });
+        return new Response(null, { status: 204 });
       }
       if (!url.pathname.startsWith("/rest/v1/")) return undefined;
       const table = url.pathname.replace("/rest/v1/", "");
@@ -135,6 +144,7 @@ Deno.test("extract-facts: a pass for the caller's course extracts the announceme
     assert.deepEqual(await res.json(), { attempted: 1, done: 1, failed: 0, skippedBudget: 0, facts: 1, remaining: 0 });
     assert.equal(recorded.claims, 1, "only the announcement is a candidate; the assignment is index, not source");
     assert.equal(recorded.factInserts, 1);
+    assert.equal(recorded.finishes.length, 1, "one rpc finishes the extraction: delete, insert and update in one transaction");
     assert.equal(recorded.extractionUpdates.at(-1)?.status, "done");
     assert.equal(recorded.extractionUpdates.at(-1)?.fact_count, 1);
     assert.equal(stub.log.filter((e) => e === "openrouter").length, 1);

@@ -13,6 +13,7 @@ import {
   makeContext,
   parseArgs,
   run,
+  FACTS_MIGRATIONS,
   scanIdempotency,
   secretsReport,
 } from "./deploy-facts.mjs";
@@ -113,6 +114,8 @@ test("dry run sends nothing at all and plans every step", async () => {
   const text = lines.join("\n");
   assert.match(text, /\[dry-run\] GET .*\/secrets/);
   assert.match(text, /\[dry-run\] POST .*\/database\/query .*sql first line: -- Phase 2/);
+  assert.match(text, /\[dry-run\] POST .*\/database\/query .*sql first line: -- finish_fact_extraction\(\)/);
+  assert.ok(text.indexOf("-- Phase 2") < text.indexOf("-- finish_fact_extraction()"), "migrations are planned in order");
   assert.match(text, /functions\/deploy\?slug=sync/);
   assert.match(text, /functions\/deploy\?slug=extract-facts/);
   assert.match(text, /auth\/v1\/signup/);
@@ -164,14 +167,23 @@ test("step 3: no extraction exits 2; a missing quote exits 1; clean data exits 0
   assert.equal(await run([3], quietCtx({ fetchImpl: scenario(ext, fact("hw3 is  CANCELLED"), doc).fetchImpl }).ctx), 0);
 });
 
-test("step 1 applies the migration, then deploys sync, then extract-facts, via the Management API", async () => {
+test("FACTS_MIGRATIONS lists both facts migrations in order and every one passes the scan", () => {
+  assert.deepEqual(FACTS_MIGRATIONS, ["20261104090000_course_facts.sql", "20261105090000_finish_fact_extraction.sql"]);
+  for (const f of FACTS_MIGRATIONS) {
+    assert.deepEqual(scanIdempotency(fs.readFileSync(path.join(here, "..", "supabase", "migrations", f), "utf8")), [], f);
+  }
+});
+
+test("step 1 applies both migrations in order, then deploys sync, then extract-facts, via the Management API", async () => {
   const { calls, fetchImpl } = recorder(() => ({ body: { version: 7, status: "ACTIVE", id: "fn" } }));
   const { ctx } = quietCtx({ fetchImpl });
   assert.equal(await run([1], ctx), 0);
   assert.match(calls[0].url, /\/database\/query$/);
   assert.match(JSON.parse(calls[0].body).query, /claim_fact_extraction/);
-  assert.match(calls[1].url, /slug=sync$/);
-  assert.match(calls[2].url, /slug=extract-facts$/);
+  assert.match(calls[1].url, /\/database\/query$/);
+  assert.match(JSON.parse(calls[1].body).query, /finish_fact_extraction/);
+  assert.match(calls[2].url, /slug=sync$/);
+  assert.match(calls[3].url, /slug=extract-facts$/);
   assert.ok(calls.every((c) => c.headers.Authorization === "Bearer tok-secret-123"));
 });
 
@@ -233,4 +245,9 @@ test("step 3 --trigger --dry-run prints the plan and sends nothing", async () =>
   assert.equal(await run([3], ctx), 0);
   assert.equal(calls.length, 0);
   assert.ok(lines.some((l) => l.includes("extract-facts") && l.includes("1949400")));
+});
+
+test("the finish_fact_extraction migration passes the idempotency scan", () => {
+  const sql = fs.readFileSync(path.join(here, "..", "supabase", "migrations", "20261105090000_finish_fact_extraction.sql"), "utf8");
+  assert.deepEqual(scanIdempotency(sql), []);
 });

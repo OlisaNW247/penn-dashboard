@@ -331,12 +331,197 @@ struct AppliedFactsWiringTests {
     func requestCarriesCursor() throws {
         let (state, _, _, defaults) = try makeState([])
         #expect(state.makeSyncManifestRequest(courses: [course], documents: []).factsSince == nil)
-        state.ingestFacts([wire(3, .note, title: "fyi")], cursor: 12, now: now)
+        state.receiveManifestFacts(SyncManifestResponse(facts: [wire(3, .note, title: "fyi")], factsCursor: 12), now: now, requestedCourseIDs: ["8141"])
         #expect(defaults.object(forKey: AppState.FactKey.cursor) as? Int == 12)
         #expect(state.makeSyncManifestRequest(courses: [course], documents: []).factsSince == 12)
         // A smaller cursor never moves it back.
         state.ingestFacts([], cursor: 5, now: now)
         #expect(state.factsSinceForRequest() == 12)
+    }
+
+    // MARK: Undo lasts, the cursor covers every class, withdrawn facts end
+
+    @Test("undo survives the post being edited: the rejected fact outlives pruning and holds against the revised post's fact")
+    func undoSurvivesRevision() throws {
+        let (state, _, facts, _) = try makeState([feedRow("55", title: "Quiz 4")])
+        state.ingestFacts([wire(1, .cancel, hash: "old-hash")], cursor: 1, now: now)
+        rebuild(state)
+        state.rejectFact(factID: AppliedFact.factID(documentID: documentID, seq: 1), now: now)
+        #expect(titles(viewModel(state).todoSections(now: now)).contains("Quiz 4"))
+
+        // The post is edited: the phone re-fetches it (a different hash), so the old revision is pruned.
+        var knowledge = state.courseKnowledge
+        let post = try #require(knowledge.documents.first)
+        knowledge.documents = [CourseDocument(
+            courseID: post.courseID, course: post.course, kind: post.kind, sourceID: post.sourceID,
+            title: post.title, url: post.url, text: "edited body", fetchedAt: now.addingTimeInterval(3_600)
+        )]
+        state.courseKnowledge = knowledge
+        #expect(state.pruneStaleFacts() == 0, "the rejection is the student's verdict and is kept")
+        #expect(facts.all().count == 1)
+
+        // The server re-extracts the same news from the new revision.
+        state.ingestFacts([wire(2, .cancel, hash: "new-hash")], cursor: 2, now: now)
+        rebuild(state)
+        #expect(titles(viewModel(state).todoSections(now: now)).contains("Quiz 4"))
+        #expect(state.factDisplay.isEmpty)
+    }
+
+    private func otherCourse() -> CourseSummary {
+        CourseSummary(courseID: "8142", code: "FACT 0152", name: "Added later",
+                      url: URL(string: "https://canvas.upenn.edu/courses/8142"), section: nil)
+    }
+
+    @Test("a class added mid-term reads the facts from the start; a failed manifest records nothing")
+    func cursorFollowsTheCourseSet() throws {
+        let (state, _, _, defaults) = try makeState([])
+        // The first exchange covered one class.
+        state.receiveManifestFacts(SyncManifestResponse(factsCursor: 40), now: now, requestedCourseIDs: ["8141"])
+        #expect(state.makeSyncManifestRequest(courses: [course], documents: []).factsSince == 40)
+
+        // A second class appears: its facts may sit below the cursor, so this call reads from 0.
+        #expect(state.makeSyncManifestRequest(courses: [course, otherCourse()], documents: []).factsSince == 0)
+
+        // A FAILED manifest (the caller passes no course set) must not claim the cursor covers the new class.
+        state.receiveManifestFacts(SyncManifestResponse(), now: now, requestedCourseIDs: nil)
+        #expect(state.makeSyncManifestRequest(courses: [course, otherCourse()], documents: []).factsSince == 0)
+
+        // The successful exchange records the new set with the returned cursor.
+        state.receiveManifestFacts(SyncManifestResponse(factsCursor: 40), now: now, requestedCourseIDs: ["8141", "8142"])
+        #expect(Set(defaults.stringArray(forKey: AppState.FactKey.cursorCourses) ?? []) == ["8141", "8142"])
+        #expect(state.makeSyncManifestRequest(courses: [course, otherCourse()], documents: []).factsSince == 40)
+        // Dropping a class later is fine: the cursor still covers the rest.
+        #expect(state.makeSyncManifestRequest(courses: [course], documents: []).factsSince == 40)
+    }
+
+    @Test("a cursor with no recorded course set (a phone from before it was recorded) reads from 0 once")
+    func legacyCursorReadsOnce() throws {
+        let (state, _, _, defaults) = try makeState([])
+        state.ingestFacts([wire(3, .note, title: "fyi")], cursor: 12, now: now)
+        #expect(defaults.stringArray(forKey: AppState.FactKey.cursorCourses) == nil)
+        #expect(state.makeSyncManifestRequest(courses: [course], documents: []).factsSince == 0)
+        state.receiveManifestFacts(SyncManifestResponse(factsCursor: 12), now: now, requestedCourseIDs: ["8141"])
+        #expect(state.makeSyncManifestRequest(courses: [course], documents: []).factsSince == 12)
+    }
+
+    @Test("disconnect forgets which courses the cursor covered")
+    func disconnectClearsCourseSet() throws {
+        let (state, _, _, defaults) = try makeState([])
+        state.receiveManifestFacts(SyncManifestResponse(factsCursor: 5), now: now, requestedCourseIDs: ["8141"])
+        #expect(defaults.stringArray(forKey: AppState.FactKey.cursorCourses) != nil)
+        state.clearAppliedFacts()
+        #expect(defaults.stringArray(forKey: AppState.FactKey.cursorCourses) == nil)
+    }
+
+    private func stub(_ id: String) -> DocumentStub { DocumentStub(id: id, contentHash: "x") }
+
+    @Test("a degraded re-read (cursor 0 back, or below the stored one) leaves the new course set unrecorded")
+    func degradedReadDoesNotRecordCourseSet() throws {
+        let (state, _, _, defaults) = try makeState([])
+        state.receiveManifestFacts(SyncManifestResponse(factsCursor: 40), now: now, requestedCourseIDs: ["8141"])
+        for returned in [0, 25] {
+            state.receiveManifestFacts(SyncManifestResponse(factsCursor: returned), now: now, requestedCourseIDs: ["8141", "8142"])
+            #expect(Set(defaults.stringArray(forKey: AppState.FactKey.cursorCourses) ?? []) == ["8141"], "cursor \(returned)")
+            #expect(state.makeSyncManifestRequest(courses: [course, otherCourse()], documents: []).factsSince == 0)
+        }
+        // A read that reaches the stored cursor is trusted.
+        state.receiveManifestFacts(SyncManifestResponse(factsCursor: 40), now: now, requestedCourseIDs: ["8141", "8142"])
+        #expect(Set(defaults.stringArray(forKey: AppState.FactKey.cursorCourses) ?? []) == ["8141", "8142"])
+    }
+
+    @Test("absence from the server list ends a recent fact but not one older than 100 days")
+    func oldFactsSurviveAbsence() throws {
+        let (state, _, facts, _) = try makeState([feedRow("55", title: "Quiz 4")])
+        let old = CourseFactWire(
+            seq: 1, courseID: "8141", documentID: "announcement:8141:old", contentHash: "h", type: .cancel,
+            target: "55", title: nil, dueAt: nil, kind: nil, quote: "q", confidence: .high,
+            postedAt: now.addingTimeInterval(-101 * 86_400)
+        )
+        state.ingestFacts([old, wire(2, .note, title: "fyi")], cursor: 2, now: now)
+        state.receiveManifestFacts(
+            SyncManifestResponse(serverManifest: [stub("syllabus:8141")], factsCursor: 2),
+            now: now, requestedCourseIDs: ["8141"]
+        )
+        #expect(facts.all().map(\.seq) == [1])
+    }
+
+    @Test("a fact whose document the server no longer lists is withdrawn, and its cancel ends")
+    func withdrawnFactIsPruned() throws {
+        let (state, _, facts, _) = try makeState([feedRow("55", title: "Quiz 4")])
+        state.ingestFacts([wire(1, .cancel)], cursor: 1, now: now)
+        rebuild(state)
+        #expect(!titles(viewModel(state).todoSections(now: now)).contains("Quiz 4"))
+
+        state.receiveManifestFacts(
+            SyncManifestResponse(serverManifest: [stub("syllabus:8141")], factsCursor: 1),
+            now: now, requestedCourseIDs: ["8141"]
+        )
+        #expect(facts.all().isEmpty)
+        #expect(titles(viewModel(state).todoSections(now: now)).contains("Quiz 4"))
+    }
+
+    @Test("a fact stays when its document is listed, its course was not asked about, the manifest failed, or the list is empty")
+    func withdrawalIsNarrow() throws {
+        let (state, _, facts, _) = try makeState([feedRow("55", title: "Quiz 4")])
+        state.ingestFacts([wire(1, .cancel)], cursor: 1, now: now)
+        let others = [stub("syllabus:8141")]
+
+        state.receiveManifestFacts(SyncManifestResponse(serverManifest: others + [stub(documentID)]), now: now, requestedCourseIDs: ["8141"])
+        #expect(facts.all().count == 1, "document still live")
+        state.receiveManifestFacts(SyncManifestResponse(serverManifest: others), now: now, requestedCourseIDs: ["9999"])
+        #expect(facts.all().count == 1, "course not in the request")
+        state.receiveManifestFacts(SyncManifestResponse(serverManifest: others), now: now, requestedCourseIDs: nil)
+        #expect(facts.all().count == 1, "manifest failed")
+        state.receiveManifestFacts(SyncManifestResponse(serverManifest: []), now: now, requestedCourseIDs: ["8141"])
+        #expect(facts.all().count == 1, "an empty list proves nothing")
+    }
+
+    @Test("a withdrawn post's rejected fact is kept, so undo still holds if the post comes back")
+    func withdrawalKeepsRejection() throws {
+        let (state, _, facts, _) = try makeState([feedRow("55", title: "Quiz 4")])
+        state.ingestFacts([wire(1, .cancel), wire(2, .note, title: "fyi")], cursor: 2, now: now)
+        state.rejectFact(factID: AppliedFact.factID(documentID: documentID, seq: 1), now: now)
+        state.receiveManifestFacts(
+            SyncManifestResponse(serverManifest: [stub("syllabus:8141")], factsCursor: 2),
+            now: now, requestedCourseIDs: ["8141"]
+        )
+        #expect(facts.all().map(\.seq) == [1])
+        #expect(facts.all().first?.studentOverride == .rejected)
+    }
+
+    // MARK: Cancelled and overdue
+
+    @Test("a cancelled item past its date is still in all, tagged, so its undo stays reachable")
+    func cancelledOverdueStaysInAll() throws {
+        let (state, _, _, _) = try makeState([
+            feedRow("55", title: "Quiz 4", due: "2026-11-03T17:00:00Z"),
+            feedRow("56", title: "Plain overdue", due: "2026-11-03T17:00:00Z"),
+        ])
+        state.ingestFacts([wire(1, .cancel)], cursor: 1, now: now)
+        rebuild(state)
+        let vm = viewModel(state)
+        #expect(!titles(vm.todoSections(now: now)).contains("Quiz 4"))
+        let all = vm.allSections(now: now)
+        let card = try #require(all.flatMap(\.items).first { $0.assignment.title == "Quiz 4" })
+        #expect(card.caveatText?.contains("cancelled") == true)
+        #expect(all.first { $0.items.contains { $0.assignment.title == "Quiz 4" } }?.id == "cancelled")
+        // Other overdue work is not pulled into all.
+        #expect(!titles(all).contains("Plain overdue"))
+        // Undo from the card brings it back to todo.
+        state.rejectFacts(state.factDisplay[card.assignment.id]?.factIDs ?? [], now: now)
+        #expect(titles(viewModel(state).todoSections(now: now)).contains("Quiz 4"))
+    }
+
+    // MARK: On-device pool
+
+    @Test("ask, on-device: a cancelled item is marked cancelled in the pool")
+    func poolCarriesCancellation() throws {
+        let (state, _, _, _) = try makeState([feedRow("55", title: "Quiz 4"), feedRow("56", title: "Other")])
+        state.ingestFacts([wire(1, .cancel)], cursor: 1, now: now)
+        rebuild(state)
+        let work = state.assistantWorkItems()
+        #expect(work.first { $0.title == "Quiz 4" }?.isCancelled == true)
+        #expect(work.first { $0.title == "Other" }?.isCancelled == false)
     }
 
     // MARK: Megaphone

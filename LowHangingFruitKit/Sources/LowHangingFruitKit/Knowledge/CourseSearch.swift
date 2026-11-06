@@ -258,6 +258,39 @@ public struct CourseSearch: Sendable {
     /// is.
     public static let policyWords = ["policy", "late", "grading", "grade", "attendance", "office hours", "textbook", "exam", "midterm", "final", "weight", "percent", "curve", "extension", "collaboration", "honor", "absence"]
 
+    /// Lowercased runs of letters (apostrophes dropped inside a word), so a
+    /// word is compared whole. The earlier `q.contains(word)` made "example"
+    /// an exam question, "later" a late-policy one and "upgrade" a grade one.
+    static func wordTokens(_ q: String) -> [String] {
+        q.replacingOccurrences(of: "'", with: "")
+            .split(whereSeparator: { !$0.isLetter })
+            .map(String.init)
+    }
+
+    /// Whole-token match of any `policyWords` entry (a multi-word
+    /// entry such as "office hours" must appear as consecutive tokens), with a
+    /// plain "s" or "es" plural allowed on the last token.
+    public static func mentionsPolicyWord(_ q: String) -> Bool {
+        let words = wordTokens(q)
+        for entry in CourseSearch.policyWords {
+            let parts = entry.split(separator: " ").map(String.init)
+            guard let last = parts.last, words.count >= parts.count else { continue }
+            for start in 0...(words.count - parts.count) {
+                var matched = true
+                for (offset, part) in parts.enumerated() {
+                    let word = words[start + offset]
+                    let isLast = offset == parts.count - 1
+                    if word == part { continue }
+                    if isLast, word == last + "s" || word == last + "es" { continue }
+                    matched = false
+                    break
+                }
+                if matched { return true }
+            }
+        }
+        return false
+    }
+
     /// Half-life, in days, of the freshness decay for the two questions that
     /// want the newest word (`AskTimeFrame.weighsFreshness`). Four days: a
     /// cancellation from last week should lose to Monday's "we are back", but
@@ -281,21 +314,29 @@ public struct CourseSearch: Sendable {
 
     /// The multiplier for one document: decay for a dated kind (Ed post,
     /// announcement) under an intent that weighs freshness, 1.0 for everything
-    /// else, including a post whose date is unknown, an undated kind, no
-    /// intent, and no `now` (so every existing caller scores as before).
+    /// else: an undated kind, no intent, and no `now` (so every existing caller
+    /// scores as before). A dated kind whose post date is unknown gets
+    /// `undatedFreshness`.
     private static func documentFreshness(_ document: CourseDocument, intent: AskTimeFrame?, now: Date?) -> Double {
         guard let intent, intent.weighsFreshness, let now else { return 1.0 }
-        guard document.kind == .ed || document.kind == .announcement,
-              let posted = document.shownPostedAt
-        else { return 1.0 }
+        guard document.kind == .ed || document.kind == .announcement else { return 1.0 }
+        guard let posted = document.shownPostedAt else { return undatedFreshness }
         return freshnessFactor(ageDays: now.timeIntervalSince(posted) / 86_400)
     }
+
+    /// The weight of an Ed post or announcement whose date is unknown: the
+    /// decay at one half-life (0.75), as if it were four days old. Neither
+    /// extreme is right. 1.0 told the search an undated post is brand new, so
+    /// it outscored a real post from ten days ago that we know is dated. 0.5
+    /// (the floor) would claim it is ancient, burying a post that may be the
+    /// newest word. Unknown age is a middle guess, so it scores in between.
+    static let undatedFreshness = freshnessFactor(ageDays: freshnessHalfLifeDays)
 
     private func kindBoost(_ kind: CourseDocument.Kind, query: String, intent: AskTimeFrame?) -> Double {
         let q = query.lowercased()
         switch kind {
         case .syllabus:
-            guard Self.policyWords.contains(where: q.contains) else { return 1.1 }
+            guard Self.mentionsPolicyWord(q) else { return 1.1 }
             // 1.5 for the standing-rule intents (2026-11-05): the syllabus is
             // the authority for "what is the late policy", and a recent
             // unrelated post must not outrank it. Every other caller keeps the

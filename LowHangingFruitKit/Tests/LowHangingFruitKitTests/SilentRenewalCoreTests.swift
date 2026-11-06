@@ -317,3 +317,257 @@ struct SilentRenewalCoreTests {
         #expect(state.pendingSilentRenewal == nil)
     }
 }
+
+
+/// The 2026-11-05 review of the silent re-login path, items 12-15 and 17
+/// (items 11 and 16 live in `CanvasSessionRenewerTests`). Every state here
+/// calls `disablePersistenceForTesting()`, and the seams it reaches
+/// (`seedFailedSubmissionClockForTesting`, `credentialSaveForTesting`,
+/// `landingWasPositiveForTesting`) are per instance: nothing in this suite
+/// writes or deletes a key in the shared `UserDefaults.lhf` domain, which
+/// is the trap CLAUDE.md records (a concurrent suite's `AppState.init`
+/// would read it).
+@MainActor
+@Suite("Silent re-login review fixes")
+struct SilentReloginReviewTests {
+    private func makeState() -> AppState {
+        let state = AppState(assignmentStore: try? AssignmentStore(inMemory: true))
+        state.disablePersistenceForTesting()
+        state.forceFixtureDataForTesting(false)
+        return state
+    }
+
+    private let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+
+    // MARK: - Item 12
+
+    @Test("a corrected password clears the failed-submission wait")
+    func correctedPasswordClearsFailedWait() {
+        let state = makeState()
+        state.seedFailedSubmissionClockForTesting(t0)
+        state.credentialSaveForTesting = { _, _ in true }
+        #expect(state.enableStayLoggedIn(username: "student", password: "corrected"))
+        #expect(state.failedCredentialSubmissionAt == nil)
+    }
+
+    @Test("a successful renewal clears the failed-submission wait, in the state and in the renewer")
+    func renewedClearsFailedWait() {
+        let state = makeState()
+        state.seedFailedSubmissionClockForTesting(t0)
+        let renewer = CanvasSessionRenewer(isLoginPaneActive: { false }, lastFailedCredentialSubmissionAt: t0)
+        state.installSessionRenewerForTesting(renewer)
+        state.noteRenewalOutcomeForTesting(.renewed)
+        #expect(state.failedCredentialSubmissionAt == nil)
+        #expect(renewer.lastFailedCredentialSubmissionAt == nil)
+    }
+
+    @Test("a failed outcome does not clear the wait")
+    func failedOutcomeKeepsWait() {
+        let state = makeState()
+        state.seedFailedSubmissionClockForTesting(t0)
+        state.noteRenewalOutcomeForTesting(.timedOut)
+        #expect(state.failedCredentialSubmissionAt == t0)
+    }
+
+    @Test("disconnect's history reset clears the failed-submission wait")
+    func disconnectClearsFailedWait() {
+        let state = makeState()
+        state.seedFailedSubmissionClockForTesting(t0)
+        state.resetSilentRenewalHistoryForTesting()
+        #expect(state.failedCredentialSubmissionAt == nil)
+    }
+
+    // MARK: - Item 13
+
+    @Test("a dead probe keeps the flag up through recomputes while the cookies are fresh, until a renewal")
+    func deadProbeSurvivesRecompute() async {
+        let state = makeState()
+        state.forceCanvasCookieSessionExpiredForTesting(true)
+        state.setSessionProbeForTesting { _ in
+            // Keeps the renewal the dead verdict starts from touching WebKit.
+            state.forceFixtureDataForTesting(true)
+            return CanvasSessionProbe.Result(verdict: .dead)
+        }
+        state.refreshCanvasSessionExpiredState()
+        await state.awaitPendingSessionProbe()
+        await state.awaitPendingSilentRenewal()
+        #expect(state.canvasSessionExpired)
+        #expect(state.sessionProbeSaidDead)
+
+        // The clock now reads fresh cookies (under 24 hours). Before the fix
+        // the recompute set the flag straight back to false here.
+        state.forceCanvasCookieSessionExpiredForTesting(false)
+        state.refreshCanvasSessionExpiredState()
+        #expect(state.canvasSessionExpired)
+        state.refreshCanvasSessionExpiredState()
+        #expect(state.canvasSessionExpired)
+
+        // A retry is therefore due: the policy reads the expired flag.
+        #expect(AppState.shouldRetrySilentRenewal(
+            expired: state.canvasSessionExpired, awaitingDuo: false, disabledReason: nil,
+            lastAttemptAt: nil, now: Date()))
+
+        state.noteRenewalOutcomeForTesting(.renewed)
+        #expect(!state.sessionProbeSaidDead)
+        #expect(!state.canvasSessionExpired)
+    }
+
+    @Test("a new interactive login clears the dead verdict")
+    func loginClearsDeadVerdict() async {
+        let state = makeState()
+        state.forceCanvasCookieSessionExpiredForTesting(true)
+        state.setSessionProbeForTesting { _ in
+            state.forceFixtureDataForTesting(true)
+            return CanvasSessionProbe.Result(verdict: .dead)
+        }
+        state.refreshCanvasSessionExpiredState()
+        await state.awaitPendingSessionProbe()
+        await state.awaitPendingSilentRenewal()
+        #expect(state.sessionProbeSaidDead)
+        state.invalidateSessionProbeForTesting()
+        #expect(!state.sessionProbeSaidDead)
+    }
+
+    // MARK: - Item 14
+
+    @Test("retiring the renewer aborts its running attempt and moves to a new generation")
+    func retireAbortsAndBumpsGeneration() {
+        let state = makeState()
+        let renewer = CanvasSessionRenewer(isLoginPaneActive: { false })
+        state.installSessionRenewerForTesting(renewer)
+        let serial = renewer.beginAttemptForTesting()
+        #expect(renewer.attemptIsNotAborted(serial))
+        let generation = state.canvasAccountGeneration
+
+        state.retireCanvasSessionRenewerForTesting()
+
+        // The attempt's continuations (cookie merge) now refuse to run.
+        #expect(!renewer.attemptIsNotAborted(serial))
+        #expect(!renewer.attemptIsLive(serial))
+        #expect(state.canvasAccountGeneration == generation + 1)
+        renewer.endAttemptForTesting()
+    }
+
+    @Test("a result from an earlier account generation is stale")
+    func staleGeneration() {
+        #expect(AppState.renewalResultIsStale(startedGeneration: 3, currentGeneration: 4))
+        #expect(!AppState.renewalResultIsStale(startedGeneration: 4, currentGeneration: 4))
+    }
+
+    // MARK: - Item 15
+
+    private func credentiallessState() -> AppState {
+        let state = makeState()
+        state.silentRenewalHasCredentialForTesting = false
+        state.forceCanvasCookieSessionExpiredForTesting(true)
+        state.refreshCanvasSessionExpiredState()
+        return state
+    }
+
+    @Test("one or two positive credential-less landings do not latch; the third does and shows the sign-in row")
+    func threePositiveLandingsLatch() {
+        let state = credentiallessState()
+        #expect(state.canvasSessionExpired)
+        state.landingWasPositiveForTesting = true
+
+        state.noteRenewalOutcomeForTesting(.landedOnLoginPage)
+        #expect(!state.silentRenewalCannotProceed)
+        #expect(state.canvasSessionStatusLine() == .none)
+        state.noteRenewalOutcomeForTesting(.landedOnLoginPage)
+        #expect(!state.silentRenewalCannotProceed)
+
+        state.noteRenewalOutcomeForTesting(.landedOnLoginPage)
+        #expect(state.silentRenewalCannotProceed)
+        #expect(state.canvasSessionStatusLine() == .signInNeeded)
+
+        // No further silent attempt starts, from any trigger.
+        let generation = state.silentRenewalGeneration
+        state.startSilentCanvasRenewal()
+        state.retrySilentRenewalIfDue(now: Date().addingTimeInterval(3600))
+        #expect(state.silentRenewalGeneration == generation)
+
+        // A successful renewal lifts it and restarts the count.
+        state.noteRenewalOutcomeForTesting(.renewed)
+        #expect(!state.silentRenewalCannotProceed)
+        #expect(state.credentiallessLandings == 0)
+    }
+
+    @Test("a network-failure landing in between neither counts nor resets the streak")
+    func networkFailureDoesNotCount() {
+        let state = credentiallessState()
+        state.landingWasPositiveForTesting = true
+        state.noteRenewalOutcomeForTesting(.landedOnLoginPage)
+        state.noteRenewalOutcomeForTesting(.landedOnLoginPage)
+        #expect(state.credentiallessLandings == 2)
+
+        // A landing that came from a failed navigation.
+        state.landingWasPositiveForTesting = false
+        for _ in 0..<5 { state.noteRenewalOutcomeForTesting(.landedOnLoginPage) }
+        #expect(state.credentiallessLandings == 2)
+        #expect(!state.silentRenewalCannotProceed)
+
+        // The next positive one is the third, not the first.
+        state.landingWasPositiveForTesting = true
+        state.noteRenewalOutcomeForTesting(.landedOnLoginPage)
+        #expect(state.silentRenewalCannotProceed)
+    }
+
+    @Test("with a credential a landing keeps retrying and shows nothing")
+    func credentialLandingKeepsTrying() {
+        let state = makeState()
+        state.silentRenewalHasCredentialForTesting = true
+        state.landingWasPositiveForTesting = true
+        state.forceCanvasCookieSessionExpiredForTesting(true)
+        state.refreshCanvasSessionExpiredState()
+        for _ in 0..<4 { state.noteRenewalOutcomeForTesting(.landedOnLoginPage) }
+        #expect(!state.silentRenewalCannotProceed)
+        #expect(state.canvasSessionStatusLine() == .none)
+    }
+
+    @Test("a background landing never counts")
+    func backgroundLandingDoesNotLatch() {
+        let state = makeState()
+        state.silentRenewalHasCredentialForTesting = false
+        state.landingWasPositiveForTesting = true
+        state.renewalContext = .background
+        for _ in 0..<4 { state.noteRenewalOutcomeForTesting(.landedOnLoginPage) }
+        #expect(!state.silentRenewalCannotProceed)
+    }
+
+    @Test("a renewer's landing from a failed navigation is not positive")
+    func renewerLandingFlagDefaultsFalse() {
+        #expect(CanvasSessionRenewer(isLoginPaneActive: { false }).lastLandingWasPositive == false)
+    }
+
+    // MARK: - Item 17
+
+    @Test("a Keychain save failure has its own status and does not reject the password or stop renewal")
+    func saveFailureIsNotRejection() {
+        let state = makeState()
+        state.credentialSaveForTesting = { _, _ in false }
+        #expect(state.enableStayLoggedIn(username: "student", password: "pw") == false)
+        #expect(state.autoLoginDisabledReason == nil)
+        #expect(state.credentialSaveFailed)
+        #expect(state.canvasSessionStatusLine() == .couldntSavePassword)
+
+        // A later successful save clears it.
+        state.credentialSaveForTesting = { _, _ in true }
+        #expect(state.enableStayLoggedIn(username: "student", password: "pw"))
+        #expect(!state.credentialSaveFailed)
+        #expect(state.canvasSessionStatusLine() == .none)
+    }
+
+    @Test("status line priority: a rejected password outranks a failed save")
+    func saveFailedPriority() {
+        typealias L = AppState.CanvasSessionStatusLine
+        func line(rejected: Bool, saveFailed: Bool) -> L {
+            AppState.canvasSessionStatusLine(
+                renewalInFlight: false, inFlightFor: 0, duoPushSent: false, awaitingDuo: false,
+                passwordRejected: rejected, loginMissing: false, hasSavedCredentials: true,
+                saveFailed: saveFailed)
+        }
+        #expect(line(rejected: false, saveFailed: true) == .couldntSavePassword)
+        #expect(line(rejected: true, saveFailed: true) == .passwordChanged)
+        #expect(line(rejected: false, saveFailed: false) == .none)
+    }
+}

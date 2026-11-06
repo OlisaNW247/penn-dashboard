@@ -13,8 +13,8 @@
 //   4  secrets: OPENROUTER_API_KEY must exist; LHF_FACTS_MODEL,
 //      LHF_FACTS_DISABLED and FACTS_COURSE_MONTHLY_LIMIT are reported
 //      set / not set (never their values).
-//   1  migration 20261104090000_course_facts.sql (after a scan that it is
-//      idempotent), then deploy `sync`, then `extract-facts`.
+//   1  the facts migrations (FACTS_MIGRATIONS, in order; each after a scan
+//      that it is idempotent), then deploy `sync`, then `extract-facts`.
 //   2  one manifest call each way from a throwaway anonymous user enrolled in
 //      nothing: with `factsSince: 0` (200, `facts: []`, a numeric
 //      `factsCursor`) and the old shape without it (200, the usual keys).
@@ -44,13 +44,16 @@ import {
 } from "./deploy-function.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
-const MIGRATION_PATH = path.resolve(
-  path.dirname(__filename),
-  "..",
-  "supabase",
-  "migrations",
+const MIGRATIONS_DIR = path.resolve(path.dirname(__filename), "..", "supabase", "migrations");
+/** Every facts migration step 1 applies, in order. A NEW facts migration is
+ *  added to the END of this list (and nowhere else), or a deploy of the code
+ *  that needs it will reach a database that never got it: that is how
+ *  `finish_fact_extraction` nearly shipped unapplied. Each file must pass
+ *  `scanIdempotency`, because step 1 may be re-run. */
+export const FACTS_MIGRATIONS = [
   "20261104090000_course_facts.sql",
-);
+  "20261105090000_finish_fact_extraction.sql",
+];
 const API = "https://api.supabase.com";
 const SUPABASE_URL = process.env.LHF_SUPABASE_URL ?? `https://${PROJECT_REF}.supabase.co`;
 // Same publishable key ask-probe.mjs uses; it ships in the app, it is not a secret.
@@ -225,18 +228,27 @@ export async function stepSecrets(ctx) {
   }
 }
 
-export async function stepMigrateAndDeploy(ctx, { deploy = deployFunction, sqlPath = MIGRATION_PATH } = {}) {
-  ctx.log("== step 1: migration, then sync, then extract-facts ==");
-  const sql = fs.readFileSync(sqlPath, "utf8");
-  const problems = scanIdempotency(sql);
-  if (problems.length > 0) {
-    throw new StepFailure(
-      `migration is not idempotent:\n${problems.map(([n, l]) => `  line ${n}: ${l}`).join("\n")}`,
-    );
+export async function stepMigrateAndDeploy(
+  ctx,
+  { deploy = deployFunction, sqlPaths = FACTS_MIGRATIONS.map((f) => path.join(MIGRATIONS_DIR, f)) } = {},
+) {
+  ctx.log("== step 1: migrations, then sync, then extract-facts ==");
+  // Scan ALL of them before sending any: a bad second file must not leave
+  // the first applied and the deploy half-planned.
+  const loaded = sqlPaths.map((p) => ({ name: path.basename(p), sql: fs.readFileSync(p, "utf8") }));
+  for (const { name, sql } of loaded) {
+    const problems = scanIdempotency(sql);
+    if (problems.length > 0) {
+      throw new StepFailure(
+        `migration ${name} is not idempotent:\n${problems.map(([n, l]) => `  line ${n}: ${l}`).join("\n")}`,
+      );
+    }
+    ctx.log(`migration scan: ${name} idempotent (${sql.split("\n").length} lines)`);
   }
-  ctx.log(`migration scan: idempotent (${sql.split("\n").length} lines)`);
-  await ctx.sql(sql);
-  if (!ctx.dryRun) ctx.log("migration applied");
+  for (const { name, sql } of loaded) {
+    await ctx.sql(sql);
+    if (!ctx.dryRun) ctx.log(`migration applied: ${name}`);
+  }
   for (const slug of ["sync", "extract-facts"]) {
     try {
       await deploy(slug, { dryRun: ctx.dryRun, fetchImpl: ctx.fetchImpl, log: ctx.log, env: ctx.env });

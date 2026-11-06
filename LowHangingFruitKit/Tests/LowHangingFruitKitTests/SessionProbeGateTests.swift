@@ -317,6 +317,13 @@ struct SessionProbeGateTests {
     func clockAloneShowsNothing() {
         let state = AppState(assignmentStore: try? AssignmentStore(inMemory: true))
         state.disablePersistenceForTesting()
+        // A saved password is what makes silence correct: with something to
+        // fill the login form with, the app fixes a dead session itself and
+        // shows nothing. (Without one, two landings now stop silent renewal
+        // and show the "sign in to canvas" row; see SilentRenewalCoreTests,
+        // item 15. This test pinned the owner's no-banner rule for a student
+        // who has a password saved, so it keeps that state.)
+        state.silentRenewalHasCredentialForTesting = true
         state.forceCanvasCookieSessionExpiredForTesting(true)
         state.refreshCanvasSessionExpiredState()
         #expect(state.canvasSessionExpired)

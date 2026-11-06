@@ -6,7 +6,13 @@
 // the real deploy story, if this project settles on one, belongs in CI.
 //
 // Usage:
-//   node backend/scripts/deploy-function.mjs <slug> [--from <source-slug>]
+//   node backend/scripts/deploy-function.mjs <slug> [--from <source-slug>] [--also <slug>]... [--production]
+//
+// `<slug>` = `ask` is the production function every student's question goes
+// through, and CLAUDE.md says deploying it needs a person's go, so it is
+// refused unless `--production` is passed (the person's go, typed). `--from
+// ask` and `--also ask` only bundle its source into another slug and stay
+// allowed.
 //
 // `<slug>` is the function slug on the server. Normally the source
 // directory is `backend/supabase/functions/<slug>/`. `--from <source-slug>`
@@ -103,7 +109,8 @@ export function describeTokenSource(source) {
 
 function usageAndExit(message) {
   if (message) console.error(message);
-  console.error("Usage: node backend/scripts/deploy-function.mjs <slug> [--from <source-slug>] [--also <slug>]...");
+  console.error("Usage: node backend/scripts/deploy-function.mjs <slug> [--from <source-slug>] [--also <slug>]... [--production]");
+  console.error("  <slug> ask is production and is refused without --production; --from ask and --also ask are fine.");
   process.exit(1);
 }
 
@@ -111,6 +118,7 @@ function parseArgs(argv) {
   const positional = [];
   let from;
   const also = [];
+  let production = false;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--from") {
@@ -120,6 +128,8 @@ function parseArgs(argv) {
       const extra = argv[++i];
       if (!extra) usageAndExit("--also requires a value");
       also.push(extra);
+    } else if (arg === "--production") {
+      production = true;
     } else if (arg.startsWith("--")) {
       usageAndExit(`unknown flag: ${arg}`);
     } else {
@@ -127,7 +137,7 @@ function parseArgs(argv) {
     }
   }
   if (positional.length !== 1) usageAndExit("expected exactly one <slug> argument");
-  return { slug: positional[0], from, also };
+  return { slug: positional[0], from, also, production };
 }
 
 /** Recursively lists every file under `dir`, returning `{ abs, rel }` pairs
@@ -159,9 +169,17 @@ function collectFiles(dir, relPrefix) {
 /** Deploys one function bundle. Returns the parsed response (or `{ raw }`).
  *  Throws on any failure (the CLI wrapper turns that into exit 1). With
  *  `dryRun` it builds the bundle and returns the plan without sending.
- *  opts: { from, also = [], dryRun = false, fetchImpl = fetch, log = console.log, env = process.env } */
+ *  opts: { from, also = [], dryRun = false, production = false, fetchImpl = fetch, log = console.log, env = process.env } */
+export const PRODUCTION_SLUG = "ask";
+
 export async function deployFunction(slug, opts = {}) {
-  const { from, also: alsoSlugs = [], dryRun = false, fetchImpl = fetch, log = console.log, env = process.env } = opts;
+  const { from, also: alsoSlugs = [], dryRun = false, production = false, fetchImpl = fetch, log = console.log, env = process.env } = opts;
+
+  if (slug === PRODUCTION_SLUG && !production) {
+    throw new Error(
+      `refusing to deploy "${PRODUCTION_SLUG}" (production): CLAUDE.md says "Deploying \`ask\` itself is a production change and needs a person's go"; pass --production once a person has said go`,
+    );
+  }
 
   // If `functions/<slug>/index.ts` already exists, that directory is the
   // source regardless of `--from` -- `--from` exists only to stand in for a
@@ -240,8 +258,8 @@ export async function deployFunction(slug, opts = {}) {
 }
 
 async function main() {
-  const { slug, from, also } = parseArgs(process.argv.slice(2));
-  const result = await deployFunction(slug, { from, also });
+  const { slug, from, also, production } = parseArgs(process.argv.slice(2));
+  const result = await deployFunction(slug, { from, also, production });
   console.log(JSON.stringify(result, null, 2));
 }
 

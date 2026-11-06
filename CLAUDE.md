@@ -141,7 +141,9 @@ the last, on 2026-11-05): `ask`,
 `map-categories`, `pair`, `sync`. `extract-facts` (written 2026-11-04 on
 `v10`, **live since 2026-11-05 01:20-01:45 UTC**, the evening of
 2026-11-04 US Eastern; version 1, with the `sync` that serves its facts at
-version 17 and migration `20261104090000_course_facts.sql` applied) reads each pooled course document once per
+version 17 and migration `20261104090000_course_facts.sql` applied; the
+prompt's round 4, the stale-document rule, is live since 2026-11-05 21:13 UTC
+as `extract-facts` v5 and `sync` v21) reads each pooled course document once per
 revision with Claude Haiku 5.5 and stores the course-level changes it states
 in `course_facts` (a cancelled item, a new date, a new task, each with a
 quote); the manifest serves them to every enrolled classmate. No user id is
@@ -1211,7 +1213,32 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v10` at `e0ab790` (2026-11-05): 3631 tests / 348 suites, all
+**Current on `v10` (2026-11-05, evening, uncommitted tree before the bug-hunt
+fix commit): 3688 tests / 350 suites, all green, `swift test --no-parallel`
+on Marco's Mac; the iOS Debug `xcodebuild` for `generic/platform=iOS` with
+`CODE_SIGNING_ALLOWED=NO` succeeded; Deno 711 tests and `deno task check`
+clean; Node `node --test backend/scripts/*.test.mjs` 29; the SQL check in
+Docker (`backend/scripts/sql-check.sh`) applied all 16 migrations, both
+facts migrations twice for idempotency, and passed RLS, the 11 claim checks
+and the 6 new `finish_fact_extraction` checks.** +57 tests / +2 suites over
+3631 / 348: the fix pass for `docs/V10_BUG_HUNT_2026-11-05.md` items 1-21,
+23-25, 27, 28 and 32 (its Status table says what each became). Tests
+rewritten because they pinned the old, wrong behaviour: `FactApplicationTests`
+`rejectedDoesNotSupersede` → `rejectedIsAVerdictOnTheKey`;
+`ManifestContractTests` `wholePipe` (cancel and reschedule of one target now
+share a key, the newer reschedule wins); `CanvasStructuredSourcesTests`
+`quizDiscussionIDs`, `completionAndUndated`, `prefixes` and
+`StructuredSourcesWiringTests` `moduleRequirementBySource` (module
+completions now carry a requirement type that means done; pages are keyed by
+course); `AppliedFactsWiringTests` `requestCarriesCursor` (a request needs a
+recorded course set); `SessionProbeGateTests` "the clock alone … show
+nothing" (now with a saved credential, since without one three positive
+landings deliberately show the sign-in row). New suites:
+`OnDeviceCancelledItemsTests`, `SilentReloginReviewTests` (note: its display
+name is "Silent re-login review fixes", so `--filter SilentRenewalCore`
+misses it; filter on the type name). Nothing from this pass is on a phone.
+
+Before it, **on `v10` at `e0ab790` (2026-11-05): 3631 tests / 348 suites, all
 green, `swift test --no-parallel` on the GitHub macOS runner with Xcode 26.3
 in 111.5 s (the `tests` workflow, run 42084961566), the first runner compile
 of today's blind tree work: +35 tests and +3 suites over 3596 / 345 (the
@@ -2339,6 +2366,48 @@ itself.
 
 ## Traps that have already bitten
 
+- **"Unextracted" in SQL is not "pending", and the index's cap must look at
+  now, not at the oldest date** (2026-11-05). After the round-4 deploy a
+  count of PHYS 0151 documents with no `course_fact_extractions` row at
+  their hash said 44, and the hand trigger answered `attempted 0 …
+  remaining 0`: all 44 were `assignment` rows, which `FACT_ELIGIBLE_KINDS`
+  skips because the description is already structured data. Only eligible
+  kinds are ever pending, so a "nothing to extract" answer on a course
+  full of old assignments is correct, and the only way to see a prompt
+  change live is to wait for a new announcement or Ed post. Separately,
+  `buildItemIndex` sorted oldest-due first and cut at 200, so a recycled
+  site's 2025 rows could push the current weeks out of the model's view;
+  it now orders by distance from now, undated last. The wrong fix would
+  have been raising the cap: the prompt has a 12,000-character document
+  cap for a reason, and a bigger index is the stale half of it.
+- **A Canvas module completion is only "done" for some requirement types**
+  (2026-11-05). `completion_requirement.completed == true` on a
+  `must_view` item means the student opened it, and the reconciler
+  counted every `true` as a completion, so opening an assignment in
+  Canvas marked it done in Smooth. Only `must_submit`, `must_mark_done`,
+  `min_score` and `must_contribute` complete a card now. Pair of it: a
+  Canvas-derived completion had no way back (`structuredCompletedItemIDs`
+  only grew, and `markActive` did not touch it), so a swipe back to
+  active was re-completed on the next rebuild. The student's "mark
+  active" now records an override; a Canvas un-tick retires the id only
+  after a run that read the planner, the missing list and that course's
+  modules in full, for a row inside the planner window. The wrong fix:
+  replacing the set with each run's result, which drops ids on every
+  partial read.
+- **Deleting server-side facts does not retract them from a phone, and a
+  rejection must be a verdict on the key, not on the row** (2026-11-05).
+  A fact's id on the phone is documentID+seq, so clearing `course_facts`
+  and re-extracting gives every phone a second copy at new seqs (this is
+  why round 4 was deployed without re-extracting PHYS 0151). And a
+  student's `undo` used to reject one fact id, so a typo edit to the post
+  (new hash, old facts pruned), a second post saying the same thing, or a
+  re-extraction re-applied the cancel. A rejection now suppresses every
+  fact with the same (course, type, target) whose `postedAt` is not later,
+  and pruning keeps rejected rows. Retry of a finished extraction was the
+  server-side door to the same duplication: delete, insert and update were
+  three statements, so a run that died after the insert was retried five
+  minutes later with new seqs; `finish_fact_extraction` does the three in
+  one transaction (migration `20261105090000`).
 - **A network secret saved on the functions host strips every client
   Authorization header from the cloud sessions** (2026-11-05). The canary
   probe needs two headers: `x-lhf-probe-secret` (the gate) and
@@ -3316,6 +3385,26 @@ none is a ship line.
 
 ## Known gaps
 
+- **The 2026-11-05 bug-hunt fixes (facts, structured sources, silent
+  re-login, backend) are compiled and tested but have never run on a
+  phone, and the `finish_fact_extraction` migration is not applied in
+  production.** `docs/V10_BUG_HUNT_2026-11-05.md` → Status lists the 29
+  items fixed and the 5 parked (per-user extraction cap; Olisa's Chrome
+  extension items 29-31 and 33). Before the next `extract-facts` or `sync`
+  deploy, run `node backend/scripts/deploy-facts.mjs --step 1` (it now
+  applies both facts migrations, then deploys both functions); deploying
+  the functions alone would make every extraction finish throw. The
+  sign-in half (items 11-17) changes what a bounced login form means
+  (`PennKeyLoginForm.credentialErrorWords` is a guess until the real
+  identity-provider error element is captured on a device, read with
+  `innerText` and visible nodes only), latches "cannot renew silently"
+  only after three positive credential-less landings, and aborts the
+  renewer on disconnect and school switch. Watch for on a phone: a
+  wrongly disabled saved password after a Duo denial, and the sign-in row
+  on a non-Penn install. Not fixed: the megaphone's changed row has no
+  undo (item 5, half); Profile's "save pennkey" row does not reappear after
+  a Keychain save failure when an older credential is still saved (item
+  17).
 - **Phases 1-3 of the composed day run on Marco's phone; the tree's
   applied-facts work and the time-frame resolver are installed there but
   unexercised.** On 2026-11-05 at 20:15 UTC the Debug build from `08b2e77`
@@ -3380,7 +3469,12 @@ none is a ship line.
      counts as action words, and **round 3 is what runs now**: deployed
      2026-11-05 02:03 UTC as `extract-facts` version 2 and `sync` version
      18 (`sync` bundles the same prompt, since it extracts right after an
-     upload), after 686 Deno tests and two bench runs with 0 false tasks
+     upload), then round 4 (stale posts: no reschedule or review flag
+     from a post older than a week, no task for work already past) as
+     `extract-facts` v5 and `sync` v21 at 21:13 UTC the same day, with
+     Marco's go, after 702 Deno tests and three gate-passing bench runs
+     (`docs/FACTS_PROMPT_OWNER_RULE_2026-11-05.md` → Round 4). Round 3 was
+     deployed after 686 Deno tests and two bench runs with 0 false tasks
      and 0 false cancels, task recall 64% and 57% (the same prompt differs
      on 12 of 121 documents between runs, so single-run numbers are
      noisy). PHYS 0151's six old-rule facts were then deleted and the whole

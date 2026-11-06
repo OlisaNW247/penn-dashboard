@@ -127,14 +127,15 @@ public enum CanvasStructuredSourcesReconciler {
                     let assignmentID = moduleAssignmentID(item, topicAssignment: topicAssignment)
                     let sourceID = "module-item-\(item.id)"
                     let ref: CanvasStructuredSignals.Ref = assignmentID.map { .assignment($0) } ?? .source(sourceID)
-                    if item.completionCompleted == true { complete(ref, cid, .moduleRequirement) }
+                    let done = moduleRequirementMeansDone(item)
+                    if done { complete(ref, cid, .moduleRequirement) }
                     // An undated item is not something that is "due".
                     guard let due = item.dueAt else { continue }
                     out.rows.append(.init(
                         source: .canvasModules, sourceID: sourceID, kind: kind, course: key,
                         title: item.title, dueAt: due,
                         url: moduleURL(item, assignmentID: assignmentID, courseID: cid, baseURL: baseURL)?.absoluteString,
-                        submitted: item.completionCompleted == true))
+                        submitted: done))
                 }
             }
 
@@ -166,8 +167,23 @@ public enum CanvasStructuredSourcesReconciler {
                 guard let todo = page.todoDate else { continue }
                 let url = page.htmlURL.flatMap(URL.init(string:))
                     ?? baseURL.appendingPathComponent("courses/\(cid)/pages/\(page.url)")
-                out.rows.append(.init(source: .canvasModules, sourceID: "page_\(page.url)", kind: .other,
+                out.rows.append(.init(source: .canvasModules, sourceID: pageSourceID(courseID: cid, slug: page.url), kind: .other,
                                       course: key, title: page.title, dueAt: todo, url: url.absoluteString, submitted: false))
+            }
+        }
+
+        // A quiz's planner id is the QUIZ id, which no ledger row carries
+        // (a feed row has the quiz's assignment id; a module row is keyed by
+        // its module item id). The course's own Quiz module items say which
+        // module rows are that quiz, so index them: quiz id to those rows'
+        // sourceIDs, per course.
+        var quizModuleRows: [String: [String]] = [:] // "<courseID>|<quizID>"
+        for course in run.courses where keys[course.courseID] != nil {
+            for module in course.modules {
+                for item in module.items where item.type == "Quiz" {
+                    guard let quizID = item.contentID else { continue }
+                    quizModuleRows["\(course.courseID)|\(quizID)", default: []].append("module-item-\(item.id)")
+                }
             }
         }
 
@@ -179,18 +195,31 @@ public enum CanvasStructuredSourcesReconciler {
                 // guessed class.
                 continue
             }
-            let ref: CanvasStructuredSignals.Ref
+            var refs: [CanvasStructuredSignals.Ref]
             switch item.plannableType {
-            case "assignment": ref = .assignment(id)
-            case "quiz": ref = .source("quiz_\(id)")
-            case "discussion_topic": ref = .source("discussion_\(id)")
-            case "wiki_page": ref = .source("page_\(item.pageURL ?? id)")
-            case "planner_note": ref = .source("planner-note-\(id)")
+            case "assignment": refs = [.assignment(id)]
+            case "quiz":
+                // Every identity the quiz's row can have: its assignment id
+                // when the planner payload states one (that is the feed row's
+                // id), and each module row for it. Only when neither is known
+                // is the bare quiz reference kept, which then matches nothing
+                // rather than guessing at someone else's row. The wrong fix is
+                // joining the quiz id against assignment ids: different id
+                // spaces, so it would read another assignment's state.
+                refs = []
+                if let a = item.assignmentID { refs.append(.assignment(a)) }
+                refs += (quizModuleRows["\(cid)|\(id)"] ?? []).map { .source($0) }
+                if refs.isEmpty { refs = [.source("quiz_\(id)")] }
+            case "discussion_topic": refs = [.source("discussion_\(id)")]
+            case "wiki_page": refs = [.source(pageSourceID(courseID: cid, slug: item.pageURL ?? id))]
+            case "planner_note": refs = [.source("planner-note-\(id)")]
             default: continue
             }
-            if item.markedComplete { complete(ref, cid, .plannerMarkedComplete) }
-            else if item.submitted == true { complete(ref, cid, .plannerSubmitted) }
-            if item.dismissed { out.dismissals.append(.init(ref: ref, courseID: cid)) }
+            for ref in refs {
+                if item.markedComplete { complete(ref, cid, .plannerMarkedComplete) }
+                else if item.submitted == true { complete(ref, cid, .plannerSubmitted) }
+                if item.dismissed { out.dismissals.append(.init(ref: ref, courseID: cid)) }
+            }
             if item.missing == true, item.plannableType == "assignment" {
                 out.missing.append(.init(assignmentID: id, courseID: cid, title: item.title ?? "", dueAt: item.dueAt))
             }
@@ -234,6 +263,34 @@ public enum CanvasStructuredSourcesReconciler {
     public static func effectiveDueDate(_ assignment: CanvasOverrideAssignment) -> Date? {
         let overrides = assignment.allDates.filter { !$0.base }.compactMap(\.dueAt)
         return overrides.min()
+    }
+
+    /// Whether a met module requirement means the student DID the work.
+    ///
+    /// `completion_requirement.completed` is true for `must_view` the moment
+    /// the student opens the item, so reading it alone completed an
+    /// assignment card for merely looking at it. Only the requirement types
+    /// that need an act count: a submission, a "mark as done" tick, a score,
+    /// a contribution. `must_view` and a missing or unknown type never
+    /// complete (an unknown future type is more likely a view-like rule than
+    /// a submission, and a card wrongly shown done is a missed deadline).
+    /// The wrong fix is dropping module completions altogether: `must_submit`
+    /// and `must_mark_done` are real, Canvas-stated completions.
+    nonisolated static func moduleRequirementMeansDone(_ item: CanvasStructuredModuleItem) -> Bool {
+        guard item.completionCompleted == true, let type = item.completionRequirementType else { return false }
+        switch type {
+        case "must_submit", "must_mark_done", "min_score", "must_contribute": return true
+        default: return false
+        }
+    }
+
+    /// A page row's `sourceID`. The course id is part of it because a slug
+    /// like `week-1` exists in every course that has a week one, and the
+    /// ledger and `dedupe` key on `sourceID`: slug-only keys made one
+    /// course's page overwrite (or tick off) another's. Used by both the
+    /// page row and the planner's reference to it, which must agree.
+    nonisolated static func pageSourceID(courseID: String, slug: String) -> String {
+        "page_\(courseID)_\(slug)"
     }
 
     private static func moduleKind(_ type: String) -> Assignment.Kind? {

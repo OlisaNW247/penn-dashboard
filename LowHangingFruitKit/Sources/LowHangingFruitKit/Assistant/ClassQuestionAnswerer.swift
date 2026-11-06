@@ -203,7 +203,7 @@ public struct ClassQuestionAnswerer: Sendable {
     }
 
     private func itemDetail(_ parsed: ParsedQuestion, query: String) -> AssistantAnswer {
-        let candidates = openItems(course: parsed.course, includeCompleted: true)
+        let candidates = openItems(course: parsed.course, includeCompleted: true, includeCancelled: true)
         if let item = bestItem(matching: query, in: candidates) {
             var text: String
             if let due = item.dueAt {
@@ -211,6 +211,7 @@ public struct ClassQuestionAnswerer: Sendable {
             } else {
                 text = "\(item.title) (\(item.course)) has no due date on Canvas."
             }
+            if item.isCancelled { text += " It has been cancelled." }
             if item.isCompleted { text += " You've marked it done." }
             var refs = sources(for: [item])
             // Add the assignment description from Canvas when we have it.
@@ -333,9 +334,15 @@ public struct ClassQuestionAnswerer: Sendable {
 
     // MARK: - Data helpers
 
-    private func openItems(course: CourseSummary?, includeCompleted: Bool = false) -> [WorkItem] {
+    /// A cancelled item is not outstanding work, so every list, "next" and
+    /// "overdue" answer drops it unless the caller asks by name
+    /// (`includeCancelled`, used by the direct item lookup, which then says
+    /// it was cancelled). The on-device pool used to carry no cancellation at
+    /// all, so ask listed a cancelled quiz as due while the card was gone.
+    private func openItems(course: CourseSummary?, includeCompleted: Bool = false, includeCancelled: Bool = false) -> [WorkItem] {
         context.items.filter { item in
-            (includeCompleted || !item.isCompleted)
+            (includeCancelled || !item.isCancelled)
+                && (includeCompleted || !item.isCompleted)
                 && (course.map { CourseMatcher.sameCourse(item.course, as: $0) } ?? true)
         }
     }

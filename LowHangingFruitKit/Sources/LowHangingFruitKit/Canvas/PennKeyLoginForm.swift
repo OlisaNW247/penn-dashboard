@@ -220,6 +220,62 @@ public enum PennKeyLoginForm {
     })();
     """
 
+    /// Words that, in the identity provider's own error text, say the
+    /// CREDENTIAL was refused (as opposed to Duo bouncing the student back to
+    /// the form after a denial or a failure). One list, in one place.
+    ///
+    /// THIS LIST IS A GUESS pending evidence from a device: nobody has yet
+    /// captured the text Penn's IdP shows for a wrong password versus the
+    /// text it shows after a Duo denial. The words are chosen so the rule
+    /// errs toward NOT disabling auto-login: a missed rejection costs one
+    /// more silent attempt (the 60-minute failed-submission spacing still
+    /// bounds it), while a false rejection disables auto-login permanently
+    /// and tells the student their password changed. The wrong fix is the
+    /// old rule, "the form came back after a submission, so the password was
+    /// rejected": a Duo denial that returns to the form reads exactly like
+    /// that.
+    public static let credentialErrorWords = [
+        "password", "passphrase", "username", "credentials", "incorrect", "invalid",
+    ]
+
+    /// True when `text` (lowercased error text read from the form page)
+    /// contains any of `credentialErrorWords`. `nil` or empty is false.
+    public static func errorTextIndicatesBadCredential(_ text: String?) -> Bool {
+        guard let lower = text?.lowercased(), !lower.isEmpty else { return false }
+        return credentialErrorWords.contains { lower.contains($0) }
+    }
+
+    /// Returns the VISIBLE text of the page's error-looking elements (class
+    /// containing "error" or "alert", or `role=alert`), lowercased and capped
+    /// at 300 characters, or "" when there is none. `innerText` only: it is
+    /// empty for hidden content, whereas the `textContent` fallback this
+    /// script first had would read a `display:none` error template the
+    /// student never saw ("Incorrect password") as a rejection, which
+    /// disables auto-login for good. Nodes with `offsetParent === null`
+    /// (hidden, or detached) are skipped outright. The text stays in Swift
+    /// memory only long enough to be matched against `credentialErrorWords`;
+    /// it is never logged or persisted.
+    ///
+    /// The selector is broad on purpose until a device capture exists: once
+    /// the identity provider's real error element has been seen on a phone,
+    /// it should replace this selector and `credentialErrorWords` outright.
+    public static let errorTextScript = """
+    (function() {
+      try {
+        var nodes = document.querySelectorAll('[class*="error"], [class*="alert"], [role="alert"]');
+        var parts = [];
+        for (var i = 0; i < nodes.length; i++) {
+          if (nodes[i].offsetParent === null) { continue; }
+          var t = (nodes[i].innerText || "").trim();
+          if (t) { parts.push(t); }
+        }
+        return parts.join(" ").toLowerCase().slice(0, 300);
+      } catch (e) {
+        return "";
+      }
+    })();
+    """
+
     /// Builds the script a caller hands to `WKWebView.evaluateJavaScript` to
     /// fill and submit Penn's PennKey credential form.
     ///

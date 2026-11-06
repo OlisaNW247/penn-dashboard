@@ -16,8 +16,10 @@ import LowHangingFruitKit
 //    did not mention (the same trap `importModuleReadings` documents).
 //  - completions are an ADDITIVE set consulted by `isCompleted`, not a write
 //    of `userCompleted`. A card Canvas says is done shows as done; the
-//    student's own tick, and their un-tick, stay theirs. Nothing here ever
-//    un-completes. The tempting version, `setCompleted`, would stamp the
+//    student's own tick, and their un-tick, stay theirs: marking such a card
+//    active records an override beside the set (`structuredCompletionOverrides`),
+//    and a Canvas un-tick, seen by a run that read everything, retires both.
+//    Nothing here ever writes a completion for the student or removes one of theirs. The tempting version, `setCompleted`, would stamp the
 //    student's own completion on Canvas's say-so, and could not be told apart
 //    from the student's tap on the next sync or when sync-ing devices.
 //    `applySubmissionState` was the other candidate and is the wrong tool: it
@@ -51,6 +53,7 @@ extension AppState {
     /// Defaults keys. `UserDefaults.lhf`, per the preferences rule.
     enum StructuredKey {
         static let completed = "structuredCompletedItemIDsV1"
+        static let completionOverrides = "structuredCompletionOverridesV1"
         static let dismissed = "structuredDismissedItemIDsV1"
         static let dueOverrides = "structuredDueOverridesV1"
         static let summary = "lastStructuredSourcesSyncSummaryV1"
@@ -76,6 +79,7 @@ extension AppState {
     func loadStructuredState() {
         guard FeatureFlags.structuredCanvasSources, let defaults = structuredDefaults else { return }
         structuredCompletedItemIDs = Set(defaults.stringArray(forKey: StructuredKey.completed) ?? [])
+        structuredCompletionOverrides = Set(defaults.stringArray(forKey: StructuredKey.completionOverrides) ?? [])
         structuredDismissedItemIDs = Set(defaults.stringArray(forKey: StructuredKey.dismissed) ?? [])
         structuredDueOverrides = defaults.dictionary(forKey: StructuredKey.dueOverrides) as? [String: Date] ?? [:]
     }
@@ -83,6 +87,7 @@ extension AppState {
     private func saveStructuredState() {
         guard let defaults = structuredDefaults else { return }
         defaults.set(structuredCompletedItemIDs.sorted(), forKey: StructuredKey.completed)
+        defaults.set(structuredCompletionOverrides.sorted(), forKey: StructuredKey.completionOverrides)
         defaults.set(structuredDismissedItemIDs.sorted(), forKey: StructuredKey.dismissed)
         defaults.set(structuredDueOverrides, forKey: StructuredKey.dueOverrides)
     }
@@ -90,12 +95,40 @@ extension AppState {
     /// On Canvas disconnect.
     func clearStructuredState() {
         structuredCompletedItemIDs = []
+        structuredCompletionOverrides = []
         structuredDismissedItemIDs = []
         structuredDueOverrides = [:]
         guard let defaults = structuredDefaults else { return }
-        for key in [StructuredKey.completed, StructuredKey.dismissed, StructuredKey.dueOverrides, StructuredKey.summary] {
+        for key in [StructuredKey.completed, StructuredKey.completionOverrides, StructuredKey.dismissed, StructuredKey.dueOverrides, StructuredKey.summary] {
             defaults.removeObject(forKey: key)
         }
+    }
+
+    // MARK: Undoing a Canvas-derived completion
+
+    /// The student marked `assignment` active again. If a structured
+    /// completion is what still shows it done, remember the un-tick beside the
+    /// set (`structuredCompletionOverrides`) so `isCompleted` stops honouring
+    /// it. The set itself keeps its ids: it is rebuilt from Canvas on every
+    /// run, so deleting from it would be undone by the same planner tick on
+    /// the next refresh, which was the bug. If the card is still done for any
+    /// other reason (Canvas says it was submitted), the override is not
+    /// recorded: it would silently outlive that submission and hide a later
+    /// genuine Canvas completion. Called after the ledger un-tick is applied.
+    func overrideStructuredCompletionIfItWasTheOnlyReason(_ assignment: Assignment, ids: Set<String>) {
+        let added = ids.intersection(structuredCompletedItemIDs).subtracting(structuredCompletionOverrides)
+        guard !added.isEmpty else { return }
+        structuredCompletionOverrides.formUnion(added)
+        if isCompleted(assignment) { structuredCompletionOverrides.subtract(added) }
+        saveStructuredState()
+    }
+
+    /// The student completed these themselves: their own tick is the truth
+    /// now, and an old un-tick must not linger and mask a later Canvas tick.
+    func releaseStructuredCompletionOverride(ids: Set<String>) {
+        guard !structuredCompletionOverrides.isDisjoint(with: ids) else { return }
+        structuredCompletionOverrides.subtract(ids)
+        saveStructuredState()
     }
 
     // MARK: Dashboard read
@@ -136,7 +169,7 @@ extension AppState {
                 plannerEnd: now.addingTimeInterval(120 * 24 * 60 * 60)
             )
         }
-        applyStructuredSources(run: run, courses: courses)
+        applyStructuredSources(run: run, courses: courses, now: now)
     }
 
     // MARK: Apply
@@ -147,7 +180,8 @@ extension AppState {
     @discardableResult
     func applyStructuredSources(
         run: CanvasStructuredSourcesClient.RunResult,
-        courses: [CourseSummary]
+        courses: [CourseSummary],
+        now: Date = Date()
     ) -> StructuredApplySummary {
         var summary = StructuredApplySummary()
         guard FeatureFlags.structuredCanvasSources, !isUsingFixtureData else {
@@ -194,9 +228,39 @@ extension AppState {
             return []
         }
 
-        // 2. Completions: additive, never undone.
+        var keyByCourseID: [String: String] = [:]
+        for course in courses { keyByCourseID[course.courseID] = course.code }
+
+        // 2. Completions. Additive within a run, but Canvas's own un-tick is
+        // honoured: an id the set holds that this run no longer reports done
+        // is dropped (with any student override on it), so the set tracks
+        // Canvas instead of only growing.
+        //
+        // Only where this run can be trusted to have seen it. Completions come
+        // from the planner, the missing list and each course's modules, so an
+        // id is retired only when all three finished in full (a partial run
+        // is silent about what it did not read, and silence must never drop a
+        // completion), the id resolves to a ledger row of a course whose
+        // modules were read, and that row's due date lies inside the planner
+        // window (an older or undated row is simply not in the planner's
+        // answer, which is not a retraction).
         let completed = Set(signals.completions.flatMap { ids($0.ref) })
         summary.completions = completed.count
+        if run.plannerCompleted, run.missingCompleted {
+            let modulesRead = Set(run.courses.filter { $0.completedEndpoints.contains(.modules) }
+                .compactMap { keyByCourseID[$0.courseID] })
+            let windowStart = now.addingTimeInterval(-14 * 24 * 60 * 60)
+            let windowEnd = now.addingTimeInterval(120 * 24 * 60 * 60)
+            var rowByID: [String: Assignment] = [:]
+            for row in ledger { rowByID[row.id] = row }
+            let retracted = structuredCompletedItemIDs.subtracting(completed).filter { id in
+                guard let row = rowByID[id], modulesRead.contains(row.course),
+                      let due = row.dueAt, due >= windowStart, due <= windowEnd else { return false }
+                return true
+            }
+            structuredCompletedItemIDs.subtract(retracted)
+            structuredCompletionOverrides.subtract(retracted)
+        }
         structuredCompletedItemIDs.formUnion(completed)
 
         // 3. Dismissals: replaced by a complete planner read, otherwise additive.
@@ -211,8 +275,6 @@ extension AppState {
         // 4. Section dates. A course whose assignments endpoint finished in
         // full is authoritative for its own rows, so an override Canvas has
         // since removed is dropped; a partial course only adds.
-        var keyByCourseID: [String: String] = [:]
-        for course in courses { keyByCourseID[course.courseID] = course.code }
         let fullyRead = Set(run.courses.filter { $0.completedEndpoints.contains(.assignments) }
             .compactMap { keyByCourseID[$0.courseID] })
         if !fullyRead.isEmpty {

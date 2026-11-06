@@ -46,6 +46,10 @@ export const DEFAULT_COURSE_DAILY_LIMIT = 60;
 export const DEFAULT_MONTHLY_GLOBAL_LIMIT = 5000;
 export const DEFAULT_COURSE_MONTHLY_LIMIT = 400;
 const MODEL_TIMEOUT_MS = 20_000;
+/** Below this much of the run's budget left, a document is not started: the
+ *  claim spends a budget unit and an attempt, and a model call squeezed into
+ *  a second or two times out and counts toward giving the document up. */
+export const MIN_REMAINING_MS = 8_000;
 const MAX_TOKENS = 4000;
 /** The item index is capped so one course with hundreds of work items cannot
  * balloon every prompt. Sorted by due date (undated last) before the cut. */
@@ -139,8 +143,19 @@ export function postedAtFor(row: Pick<FactsDocumentMetaRow, "kind" | "posted_at"
  * every `assignment` (its Canvas source id is the id the phone already keys
  * its work on) and every `module` document that carries a due date, as
  * `module:<source id>` so the two id spaces cannot collide. Dated items
- * first by date, then undated by title, capped at `MAX_INDEX_ITEMS`. */
-export function buildItemIndex(rows: Array<Pick<FactsDocumentMetaRow, "kind" | "source_id" | "title" | "due_at">>): IndexItem[] {
+ * first, nearest to `now` first (by |due - now|, either side), then undated
+ * by title, capped at `MAX_INDEX_ITEMS`. Oldest-first used to fill the cap
+ * with last year's work in a recycled or large course and hide the current
+ * weeks, which are the ones a fact can name. */
+export function buildItemIndex(
+  rows: Array<Pick<FactsDocumentMetaRow, "kind" | "source_id" | "title" | "due_at">>,
+  now: Date,
+): IndexItem[] {
+  const nowMs = now.getTime();
+  const distance = (iso: string): number => {
+    const ms = Date.parse(iso);
+    return Number.isNaN(ms) || Number.isNaN(nowMs) ? Number.MAX_SAFE_INTEGER : Math.abs(ms - nowMs);
+  };
   const items: IndexItem[] = [];
   for (const row of rows) {
     if (row.kind === "assignment") {
@@ -155,7 +170,10 @@ export function buildItemIndex(rows: Array<Pick<FactsDocumentMetaRow, "kind" | "
     }
   }
   items.sort((a, b) => {
-    if (a.dueAt && b.dueAt) return Date.parse(a.dueAt) - Date.parse(b.dueAt) || a.sourceID.localeCompare(b.sourceID);
+    if (a.dueAt && b.dueAt) {
+      return distance(a.dueAt) - distance(b.dueAt) || Date.parse(a.dueAt) - Date.parse(b.dueAt) ||
+        a.sourceID.localeCompare(b.sourceID);
+    }
     if (a.dueAt) return -1;
     if (b.dueAt) return 1;
     return a.title.localeCompare(b.title) || a.sourceID.localeCompare(b.sourceID);
@@ -418,7 +436,7 @@ export async function runPendingFactExtractionsWith(
     const involved = [...new Set(batch.map((row) => row.course_id))];
     const indexByCourse = new Map<string, IndexItem[]>();
     for (const courseID of involved) {
-      indexByCourse.set(courseID, buildItemIndex(live.filter((row) => row.course_id === courseID)));
+      indexByCourse.set(courseID, buildItemIndex(live.filter((row) => row.course_id === courseID), now));
     }
     let meetingsByCourse = new Map<string, Meeting[]>();
     try {
@@ -437,8 +455,10 @@ export async function runPendingFactExtractionsWith(
         const i = next++;
         if (i >= batch.length) return;
         const row = batch[i];
-        if (Date.now() >= deadline) {
+        if (deadline - Date.now() < MIN_REMAINING_MS) {
+          // Leave it pending: nothing claimed, no budget or attempt charged.
           stats.remaining += batch.length - i;
+          stop = true;
           return;
         }
         if (budgetSpent.has(row.course_id)) {
@@ -453,8 +473,15 @@ export async function runPendingFactExtractionsWith(
         // touching any row; the next run lists the new revision itself.
         if (loaded.contentHash !== row.content_hash) continue;
         const text = loaded.text;
+        // loadText took time too: re-check before the claim charges anything.
+        const left = deadline - Date.now();
+        if (left < MIN_REMAINING_MS) {
+          stats.remaining += batch.length - i;
+          stop = true;
+          return;
+        }
         const result = await extractFactsForDocument(
-          { ...ctx, modelTimeoutMs: Math.min(ctx.modelTimeoutMs ?? MODEL_TIMEOUT_MS, Math.max(1000, deadline - Date.now())) },
+          { ...ctx, modelTimeoutMs: Math.min(ctx.modelTimeoutMs ?? MODEL_TIMEOUT_MS, left) },
           { ...row, text },
           indexByCourse.get(row.course_id) ?? [],
           meetingsByCourse.get(row.course_id) ?? [],
@@ -604,28 +631,17 @@ export function supabaseFactsStore(client: SupabaseClient): FactsStore {
     },
 
     async finish(input) {
-      const { data: found, error: findError } = await client
-        .from("course_fact_extractions")
-        .select("id")
-        .eq("document_id", input.documentID)
-        .eq("content_hash", input.contentHash)
-        .maybeSingle();
-      if (findError || !found) throw new Error(`finish: extraction row missing (${findError?.message ?? "none"})`);
-      const extractionID = (found as { id: number }).id;
-
-      if (input.status === "done") {
-        // Delete-then-insert: a run that died after inserting facts but
-        // before marking the row done is retried (once its `running` row goes
-        // stale), and must not leave two copies. One insert statement, so the
-        // facts become visible together (see `course_facts.seq`).
-        const { error: deleteError } = await client.from("course_facts").delete().eq("extraction_id", extractionID);
-        if (deleteError) throw new Error(`finish: ${deleteError.message}`);
-        if (input.facts.length > 0) {
-          const rows = input.facts.map((fact) => ({
-            extraction_id: extractionID,
-            course_id: input.courseID,
-            document_id: input.documentID,
-            content_hash: input.contentHash,
+      // One transaction on the database side (`finish_fact_extraction`,
+      // 20261105090000): delete the old facts, insert the new, update the
+      // row. Three separate statements let a run that died after the insert
+      // be retried and hand phones the same facts under new seqs (a fact's
+      // id on the phone is documentID+seq).
+      const { error } = await client.rpc("finish_fact_extraction", {
+        p_document_id: input.documentID,
+        p_content_hash: input.contentHash,
+        p_status: input.status,
+        p_facts: input.status === "done"
+          ? input.facts.map((fact) => ({
             fact_type: fact.type,
             target_source_id: fact.target,
             title: fact.title ?? null,
@@ -633,31 +649,21 @@ export function supabaseFactsStore(client: SupabaseClient): FactsStore {
             kind: fact.kind ?? null,
             quote: fact.quote,
             confidence: fact.confidence,
-            posted_at: input.postedAt,
-          }));
-          const { error: insertError } = await client.from("course_facts").insert(rows);
-          if (insertError) throw new Error(`finish: ${insertError.message}`);
-        }
-      }
-
-      const { error: updateError } = await client
-        .from("course_fact_extractions")
-        .update({
-          status: input.status,
-          fact_count: input.facts.length,
-          rejected_count: input.rejectedCount,
-          reject_reasons: input.rejectReasons,
-          model: input.model,
-          prompt_tokens: input.usage.promptTokens ?? null,
-          completion_tokens: input.usage.completionTokens ?? null,
-          reasoning_tokens: input.usage.reasoningTokens ?? null,
-          cost_usd: input.usage.cost ?? null,
-          latency_ms: input.latencyMs,
-          detail: input.detail ? input.detail.slice(0, 200) : null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", extractionID);
-      if (updateError) throw new Error(`finish: ${updateError.message}`);
+          }))
+          : [],
+        p_posted_at: input.postedAt,
+        p_fact_count: input.facts.length,
+        p_rejected_count: input.rejectedCount,
+        p_reject_reasons: input.rejectReasons,
+        p_model: input.model,
+        p_prompt_tokens: input.usage.promptTokens ?? null,
+        p_completion_tokens: input.usage.completionTokens ?? null,
+        p_reasoning_tokens: input.usage.reasoningTokens ?? null,
+        p_cost_usd: input.usage.cost ?? null,
+        p_latency_ms: input.latencyMs,
+        p_detail: input.detail ? input.detail.slice(0, 200) : null,
+      });
+      if (error) throw new Error(`finish_fact_extraction: ${error.message}`);
     },
 
     listLiveDocuments: (courseIDs, now) => selectLiveDocumentMetaForFacts(client, courseIDs, now),

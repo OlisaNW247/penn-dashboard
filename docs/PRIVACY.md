@@ -210,9 +210,10 @@ on-device alone:
   for each item of work from Canvas and Gradescope, each reading, and each
   task the app found in an announcement, its class, its title, the due date
   Canvas or Gradescope gave, where it came from, and **whether it is done**
-  (you checked it off or it was turned in), still outstanding, or has nothing
-  to submit. So your completion state is sent: one word per item, beside the
-  item. The summary does not hold your name, any grade or score, a due date
+  (you checked it off or it was turned in), still outstanding, has nothing
+  to submit, or was cancelled. So your completion state is sent: one word per
+  item, beside the item. If a course post (an announcement or an Ed post) says an item was moved to a
+  new date, that new date is sent beside the item too. The summary does not hold your name, any grade or score, a due date
   you changed, a task you added yourself, or your reminder settings.
 
   The Announcement Watcher's "AI assist" toggle is on by default (you can turn

@@ -4,8 +4,9 @@ Steps 1-4 were run on 2026-11-05 (01:20-01:45 UTC); see "Run record" at the
 end. The scripts were written and tested with `fetch` stubbed on 2026-11-04.
 A green `--dry-run` proves the plan, not the deploy.
 
-What goes live: migration `20261104090000_course_facts.sql` (three tables,
-one function, one column), the `sync` function (manifest now carries `facts`
+What goes live: migrations `20261104090000_course_facts.sql` (three tables,
+one function, one column) and, since 2026-11-05,
+`20261105090000_finish_fact_extraction.sql` (one function), the `sync` function (manifest now carries `facts`
 and `factsCursor`) and the new `extract-facts` function. Contract:
 `backend/PROTOCOL.md`, sections "sync" and "Facts and `extract-facts`".
 
@@ -43,10 +44,15 @@ node backend/scripts/deploy-facts.mjs
 or one at a time with `--step <n>`. Exit codes: 0 good, 1 failure, 2 nothing
 extracted yet.
 
-1. **Migration, then `sync`, then `extract-facts`** (`--step 1`). The SQL is
-   re-runnable (`if not exists`, `create or replace`, drop-then-create for
-   the policy); the script refuses to send it if its scan finds an unguarded
-   statement. Migration first, deploy second: `sync` and `extract-facts` both
+1. **Migrations, then `sync`, then `extract-facts`** (`--step 1`). It applies
+   every file in `FACTS_MIGRATIONS` (`deploy-facts.mjs`), in order:
+   `20261104090000_course_facts.sql`, then
+   `20261105090000_finish_fact_extraction.sql` (the transactional
+   `finish_fact_extraction` function that `extract-facts` now calls; without
+   it every finish fails). A new facts migration is added to that list. The
+   SQL is re-runnable (`if not exists`, `create or replace`, drop-then-create
+   for the policy); the script scans every file first and sends none if any
+   scan finds an unguarded statement. Migrations first, deploy second: `sync` and `extract-facts` both
    fail soft without the tables, but this order never needs that.
 2. **Manifest check** (`--step 2`). One throwaway anonymous user enrolled in
    nothing sends `factsSince: 0` (expects 200, `facts: []`, a numeric
@@ -183,5 +189,13 @@ one-off: create a throwaway anonymous user, make a manifest call that
 carries the course's `{courseID, code, name}` (this enrolls it), `POST`
 `extract-facts` with `{"courseId":"<id>"}` as that user, then delete the user
 through `delete-account`. `deploy-facts.mjs --step 3 --trigger <courseId>` does exactly this inside
-step 3 when it finds no extraction (implemented; tested with stubbed fetch,
-not yet run against the live project).
+step 3 when it finds no extraction. First run against the live project on
+2026-11-05 at 21:15 UTC, after the round-4 deploy (`extract-facts` v5, `sync`
+v21): because extractions already existed, the gate skipped the trigger, so
+`triggerExtraction(makeContext({trigger}))` was called from a one-off
+script; the throwaway user enrolled PHYS 0151, `extract-facts` answered
+`attempted 0 … remaining 0`, and the user was deleted. Nothing was pending
+because the course's 44 never-extracted live documents are `assignment`
+rows, which `FACT_ELIGIBLE_KINDS` excludes. Lesson: "unextracted" in SQL is
+not "pending"; only eligible kinds count, and the trigger gate should
+probably be "nothing pending" rather than "no extraction ever".

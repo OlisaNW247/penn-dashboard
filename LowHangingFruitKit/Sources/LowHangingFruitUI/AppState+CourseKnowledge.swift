@@ -191,7 +191,8 @@ extension AppState {
             return WorkItem(
                 assignment: assignment,
                 isCompleted: isCompleted(assignment),
-                dueOverride: editedDueDate(for: assignment)
+                dueOverride: editedDueDate(for: assignment),
+                isCancelled: isFactCancelled(assignment)
             )
         }
     }
@@ -382,7 +383,9 @@ extension AppState {
         // response. Stored after the documents they came from are folded in,
         // so a stale revision's facts are pruned against the new hashes.
         // Never fails the sync (`receiveManifestFacts` throws nothing).
-        receiveManifestFacts(manifest)
+        // Only a manifest that succeeded may withdraw facts or record which
+        // courses the cursor covers; a failed one is an empty stand-in.
+        receiveManifestFacts(manifest, requestedCourseIDs: manifestSucceeded ? Set(courses.map(\.courseID)) : nil)
         // Re-taken after the manifest's downloads: another student's phone
         // may have pooled Ed threads for a course this phone has none for,
         // and those are as worth restoring as the ones read locally.

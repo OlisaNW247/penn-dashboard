@@ -106,14 +106,111 @@ struct FactApplicationTests {
         #expect(out.items[itemID]?.rescheduled?.to == moved)
     }
 
-    @Test("a rejected newer fact does not retire an older one")
-    func rejectedDoesNotSupersede() {
+    // Rewritten 2026-11-05. It used to pin "a rejected newer reschedule leaves
+    // an older RESCHEDULE eligible", which is the very hole in undo: a rejection
+    // is now a verdict on the key (course, type, target), so an older fact of
+    // the same key stays down too. What survives of the old intent is that a
+    // rejection never retires a fact of ANOTHER key (here an older cancel).
+    @Test("a rejected reschedule is a verdict on its key: older reschedules stay down, an older cancel is not retired by it")
+    func rejectedIsAVerdictOnTheKey() {
         let a = Self.due.addingTimeInterval(86_400), b = Self.due.addingTimeInterval(172_800)
-        let out = run([
+        let sameKey = run([
             fact(1, .reschedule, dueAt: a, posted: 10),
             fact(2, .reschedule, dueAt: b, posted: 20, override: .rejected),
         ], [FactItem(canvasItem("555"))])
-        #expect(out.items[itemID]?.rescheduled?.to == a)
+        #expect(sameKey.items.isEmpty)
+        #expect(sameKey.redundant.contains(.init(factID: "announcement:1234:55#1", reason: .studentOverride)))
+
+        let otherKey = run([
+            fact(1, .cancel, posted: 10),
+            fact(2, .reschedule, dueAt: b, posted: 20, override: .rejected),
+        ], [FactItem(canvasItem("555"))])
+        #expect(otherKey.items[itemID]?.cancelled != nil)
+    }
+
+    // MARK: Rejection outlives the fact id
+
+    @Test("undo lasts through a typo edit to the post: the re-extracted cancel (new id, same post time) stays down")
+    func undoSurvivesTypoEdit() {
+        let rejected = fact(1, .cancel, posted: 10, override: .rejected)
+        let reextracted = fact(7, .cancel, posted: 10) // same document, new revision, new seq
+        let out = run([rejected, reextracted], [FactItem(canvasItem("555"))])
+        #expect(out.items.isEmpty)
+        #expect(out.applied.isEmpty)
+        #expect(out.redundant.contains(.init(factID: reextracted.id, reason: .studentOverride)))
+    }
+
+    @Test("undo lasts when a second post repeats the news, even one posted earlier")
+    func undoSurvivesDuplicatePost() {
+        let rejected = fact(1, .cancel, posted: 10, override: .rejected)
+        let repeatLater = fact(2, .cancel, posted: 10, doc: "announcement:1234:56")
+        let repeatEarlier = fact(3, .cancel, posted: 4, doc: "announcement:1234:57")
+        let out = run([rejected, repeatLater, repeatEarlier], [FactItem(canvasItem("555"))])
+        #expect(out.items.isEmpty)
+    }
+
+    @Test("a genuinely newer post may apply again, and rejecting that one holds too")
+    func newerPostReapplies() {
+        let old = fact(1, .cancel, posted: 10, override: .rejected)
+        let newer = fact(2, .cancel, posted: 50, doc: "announcement:1234:60")
+        #expect(run([old, newer], [FactItem(canvasItem("555"))]).items[itemID]?.cancelled != nil)
+        let rejectedAgain = fact(2, .cancel, posted: 50, doc: "announcement:1234:60", override: .rejected)
+        let again = fact(3, .cancel, posted: 50, doc: "announcement:1234:61")
+        #expect(run([old, rejectedAgain, again], [FactItem(canvasItem("555"))]).items.isEmpty)
+    }
+
+    @Test("a rejection does not leak to another target, another type, or another course; a confirm lifts it")
+    func rejectionIsScopedToItsKey() {
+        let rejected = fact(1, .cancel, target: "555", posted: 10, override: .rejected)
+        let otherTarget = fact(2, .cancel, target: "556", posted: 10, doc: "announcement:1234:70")
+        let items = [FactItem(canvasItem("555")), FactItem(canvasItem("556"))]
+        let out = run([rejected, otherTarget], items)
+        #expect(out.items[canvasItem("556").id]?.cancelled != nil)
+        #expect(out.items[itemID] == nil)
+        let confirmed = fact(3, .cancel, target: "555", posted: 10, doc: "announcement:1234:71", override: .confirmed)
+        #expect(run([rejected, confirmed], items).items[itemID]?.cancelled != nil)
+    }
+
+    @Test("an undated rejected fact holds against any later post: nothing is provably newer")
+    func undatedRejectionHolds() {
+        let rejected = fact(1, .cancel, posted: nil, override: .rejected)
+        let later = fact(2, .cancel, posted: 99, doc: "announcement:1234:80")
+        #expect(run([rejected, later], [FactItem(canvasItem("555"))]).items.isEmpty)
+    }
+
+    // MARK: Cancel and reschedule share one key
+
+    @Test("a newer reschedule lifts an older cancel; the cancel is superseded, not applied alongside")
+    func newerRescheduleLiftsCancel() {
+        let back = Self.due.addingTimeInterval(86_400)
+        let out = run([
+            fact(1, .cancel, posted: 1),
+            fact(2, .reschedule, dueAt: back, posted: 3, doc: "announcement:1234:56"),
+        ], [FactItem(canvasItem("555"))])
+        #expect(out.items[itemID]?.cancelled == nil)
+        #expect(out.items[itemID]?.rescheduled?.to == back)
+        #expect(out.redundant.contains(.init(factID: "announcement:1234:55#1", reason: .supersededBySeq(2))))
+    }
+
+    @Test("a newer cancel beats an older reschedule")
+    func newerCancelBeatsReschedule() {
+        let moved = Self.due.addingTimeInterval(86_400)
+        let out = run([
+            fact(1, .reschedule, dueAt: moved, posted: 1),
+            fact(2, .cancel, posted: 3, doc: "announcement:1234:56"),
+        ], [FactItem(canvasItem("555"))])
+        #expect(out.items[itemID]?.cancelled != nil)
+        #expect(out.items[itemID]?.rescheduled == nil)
+    }
+
+    @Test("a scope change and a note do not share the cancel/reschedule key")
+    func scopeChangeKeepsOwnKey() {
+        let out = run([
+            fact(1, .cancel, posted: 1),
+            fact(2, .scopeChange, title: "Only part A", posted: 3, doc: "announcement:1234:56"),
+        ], [FactItem(canvasItem("555"))])
+        #expect(out.items[itemID]?.cancelled != nil)
+        #expect(out.items[itemID]?.scopeChanged != nil)
     }
 
     // MARK: Rule 2, Canvas wins over prose

@@ -4,7 +4,9 @@ import {
   FACTS_INSTRUCTIONS,
   FACTS_JSON_SCHEMA,
   type FactsDocument,
+  MAX_FACT_TITLE_CHARS,
   parseFacts,
+  resolveDueAt,
   STALE_DOCUMENT_MS,
 } from "../supabase/functions/_shared/facts.ts";
 
@@ -358,4 +360,82 @@ Deno.test("parseFacts rejects a new_task due yesterday in the document's zone", 
   ]), d);
   assert.equal(parsed.facts.length, 0);
   assert.equal(parsed.rejected[0].reason, "due_in_past");
+});
+
+// --- offset-less dates are the document's local time ---------------------
+
+Deno.test("resolveDueAt: offset-less strings are local to the zone, offsets are kept as written", () => {
+  // November 10 is EST (UTC-5); a date-only value is 23:59 local that day.
+  assert.equal(resolveDueAt("2026-11-10", "America/New_York"), "2026-11-11T04:59:00.000Z");
+  assert.equal(resolveDueAt("2026-11-10T23:59", "America/New_York"), "2026-11-11T04:59:00.000Z");
+  assert.equal(resolveDueAt("2026-11-10T09:30:15", "America/New_York"), "2026-11-10T14:30:15.000Z");
+  // Summer (EDT, UTC-4) and a zone east of UTC.
+  assert.equal(resolveDueAt("2026-06-10T12:00", "America/New_York"), "2026-06-10T16:00:00.000Z");
+  assert.equal(resolveDueAt("2026-11-10T08:00", "Europe/Paris"), "2026-11-10T07:00:00.000Z");
+  // Already absolute: returned unchanged.
+  assert.equal(resolveDueAt("2026-11-10T23:59:00Z", "America/New_York"), "2026-11-10T23:59:00Z");
+  assert.equal(resolveDueAt("2026-11-10T23:59:00-05:00", "Asia/Tokyo"), "2026-11-10T23:59:00-05:00");
+  // Garbage, impossible dates, and an unusable zone (falls back to UTC).
+  assert.equal(resolveDueAt("next friday", "America/New_York"), undefined);
+  assert.equal(resolveDueAt("2026-02-30", "America/New_York"), undefined);
+  assert.equal(resolveDueAt("2026-11-10T25:00", "America/New_York"), undefined);
+  assert.equal(resolveDueAt("2026-11-10T12:00", "Not/AZone"), "2026-11-10T12:00:00.000Z");
+});
+
+Deno.test("resolveDueAt: the offset is right on either side of the fall-back DST change", () => {
+  assert.equal(resolveDueAt("2026-11-01T12:00", "America/New_York"), "2026-11-01T17:00:00.000Z");
+  assert.equal(resolveDueAt("2026-10-31T12:00", "America/New_York"), "2026-10-31T16:00:00.000Z");
+});
+
+Deno.test("parseFacts: a date-only or offset-less due_at is stored as the zone's instant, not UTC", () => {
+  const parsed = parseFacts(wrap([
+    { ...base, type: "new_task", title: "Problem set", due_at: "2026-11-10", kind: "submission", quote: "read chapter 5" },
+    { ...base, type: "reschedule", target: "a1", due_at: "2026-11-10T23:59", quote: "HW3 is now due Friday" },
+  ]), doc);
+  assert.equal(parsed.rejected.length, 0);
+  assert.equal(parsed.facts[0].due_at, "2026-11-11T04:59:00.000Z");
+  assert.equal(parsed.facts[1].due_at, "2026-11-11T04:59:00.000Z");
+});
+
+Deno.test("parseFacts: a date-only due_at for today in the zone is still live, an offset one is untouched", () => {
+  const parsed = parseFacts(wrap([
+    { ...base, type: "new_task", title: "Today", due_at: "2026-11-05", quote: "read chapter 5" },
+    { ...base, type: "new_task", title: "Kept", due_at: "2026-11-10T23:59:00-05:00", quote: "read chapter 5" },
+  ]), doc);
+  assert.equal(parsed.facts.length, 2);
+  assert.equal(parsed.facts[1].due_at, "2026-11-10T23:59:00-05:00");
+});
+
+// --- reschedule needs a date; titles are capped; note/scope need a title --
+
+Deno.test("parseFacts rejects a reschedule with no due date as due_required", () => {
+  const parsed = parseFacts(wrap([
+    { ...base, type: "reschedule", target: "a1", due_at: null, quote: "HW3 is now due Friday" },
+    { ...base, type: "reschedule", target: "a1", quote: "HW3 is now due Friday" },
+  ]), doc);
+  assert.equal(parsed.facts.length, 0);
+  assert.deepEqual(parsed.rejected.map((r) => r.reason), ["due_required", "due_required"]);
+});
+
+Deno.test("parseFacts trims a title and caps it at MAX_FACT_TITLE_CHARS without rejecting", () => {
+  const long = "x".repeat(MAX_FACT_TITLE_CHARS + 50);
+  const parsed = parseFacts(wrap([
+    { ...base, type: "new_task", title: `  ${long}  `, quote: "read chapter 5" },
+    { ...base, type: "note", target: "a1", title: "  covers ch 5  ", quote: "read chapter 5" },
+  ]), doc);
+  assert.equal(parsed.rejected.length, 0);
+  assert.equal(parsed.facts[0].title, "x".repeat(MAX_FACT_TITLE_CHARS));
+  assert.equal(parsed.facts[1].title, "covers ch 5");
+});
+
+Deno.test("parseFacts: note and scope_change need a title, needs_review does not", () => {
+  const parsed = parseFacts(wrap([
+    { ...base, type: "note", target: "a1", quote: "read chapter 5" },
+    { ...base, type: "scope_change", target: "a1", title: "   ", quote: "read chapter 5" },
+    { ...base, type: "needs_review", target: "a1", title: "   ", quote: "read chapter 5" },
+  ]), doc);
+  assert.deepEqual(parsed.rejected.map((r) => r.reason), ["title_required", "title_required"]);
+  assert.equal(parsed.facts.length, 1);
+  assert.equal(parsed.facts[0].type, "needs_review");
+  assert.equal(parsed.facts[0].title, undefined, "a blank title is left off, not stored empty");
 });

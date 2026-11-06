@@ -144,6 +144,15 @@ struct AskTimeFrameResolverTests {
         ("when is the midterm", F.pinned, "policy", nil, nil),
         ("what is the class participation grade", F.pinned, "policy", nil, nil),
         ("what does the syllabus say about laptops", F.pinned, "policy", nil, nil),
+        // Whole words only: these used to match exam, late and grade.
+        ("can you give an example", F.pinned, "specific", nil, nil),
+        ("I will ask later", F.pinned, "specific", nil, nil),
+        ("how do I upgrade my laptop", F.pinned, "specific", nil, nil),
+        // A change word beside a policy word wants the newest post.
+        ("was the midterm moved?", F.pinned, "specific", nil, nil),
+        ("is the final still on friday", F.pinned, "specific", nil, nil),
+        ("what are the exams", F.pinned, "policy", nil, nil),
+        ("when are office hours", F.pinned, "policy", nil, nil),
         ("who teaches cis 2400", F.pinned, "specific", nil, nil),
         ("what is due", F.pinned, "specific", nil, nil),
         ("how many assignments are due this month", F.pinned, "specific", nil, nil),
@@ -301,6 +310,22 @@ struct AskTimeFrameScoringTests {
         #expect(CourseSearch.freshnessFactor(ageDays: -3) == 1.0)
     }
 
+    @Test("an undated post weighs the half-life decay: below a fresh one, above a ten-day-old dated one")
+    func undatedIsNeutral() throws {
+        #expect(abs(CourseSearch.undatedFreshness - 0.75) < 1e-12)
+        let undated = CourseDocument(
+            courseID: "1", course: "CIS 2620", kind: .announcement, sourceID: "undated", title: "Lecture notice", url: nil,
+            text: "Lecture is cancelled and the lecture will not meet."
+        )
+        let old = Self.notice("ten", posted: F.eastern(2026, 10, 23))
+        let fresh = Self.notice("fresh", posted: F.pinned)
+        let search = Self.search([undated, old, fresh])
+        let hits = search.search("lecture cancelled", courseIDs: nil, limit: 5, perDocument: 2, intent: .classMeeting(nil), now: F.pinned)
+        try #require(hits.count == 3)
+        #expect(hits.map(\.document.id) == [fresh.id, undated.id, old.id])
+        #expect(abs(hits[0].score / hits[1].score - 1 / 0.75) < 1e-9)
+    }
+
     @Test("under a class-meeting or news intent the newer of two identical posts scores higher, by the factor")
     func newerOutranksOlder() throws {
         let older = Self.notice("old", posted: F.eastern(2026, 10, 20))
@@ -341,6 +366,20 @@ struct AskTimeFrameScoringTests {
         let plain = try #require(search.search("class meets mondays", courseIDs: nil, limit: 3).first)
         let weighed = try #require(search.search("class meets mondays", courseIDs: nil, limit: 3, intent: .classMeeting(nil), now: F.pinned).first)
         #expect(abs(plain.score - weighed.score) < 1e-9)
+    }
+
+    @Test("a word that merely contains a policy word does not lift the syllabus")
+    func syllabusBoostWholeWords() throws {
+        let text = "For example, a later upgrade of the lab is optional."
+        let syllabus = CourseDocument(courseID: "1", course: "CIS 2620", kind: .syllabus, sourceID: "s", title: "Syllabus", url: nil, text: text)
+        let page = CourseDocument(courseID: "1", course: "CIS 2620", kind: .page, sourceID: "p", title: "Syllabus", url: nil, text: text)
+        for query in ["example", "later upgrade"] {
+            let boosted = try #require(Self.search([syllabus]).search(query, courseIDs: nil, limit: 3).first).score
+            let neutral = try #require(Self.search([page]).search(query, courseIDs: nil, limit: 3).first).score
+            #expect(abs(boosted / neutral - 1.1) < 1e-9, "\(query)")
+        }
+        #expect(CourseSearch.mentionsPolicyWord("what are the exams"))
+        #expect(!CourseSearch.mentionsPolicyWord("an example, later, upgrade"))
     }
 
     @Test("a policy word lifts the syllabus to 1.5 for policy and specific, and stays at 1.35 for everything else")

@@ -12,8 +12,12 @@ public struct WorkItem: Sendable, Hashable, Identifiable {
     public let url: URL?
     /// Marked done in LHF, or reported as submitted by Canvas.
     public let isCompleted: Bool
+    /// An instructor's post cancelled it (an applied fact). Not outstanding
+    /// work: "what's due" and "next exam" skip it, while a question that names
+    /// it directly says so. Nothing is completed or deleted by this.
+    public let isCancelled: Bool
 
-    public init(id: String, course: String, title: String, kind: Assignment.Kind, dueAt: Date?, url: URL?, isCompleted: Bool) {
+    public init(id: String, course: String, title: String, kind: Assignment.Kind, dueAt: Date?, url: URL?, isCompleted: Bool, isCancelled: Bool = false) {
         self.id = id
         self.course = course
         self.title = title
@@ -21,9 +25,10 @@ public struct WorkItem: Sendable, Hashable, Identifiable {
         self.dueAt = dueAt
         self.url = url
         self.isCompleted = isCompleted
+        self.isCancelled = isCancelled
     }
 
-    public init(assignment: Assignment, isCompleted: Bool, dueOverride: Date? = nil) {
+    public init(assignment: Assignment, isCompleted: Bool, dueOverride: Date? = nil, isCancelled: Bool = false) {
         self.init(
             id: assignment.id,
             course: assignment.course,
@@ -31,7 +36,8 @@ public struct WorkItem: Sendable, Hashable, Identifiable {
             kind: assignment.kind,
             dueAt: dueOverride ?? assignment.dueAt,
             url: assignment.url,
-            isCompleted: isCompleted || assignment.submitted
+            isCompleted: isCompleted || assignment.submitted,
+            isCancelled: isCancelled
         )
     }
 

@@ -359,6 +359,15 @@ about $0.27 (estimated by `score.ts`).
 
 The six stale cases were re-run once more against the corrected prompt and
 validator (tag `round4-synthetic-stale2`, $0.0032): 6 of 6 documents as
-labelled, 5 facts, 0 FP, 0 FN. Round 4 is committed on `v10` and NOT
-deployed; deploying it means `extract-facts` and `sync` both, since `sync`
-bundles `_shared/facts.ts`, and needs a person's go.
+labelled, 5 facts, 0 FP, 0 FN. Round 4 was committed on `v10` (`57b27e3`)
+and **deployed 2026-11-05 at about 21:13 UTC with Marco's go** as
+`extract-facts` version 5 and `sync` version 21 (`sync` bundles
+`_shared/facts.ts`; versions 3-4 and 19-20 were deploys from Olisa's cloud
+session in between). Runbook step 3 re-run green on the live rows. There
+was nothing new to extract: PHYS 0151's 44 never-extracted live documents
+are all `assignment` descriptions, which extraction skips by design, so
+round 4's first live exercise is the next announcement a classmate's phone
+uploads. The 17 stored facts (seq 1-23) are round 3's and were left alone:
+deleting server rows does not retract facts a phone has already applied
+(bug hunt item 7), so a clear-and-re-extract would have doubled them on
+Marco's phone.

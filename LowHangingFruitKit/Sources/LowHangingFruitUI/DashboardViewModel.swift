@@ -403,7 +403,16 @@ final class DashboardViewModel: ObservableObject {
             now: now,
             includeOverdue: false,
             includeLater: true,
-            upcomingHorizon: 7 * 86_400
+            upcomingHorizon: 7 * 86_400,
+            // A cancelled item that has gone past its date is in no other
+            // view: todo leaves cancelled out, all leaves overdue out, and
+            // prev is completed work only. Without this its card, and the
+            // `undo` on it, became unreachable the moment the date passed,
+            // so a wrong cancel could no longer be taken back. Listed under
+            // its own "cancelled" header, still tagged on the card. The wrong
+            // fix is letting `all` show every overdue item: overdue work
+            // belongs in todo and that would list it twice.
+            keepingPastCancelled: true
         )
     }
 
@@ -412,9 +421,11 @@ final class DashboardViewModel: ObservableObject {
         includeOverdue: Bool,
         includeLater: Bool,
         upcomingHorizon: TimeInterval,
-        excludingCancelled: Bool = false
+        excludingCancelled: Bool = false,
+        keepingPastCancelled: Bool = false
     ) -> [DashSection] {
         var overdue: [DashItem] = []
+        var pastCancelled: [DashItem] = []
         var today: [DashItem] = []
         var rest: [DashItem] = []
         var later: [DashItem] = []
@@ -428,7 +439,8 @@ final class DashboardViewModel: ObservableObject {
             }
             let s = due.timeIntervalSince(now)
             if s < 0 {
-                overdue.append(item)
+                if includeOverdue { overdue.append(item) }
+                else if keepingPastCancelled && item.isFactCancelled { pastCancelled.append(item) }
             } else if s < 86_400 {
                 today.append(item)
             } else if s <= upcomingHorizon {
@@ -443,6 +455,7 @@ final class DashboardViewModel: ObservableObject {
         today.sort(by: DashItem.isOrderedByDueDate)
         rest.sort(by: DashItem.isOrderedByDueDate)
         later.sort(by: DashItem.isOrderedByDueDate)
+        pastCancelled.sort(by: DashItem.isOrderedByDueDate)
 
         var sections: [DashSection] = []
         if includeOverdue && !overdue.isEmpty {
@@ -460,6 +473,10 @@ final class DashboardViewModel: ObservableObject {
         if includeLater && !later.isEmpty {
             sections.append(.init(id: "later", label: "later",
                                   labelColor: .v2SectionMuted, items: later))
+        }
+        if !pastCancelled.isEmpty {
+            sections.append(.init(id: "cancelled", label: "cancelled",
+                                  labelColor: .v2SectionMuted, items: pastCancelled))
         }
         return sections
     }

@@ -615,6 +615,11 @@ struct ContentView: View {
                 statusLineLabel("sign in to canvas")
             }
             .buttonStyle(.plain)
+        case .couldntSavePassword:
+            Button { path.append(.profile) } label: {
+                statusLineLabel("couldn\u{2019}t save pennkey \u{00B7} try again in profile")
+            }
+            .buttonStyle(.plain)
         }
     }
 

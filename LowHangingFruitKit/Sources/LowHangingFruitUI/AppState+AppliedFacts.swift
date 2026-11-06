@@ -115,6 +115,10 @@ extension AppState {
     enum FactKey {
         /// `UserDefaults.lhf`, per the preferences rule.
         static let cursor = "factsCursorV1"
+        /// The Canvas course ids `factsCursorV1` was earned for. The server
+        /// filters facts by the courses in the request, so a cursor is only
+        /// meaningful for the courses that were asked about when it advanced.
+        static let cursorCourses = "factsCursorCoursesV1"
     }
 
     /// Ledger `sourceID` prefix of a task a fact created
@@ -162,14 +166,29 @@ extension AppState {
         SyncManifestRequest(
             courses: courses.map { CourseSummaryWire(summary: $0) },
             documents: documents.map(DocumentStub.init(document:)),
-            factsSince: factsSinceForRequest()
+            factsSince: factsSinceForRequest(courseIDs: Set(courses.map(\.courseID)))
         )
     }
 
-    func factsSinceForRequest() -> Int? {
+    /// `courseIDs`, when given, are the courses this request asks about. The
+    /// server only serves facts for those, and the cursor is one number for
+    /// all of them, so a class added mid-term (its facts have seqs below the
+    /// cursor, earned while the class was not being asked about) would never
+    /// receive them. When the request names a course the cursor was not
+    /// earned for, `0` goes out for this call: facts are idempotent by id, so
+    /// re-reading the others is safe, and `receiveManifestFacts` then records
+    /// the new set with the returned cursor. No cursor yet, or no recorded set
+    /// (a phone from before this was recorded), reads the same way once.
+    /// The wrong fix is a per-course cursor, which needs the protocol to
+    /// carry one.
+    func factsSinceForRequest(courseIDs: Set<String>? = nil) -> Int? {
         guard FeatureFlags.appliedFacts, let store = appliedFactStore, let defaults = factsDefaults else { return nil }
         guard let cursor = defaults.object(forKey: FactKey.cursor) as? Int, cursor > 0 else { return nil }
         if !store.isPersistent && !SharedDefaults.isTestRunner { return nil }
+        if let courseIDs, !courseIDs.isEmpty {
+            let earned = Set(defaults.stringArray(forKey: FactKey.cursorCourses) ?? [])
+            if !courseIDs.isSubset(of: earned) { return 0 }
+        }
         return cursor
     }
 
@@ -177,7 +196,14 @@ extension AppState {
     /// if the save landed, and returns how many facts were new. Never throws.
     @discardableResult
     func ingestFacts(_ wires: [CourseFactWire], cursor: Int?, now: Date = Date()) -> Int {
-        guard FeatureFlags.appliedFacts, let store = appliedFactStore else { return 0 }
+        ingestFactsReporting(wires, cursor: cursor, now: now).added
+    }
+
+    /// `ingestFacts`, also saying whether every delivered fact is held and
+    /// nothing failed, which is the condition for trusting that the cursor now
+    /// covers the courses the request named.
+    func ingestFactsReporting(_ wires: [CourseFactWire], cursor: Int?, now: Date = Date()) -> (added: Int, complete: Bool) {
+        guard FeatureFlags.appliedFacts, let store = appliedFactStore else { return (0, false) }
         let failedSavesBefore = store.failedSaveCount
         let failedReadsBefore = store.failedReadCount
         let added = store.upsert(facts: wires, now: now)
@@ -187,12 +213,13 @@ extension AppState {
         // `failedReadCount`), and a failed save is counted in
         // `failedSaveCount`; advancing on either would skip those facts for
         // good. The presence check is the belt to those braces.
-        if Self.mayAdvanceFactsCursor(
+        let mayAdvance = Self.mayAdvanceFactsCursor(
             savesFailed: store.failedSaveCount - failedSavesBefore,
             readsFailed: store.failedReadCount - failedReadsBefore,
             wires: wires,
             stored: Set(store.all().map(\.id))
-        ), let defaults = factsDefaults {
+        )
+        if mayAdvance, let defaults = factsDefaults {
             // Never backwards, never past 2^53: a nil cursor contributes nothing,
             // and a value outside the range the server can send is ignored.
             let valid = (cursor ?? 0) <= CourseFactWire.maxSeq ? (cursor ?? 0) : 0
@@ -200,7 +227,7 @@ extension AppState {
             let current = defaults.object(forKey: FactKey.cursor) as? Int ?? 0
             if observed > current, observed <= CourseFactWire.maxSeq { defaults.set(observed, forKey: FactKey.cursor) }
         }
-        return added
+        return (added, mayAdvance)
     }
 
     /// Pure half of the cursor rule: no failed read or save during the upsert,
@@ -240,14 +267,76 @@ extension AppState {
         return removed
     }
 
+    /// Ends the effect of facts whose document the server no longer lists.
+    /// `pruneStaleFacts` only notices an EDITED post (the local copy has a
+    /// different hash); a deleted or withdrawn post leaves no local copy to
+    /// compare, so its cancel stayed on the card forever. The manifest's
+    /// `serverManifest` is every live document for the courses asked about,
+    /// so a stored fact of one of those courses whose document is absent is
+    /// withdrawn. Narrow on purpose:
+    ///  - only courses in the request (the list says nothing about others),
+    ///  - never on an empty list (a server that returned nothing at all is
+    ///    more likely failing than withdrawing every post, and the wrong
+    ///    guess would lift every cancel),
+    ///  - never for a document kind this phone did not ask the server to list
+    ///    (`file` rows are withheld from `serverManifest` by design),
+    ///  - the student's rejections are kept (`AppliedFactStore.removeFacts`).
+    nonisolated static let withdrawalAgeLimit: TimeInterval = 100 * 86_400
+
+    @discardableResult
+    func pruneWithdrawnFacts(serverManifest: [DocumentStub], requestedCourseIDs: Set<String>, now: Date = Date()) -> Int {
+        guard FeatureFlags.appliedFacts, let store = appliedFactStore,
+              !serverManifest.isEmpty, !requestedCourseIDs.isEmpty else { return 0 }
+        let live = Set(serverManifest.map(\.id))
+        let localKind = Dictionary(courseKnowledge.documents.map { ($0.id, $0.kind) }, uniquingKeysWith: { first, _ in first })
+        var removed = 0
+        var seen: Set<String> = []
+        for fact in store.all() {
+            // The server stops serving window-kind documents (announcement,
+            // ed) after 120 days, so their absence from `serverManifest` is
+            // not a withdrawal once the post is old: a cancel from an August
+            // announcement for a late-November date is still valid. 100 days
+            // keeps a margin inside the server's 120. Old facts age out by
+            // supersession or the student's undo only.
+            let age = (fact.postedAt ?? fact.receivedAt)
+            guard now.timeIntervalSince(age) < Self.withdrawalAgeLimit else { continue }
+            guard requestedCourseIDs.contains(fact.courseID), !live.contains(fact.documentID),
+                  localKind[fact.documentID] != .file,
+                  seen.insert(fact.documentID).inserted else { continue }
+            removed += store.removeFacts(documentID: fact.documentID)
+        }
+        if removed > 0 { appliedFactsCache = nil }
+        return removed
+    }
+
     /// The sync's whole facts step: store, advance, prune, and rebuild if
     /// anything changed. Called with the manifest response, after its
     /// documents are folded into the knowledge base.
-    func receiveManifestFacts(_ manifest: SyncManifestResponse, now: Date = Date()) {
+    ///
+    /// `requestedCourseIDs` is the course set the manifest request carried,
+    /// and is nil when the manifest FAILED (the caller then hands in an empty
+    /// response): a failed exchange proves nothing, so it neither withdraws
+    /// facts nor records which courses the cursor covers.
+    func receiveManifestFacts(_ manifest: SyncManifestResponse, now: Date = Date(), requestedCourseIDs: Set<String>? = nil) {
         guard FeatureFlags.appliedFacts, appliedFactStore != nil else { return }
-        let added = ingestFacts(manifest.facts, cursor: manifest.factsCursor, now: now)
-        let removed = pruneStaleFacts()
-        if added > 0 || removed > 0 { rebuildDashboardItems(now: now) }
+        // Read before the ingest, which advances it.
+        let storedCursor = factsDefaults?.object(forKey: FactKey.cursor) as? Int ?? 0
+        let ingest = ingestFactsReporting(manifest.facts, cursor: manifest.factsCursor, now: now)
+        var removed = pruneStaleFacts()
+        if let requested = requestedCourseIDs {
+            removed += pruneWithdrawnFacts(serverManifest: manifest.serverManifest, requestedCourseIDs: requested, now: now)
+            // The new course set is trusted only when the answer's cursor is at
+            // least the one already stored. A degraded facts read (the server
+            // swallows a facts error and answers 200 with `factsCursor =
+            // factsSince`, which is 0 for a re-read) or a re-read capped at
+            // 1000 rows comes back BELOW it; recording the set then would mark
+            // the new class covered although its earlier facts never arrived.
+            // Left unrecorded, the next request re-reads from 0 again.
+            if ingest.complete, let returned = manifest.factsCursor, returned >= storedCursor, let defaults = factsDefaults {
+                defaults.set(requested.sorted(), forKey: FactKey.cursorCourses)
+            }
+        }
+        if ingest.added > 0 || removed > 0 { rebuildDashboardItems(now: now) }
     }
 
     /// Canvas disconnect: facts are derived from course material, so they go
@@ -260,6 +349,7 @@ extension AppState {
         factChangeGroups = []
         factReviewRows = []
         factsDefaults?.removeObject(forKey: FactKey.cursor)
+        factsDefaults?.removeObject(forKey: FactKey.cursorCourses)
         guard let store = appliedFactStore else { return }
         store.purge(courseIDs: Set(store.all().map(\.courseID)))
     }

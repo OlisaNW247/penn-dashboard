@@ -65,7 +65,12 @@ export type RejectReason =
   | "date_out_of_range"
   | "due_in_past"
   | "stale_document"
-  | "title_required";
+  | "title_required"
+  | "due_required";
+
+/** The longest title a stored fact keeps. A longer one is trimmed, not
+ *  rejected: the prompt asks for 80, and the schema cannot carry a maxLength. */
+export const MAX_FACT_TITLE_CHARS = 200;
 
 export interface ParsedFacts {
   facts: Fact[];
@@ -287,6 +292,56 @@ function weekdayName(iso: string, timeZone: string): string | undefined {
   }
 }
 
+/** A `due_at` string as an absolute ISO instant, or `undefined` when it is
+ *  not a date at all. A string with an offset (`Z`, `+05:30`) is already
+ *  absolute and is returned unchanged. One WITHOUT an offset ("2026-11-10",
+ *  "2026-11-10T23:59") is a wall-clock time in the document's `timeZone`, not
+ *  UTC: reading it as UTC put "2026-11-10T23:59" five hours late for a
+ *  student in New York. A bare date is 23:59 local that day (the prompt's own
+ *  rule for "by Friday"). An unusable zone falls back to UTC, the old
+ *  behaviour, rather than dropping the fact. */
+export function resolveDueAt(raw: string, timeZone: string): string | undefined {
+  const s = raw.trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?)?$/.exec(s);
+  if (!m) {
+    return Number.isNaN(new Date(s).getTime()) ? undefined : s;
+  }
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const hasTime = m[4] !== undefined;
+  const h = hasTime ? Number(m[4]) : 23;
+  const mi = hasTime ? Number(m[5]) : 59;
+  const sec = m[6] !== undefined ? Number(m[6]) : 0;
+  if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || sec > 59) return undefined;
+  const wall = Date.UTC(y, mo - 1, d, h, mi, sec);
+  if (new Date(wall).getUTCMonth() !== mo - 1) return undefined; // Feb 30
+  const offsetAt = (instant: number): number | undefined => {
+    try {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        hourCycle: "h23",
+        year: "numeric",
+        month: "numeric",
+        day: "numeric",
+        hour: "numeric",
+        minute: "numeric",
+        second: "numeric",
+      }).formatToParts(new Date(instant));
+      const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+      const asUTC = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
+      return asUTC - Math.floor(instant / 1000) * 1000;
+    } catch {
+      return undefined;
+    }
+  };
+  const first = offsetAt(wall);
+  if (first === undefined) return new Date(wall).toISOString();
+  // Two passes settle the offset across a DST change.
+  let instant = wall - first;
+  const second = offsetAt(instant);
+  if (second !== undefined && second !== first) instant = wall - second;
+  return new Date(instant).toISOString();
+}
+
 /** Calendar day (YYYY-MM-DD) of `iso` in `timeZone`; a bare date is that day.
  *  `null` when the date or zone is unusable. */
 function dayKey(iso: string, timeZone: string): string | null {
@@ -439,6 +494,9 @@ export function parseFacts(text: string, doc: FactsDocument): ParsedFacts {
       reject("bad_shape");
       continue;
     }
+    // Offset-less dates are the document's local time (see resolveDueAt).
+    // Everything below, and the stored fact, uses the resolved string.
+    const dueRaw: string | null = typeof e.due_at === "string" ? (resolveDueAt(e.due_at, doc.timezone) ?? e.due_at) : null;
     if (e.kind != null && !(FACT_KINDS as readonly string[]).includes(e.kind as string)) {
       reject("bad_shape");
       continue;
@@ -456,8 +514,15 @@ export function parseFacts(text: string, doc: FactsDocument): ParsedFacts {
       reject("target_required");
       continue;
     }
-    const title = typeof e.title === "string" ? e.title : undefined;
-    if (type === "new_task" && (title === undefined || title.trim().length === 0)) {
+    const trimmedTitle = typeof e.title === "string" ? e.title.trim().slice(0, MAX_FACT_TITLE_CHARS).trim() : undefined;
+    const title = trimmedTitle === undefined ? undefined : trimmedTitle;
+    // new_task names the work in its title; scope_change and note carry the
+    // change / the note in it (see the prompt). needs_review has no title in
+    // the schema ("target is optional"), so it is left alone.
+    if (
+      (type === "new_task" || type === "scope_change" || type === "note") &&
+      (title === undefined || title.length === 0)
+    ) {
       reject("title_required");
       continue;
     }
@@ -480,10 +545,10 @@ export function parseFacts(text: string, doc: FactsDocument): ParsedFacts {
     // comparing instants would drop both. Only a plausible date counts: an
     // unparseable or out-of-range one (1900, 9999) is garbage rather than
     // "past", and keeps going to the null-the-date path below, as before.
-    if (type === "new_task" && typeof e.due_at === "string") {
-      const due = new Date(e.due_at).getTime();
+    if (type === "new_task" && dueRaw !== null) {
+      const due = new Date(dueRaw).getTime();
       if (!Number.isNaN(due) && !Number.isNaN(now) && Math.abs(now - due) <= MAX_DUE_DATE_SKEW_MS) {
-        const dueDay = dayKey(e.due_at, doc.timezone);
+        const dueDay = dayKey(dueRaw, doc.timezone);
         const today = dayKey(doc.now, doc.timezone);
         if (dueDay !== null && today !== null && dueDay < today) {
           reject("due_in_past");
@@ -492,12 +557,18 @@ export function parseFacts(text: string, doc: FactsDocument): ParsedFacts {
       }
     }
 
+    // A reschedule IS a new date: without one there is nothing to apply.
+    if (type === "reschedule" && dueRaw === null) {
+      reject("due_required");
+      continue;
+    }
+
     let dueAt: string | null = null;
-    if (typeof e.due_at === "string") {
-      const parsed = new Date(e.due_at).getTime();
+    if (dueRaw !== null) {
+      const parsed = new Date(dueRaw).getTime();
       const ok = !Number.isNaN(parsed) && (Number.isNaN(now) || Math.abs(parsed - now) <= MAX_DUE_DATE_SKEW_MS);
       if (ok) {
-        dueAt = e.due_at;
+        dueAt = dueRaw;
       } else if (type === "reschedule") {
         reject("date_out_of_range");
         continue;
@@ -511,7 +582,7 @@ export function parseFacts(text: string, doc: FactsDocument): ParsedFacts {
       quote: e.quote,
       confidence: e.confidence,
     };
-    if (title !== undefined) fact.title = title;
+    if (title !== undefined && title.length > 0) fact.title = title;
     if (typeof e.kind === "string") fact.kind = e.kind as FactKind;
     result.facts.push(fact);
   }

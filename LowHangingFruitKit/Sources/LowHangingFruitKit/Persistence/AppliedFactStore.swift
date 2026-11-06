@@ -203,7 +203,29 @@ public final class AppliedFactStore {
     @discardableResult
     public func removeFacts(documentID: String, contentHash: String) -> Int {
         guard let rows = try? allRows() else { return 0 }
-        let doomed = rows.filter { $0.documentID == documentID && $0.contentHash == contentHash }
+        // A rejected fact is the student's verdict, kept: the revised post's
+        // fact has a new id, and the engine matches the rejection by (course,
+        // type, target) to keep an undone cancel undone. Deleting it here
+        // would let the very edit that "fixes" the post bring the cancel back.
+        let doomed = rows.filter {
+            $0.documentID == documentID && $0.contentHash == contentHash
+                && $0.studentOverrideRaw != FactOverride.rejected.rawValue
+        }
+        for row in doomed { context.delete(row) }
+        if !doomed.isEmpty { saveChanges() }
+        return doomed.count
+    }
+
+    /// Drops every fact of a document the server no longer lists (the post
+    /// was deleted, or the instructor took it back), whatever revision the
+    /// fact came from. Rejected facts stay, as in `removeFacts(documentID:contentHash:)`:
+    /// the verdict outlives the fact. Returns how many were removed.
+    @discardableResult
+    public func removeFacts(documentID: String) -> Int {
+        guard let rows = try? allRows() else { return 0 }
+        let doomed = rows.filter {
+            $0.documentID == documentID && $0.studentOverrideRaw != FactOverride.rejected.rawValue
+        }
         for row in doomed { context.delete(row) }
         if !doomed.isEmpty { saveChanges() }
         return doomed.count

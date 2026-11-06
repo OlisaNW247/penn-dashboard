@@ -19,5 +19,8 @@ for f in $(ls supabase/migrations); do P -f "/m/$f" >/dev/null || { echo "FAIL m
 echo "migrations: all $(ls supabase/migrations | wc -l | tr -d ' ') applied"
 P -f /m/20261104090000_course_facts.sql >/dev/null 2>&1 || { echo "FAIL: course_facts migration is not idempotent"; exit 1; }
 echo "course_facts migration: idempotent"
+P -f /m/20261105090000_finish_fact_extraction.sql >/dev/null 2>&1 || { echo "FAIL: finish_fact_extraction migration is not idempotent"; exit 1; }
+echo "finish_fact_extraction migration: idempotent"
 P -f /t/rls.test.sql 2>&1 | tail -1 || exit 1
 P -f /t/claim_fact_extraction.test.sql 2>&1 | grep -E 'passed|ERROR' | tail -1
+P -f /t/finish_fact_extraction.test.sql 2>&1 | grep -E 'passed|ERROR' | tail -1

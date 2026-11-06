@@ -113,10 +113,23 @@ public enum AskTimeFrame: Sendable, Equatable {
         if q.range(of: duePattern, options: .regularExpression) != nil, let range = resolver.range(in: q) {
             return .dueOn(range)
         }
-        if CourseSearch.policyWords.contains(where: q.contains) || q.contains("syllabus") {
+        if q.contains("syllabus") || (CourseSearch.mentionsPolicyWord(q) && !carriesChangeWord(q)) {
             return .policy
         }
         return .specific
+    }
+
+    /// Words that say the student is asking whether something *changed*. A
+    /// standing-rule word beside one of these ("was the midterm moved?") wants
+    /// the newest post, not the syllabus, and a `.policy` classification
+    /// would raise the syllabus boost and switch freshness off.
+    private static let changeWords: Set<String> = [
+        "moved", "changed", "rescheduled", "postponed", "cancelled", "canceled",
+        "still", "now", "update", "updated", "updates",
+    ]
+
+    private static func carriesChangeWord(_ q: String) -> Bool {
+        CourseSearch.wordTokens(q).contains(where: changeWords.contains)
     }
 
     /// A word about work being owed. Together with a day it is a due-date

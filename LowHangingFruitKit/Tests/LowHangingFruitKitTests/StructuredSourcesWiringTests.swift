@@ -133,11 +133,116 @@ struct StructuredSourcesWiringTests {
     func moduleRequirementBySource() throws {
         let (state, _, _) = try makeState([])
         state.applyStructuredSources(run: run(modules: [.init(id: "1", name: "W1", items: [
-            .init(id: "21", type: "Quiz", contentID: "5", title: "Quiz 1", completionCompleted: true,
+            .init(id: "21", type: "Quiz", contentID: "5", title: "Quiz 1", completionRequirementType: "must_submit", completionCompleted: true,
                   dueAt: date("2026-11-26T17:00:00Z")),
         ])]), courses: [course])
         rebuild(state)
         #expect(!titles(state).contains("Quiz 1"))
+    }
+
+    // MARK: Undoing a Canvas-derived completion
+
+    /// A run that read everything in full, so Canvas's silence means something.
+    private func fullRun(planner: [CanvasPlannerItem]) -> CanvasStructuredSourcesClient.RunResult {
+        var r = run(planner: planner)
+        r.plannerCompleted = true
+        r.missingCompleted = true
+        r.courses[0].completedEndpoints = [.modules, .assignments]
+        return r
+    }
+
+    private func tick(_ id: String = "55") -> CanvasPlannerItem {
+        .init(plannableType: "assignment", plannableID: id, courseID: "7", markedComplete: true)
+    }
+
+    @Test("marking a Canvas-ticked card active lasts: the next rebuild and the same planner tick do not re-complete it")
+    func unTickLasts() throws {
+        let (state, _, _) = try makeState([feedRow("55", title: "Ticked in Canvas")])
+        state.applyStructuredSources(run: fullRun(planner: [tick()]), courses: [course], now: now)
+        rebuild(state)
+        #expect(!titles(state).contains("Ticked in Canvas"))
+
+        let card = feedRow("55", title: "Ticked in Canvas")
+        state.markActive(card)
+        #expect(state.structuredCompletionOverrides.contains(card.id))
+        #expect(titles(state).contains("Ticked in Canvas"))
+
+        rebuild(state)
+        state.applyStructuredSources(run: fullRun(planner: [tick()]), courses: [course], now: now)
+        rebuild(state)
+        #expect(titles(state).contains("Ticked in Canvas"))
+        #expect(!state.isCompleted(card))
+        // The override is persisted beside the set.
+        #expect(Set(state.structuredDefaults?.stringArray(forKey: "structuredCompletionOverridesV1") ?? []) == [card.id])
+    }
+
+    @Test("completing it yourself afterwards removes the override")
+    func ownTickRemovesOverride() throws {
+        let (state, _, _) = try makeState([feedRow("55", title: "Ticked in Canvas")])
+        state.applyStructuredSources(run: fullRun(planner: [tick()]), courses: [course], now: now)
+        rebuild(state)
+        let card = feedRow("55", title: "Ticked in Canvas")
+        state.markActive(card)
+        #expect(state.structuredCompletionOverrides.contains(card.id))
+        state.markCompleted(card)
+        #expect(state.structuredCompletionOverrides.isEmpty)
+        #expect(state.isCompleted(card))
+    }
+
+    @Test("a Canvas un-tick seen by a full run retires the completion and any override; a later re-tick completes again")
+    func canvasUnTick() throws {
+        let (state, _, _) = try makeState([feedRow("55", title: "Ticked in Canvas")])
+        state.applyStructuredSources(run: fullRun(planner: [tick()]), courses: [course], now: now)
+        let card = feedRow("55", title: "Ticked in Canvas")
+        state.markActive(card)
+        #expect(state.structuredCompletionOverrides.contains(card.id))
+
+        state.applyStructuredSources(run: fullRun(planner: []), courses: [course], now: now)
+        #expect(state.structuredCompletedItemIDs.isEmpty)
+        #expect(state.structuredCompletionOverrides.isEmpty)
+
+        state.applyStructuredSources(run: fullRun(planner: [tick()]), courses: [course], now: now)
+        #expect(state.isCompleted(card))
+    }
+
+    @Test("a partial run, or an item outside the planner window, never drops a completion")
+    func partialRunKeepsCompletions() throws {
+        let (state, _, _) = try makeState([
+            feedRow("55", title: "Ticked in Canvas"),
+            feedRow("56", title: "Old tick", due: "2026-09-01T17:00:00Z"),
+        ])
+        state.applyStructuredSources(run: run(planner: [tick("55"), tick("56")]), courses: [course], now: now)
+        #expect(state.structuredCompletedItemIDs.count == 2)
+
+        // Planner unfinished: silence is not a retraction.
+        var partial = fullRun(planner: [])
+        partial.plannerCompleted = false
+        state.applyStructuredSources(run: partial, courses: [course], now: now)
+        #expect(state.structuredCompletedItemIDs.count == 2)
+
+        // Modules unfinished for the course: same.
+        var noModules = fullRun(planner: [])
+        noModules.courses[0].completedEndpoints = [.assignments]
+        state.applyStructuredSources(run: noModules, courses: [course], now: now)
+        #expect(state.structuredCompletedItemIDs.count == 2)
+
+        // A full run drops the in-window tick, but the 2026-09-01 item is older than the
+        // planner's 14-day look-back, so its absence from the answer proves nothing.
+        state.applyStructuredSources(run: fullRun(planner: []), courses: [course], now: now)
+        #expect(state.structuredCompletedItemIDs.count == 1)
+    }
+
+    @Test("a module must_view requirement does not complete the card")
+    func mustViewDoesNotComplete() throws {
+        let (state, _, _) = try makeState([feedRow("55", title: "Opened only")])
+        state.applyStructuredSources(run: run(modules: [.init(id: "1", name: "W1", items: [
+            .init(id: "11", type: "Assignment", contentID: "55", title: "Opened only",
+                  completionRequirementType: "must_view", completionCompleted: true,
+                  dueAt: date("2026-11-25T17:00:00Z")),
+        ])]), courses: [course], now: now)
+        rebuild(state)
+        #expect(titles(state).contains("Opened only"))
+        #expect(state.structuredCompletedItemIDs.isEmpty)
     }
 
     @Test("a dismissed planner item is off todo and all but stays in the ledger")

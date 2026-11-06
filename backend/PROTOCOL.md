@@ -948,12 +948,18 @@ recorded.
 document is read again under its new hash. The model is shown the **item
 index** the server builds from the course's live documents: every
 `assignment` (id = its Canvas `sourceID`, with `dueAt`) and every `module`
-document that has a `dueAt` (id = `module:<sourceID>`), at most 200, plus the
+document that has a `dueAt` (id = `module:<sourceID>`), at most 200, nearest
+to now first (by distance from the current time, either side; undated last),
+so a large or recycled course shows the model its current weeks, plus the
 course's meeting pattern from the catalog when it has one (no room), in
 `America/New_York`. A fact's `target` is one of those ids, or null.
 `rejected` facts (a quote not in the title or text, an unknown target, a
-missing target or title, a `reschedule` more than 400 days from now) are
-counted by reason and never stored. A document that yields nothing is
+missing target, a missing title on a `new_task`, `scope_change` or `note`, a
+`reschedule` without a date (`due_required`) or more than 400 days from now)
+are counted by reason and never stored. A `due_at` with no UTC offset
+(`"2026-11-10"`, `"2026-11-10T23:59"`) is read as local time in the
+document's zone, a date-only one as 23:59 that day, and is stored as an
+instant. A title is trimmed and cut at 200 characters, not rejected. A document that yields nothing is
 recorded as read, so it is not paid for again.
 
 **Model.** `LHF_FACTS_MODEL`, default `anthropic/claude-haiku-5.5`, through
@@ -978,7 +984,13 @@ means the document is recorded
 `skipped_budget` and picked up on a later call, never read for free. A failed
 call (HTTP error, timeout, an answer that is not the schema) is recorded
 `failed` and retried by later runs, at most 3 attempts in all, then given up.
-A document that is edited between being listed and being read is skipped
+A run does not start a document with less than 8 seconds of its 50 second
+budget left: nothing is claimed, so no budget unit or attempt is charged, and
+the document stays pending for the next run. A finished extraction (delete the
+old facts, insert the new, update the row) is one database transaction
+(`finish_fact_extraction`, `20261105090000_finish_fact_extraction.sql`, which
+must be applied before the `extract-facts` that calls it is deployed). A
+document that is edited between being listed and being read is skipped
 without a row, so new text is never stored under the old hash. A call is never
 repeated while another is running it (a `running` row younger
 than 5 minutes is left alone).

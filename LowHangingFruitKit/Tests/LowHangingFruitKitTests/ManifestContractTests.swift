@@ -103,21 +103,24 @@ struct ManifestContractTests {
         )
 
         let item = try #require(effects.items[row.id])
-        #expect(item.cancelled?.by == "announcement:1234:55#101")
+        // Rewritten 2026-11-05: the fixture's cancel (#101) and reschedule (#102)
+        // of one target share a post time, and they now share one supersession
+        // key, so the later seq wins and the cancel is superseded (it used to
+        // apply alongside, leaving a card both hidden and moved).
+        #expect(item.cancelled == nil)
+        #expect(effects.redundant.contains(.init(factID: "announcement:1234:55#101", reason: .supersededBySeq(102))))
         #expect(item.rescheduled?.to == (try date("2026-11-12T04:59:00.000Z")))
         #expect(item.rescheduled?.from == due)
         #expect(effects.newTasks.count == 1)
         #expect(effects.newTasks.first?.assignment.title == "Read ch. 5")
         #expect(effects.newTasks.first?.assignment.kind == .other)
         #expect(effects.needsReview.map(\.reason) == [.flaggedByExtractor])
-        #expect(effects.applied == [
-            "announcement:1234:55#101", "announcement:1234:55#102", "announcement:1234:55#103",
-        ])
+        #expect(effects.applied == ["announcement:1234:55#102", "announcement:1234:55#103"])
 
         // And the write-back leaves the store consistent.
         #expect(store.record(effects, now: Self.now))
         let stored = store.all()
-        #expect(stored.filter { $0.appliedAt != nil }.map(\.seq) == [101, 102, 103])
-        #expect(stored.first { $0.seq == 101 }?.resolvedItemID == row.id)
+        #expect(stored.filter { $0.appliedAt != nil }.map(\.seq) == [102, 103])
+        #expect(stored.first { $0.seq == 102 }?.resolvedItemID == row.id)
     }
 }

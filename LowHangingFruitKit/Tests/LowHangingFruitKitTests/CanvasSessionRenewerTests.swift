@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+@testable import LowHangingFruitKit
 @testable import LowHangingFruitUI
 
 /// Session-longevity Layer 2 (`CanvasSessionRenewer.swift`): a silent,
@@ -354,5 +355,159 @@ struct CanvasSessionRenewerTests {
         #expect(!AppState.isDuoCookieDomain("notduosecurity.com"))
         #expect(!AppState.isDuoCookieDomain("duosecurity.com.evil.example"))
         #expect(!AppState.isDuoCookieDomain("canvas.upenn.edu"))
+    }
+
+    // MARK: - Continuations re-check liveness (2026-11-05 review, items 11, 14, 16)
+
+    private let idpURL = URL(string: "https://idp.pennkey.upenn.edu/idp/profile/SAML2/Redirect/SSO")
+
+    private func makeRenewer() -> CanvasSessionRenewer {
+        CanvasSessionRenewer(isLoginPaneActive: { false }, autoLogin: { (username: "student", password: "pw") })
+    }
+
+    @Test("an attempt aborted during the form-detect await never submits")
+    func abortedDuringDetectNeverSubmits() async {
+        let renewer = makeRenewer()
+        let serial = renewer.beginAttemptForTesting()
+        var submissions = 0
+        let settle = await renewer.evaluateNonCanvasFinish(
+            url: idpURL, serial: serial,
+            detect: { renewer.abort(); return "form" },
+            errorText: { nil },
+            submit: { _, _ in submissions += 1 }
+        )
+        #expect(settle == false)
+        #expect(submissions == 0)
+        #expect(renewer.hasSubmittedForTesting == false)
+        renewer.endAttemptForTesting()
+    }
+
+    @Test("an attempt superseded during the await never submits, and the new one submits once")
+    func supersededDuringDetectNeverSubmits() async {
+        let renewer = makeRenewer()
+        let oldSerial = renewer.beginAttemptForTesting()
+        var submissions = 0
+        var newSerial = 0
+        let stale = await renewer.evaluateNonCanvasFinish(
+            url: idpURL, serial: oldSerial,
+            detect: {
+                // The old attempt ends and a new one starts while the script runs.
+                renewer.endAttemptForTesting()
+                newSerial = renewer.beginAttemptForTesting()
+                return "form"
+            },
+            errorText: { nil },
+            submit: { _, _ in submissions += 1 }
+        )
+        #expect(stale == false)
+        #expect(submissions == 0)
+        #expect(renewer.hasSubmittedForTesting == false)
+
+        // The live attempt is unaffected: it submits exactly once, and a
+        // second sighting of the form goes to the bounce branch, not a
+        // second submission.
+        let first = await renewer.evaluateNonCanvasFinish(
+            url: idpURL, serial: newSerial,
+            detect: { "form" }, errorText: { nil }, submit: { _, _ in submissions += 1 }
+        )
+        #expect(first == false)
+        #expect(submissions == 1)
+        let second = await renewer.evaluateNonCanvasFinish(
+            url: idpURL, serial: newSerial,
+            detect: { "form" }, errorText: { "" }, submit: { _, _ in submissions += 1 }
+        )
+        #expect(second == true)
+        #expect(submissions == 1)
+        renewer.endAttemptForTesting()
+    }
+
+    @Test("a stale serial is not live and an abort marks every earlier serial aborted")
+    func livenessRules() {
+        let renewer = makeRenewer()
+        let first = renewer.beginAttemptForTesting()
+        #expect(renewer.attemptIsLive(first))
+        renewer.endAttemptForTesting()
+        #expect(!renewer.attemptIsLive(first))
+        let second = renewer.beginAttemptForTesting()
+        #expect(renewer.attemptIsLive(second))
+        #expect(!renewer.attemptIsLive(first))
+        renewer.abort()
+        #expect(!renewer.attemptIsLive(second))
+        #expect(!renewer.attemptIsNotAborted(second))
+        #expect(!renewer.attemptIsNotAborted(first))
+        // The next attempt is not poisoned by the earlier abort.
+        renewer.endAttemptForTesting()
+        let third = renewer.beginAttemptForTesting()
+        #expect(renewer.attemptIsLive(third))
+        #expect(renewer.attemptIsNotAborted(third))
+        renewer.endAttemptForTesting()
+    }
+
+    @Test("a form that returns with an error naming the credential is a rejection")
+    func credentialErrorIsRejection() async {
+        let renewer = makeRenewer()
+        let serial = renewer.beginAttemptForTesting()
+        _ = await renewer.evaluateNonCanvasFinish(
+            url: idpURL, serial: serial, detect: { "form" }, errorText: { nil }, submit: { _, _ in })
+        let settled = await renewer.evaluateNonCanvasFinish(
+            url: idpURL, serial: serial, detect: { "form-error" },
+            errorText: { "the password you entered was incorrect." }, submit: { _, _ in })
+        #expect(settled)
+        #expect(renewer.lastSubmissionBounce == .credentialError)
+        #expect(CanvasSessionRenewer.postSubmissionFormOutcome(renewer.lastSubmissionBounce) == .passwordRejected)
+        renewer.endAttemptForTesting()
+    }
+
+    @Test("a form that returns without a credential error is a plain landing, not a rejection")
+    func otherBounceIsNotRejection() async {
+        for text in [nil, "", "duo authentication was denied. please try again later."] as [String?] {
+            let renewer = makeRenewer()
+            let serial = renewer.beginAttemptForTesting()
+            _ = await renewer.evaluateNonCanvasFinish(
+                url: idpURL, serial: serial, detect: { "form" }, errorText: { nil }, submit: { _, _ in })
+            let settled = await renewer.evaluateNonCanvasFinish(
+                url: idpURL, serial: serial, detect: { "form" }, errorText: { text }, submit: { _, _ in })
+            #expect(settled)
+            #expect(renewer.lastSubmissionBounce == .other)
+            #expect(CanvasSessionRenewer.postSubmissionFormOutcome(renewer.lastSubmissionBounce) == .landedOnLoginPage)
+            renewer.endAttemptForTesting()
+        }
+        #expect(CanvasSessionRenewer.postSubmissionFormOutcome(nil) == .landedOnLoginPage)
+    }
+
+    @Test("the credential-error word list matches on any listed word, case-insensitively")
+    func credentialErrorWords() {
+        for word in PennKeyLoginForm.credentialErrorWords {
+            #expect(PennKeyLoginForm.errorTextIndicatesBadCredential("Problem: \(word.uppercased()) was refused"))
+        }
+        #expect(!PennKeyLoginForm.errorTextIndicatesBadCredential("duo push was denied"))
+        #expect(!PennKeyLoginForm.errorTextIndicatesBadCredential(nil))
+        #expect(!PennKeyLoginForm.errorTextIndicatesBadCredential(""))
+    }
+
+    @Test("the error-text script reads visible text only: innerText, hidden nodes skipped")
+    func errorTextScriptIgnoresHiddenText() {
+        let script = PennKeyLoginForm.errorTextScript
+        #expect(script.contains("innerText"))
+        // `textContent` would read a display:none "Incorrect password" template.
+        #expect(!script.contains("textContent"))
+        #expect(script.contains("offsetParent === null"))
+        // What the script returns for a hidden template is empty, and empty
+        // is never a credential rejection.
+        #expect(!PennKeyLoginForm.errorTextIndicatesBadCredential(""))
+    }
+
+    @Test("clearing the failed-submission clock lets a foreground submission through again")
+    func clearFailedClock() {
+        let t = Date(timeIntervalSince1970: 1_800_000_000)
+        let renewer = CanvasSessionRenewer(isLoginPaneActive: { false }, lastFailedCredentialSubmissionAt: t)
+        #expect(!CanvasSessionRenewer.credentialSubmissionAllowed(
+            lastSubmissionAt: nil, now: t.addingTimeInterval(60), isBackground: false,
+            lastFailedSubmissionAt: renewer.lastFailedCredentialSubmissionAt))
+        renewer.clearFailedSubmissionClock()
+        #expect(renewer.lastFailedCredentialSubmissionAt == nil)
+        #expect(CanvasSessionRenewer.credentialSubmissionAllowed(
+            lastSubmissionAt: nil, now: t.addingTimeInterval(60), isBackground: false,
+            lastFailedSubmissionAt: renewer.lastFailedCredentialSubmissionAt))
     }
 }

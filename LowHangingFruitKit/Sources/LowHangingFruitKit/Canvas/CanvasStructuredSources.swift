@@ -89,6 +89,9 @@ public struct CanvasPlannerItem: Decodable, Sendable, Hashable {
     public let submitted: Bool?
     public let missing: Bool?
     public let graded: Bool?
+    /// `plannable.assignment_id`: for a quiz, the id of the assignment that
+    /// backs it, which is what a feed row carries. Not every Canvas sends it.
+    public let assignmentID: String?
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: AnyKey.self)
@@ -102,8 +105,9 @@ public struct CanvasPlannerItem: Decodable, Sendable, Hashable {
             dueAt = plannable.lenientDate(key("due_at"))
             todoDate = plannable.lenientDate(key("todo_date"))
             pageURL = plannable.lenientString(key("url"))
+            assignmentID = plannable.flexString(key("assignment_id"))
         } else {
-            title = nil; dueAt = nil; todoDate = nil; pageURL = nil
+            title = nil; dueAt = nil; todoDate = nil; pageURL = nil; assignmentID = nil
         }
         if let override = try? c.nestedContainer(keyedBy: AnyKey.self, forKey: key("planner_override")) {
             markedComplete = override.lenientBool(key("marked_complete")) ?? false
@@ -124,8 +128,9 @@ public struct CanvasPlannerItem: Decodable, Sendable, Hashable {
         plannableType: String, plannableID: String?, title: String? = nil, dueAt: Date? = nil,
         todoDate: Date? = nil, pageURL: String? = nil, courseID: String? = nil, htmlURL: String? = nil,
         markedComplete: Bool = false, dismissed: Bool = false,
-        submitted: Bool? = nil, missing: Bool? = nil, graded: Bool? = nil
+        submitted: Bool? = nil, missing: Bool? = nil, graded: Bool? = nil, assignmentID: String? = nil
     ) {
+        self.assignmentID = assignmentID
         self.plannableType = plannableType; self.plannableID = plannableID; self.title = title
         self.dueAt = dueAt; self.todoDate = todoDate; self.pageURL = pageURL; self.courseID = courseID
         self.htmlURL = htmlURL; self.markedComplete = markedComplete; self.dismissed = dismissed

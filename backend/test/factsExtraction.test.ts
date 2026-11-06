@@ -11,6 +11,7 @@
 import { strict as assert } from "node:assert";
 import {
   buildItemIndex,
+  MIN_REMAINING_MS,
   extractFactsForDocument,
   FACT_ELIGIBLE_KINDS,
   meetingsFromCatalog,
@@ -45,6 +46,7 @@ async function fixture(name: string): Promise<CorpusDoc> {
 }
 
 const COURSE = "4001";
+const NOW = new Date("2026-10-06T14:14:00Z");
 
 function metaRow(doc: CorpusDoc, overrides: Partial<FactsDocumentMetaRow> = {}): FactsDocumentMetaRow {
   return {
@@ -253,7 +255,7 @@ Deno.test("accepted and rejected facts: the cancel is stored, the invented-targe
   const bad = { ...cancelFact, target: "a-99999" }; // not in the index
   const invented = { ...cancelFact, quote: "this sentence is not in the post" };
   const { fetchImpl } = fakeModel(() => answer([cancelFact, bad, invented]));
-  const result = await extractFactsForDocument(context(store, fetchImpl), full, buildItemIndex(store.rows), doc.meetings);
+  const result = await extractFactsForDocument(context(store, fetchImpl), full, buildItemIndex(store.rows, NOW), doc.meetings);
 
   assert.deepEqual(result, { status: "done", facts: 1, rejected: 2 });
   assert.equal(store.facts.length, 1);
@@ -291,7 +293,7 @@ Deno.test("a new_task document stores the task with its resolved date", async ()
 Deno.test("the request: strict json_schema, Haiku, low reasoning, temperature 0, 4000 tokens, never require_parameters", async () => {
   const { doc, store, full } = await seeded();
   const { fetchImpl, calls } = fakeModel(() => answer([]));
-  await extractFactsForDocument(context(store, fetchImpl), full, buildItemIndex(store.rows), doc.meetings);
+  await extractFactsForDocument(context(store, fetchImpl), full, buildItemIndex(store.rows, NOW), doc.meetings);
   const body = calls[0].body;
   assert.equal(body.model, "anthropic/claude-haiku-5.5");
   assert.deepEqual(body.reasoning, { effort: "low" });
@@ -325,11 +327,11 @@ Deno.test("dedupe is by (id, content_hash): the same revision is skipped, an edi
   const { doc, store, full } = await seeded();
   const { fetchImpl, calls } = fakeModel(() => answer([cancelFact]));
   const ctx = context(store, fetchImpl);
-  await extractFactsForDocument(ctx, full, buildItemIndex(store.rows), doc.meetings);
-  assert.equal((await extractFactsForDocument(ctx, full, buildItemIndex(store.rows), doc.meetings)).status, "not_pending");
+  await extractFactsForDocument(ctx, full, buildItemIndex(store.rows, NOW), doc.meetings);
+  assert.equal((await extractFactsForDocument(ctx, full, buildItemIndex(store.rows, NOW), doc.meetings)).status, "not_pending");
   assert.equal(calls.length, 1);
   const edited = { ...full, content_hash: "hash-2" };
-  assert.equal((await extractFactsForDocument(ctx, edited, buildItemIndex(store.rows), doc.meetings)).status, "done");
+  assert.equal((await extractFactsForDocument(ctx, edited, buildItemIndex(store.rows, NOW), doc.meetings)).status, "done");
   assert.equal(calls.length, 2);
   assert.equal(store.facts.length, 2, "one fact per revision, kept apart by content_hash");
 });
@@ -361,7 +363,7 @@ Deno.test("a document edited between listing and reading is skipped, with no row
   const { store, row } = await seeded();
   store.hashNow.set(row.id, "hash-EDITED");
   const { fetchImpl, calls } = fakeModel(() => answer([cancelFact]));
-  const stats = await runPendingFactExtractionsWith(context(store, fetchImpl), [COURSE], { maxDocuments: 5, budgetMs: 5000, concurrency: 1 });
+  const stats = await runPendingFactExtractionsWith(context(store, fetchImpl), [COURSE], { maxDocuments: 5, budgetMs: 60_000, concurrency: 1 });
   assert.equal(calls.length, 0);
   assert.equal(store.extractions.size, 0);
   assert.equal(store.facts.length, 0);
@@ -416,7 +418,7 @@ Deno.test("an answer that is not the schema's JSON is a failed row, not zero fac
 // Pure helpers
 // ---------------------------------------------------------------------
 
-Deno.test("buildItemIndex: assignments and dated modules, dated first by date, module ids prefixed", () => {
+Deno.test("buildItemIndex: assignments and dated modules, dated first nearest to now, module ids prefixed", () => {
   const index = buildItemIndex([
     { kind: "assignment", source_id: "7", title: "Zed", due_at: null },
     { kind: "assignment", source_id: "8", title: "Late", due_at: "2026-12-01T05:00:00Z" },
@@ -424,10 +426,28 @@ Deno.test("buildItemIndex: assignments and dated modules, dated first by date, m
     { kind: "module", source_id: "7", title: "Week 7", due_at: "2026-11-15T05:00:00Z" },
     { kind: "module", source_id: "8", title: "Undated module", due_at: null },
     { kind: "page", source_id: "1", title: "A page", due_at: null },
-  ]);
+  ], new Date("2026-10-30T00:00:00Z"));
   assert.deepEqual(index.map((i) => i.sourceID), ["9", "module:7", "8", "7"]);
   assert.equal(index[1].kind, "module_item");
   assert.equal(index[3].dueAt, undefined);
+});
+
+Deno.test("buildItemIndex: a big or recycled course keeps the weeks around now, not the oldest 200", () => {
+  const now = new Date("2026-11-05T12:00:00Z");
+  const rows: Parameters<typeof buildItemIndex>[0] = [];
+  // 250 old items (a recycled site), then three current ones and an undated one.
+  for (let i = 0; i < 250; i++) {
+    const day = new Date(Date.UTC(2025, 0, 1) + i * 86_400_000).toISOString();
+    rows.push({ kind: "assignment", source_id: `old${i}`, title: `Old ${i}`, due_at: day });
+  }
+  rows.push({ kind: "assignment", source_id: "cur-past", title: "Just past", due_at: "2026-11-03T12:00:00Z" });
+  rows.push({ kind: "assignment", source_id: "cur-next", title: "Next", due_at: "2026-11-07T12:00:00Z" });
+  rows.push({ kind: "assignment", source_id: "undated", title: "Undated", due_at: null });
+  const index = buildItemIndex(rows, now);
+  assert.equal(index.length, 200);
+  assert.deepEqual(index.slice(0, 2).map((i) => i.sourceID), ["cur-past", "cur-next"], "nearest first, either side of now");
+  assert.ok(!index.some((i) => i.sourceID === "old0"), "the oldest item is what gets cut");
+  assert.ok(!index.some((i) => i.sourceID === "undated"), "undated sorts after dated, so a full cap cuts it first");
 });
 
 Deno.test("meetingsFromCatalog: weekday numbers and minutes become the prompt's block, duplicates collapse", () => {
@@ -493,7 +513,7 @@ Deno.test("a run takes eligible documents newest first, up to the cap, and repor
   });
   const stats = await runPendingFactExtractionsWith(context(store, fetchImpl), [COURSE], {
     maxDocuments: 2,
-    budgetMs: 10_000,
+    budgetMs: 60_000,
     concurrency: 1,
   });
   assert.deepEqual(order, ["2026-10-05T00:00:00Z", "2026-10-01T00:00:00Z"]);
@@ -512,12 +532,27 @@ Deno.test("a run stops asking a course whose budget said no", async () => {
   const { fetchImpl, calls } = fakeModel(() => answer([]));
   const stats = await runPendingFactExtractionsWith(context(store, fetchImpl), [COURSE], {
     maxDocuments: 10,
-    budgetMs: 10_000,
+    budgetMs: 60_000,
     concurrency: 1,
   });
   assert.equal(calls.length, 0);
   assert.equal(stats.skippedBudget, 1, "one claim was refused; the other two were not even tried");
   assert.equal(stats.remaining, 2);
+});
+
+Deno.test("a run with less than the floor left claims nothing and leaves the document pending", async () => {
+  const { store } = await seeded();
+  const { fetchImpl, calls } = fakeModel(() => answer([]));
+  const stats = await runPendingFactExtractionsWith(context(store, fetchImpl), [COURSE], {
+    maxDocuments: 5,
+    budgetMs: MIN_REMAINING_MS - 1,
+    concurrency: 1,
+  });
+  assert.equal(calls.length, 0, "no model call");
+  assert.deepEqual(store.claims, [], "no claim, so no budget unit and no attempt charged");
+  assert.equal(store.budget.get(COURSE) ?? 0, 0);
+  assert.equal(store.extractions.size, 0);
+  assert.deepEqual(stats, { attempted: 0, done: 0, failed: 0, skippedBudget: 0, facts: 0, remaining: 1 });
 });
 
 Deno.test("a store failure ends the run quietly instead of throwing", async () => {
@@ -539,7 +574,7 @@ Deno.test("two overlapping runs never extract the same revision twice", async ()
     return answer([cancelFact]);
   });
   const ctx = context(store, fetchImpl);
-  const options = { maxDocuments: 5, budgetMs: 5000, concurrency: 1 };
+  const options = { maxDocuments: 5, budgetMs: 60_000, concurrency: 1 };
   await Promise.all([
     runPendingFactExtractionsWith(ctx, [COURSE], options),
     runPendingFactExtractionsWith(ctx, [COURSE], options),

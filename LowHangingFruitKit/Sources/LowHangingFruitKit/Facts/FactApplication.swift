@@ -165,13 +165,34 @@ public enum FactApplication {
 
         // Rule 1a: a fact the student rejected is gone before anything else
         // looks at it, and it is dropped BEFORE supersession so that it can
-        // neither apply nor suppress an older fact. (Rejecting a newer fact
-        // means "that one is wrong", not "so the older one must be too": the
-        // older fact stays eligible. The wrong order would let a rejected
-        // reschedule silently retire the earlier, correct one.)
+        // neither apply nor suppress an older fact BY SUPERSESSION. (Rejecting
+        // a newer fact means "that one is wrong", not "so the older one must
+        // be too": the wrong order would let a rejected reschedule silently
+        // retire the earlier, correct one as `supersededBySeq`.)
+        //
+        // A rejection is, however, a durable verdict on the KEY (course, type,
+        // target) and not on one fact id. Keyed on the id alone, undo did not
+        // last: a typo fix to the post gives the same statement a new content
+        // hash and so a new fact id, a second post repeating the news is
+        // another id, and a re-extraction is another seq, and each re-applied
+        // the cancel the student had just undone. So a rejected fact also
+        // stands down every other fact with the same key that is not newer
+        // than it (`postedAt` not later than the rejected one's; an unknown
+        // date never counts as newer). A genuinely later post may apply again
+        // and the student can reject it again.
+        // Verdict key to the latest rejected `postedAt`; an undated rejected
+        // fact has nothing to compare against, so it covers the key outright.
+        var verdicts: [String: Date] = [:]
+        for fact in facts where fact.studentOverride == .rejected {
+            guard let key = verdictKey(fact) else { continue }
+            verdicts[key] = max(verdicts[key] ?? .distantPast, fact.postedAt ?? .distantFuture)
+        }
         var live: [AppliedFact] = []
         for fact in facts {
             if fact.studentOverride == .rejected {
+                out.redundant.append(.init(factID: fact.id, reason: .studentOverride))
+            } else if fact.studentOverride != .confirmed, let key = verdictKey(fact), let verdict = verdicts[key],
+                      !Self.isLater(fact.postedAt, than: verdict) {
                 out.redundant.append(.init(factID: fact.id, reason: .studentOverride))
             } else {
                 live.append(fact)
@@ -399,10 +420,48 @@ public enum FactApplication {
         return a.id < b.id
     }
 
+    /// Whether a fact posted at `a` is strictly newer than a verdict's date.
+    /// An undated candidate is never newer, and an undated rejection arrives
+    /// here as `.distantFuture`, so nothing beats it: the safe error is a
+    /// cancel the student already undid staying undone.
+    nonisolated private static func isLater(_ a: Date?, than b: Date) -> Bool {
+        guard let a else { return false }
+        return a > b
+    }
+
+    /// What a rejection is about: the same (course, type, target), or for a
+    /// new task the same title, or for a note the same target and words. Nil
+    /// for facts that name nothing a verdict could attach to (no target, a
+    /// `needs_review`), which are judged by their own id only.
+    nonisolated private static func verdictKey(_ fact: AppliedFact) -> String? {
+        switch fact.type {
+        case .newTask:
+            let title = AssignmentDeduplicator.normalize(fact.title ?? "").joined(separator: " ")
+            return title.isEmpty ? nil : "\(fact.courseID)|new_task|\(title)"
+        case .note:
+            guard let target = fact.target, !target.isEmpty else { return nil }
+            let words = AssignmentDeduplicator.normalize(noteText(fact)).joined(separator: " ")
+            return "\(fact.courseID)|note|\(target)|\(words)"
+        case .needsReview:
+            return nil
+        case .cancel, .reschedule, .scopeChange:
+            guard let target = fact.target, !target.isEmpty else { return nil }
+            return "\(fact.courseID)|\(fact.type.rawValue)|\(target)"
+        }
+    }
+
     /// What "the same statement, said again" means per type. A target-less
     /// targeted fact, and a `new_task`, need a different key: grouping every
     /// target-less cancel together would let one retire the rest, and two
     /// tasks with no target are not the same task.
+    ///
+    /// `cancel` and `reschedule` share ONE key per (course, target): they are
+    /// two answers to "what is happening with this item", so the newest wins.
+    /// With the type in the key, "Quiz 2 cancelled" (Nov 1) and "Quiz 2 is
+    /// back on Nov 10" (Nov 3) were both live, and the card was both hidden
+    /// and moved. A newer cancel still beats an older reschedule by the same
+    /// rule. `scope_change` stays its own key: a changed scope does not undo
+    /// a cancellation.
     nonisolated private static func supersessionKey(_ fact: AppliedFact) -> String {
         switch fact.type {
         case .newTask:
@@ -418,7 +477,8 @@ public enum FactApplication {
             guard let target = fact.target, !target.isEmpty else {
                 return "\(fact.courseID)|\(fact.type.rawValue)|untargeted|\(fact.id)"
             }
-            return "\(fact.courseID)|\(fact.type.rawValue)|\(target)"
+            let family = fact.type == .scopeChange ? fact.type.rawValue : "status"
+            return "\(fact.courseID)|\(family)|\(target)"
         }
     }
 

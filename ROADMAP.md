@@ -79,9 +79,16 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
      02:03 UTC (`extract-facts` v2, `sync` v18; 0 false tasks in two runs,
      recall 64%/57%): `docs/FACTS_PROMPT_OWNER_RULE_2026-11-05.md`. PHYS
      0151 was cleared and re-extracted under it (17 facts, no false tasks).
-     Also open: the `needs_review` fact came from a September document
-     ("Quiz 5 ... Sep 19th") read against today's index, so a stale document
-     can raise review noise.
+     The `needs_review` noise from a September document ("Quiz 5 ... Sep
+     19th") read against today's index was round 4 (a document-age rule
+     plus `due_in_past` / `stale_document` guards), live since 2026-11-05
+     21:13 UTC as `extract-facts` v5 and `sync` v21 with Marco's go; its
+     first live exercise waits for a new post (the course's unextracted
+     rows are all assignment descriptions, which extraction skips).
+     **Next deploy must apply migration `20261105090000_finish_fact_extraction.sql`
+     first** (`deploy-facts.mjs --step 1` now does both migrations, then
+     both functions); the code on `v10` calls that function on every
+     finish.
   6. Phone: `bash backend/scripts/verify-facts-on-phone.sh <CoreDevice id>`
      after a sync, then one card a fact touched: `undo` works, nothing
      completed or deleted, a manual date edit still wins. The plist half is
@@ -823,6 +830,21 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-05 (evening).** Round 4 of the facts prompt (stale posts) live as
+  `extract-facts` v5 / `sync` v21 with Marco's go; and the fix pass for
+  `docs/V10_BUG_HUNT_2026-11-05.md`: 29 of 33 items fixed on `v10` (facts
+  precedence and undo durability, `must_view` completions and their undo,
+  per-course facts cursor, withdrawn facts, quiz and page identities, the
+  on-device answerer's cancels; the silent re-login's one-submission
+  liveness, abort on disconnect, dead-probe flap, credential-less latch,
+  Duo-vs-password reading, Keychain save failure; atomic
+  `finish_fact_extraction`, the item index around now, offset-less dates,
+  reschedule/title validation, the 8 s floor; whole-word policy matching
+  and undated-post freshness in the tree; the ask-probe workflow's `eval`
+  and the `ask` deploy gate). 3688/350 Swift, Deno 711, Node 29, iOS build
+  green. Parked: per-user extraction cap (schema), Olisa's extension items
+  29-31 and 33. **Nothing on a phone yet; the new migration is not applied
+  in production.**
 - **2026-11-05 (01:20-01:45 UTC).** Facts backend live: migration
   `20261104090000_course_facts.sql`, `sync` v17, `extract-facts` v1; first
   extraction by hand gave six facts for $0.0067, two of them unwanted
