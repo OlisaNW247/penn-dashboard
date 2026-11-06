@@ -3386,15 +3386,16 @@ none is a ship line.
 ## Known gaps
 
 - **The 2026-11-05 bug-hunt fixes (facts, structured sources, silent
-  re-login, backend) are on Marco's phone but unchecked by eye, and the
+  re-login, backend) are on Marco's phone and looked right to him, and the
   `finish_fact_extraction` migration is not applied in production.** The
   Debug build from `8d2dd35` (3.4.0 (17)) was installed over the store copy
   on 2026-11-06 at 16:26 UTC: clean launch, no crash report, both session
   flags false, `factsCursorV1` 23, structured sources
-  `completions=11 dueOverrides=14 missing=1`. Still owed by eye: undo on a
-  fact-touched card, a hand-edited date winning, a cancelled card, the four
-  tree questions in `docs/HANDOFF_V10_MARCO_2026-11-05.md` step 4, and a
-  real re-login. `docs/V10_BUG_HUNT_2026-11-05.md` → Status lists the 29
+  `completions=11 dueOverrides=14 missing=1`. Marco used it the same day
+  and reported nothing wrong (2026-11-06, "I don't notice anything wrong
+  with it"); that is a general pass, not a ticked list, so a cancelled
+  card, a hand-edited date beating a fact, and a real re-login have still
+  not been seen one by one. `docs/V10_BUG_HUNT_2026-11-05.md` → Status lists the 29
   items fixed and the 5 parked (per-user extraction cap; Olisa's Chrome
   extension items 29-31 and 33). Before the next `extract-facts` or `sync`
   deploy, run `node backend/scripts/deploy-facts.mjs --step 1` (it now
