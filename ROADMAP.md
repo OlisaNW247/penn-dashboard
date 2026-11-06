@@ -834,7 +834,8 @@ Kept so nobody rebuilds them blind.
   redeployed from `bd9d20c` with the `finish_fact_extraction` migration
   (`sync` v22, `extract-facts` v6; steps 1-3 green), and **3.4.1 (18)**
   archived and uploaded at 14:00 EST. Marco submits in App Store Connect.
-  Not yet on a phone: the prev swipe-back fix and the `LHF-LINK` read.
+  The 3.4.1 (18) Debug build went onto Marco's phone at 14:06 EST (over
+  3.4.0 (17)); the prev swipe-back and the `LHF-LINK` read are his checks.
 - **2026-11-06 (the merge for production).** On top of the design pass:
   the prev swipe-back hang from `docs/TEST_REPORT_2026-11-06.md` finding 6
   fixed both ways (the latch resets; a Canvas-submitted item offers no

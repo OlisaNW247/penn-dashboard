@@ -4,7 +4,7 @@
 
 Steps 1, 2, 4 and 5 below were done on 2026-11-06: backend deployed (`sync`
 v22, `extract-facts` v6, migration applied), gate green, archive and export
-"Upload succeeded" at 14:00 EST. Step 3 (phone) not done. Step 6 is Marco's.
+"Upload succeeded" at 14:00 EST. Step 3 (phone): the 3.4.1 (18) Debug build from `bd9d20c` was installed over the 3.4.0 (17) copy on Marco's iPhone 17 Pro at 14:06 EST and launched; the two by-eye checks (prev swipe-back, one `LHF-LINK` line) are Marco's. Step 6 is Marco's.
 
 What ships beyond 3.4.0 (17), from `v10`: the `v9` sign-in rewrite (no
 banner, a session probe, silent re-login on every open, Duo auto-tap), the

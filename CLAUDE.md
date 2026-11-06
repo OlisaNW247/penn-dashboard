@@ -183,7 +183,9 @@ mode, the S app mark, and bundled type registered at runtime by
 UTC) on 2026-11-06** ("Upload succeeded"), after 3708/353 Swift, Deno 713 and
 the iOS simulator build on the same tree, and after the facts backend was
 redeployed from the same commit (`sync` v22, `extract-facts` v6, the
-`finish_fact_extraction` migration applied). Marco creates the 3.4.1 version
+`finish_fact_extraction` migration applied). The Debug build of the same
+tree is on Marco's iPhone 17 Pro since 14:06 EST the same day, over the 3.4.0
+(17) store copy, so the App Group container is readable again. Marco creates the 3.4.1 version
 record, attaches build 18, pastes `docs/appstore/LISTING.md` → What's New in
 3.4.1 and submits; the floor automation raises `update-manifest` six hours
 after it is live. What 3.4.1 carries beyond 3.4.0 is listed in
