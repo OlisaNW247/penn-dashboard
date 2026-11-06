@@ -950,4 +950,39 @@ struct SyncSummaryFormatTests {
         #expect(bare == "\(stamp) \u{00B7} skipped: not stale")
         #expect(AppState.courseKnowledgeSkipSummary(previous: bare, at: date, reason: "not stale") == bare)
     }
+
+    @Test("error kinds name only allow-listed endpoint words, with the rest under other")
+    func errorKindsFromCollectorStrings() {
+        let kinds = AppState.courseKnowledgeErrorKinds([
+            "CIS 2400 modules: 403 forbidden",
+            "PHYS 0151 modules: 2 unreadable",
+            "CIS 2400 pages: timed out",
+            "ed: signed out",
+            "something unexpected",
+        ])
+        #expect(kinds == "modules 2 \u{00B7} other 1 \u{00B7} pages 1")
+        #expect(AppState.courseKnowledgeErrorKinds([
+            "CIS 2400 modules: a", "CIS 2400 modules: b", "CIS 2400 pages: c", "weird",
+        ]) == "modules 2 \u{00B7} other 1 \u{00B7} pages 1")
+        #expect(AppState.courseKnowledgeErrorKinds(["announcements: x"]) == "announcements 1")
+        #expect(AppState.courseKnowledgeErrorKinds([]) == nil)
+        #expect(AppState.courseKnowledgeErrorKinds(["ed: a", "ed: b"]) == nil)
+    }
+
+    @Test("error kinds never carry a course code or description text")
+    func errorKindsLeakNothing() {
+        let kinds = AppState.courseKnowledgeErrorKinds(["CIS 2400 modules: 403 forbidden secret-word"]) ?? ""
+        #expect(kinds == "modules 1")
+        #expect(!kinds.contains("CIS"))
+        #expect(!kinds.contains("secret"))
+    }
+
+    @Test("a longer run line still round-trips through a skip")
+    func longerLineRoundTrips() {
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let run = "2027-01-15 07:00 \u{00B7} ok \u{00B7} errors 5 \u{00B7} error kinds: modules 3 \u{00B7} pages 2 \u{00B7} ed notes 0"
+        let skip = AppState.courseKnowledgeSkipSummary(previous: run, at: date, reason: "not stale")
+        #expect(skip.hasSuffix(" | last run: \(run)"))
+        #expect(AppState.courseKnowledgeSkipSummary(previous: skip, at: date, reason: "not stale") == skip)
+    }
 }

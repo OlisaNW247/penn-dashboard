@@ -1229,7 +1229,15 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v10` (2026-11-06, dashboard design pass): 3698 tests / 352
+**Current on `v10` (2026-11-06, the merge for production): 3708 tests / 353
+suites, all green, `swift test --no-parallel` on Marco's Mac (53 s), the only
+run on the machine; iOS Debug simulator build (`iPhone 17 Pro`) succeeded
+twice on the same tree; Deno 713 and `deno task check` clean.** +10 / +1
+over 3698 / 352: `CanvasLockedCompletionTests` (7, the prev swipe-back fix
+from `docs/TEST_REPORT_2026-11-06.md` finding 6) and three
+`SyncSummaryFormatTests` (the `error kinds` breakdown). Stamped 3.4.1 (18).
+
+Before it: **on `v10` (2026-11-06, dashboard design pass): 3698 tests / 352
 suites, all green, `swift test --no-parallel` on Marco's Mac (55 s); iOS
 Debug device build succeeded and is on Marco's phone.** +2 over 3696:
 +1 `ExamCardStyleTests` (grey palette), +2 `NoSubmissionCaveatTests`
@@ -3453,6 +3461,15 @@ none is a ship line.
 
 ## Known gaps
 
+- **A finished item whose completion is Canvas's alone has no swipe back
+  in prev** (since 2026-11-06, `AppState.completionIsLockedByCanvas`,
+  `DashItem.canMarkActive`). Before that the swipe was offered, did nothing
+  (`overrideStructuredCompletionIfItWasTheOnlyReason` withdraws the
+  override when Canvas says submitted) and the row hung mid-swipe because
+  `DoneCardView` latched `didUndo` (Marco's phone, test report finding 6).
+  A planner-tick or module completion can still be swiped back. Open: a
+  student who wants to re-do submitted work has no way to make it active,
+  by design; and the fix is unseen on a device.
 - **"open in canvas" may not reach the Canvas Student app** (Marco,
   2026-11-06: "it hasn't been for me"). `CanvasAppLink.result(for:)` tries
   the universal link, then `canvas-courses://<host>/courses/...` (the scheme

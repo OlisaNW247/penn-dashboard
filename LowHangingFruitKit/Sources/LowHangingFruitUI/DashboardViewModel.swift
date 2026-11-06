@@ -33,6 +33,10 @@ struct DashItem: Identifiable, Equatable {
     /// cancelled, moved, changed. Snapshotted at `reload` time like the fields
     /// above. Nil for sample data and for every card no fact touched.
     var fact: FactItemDisplay? = nil
+    /// False when Canvas alone keeps this completed item done
+    /// (`AppState.completionIsLockedByCanvas`), so prev offers no swipe back.
+    /// Defaulted so every other construction site is untouched.
+    var canMarkActive: Bool = true
 
     /// A fact cancelled it: off todo and reminders, still listed in all.
     var isFactCancelled: Bool { fact?.cancelled == true }
@@ -296,7 +300,8 @@ final class DashboardViewModel: ObservableObject {
                                   dueOverride: state.editedDueDate(for: a) ?? priorByID[a.id]?.dueOverride,
                                   isCompleted: true,
                                   completedAt: state.completedAt(a) ?? priorByID[a.id]?.completedAt,
-                                  requiresNoSubmission: state.requiresNoSubmission(a)))
+                                  requiresNoSubmission: state.requiresNoSubmission(a),
+                                  canMarkActive: !state.completionIsLockedByCanvas(a)))
         }
 
         items = built

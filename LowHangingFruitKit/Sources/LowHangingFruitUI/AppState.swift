@@ -9254,6 +9254,29 @@ final class AppState: ObservableObject {
         return false
     }
 
+    /// True when Canvas alone keeps this item completed: it would still read
+    /// done with the student's own tick and the structured (planner / module)
+    /// completion both ignored, because Canvas says it was turned in
+    /// (`assignment.submitted`, or its id in `submittedCanvasAssignmentIDs`,
+    /// directly or through `resolvedCanvasAssignmentIDs`) or because it is
+    /// auto-filed as "nothing to submit".
+    ///
+    /// Why it exists: a swipe to active cannot outrank Canvas saying the work
+    /// was turned in. `markActive` clears the student's tick, but
+    /// `overrideStructuredCompletionIfItWasTheOnlyReason` withdraws the
+    /// override again in exactly this case, so `isCompleted` stays true. Before
+    /// this the prev tab offered the swipe anyway, it silently did nothing, and
+    /// the card hung mid-swipe. The wrong fix is letting the override beat a
+    /// submission: it would hide a later genuine Canvas completion.
+    func completionIsLockedByCanvas(_ assignment: Assignment) -> Bool {
+        if assignment.submitted { return true }
+        if let canvasID = assignment.canvasAssignmentID,
+           submittedCanvasAssignmentIDs.contains(canvasID) { return true }
+        if let resolved = resolvedCanvasAssignmentIDs[assignment.id],
+           submittedCanvasAssignmentIDs.contains(resolved) { return true }
+        return isAutoFiledNoSubmission(assignment)
+    }
+
     /// True when Canvas has told Grade Watcher this Canvas assignment expects
     /// no online submission — the fact the dashboard card's "nothing to
     /// submit" caveat shows, and one of the two conditions

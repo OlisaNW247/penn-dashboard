@@ -1,5 +1,43 @@
 # App Store submission checklist — LHF (iOS + macOS)
 
+## 3.4.1 (18) submission, prepared 2026-11-06 (Marco submits)
+
+What ships beyond 3.4.0 (17), from `v10`: the `v9` sign-in rewrite (no
+banner, a session probe, silent re-login on every open, Duo auto-tap), the
+composed day Phases 1-3 (Canvas structured sources, facts applied with undo,
+the megaphone's changed / needs-a-look groups), the tree's time-frame
+resolver and freshness, the 2026-11-05 bug-hunt fixes, Marco's 2026-11-06
+dashboard design pass (grey exams, "in class", source words in the opened
+card, squircle header buttons, no "older hidden" line), short fact-card
+titles, the prev swipe-back fix, and ask's Canvas links through the Canvas
+app. `LISTING.md` → What's New in 3.4.1.
+
+1. **Backend first, with a person's go:** `node backend/scripts/deploy-facts.mjs
+   --step 1` applies the `finish_fact_extraction` migration (absent in
+   production as of the 2026-11-06 test report) and deploys `sync` and
+   `extract-facts` from the same tree; then `--step 2` and `--step 3`. The
+   app's manifest shape is unchanged since `sync` v21, so an older backend
+   does not break the phone, but the next `extract-facts` deploy without the
+   migration would fail every finish.
+2. **Compile**, each the only run on the Mac: `cd LowHangingFruitKit &&
+   swift test --no-parallel` (count in CLAUDE.md → Test baseline), `cd
+   backend && deno task test && deno task check`, then the iOS Debug build.
+3. **On Marco's phone** (Debug build over the store copy): the prev
+   swipe-back on a Canvas-completed item (the 2026-11-06 report's finding
+   6) and one `LHF-LINK` line from an "open in canvas" tap, read with
+   `--console`.
+4. **TestFlight → Builds:** confirm no build 18 exists. Stamped by hand in
+   `project.yml` (both targets) and `project.pbxproj` (all four); no
+   `xcodegen generate`.
+5. **Archive and upload** with the two CLAUDE.md → Commands lines.
+6. **App Store Connect:** new iOS version **3.4.1**, attach build 18, paste
+   What's New, keep the review notes, Add for Review → Submit. App Privacy
+   answers unchanged: facts are course-level and carry nothing personal
+   (`docs/PRIVACY.md`).
+7. **After it goes live:** the `update-floor` workflow raises the floor six
+   hours later; leave it alone. Set `UPDATE_FLOOR_HOLD` only if 3.4.1 shows
+   a launch problem inside that window.
+
 ## 3.3.0 (16) submission, 2026-10-27 (Olisa uploads the same day)
 
 What ships beyond 3.2.1 (15), archived from `4fe7a4f`: the feedback card

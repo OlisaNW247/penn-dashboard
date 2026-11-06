@@ -830,6 +830,13 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-06 (the merge for production).** On top of the design pass:
+  the prev swipe-back hang from `docs/TEST_REPORT_2026-11-06.md` finding 6
+  fixed both ways (the latch resets; a Canvas-submitted item offers no
+  swipe), the course-knowledge summary names which fetch fails (`error
+  kinds`), and 3.4.1 (18) stamped with its What's New and checklist
+  (`docs/appstore/`). The facts deploy (step 1 applies the missing
+  `finish_fact_extraction` migration) and the archive wait on Marco's go.
 - **2026-11-06 (dashboard design pass, merged into `v10` at Marco's go).**
   Exam cards are grey instead of black. Nothing-to-submit cards say "in
   class" under the due value instead of a caveat line (stripes were tried

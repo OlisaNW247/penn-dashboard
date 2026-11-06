@@ -568,7 +568,10 @@ extension AppState {
     /// <status line>". Counts and fixed words only; the Ed status line is the
     /// coordinator's own sentence (class codes, host and path at most) run
     /// through `scrubbedForSummary`. The collector's error strings are
-    /// counted, never copied. `docs` is every document on the phone after the
+    /// counted, never copied; the one exception is the endpoint word, reduced
+    /// by `courseKnowledgeErrorKinds` to a fixed allow-list so the line says
+    /// which fetch fails without a course code or any error text reaching it.
+    /// `docs` is every document on the phone after the
     /// run, `errors` the collector's, `ed notes` the Ed coordinator's.
     private func noteCourseKnowledgeRun(_ trace: CourseKnowledgeSyncTrace, failure: String?) {
         let finished = trace.finishedAt ?? Date()
@@ -577,14 +580,47 @@ extension AppState {
         let outcome = failure.map { "failed: \($0)" } ?? "ok"
         let manifest = trace.manifestSucceeded ? "ok" : (trace.manifestError != nil ? "failed" : "none")
         let ed = edDiscussionStatus.map { Self.scrubbedForSummary($0) } ?? "none"
+        let kinds = Self.courseKnowledgeErrorKinds(trace.collectorErrors).map { " \u{00B7} error kinds: \($0)" } ?? ""
         let summary = "\(Self.diagnosticStamp(finished)) \u{00B7} \(outcome)"
             + " \u{00B7} courses \(trace.courseIDs.count) \u{00B7} fetched \(trace.fullyFetched.count)"
             + " \u{00B7} partial \(trace.partial.count)"
             + " \u{00B7} docs \(courseKnowledge.documents.count) \u{00B7} manifest \(manifest)"
             + " \u{00B7} uploaded \(trace.uploadedDocuments)\(trace.uploadError == nil ? "" : " (failed)")"
-            + " \u{00B7} errors \(errors) \u{00B7} ed notes \(edNotes) \u{00B7} ed: \(ed)"
+            + " \u{00B7} errors \(errors)\(kinds) \u{00B7} ed notes \(edNotes) \u{00B7} ed: \(ed)"
         lastCourseKnowledgeSyncSummary = summary
         UserDefaults.lhf.set(summary, forKey: Self.lastCourseKnowledgeSyncSummaryKey)
+    }
+
+    /// Which fetch the collector's errors came from, as "modules 3 · pages 2".
+    /// The collector writes "<course code> <endpoint>: <description>" (and
+    /// "announcements: <description>" with no code). Only the endpoint word is
+    /// ever emitted, and only from the fixed list below (the words the
+    /// collector itself uses); anything that matches none counts under
+    /// "other". The course code and description are never copied: they can
+    /// carry class names and server text, which the summary promises not to
+    /// hold. The wrong version is splitting on the first space and printing
+    /// the token, which would leak "CIS" for any shape it did not expect.
+    /// "ed: " notes are the Ed coordinator's and are counted apart, so they
+    /// are skipped here. Sorted by count descending, then word. nil when
+    /// nothing is left. Pure, for tests.
+    nonisolated static func courseKnowledgeErrorKinds(_ errors: [String]) -> String? {
+        let words = ["announcements", "assignments", "pages", "syllabus", "modules"]
+        var counts: [String: Int] = [:]
+        for error in errors where !error.hasPrefix("ed: ") {
+            let padded = " " + error
+            var best: (word: String, offset: Int)?
+            for word in words {
+                guard let range = padded.range(of: " \(word): ") else { continue }
+                let offset = padded.distance(from: padded.startIndex, to: range.lowerBound)
+                if best == nil || offset < best!.offset { best = (word, offset) }
+            }
+            counts[best?.word ?? "other", default: 0] += 1
+        }
+        guard !counts.isEmpty else { return nil }
+        return counts
+            .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+            .map { "\($0.key) \($0.value)" }
+            .joined(separator: " \u{00B7} ")
     }
 
     /// The summary for a run a guard turned away. The refresh loop calls

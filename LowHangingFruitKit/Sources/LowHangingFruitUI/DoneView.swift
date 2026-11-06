@@ -117,14 +117,16 @@ struct DoneCardView: View {
             card.offset(x: dragX)
         }
         .contentShape(RoundedRectangle(cornerRadius: corner))
-        .onTapGesture(perform: undo)
+        .onTapGesture { if item.canMarkActive { undo() } }
         .gesture(
             DragGesture(minimumDistance: 18)
                 .onChanged { value in
-                    guard !didUndo, abs(value.translation.width) > abs(value.translation.height) else { return }
+                    guard item.canMarkActive, !didUndo,
+                          abs(value.translation.width) > abs(value.translation.height) else { return }
                     dragX = max(-86, min(0, value.translation.width))
                 }
                 .onEnded { value in
+                    guard item.canMarkActive else { return }
                     if CompletionSwipe.accepts(horizontal: value.translation.width,
                                                vertical: value.translation.height,
                                                predicted: value.predictedEndTranslation.width,
@@ -138,19 +140,28 @@ struct DoneCardView: View {
                 }
         )
         .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityHint("Tap or swipe left to mark incomplete")
-        .accessibilityAction { undo() }
-        .accessibilityAction(named: "Mark incomplete") { undo() }
+        .accessibilityAddTraits(item.canMarkActive ? .isButton : [])
+        .accessibilityHint(item.canMarkActive ? "Tap or swipe left to mark incomplete" : "turned in on canvas")
+        .accessibilityAction { if item.canMarkActive { undo() } }
+        .accessibilityActionIf(item.canMarkActive, named: "Mark incomplete") { undo() }
     }
 
     private func undo() {
-        guard !didUndo else { return }
+        guard item.canMarkActive, !didUndo else { return }
         didUndo = true
         lhfHapticLight()
         // Persist immediately through the existing onUncomplete path. There
         // is no delayed animation callback that could lose the user's action.
         onTap()
+        // The latch used to stay set, on the assumption that the row always
+        // leaves the list once it is un-ticked. A Canvas-submitted item does
+        // not leave, so the card sat frozen at its dragX and ignored every
+        // later drag. If the row is still on screen, spring it home and make
+        // it usable again; `didUndo` only guards re-entrancy within one gesture.
+        withAnimation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.8)) {
+            dragX = 0
+        }
+        didUndo = false
     }
 
     private var card: some View {
@@ -182,5 +193,13 @@ struct DoneCardView: View {
         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
         .opacity(0.55)
+    }
+}
+
+private extension View {
+    /// Offers a named accessibility action only when `condition` holds.
+    @ViewBuilder
+    func accessibilityActionIf(_ condition: Bool, named name: String, _ handler: @escaping () -> Void) -> some View {
+        if condition { accessibilityAction(named: name, handler) } else { self }
     }
 }

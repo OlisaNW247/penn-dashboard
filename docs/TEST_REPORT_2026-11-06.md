@@ -157,3 +157,29 @@ was asked and what he said, in his words where quoted.
   `docs/TREE_IMPROVEMENT_PLAN.md` → Status.
 - **Undo on the `v10` build itself**: passed on the other thread's build only.
 - **Retrieval bench and labels** (hand-off steps 5 and 6): outside this brief.
+
+## Status, later on 2026-11-06 (the fixing pass)
+
+Marco asked for the design pass (`0400978`..`789c8d3`, kept whole) and the
+most applicable findings here to be merged into one `v10` for production.
+Done on `v10` the same day:
+
+- **Finding 6, both defects.** `DoneCardView.undo()` springs the card home
+  and clears `didUndo` after the un-tick, so a row that stays in prev is
+  usable again; and prev no longer offers the swipe on an item Canvas alone
+  keeps completed (`AppState.completionIsLockedByCanvas`: `submitted`, an id
+  in `submittedCanvasAssignmentIDs` directly or resolved, or the
+  nothing-to-submit auto-file), carried as `DashItem.canMarkActive`. Such a
+  card has no tap, drag or undo arrow; VoiceOver hears "turned in on
+  canvas". The wrong fix, letting the override beat a submission, is named
+  in the code. `CanvasLockedCompletionTests` (7). Not yet swiped on a phone.
+- **Finding 3.** The sync summary now ends `errors 5 · error kinds: modules 3
+  · pages 2` from a fixed allow-list of the collector's endpoint words, so
+  the next plist read says which fetch fails; never a course code or error
+  text (`AppState.courseKnowledgeErrorKinds`, three tests).
+- **Finding 1** is step 1 of the deploy runbook, run with Marco's go; not
+  yet run at the time of writing.
+- **Finding 7**: the brief's form, not the repo.
+- Findings 2 and 4 need no change; the by-eye checks that could not run
+  still cannot until a course produces a `cancel` or `reschedule` fact.
+
