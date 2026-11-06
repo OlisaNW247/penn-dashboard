@@ -1213,7 +1213,20 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v10` (2026-11-05, evening, uncommitted tree before the bug-hunt
+**Current on `v10` (2026-11-06): 3691 tests / 351 suites, all green, `swift test
+--no-parallel` on Marco's Mac (66 s), the only test run on the machine; the iOS
+Debug simulator build (`iPhone 17 Pro`) succeeded on the same tree; Deno 711
+and `deno task check` clean.** +3 tests / +1 suite over 3688 / 350:
+`AnnouncementSheetUndoTests` (the megaphone changed row's `undo`, bug hunt
+item 5's second half) and three new rows in `ConnectFailureRecoveryTests`'
+save-row truth table (item 17's gap). The first full run of the day was
+3688 with one red, `AskKnowledgeWiringTests` "cites the syllabus it quoted":
+not a regression but Apple's on-device model paraphrasing under the test
+runner (see Traps, "Apple Intelligence rewrites the on-device answer under
+`swift test`"); `OnDeviceLanguageModel.compose` now returns nil under the
+test runner, and the rerun was 3688 green before the two fixes landed.
+
+Before that: **on `v10` (2026-11-05, evening, uncommitted tree before the bug-hunt
 fix commit): 3688 tests / 350 suites, all green, `swift test --no-parallel`
 on Marco's Mac; the iOS Debug `xcodebuild` for `generic/platform=iOS` with
 `CODE_SIGNING_ALLOWED=NO` succeeded; Deno 711 tests and `deno task check`
@@ -3043,6 +3056,24 @@ itself.
   documents, none of kind `announcement`) until 2026-10-23, when the owner
   had the sync touched (`9540751`, 120 days through tomorrow); the first
   phone sync on that build uploaded 63 of this term's posts at 18:09 UTC.
+- **Apple Intelligence rewrites the on-device answer under `swift test`.**
+  `OnDeviceLanguageModel.compose` runs Apple's on-device model whenever
+  `SystemLanguageModel.default.availability` is `.available`, and on a Mac
+  with Apple Intelligence on (Marco's, macOS 26.6.2) that is true inside
+  the test runner too. So `AskKnowledgeWiringTests` "cites the syllabus it
+  quoted" sometimes got a paraphrase instead of the grounded text: on
+  2026-11-06 one run of 3688 answered "Late work in CIS 2400 loses 10% per
+  day after the third day and is not accepted after three days" for a
+  grounding that says only "three late days for the semester", took 9 s,
+  and failed `contains("three late days")`; the suite alone then passed.
+  The tell: a test on the on-device responder that takes seconds instead
+  of milliseconds, and an assertion message quoting words the fixture
+  never had. `compose` now returns nil under `SharedDefaults.isTestRunner`.
+  The wrong fix is loosening the assertion: the deterministic text is the
+  contract. Worth more than the flake: the paraphrase invented a policy
+  ("10% per day") the sources do not contain, which the `validated(_:against:)`
+  check let through. Nobody has looked at that check since; it is in Known
+  gaps.
 - **Every worktree's test run shares one defaults domain.** On 2026-10-10
   four agents ran `swift test` in four git worktrees at once and
   unrelated suites failed at random: `CourseContentDashboardTests` saw

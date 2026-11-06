@@ -761,3 +761,38 @@ struct AnnouncementSheetStructureTests {
         #expect(tokens.contains("static let smoothAnnouncementAccent = Color.dynamic(light: 0x087D86, dark: 0x69DCE3)"))
     }
 }
+
+/// The changed row's `undo`: which facts it takes back, and that the sheet is
+/// wired to the same rejection the card's `undo` makes.
+@Suite("Announcements sheet: undo on a changed row")
+struct AnnouncementSheetUndoTests {
+    private func row(_ id: String, _ word: String) -> FactChangeRow {
+        FactChangeRow(id: id, word: word, postedAt: nil, url: nil)
+    }
+
+    @Test("a group's undoable ids are its rows' ids in order, and never an undone row's")
+    func undoableIDs() {
+        let both = FactChangeGroup(id: "a", courseCode: "X 1", title: "t",
+                                   rows: [row("f1", "cancelled"), row("f2", "moved")])
+        #expect(both.undoableFactIDs == ["f1", "f2"])
+
+        let mixed = FactChangeGroup(id: "a", courseCode: "X 1", title: "t",
+                                    rows: [row("f1", "cancelled"), row("f2", "undone")])
+        #expect(mixed.undoableFactIDs == ["f1"])
+    }
+
+    @Test("an undone group offers nothing to undo")
+    func undoneGroup() {
+        let group = FactChangeGroup(id: "a", courseCode: "X 1", title: "t",
+                                    rows: [row("f1", "cancelled")], isUndone: true)
+        #expect(group.undoableFactIDs.isEmpty)
+    }
+
+    @Test("ContentView hands the sheet an undo that rejects the facts")
+    func sheetIsWired() throws {
+        let content = try GradeWatcherRemovalTests.uiSource("ContentView.swift")
+        guard !content.isEmpty else { return }
+        #expect(content.contains("onUndoFacts: { ids in"))
+        #expect(content.contains("state.rejectFacts(ids)"))
+    }
+}

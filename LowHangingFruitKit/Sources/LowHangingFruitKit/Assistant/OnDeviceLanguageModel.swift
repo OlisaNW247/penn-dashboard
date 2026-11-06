@@ -52,6 +52,15 @@ public enum OnDeviceLanguageModel {
     /// size). Callers always keep the deterministic text as the fallback.
     public static func compose(question: String, answer: AssistantAnswer) async -> String? {
         guard !answer.isExact, !answer.grounding.isEmpty else { return nil }
+        // Never under `swift test`. On a Mac with Apple Intelligence on, the
+        // model really runs here and paraphrases the grounded answer, so a
+        // test that pins the quoted syllabus text ("three late days") fails
+        // on some runs and passes on others (2026-11-06: one red run of
+        // 3688 with the paraphrase "loses 10% per day", then green alone).
+        // The wrong fix is loosening the assertions: the deterministic text
+        // is the contract the tests exist to pin, and the model's output is
+        // not reproducible on any machine.
+        guard !SharedDefaults.isTestRunner else { return nil }
         #if canImport(FoundationModels)
         guard #available(iOS 26.0, macOS 26.0, *), isAvailable else { return nil }
         let prompt = buildPrompt(question: question, answer: answer)

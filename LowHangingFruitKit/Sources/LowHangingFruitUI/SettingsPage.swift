@@ -749,12 +749,22 @@ struct SettingsPage: View {
     /// other school may ever see it. The wrong fix is to show it whenever
     /// `autoLoginDisabledReason` is set: a rejection already has its own row,
     /// and a missing credential is a different state.
+    ///
+    /// `saveFailed` covers the one case "nothing on file" missed. When a
+    /// Keychain write fails, the dashboard's status line says "couldn't save
+    /// pennkey, try again in profile", and a student who already had an older
+    /// password saved was sent here to find no row, because a credential was
+    /// still on file. The same row now also appears while the last save
+    /// failed; a successful re-save through the sheet clears the flag. The
+    /// wrong fix is a second, differently worded row for the retry: it is
+    /// the same action, and the copy stays minimal.
     nonisolated static func showsSavePennKey(
         installation: CanvasInstallation,
         isCanvasConnected: Bool,
-        credentialSaved: Bool
+        credentialSaved: Bool,
+        saveFailed: Bool
     ) -> Bool {
-        installation.id == CanvasInstallation.penn.id && isCanvasConnected && !credentialSaved
+        installation.id == CanvasInstallation.penn.id && isCanvasConnected && (!credentialSaved || saveFailed)
     }
 
     @ViewBuilder
@@ -762,7 +772,8 @@ struct SettingsPage: View {
         if let saved = pennKeyCredentialSaved,
            Self.showsSavePennKey(installation: state.canvasInstallation,
                                  isCanvasConnected: state.isCanvasConnected,
-                                 credentialSaved: saved) {
+                                 credentialSaved: saved,
+                                 saveFailed: state.credentialSaveFailed) {
             Button("save pennkey") {
                 showStayLoggedInSheet = true
             }

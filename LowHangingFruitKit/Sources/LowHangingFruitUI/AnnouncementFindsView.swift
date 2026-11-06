@@ -61,6 +61,10 @@ struct AnnouncementFindsView: View {
     /// Facts the app would not apply on its own (`AppState.factReviewRows`).
     /// The group after it.
     var factReviews: [FactReviewRow] = []
+    /// The student tapped `undo` on a changed row: the fact ids behind it
+    /// (`FactChangeGroup.undoableFactIDs`), to reject together as the card's
+    /// own `undo` does. Defaulted so previews and tests need not pass one.
+    var onUndoFacts: ([String]) -> Void = { _ in }
 
     /// The classes the sheet is narrowed to (class keys), empty for all of
     /// them. Starts empty every time the sheet opens, and is the sheet's own:
@@ -217,14 +221,9 @@ struct AnnouncementFindsView: View {
 
     @ViewBuilder
     private func factRowChrome<Content: View>(
-        url: URL?, hint: String, @ViewBuilder content: () -> Content
+        url: URL?, hint: String, onUndo: (() -> Void)? = nil, @ViewBuilder content: () -> Content
     ) -> some View {
-        let body = HStack(spacing: 12) {
-            Capsule()
-                .fill(Color.smoothAnnouncementAccent)
-                .frame(width: 4)
-                .frame(maxHeight: .infinity)
-                .accessibilityHidden(true)
+        let inner = HStack(spacing: 12) {
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
             if url != nil {
@@ -234,16 +233,41 @@ struct AnnouncementFindsView: View {
                     .accessibilityHidden(true)
             }
         }
+        // The `undo` is a sibling of the Link, never inside it: a Button
+        // nested in a Link label loses the tap to the link and opens Canvas.
+        // So the Link wraps only the text and arrow, and the chrome (capsule,
+        // padding, card) wraps both.
+        HStack(spacing: 12) {
+            Capsule()
+                .fill(Color.smoothAnnouncementAccent)
+                .frame(width: 4)
+                .frame(maxHeight: .infinity)
+                .accessibilityHidden(true)
+            if let url {
+                Link(destination: url) { inner }
+                    .buttonStyle(.plain)
+                    .environment(\.openURL, CanvasAppLink.action)
+                    .accessibilityHint(hint)
+            } else {
+                inner
+            }
+            if let onUndo {
+                Button { onUndo() } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.uturn.backward")
+                            .font(.system(size: 12, weight: .medium))
+                        Text("undo")
+                            .font(.lhfAssignmentTitle(12))
+                    }
+                    .foregroundStyle(Color.smoothInk)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("undo this change")
+            }
+        }
         .padding(14)
         .background(Color.v2DoneCard, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        if let url {
-            Link(destination: url) { body }
-                .buttonStyle(.plain)
-                .environment(\.openURL, CanvasAppLink.action)
-                .accessibilityHint(hint)
-        } else {
-            body
-        }
     }
 
     private func factChip(_ code: String, date: Date?, isNew: Bool, now: Date) -> some View {
@@ -273,7 +297,11 @@ struct AnnouncementFindsView: View {
     /// same row, dimmed and struck through, so a wrong tap can be seen.
     private func factChangeRow(_ group: FactChangeGroup, now: Date) -> some View {
         let isNew = group.rows.contains { newIDs.contains(AnnouncementReadState.factKey($0.id)) }
-        return factRowChrome(url: group.url, hint: AnnouncementSheetCopy.canvasLinkHint) {
+        let undoable = group.undoableFactIDs
+        return factRowChrome(
+            url: group.url, hint: AnnouncementSheetCopy.canvasLinkHint,
+            onUndo: undoable.isEmpty ? nil : { onUndoFacts(undoable) }
+        ) {
             VStack(alignment: .leading, spacing: 6) {
                 factChip(group.courseCode, date: group.postedAt, isNew: isNew, now: now)
                 Text(group.title)

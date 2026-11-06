@@ -830,6 +830,16 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-06.** The two open bug-hunt code items: the megaphone's changed
+  row has `undo` (item 5), and Profile's "save pennkey" row shows after a
+  failed Keychain save even with an older password on file (item 17); item
+  22 (per-user extraction cap) is a schema proposal for the owners in
+  `docs/FACTS_PER_USER_CAP_PROPOSAL_2026-11-06.md`. The on-device model no
+  longer runs under `swift test` (a paraphrase flake, CLAUDE.md -> Traps).
+  3691/351 Swift, Deno 711, iOS simulator build green. Not on a phone yet.
+  The facts deploy (step 1-3, with the `finish_fact_extraction` migration)
+  and the 3.4.1 (18) release are held at Marco's word until his parallel
+  testing thread is done.
 - **2026-11-05 (evening).** Round 4 of the facts prompt (stale posts) live as
   `extract-facts` v5 / `sync` v21 with Marco's go; and the fix pass for
   `docs/V10_BUG_HUNT_2026-11-05.md`: 29 of 33 items fixed on `v10` (facts

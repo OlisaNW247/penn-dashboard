@@ -91,6 +91,15 @@ struct FactChangeGroup: Identifiable, Equatable {
 
     var url: URL? { rows.compactMap(\.url).first }
     var postedAt: Date? { rows.compactMap(\.postedAt).max() }
+
+    /// The fact ids the row's `undo` takes back, in row order. Empty for an
+    /// undone group and for any row already marked `undone`: those are a
+    /// record of what the student rejected, not a change still standing, so
+    /// offering `undo` on them would reject a fact twice for no effect.
+    var undoableFactIDs: [String] {
+        guard !isUndone else { return [] }
+        return rows.filter { $0.word != "undone" }.map(\.id)
+    }
 }
 
 /// A fact the engine would not apply on its own, for the "needs a look" group.

@@ -50,14 +50,17 @@ struct ConnectFailureRecoveryTests {
 
     // MARK: "save pennkey" row
 
-    @Test("the row shows only at Penn, connected, with nothing saved")
+    @Test("the row shows only at Penn, connected, with nothing saved or a failed save")
     func saveRowTruthTable() throws {
         let other = try #require(CanvasInstallation.verifiedSchools.first { $0.id != CanvasInstallation.penn.id })
-        #expect(SettingsPage.showsSavePennKey(installation: .penn, isCanvasConnected: true, credentialSaved: false))
-        #expect(!SettingsPage.showsSavePennKey(installation: .penn, isCanvasConnected: true, credentialSaved: true))
-        #expect(!SettingsPage.showsSavePennKey(installation: .penn, isCanvasConnected: false, credentialSaved: false))
-        #expect(!SettingsPage.showsSavePennKey(installation: other, isCanvasConnected: true, credentialSaved: false))
-        #expect(!SettingsPage.showsSavePennKey(installation: other, isCanvasConnected: true, credentialSaved: true))
+        #expect(SettingsPage.showsSavePennKey(installation: .penn, isCanvasConnected: true, credentialSaved: false, saveFailed: false))
+        #expect(!SettingsPage.showsSavePennKey(installation: .penn, isCanvasConnected: true, credentialSaved: true, saveFailed: false))
+        #expect(!SettingsPage.showsSavePennKey(installation: .penn, isCanvasConnected: false, credentialSaved: false, saveFailed: false))
+        #expect(!SettingsPage.showsSavePennKey(installation: other, isCanvasConnected: true, credentialSaved: false, saveFailed: false))
+        #expect(!SettingsPage.showsSavePennKey(installation: other, isCanvasConnected: true, credentialSaved: true, saveFailed: false))
+        #expect(SettingsPage.showsSavePennKey(installation: .penn, isCanvasConnected: true, credentialSaved: true, saveFailed: true))
+        #expect(!SettingsPage.showsSavePennKey(installation: other, isCanvasConnected: true, credentialSaved: true, saveFailed: true))
+        #expect(!SettingsPage.showsSavePennKey(installation: .penn, isCanvasConnected: false, credentialSaved: true, saveFailed: true))
     }
 
     // MARK: Wiring
