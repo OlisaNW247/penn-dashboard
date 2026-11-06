@@ -182,8 +182,8 @@ struct SyllabusExamDashboardTests {
             let item = try #require(vm.items.first { $0.assignment.title == "Midterm 1" })
             #expect(item.isFoundExam)
             #expect(item.examStyleOverride == true)
-            #expect(item.caveatText?.contains("from syllabus") == true)
-            #expect(item.caveatText?.contains("from announcements") == false)
+            #expect(item.sourceText?.contains("from syllabus") == true)
+            #expect(item.sourceText?.contains("from announcements") == false)
         }
     }
 

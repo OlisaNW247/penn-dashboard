@@ -587,9 +587,10 @@ private extension TimeInterval {
     static let day: TimeInterval = 86_400
 }
 
-/// `DashItem.caveatText` — the single line under a card's title that joins
-/// the "nothing to submit" caveat with the "from announcements" one added
-/// 2026-09-09 for tasks the Announcement Watcher extracted.
+/// `DashItem.caveatText` (fact words, collapsed card) and
+/// `DashItem.sourceText` (the "from announcements" origin added 2026-09-09
+/// for tasks the Announcement Watcher extracted; opened card only since
+/// 2026-11-06).
 @MainActor
 @Suite("Card caveat line")
 struct CardCaveatLineTests {
@@ -606,7 +607,7 @@ struct CardCaveatLineTests {
     func announcementCaveat() {
         let dash = item(source: .canvasAnnouncement, kind: .assignment)
         #expect(dash.isFromAnnouncement)
-        #expect(dash.caveatText == "from announcements")
+        #expect(dash.sourceText == "from announcements")
     }
 
     @Test("a plain Canvas assignment has no caveat line at all")
@@ -618,7 +619,7 @@ struct CardCaveatLineTests {
     func nothingToSubmitHasNoText() {
         let dash = item(source: .canvasAnnouncement, kind: .event)
         #expect(dash.showsNothingToSubmit)
-        #expect(dash.caveatText == "from announcements")
+        #expect(dash.sourceText == "from announcements")
     }
 
     @Test("a nothing-to-submit item with no other caveat has no caveat line")
@@ -626,5 +627,22 @@ struct CardCaveatLineTests {
         let dash = item(source: .canvas, kind: .assignment, requiresNoSubmission: true)
         #expect(dash.showsNothingToSubmit)
         #expect(dash.caveatText == nil)
+    }
+
+    @Test("a moved announcement task keeps its status and its source apart")
+    func movedKeepsStatusAndSourceApart() {
+        var dash = item(source: .canvasAnnouncement, kind: .assignment)
+        var fact = FactItemDisplay()
+        fact.moved = true
+        dash.fact = fact
+        #expect(dash.caveatText == "moved")
+        #expect(dash.sourceText == "from announcements")
+    }
+
+    @Test("an announcement task with no fact has no status line")
+    func noFactNoCaveat() {
+        let dash = item(source: .canvasAnnouncement, kind: .assignment)
+        #expect(dash.caveatText == nil)
+        #expect(dash.sourceText == "from announcements")
     }
 }

@@ -210,7 +210,10 @@ struct AssignmentCardView: View {
                 cardFill(now: now)
             }
         }
-        .accessibilityValue(item.showsNothingToSubmit ? "nothing to submit" : "")
+        .accessibilityValue(
+            [item.showsNothingToSubmit ? "nothing to submit" : nil, item.sourceText]
+                .compactMap { $0 }.joined(separator: ", ")
+        )
         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
     }
 
@@ -257,16 +260,15 @@ struct AssignmentCardView: View {
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: isExpanded)
 
-                // One small line under the title for the caveats about this
-                // one item: the "from announcements" / "from ed" / "from
-                // syllabus" origin of a task the Announcement Watcher
-                // extracted (`DashItem.isFromAnnouncement`) and any fact
-                // caveat, joined by `DashItem.caveatText`. "Nothing to
-                // submit" is NOT on this line any more: the card's
-                // background is diagonal stripes instead
-                // (`NothingToSubmitStripes`), because the extra line made
-                // cards taller (owner, 2026-11-04). VoiceOver still hears it
-                // through the card's accessibility value.
+                // One small line under the title for the item's status
+                // (`DashItem.caveatText`: cancelled / moved / changed). Where
+                // the card came from ("from ed", "from syllabus", "from
+                // announcements") moved into the opened card on 2026-11-06 at
+                // the owner's call (`DashItem.sourceText`, in
+                // `expandedDetail`), to keep collapsed cards one height.
+                // "Nothing to submit" is the card's diagonal stripes
+                // (`NothingToSubmitStripes`); VoiceOver hears it, and the
+                // source, through the card's accessibility value.
                 if let caveat = item.caveatText {
                     Text(caveat)
                         .font(.lhfSecondary(9, weight: .semibold))
@@ -357,6 +359,13 @@ struct AssignmentCardView: View {
                 .accessibilityLabel("edit due date")
             }
             .padding(.top, 10)
+
+            if let source = item.sourceText {
+                Text(source)
+                    .font(.lhfSecondary(9, weight: .semibold))
+                    .foregroundStyle(secondaryTextColor)
+                    .padding(.top, 4)
+            }
 
             // Facts that changed this card: the instructor's own words, one
             // line each, opening the post they came from where it is known.

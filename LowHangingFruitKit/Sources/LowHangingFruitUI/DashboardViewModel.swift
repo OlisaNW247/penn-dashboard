@@ -101,25 +101,30 @@ struct DashItem: Identifiable, Equatable {
     /// the place to take it away.
     var examStyleOverride: Bool? { isFoundExam ? true : nil }
 
-    /// The one-line caveat under the title, or nil. Both caveats can apply
-    /// (an announcement can announce something with nothing to hand in), so
-    /// they join on one line rather than stacking two 9pt rows. A task found
-    /// in an Ed post says "from ed": it did not come from an announcement on
-    /// Canvas, and the card's link opens Ed. An exam out of the syllabus says
-    /// "from syllabus" for the same reason: it is no announcement's.
-    /// "Nothing to submit" is deliberately not here: the card shows it as
-    /// diagonal stripes (`showsNothingToSubmit`), because the extra line made
-    /// cards taller (owner, 2026-11-04).
+    /// The one-line status under the title, or nil: only the fact words
+    /// ("cancelled", "moved", "changed"), joined on one line. Those are
+    /// status, so they stay on the collapsed card. Where the card came from
+    /// is provenance and lives in `sourceText`, shown only once the card is
+    /// opened (moved there 2026-11-06 at the owner's call, to keep collapsed
+    /// cards one height). "Nothing to submit" is not here either: the card
+    /// shows it as diagonal stripes (`showsNothingToSubmit`).
     var caveatText: String? {
-        var parts: [String] = fact?.caveatWords ?? []
-        if isFromAnnouncement {
-            switch assignment.announcementOrigin {
-            case .ed: parts.append("from ed")
-            case .syllabus: parts.append("from syllabus")
-            case .canvas, .none: parts.append("from announcements")
-            }
-        }
+        let parts: [String] = fact?.caveatWords ?? []
         return parts.isEmpty ? nil : parts.joined(separator: " \u{00B7} ")
+    }
+
+    /// Where a task came from, for the opened card only. A task found in an
+    /// Ed post says "from ed": it did not come from an announcement on
+    /// Canvas, and the card's link opens Ed. An exam out of the syllabus says
+    /// "from syllabus" for the same reason: it is no announcement's. Kept off
+    /// the collapsed card so every collapsed card is one height (2026-11-06).
+    var sourceText: String? {
+        guard isFromAnnouncement else { return nil }
+        switch assignment.announcementOrigin {
+        case .ed: return "from ed"
+        case .syllabus: return "from syllabus"
+        case .canvas, .none: return "from announcements"
+        }
     }
 
     func state(now: Date = Date()) -> DueState { DueState(due: due, now: now) }

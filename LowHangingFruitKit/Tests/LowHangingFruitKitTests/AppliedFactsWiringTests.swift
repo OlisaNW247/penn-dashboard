@@ -183,7 +183,7 @@ struct AppliedFactsWiringTests {
         #expect(rows.first?.sourceRaw == Assignment.Source.canvasAnnouncement.rawValue)
         let vm = viewModel(state)
         let card = try #require(vm.items.first { $0.assignment.title == "Bring a calculator form" })
-        #expect(card.caveatText == "from announcements")
+        #expect(card.sourceText == "from announcements")
         #expect(card.fact?.factIDs == [AppliedFact.factID(documentID: documentID, seq: 1)])
         #expect(titles(vm.todoSections(now: now)).contains("Bring a calculator form"))
     }
