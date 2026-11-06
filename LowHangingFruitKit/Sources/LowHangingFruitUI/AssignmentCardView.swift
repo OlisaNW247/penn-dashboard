@@ -202,13 +202,7 @@ struct AssignmentCardView: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityHint(isExpanded ? "double tap to collapse" : "double tap for details")
         .background {
-            // Nothing to submit is stripes of the card's own fill, not a
-            // text line (see the caveat comment in `content`).
-            if item.showsNothingToSubmit {
-                NothingToSubmitStripes(color: cardFill(now: now))
-            } else {
-                cardFill(now: now)
-            }
+            cardFill(now: now)
         }
         .accessibilityValue(
             [item.showsNothingToSubmit ? "nothing to submit" : nil, item.sourceText]
@@ -266,8 +260,9 @@ struct AssignmentCardView: View {
                 // announcements") moved into the opened card on 2026-11-06 at
                 // the owner's call (`DashItem.sourceText`, in
                 // `expandedDetail`), to keep collapsed cards one height.
-                // "Nothing to submit" is the card's diagonal stripes
-                // (`NothingToSubmitStripes`); VoiceOver hears it, and the
+                // "Nothing to submit" is not a line here either: it reads
+                // "in class" under the due value (`secondaryLabel`), where
+                // "late" sits. VoiceOver hears "nothing to submit", and the
                 // source, through the card's accessibility value.
                 if let caveat = item.caveatText {
                     Text(caveat)
@@ -287,7 +282,9 @@ struct AssignmentCardView: View {
                     .foregroundStyle(primaryTextColor)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
-                if let secondary = value.secondary {
+                if let secondary = value.secondaryLabel(
+                    showsNothingToSubmit: item.showsNothingToSubmit
+                ) {
                     Text(secondary)
                         .font(.lhfMono(8.5, weight: .semibold))
                         .foregroundStyle(secondaryTextColor)
@@ -431,8 +428,9 @@ struct AssignmentCardView: View {
                 }
             }
 
-            // No "nothing to submit" text here: the card's stripes already
-            // say it, and repeating it would make the card taller.
+            // No "nothing to submit" text here: "in class" under the due
+            // value already says it, and repeating it would make the card
+            // taller.
         }
         .transition(.opacity.combined(with: .move(edge: .top)))
     }

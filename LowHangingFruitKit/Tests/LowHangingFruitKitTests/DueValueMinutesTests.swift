@@ -113,3 +113,28 @@ struct DueValueMinutesTests {
         #expect(dueAccessibilityLabel(nil, now: now) == "no due date")
     }
 }
+
+/// The small line under the due value: "in class" for nothing-to-submit cards,
+/// beaten by "late" because only one word fits in that slot.
+@Suite("Due value secondary label")
+struct DueValueSecondaryLabelTests {
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    @Test("nothing to submit, not overdue, says in class")
+    func inClass() {
+        let value = smoothDueValue(now.addingTimeInterval(5 * 3600), now: now)
+        #expect(value.secondaryLabel(showsNothingToSubmit: true) == "in class")
+    }
+
+    @Test("nothing to submit and overdue says late")
+    func lateWins() {
+        let value = smoothDueValue(now.addingTimeInterval(-10 * 3600), now: now)
+        #expect(value.secondaryLabel(showsNothingToSubmit: true) == "late")
+    }
+
+    @Test("a normal card that is not overdue has no secondary line")
+    func normalHasNone() {
+        let value = smoothDueValue(now.addingTimeInterval(5 * 3600), now: now)
+        #expect(value.secondaryLabel(showsNothingToSubmit: false) == nil)
+    }
+}

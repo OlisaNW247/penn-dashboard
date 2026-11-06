@@ -615,7 +615,7 @@ struct CardCaveatLineTests {
         #expect(item(source: .canvas, kind: .assignment).caveatText == nil)
     }
 
-    @Test("nothing to submit is stripes, not a caveat line")
+    @Test("nothing to submit is an \"in class\" label, not a caveat line")
     func nothingToSubmitHasNoText() {
         let dash = item(source: .canvasAnnouncement, kind: .event)
         #expect(dash.showsNothingToSubmit)

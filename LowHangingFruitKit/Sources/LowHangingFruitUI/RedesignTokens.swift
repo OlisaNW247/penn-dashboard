@@ -211,41 +211,6 @@ struct SmoothExamPalette {
     )
 }
 
-/// Diagonal stripes for the "nothing to submit" card, drawn as background
-/// only so the card's size never changes. Bands run perpendicular to a 135deg
-/// gradient line (CSS `repeating-linear-gradient(135deg, ...)`): 8pt wide,
-/// alternating `color` with the same colour at 45% of its opacity. Owner,
-/// 2026-11-04: the words "nothing to submit" made cards taller, so the
-/// stripes say it instead.
-struct NothingToSubmitStripes: View {
-    var color: Color
-    var bandWidth: CGFloat = 8
-
-    var body: some View {
-        Canvas { context, size in
-            // Along the 135deg direction (1,1)/sqrt2 a band of width w covers
-            // x + y in an interval of length w * sqrt2.
-            let step = bandWidth * 2.0.squareRoot()
-            let total = size.width + size.height
-            let h = size.height
-            var k = 0
-            var s: CGFloat = 0
-            while s < total {
-                var path = Path()
-                path.move(to: CGPoint(x: s, y: 0))
-                path.addLine(to: CGPoint(x: s + step, y: 0))
-                path.addLine(to: CGPoint(x: s + step - h, y: h))
-                path.addLine(to: CGPoint(x: s - h, y: h))
-                path.closeSubpath()
-                context.fill(path, with: .color(k % 2 == 0 ? color : color.opacity(0.45)))
-                s += step
-                k += 1
-            }
-        }
-        .accessibilityHidden(true)
-    }
-}
-
 // MARK: – Smooth fonts
 
 private enum SmoothFontRegistry {
@@ -570,6 +535,18 @@ func courseAccentInk(for code: String) -> Color {
 struct SmoothDueValue {
     let primary: String
     let secondary: String?
+
+    /// The small line under the due value. A card with nothing to submit says
+    /// "in class" there, in the slot "late" uses, so the card is exactly as
+    /// tall as any other (owner, 2026-11-06: a separate caveat line made
+    /// cards taller, and diagonal stripes were tried on a phone and rejected
+    /// the same day as too busy). Only one word fits, so a real secondary
+    /// ("late", "no date") always wins: lateness is the more urgent fact.
+    /// `nonisolated` and off the View on purpose, so tests can call it and a
+    /// non-main caller is not caught by a View's main-actor isolation.
+    nonisolated func secondaryLabel(showsNothingToSubmit: Bool) -> String? {
+        secondary ?? (showsNothingToSubmit ? "in class" : nil)
+    }
 }
 
 /// Compact two-line deadline value used on Smooth cards: `4d / late`, `5h`,

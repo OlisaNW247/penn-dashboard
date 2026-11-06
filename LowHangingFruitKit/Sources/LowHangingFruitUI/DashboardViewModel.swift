@@ -107,7 +107,7 @@ struct DashItem: Identifiable, Equatable {
     /// is provenance and lives in `sourceText`, shown only once the card is
     /// opened (moved there 2026-11-06 at the owner's call, to keep collapsed
     /// cards one height). "Nothing to submit" is not here either: the card
-    /// shows it as diagonal stripes (`showsNothingToSubmit`).
+    /// shows it as "in class" under the due value (`showsNothingToSubmit`).
     var caveatText: String? {
         let parts: [String] = fact?.caveatWords ?? []
         return parts.isEmpty ? nil : parts.joined(separator: " \u{00B7} ")
