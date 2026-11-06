@@ -22,7 +22,7 @@ struct DashboardSmallFixesTests {
         #expect(!source.contains(".alert(\"Rename class\""))
     }
 
-    @Test("the add button has the same 44pt hit area as the filter button, and the megaphone is the header's 48pt circle")
+    @Test("the add button has the same 44pt hit area as the filter button, and the megaphone is the header's 48pt squircle")
     func controlRowHitAreas() throws {
         let source = try uiSource("ContentView.swift")
         guard !source.isEmpty else { return }
@@ -34,19 +34,22 @@ struct DashboardSmallFixesTests {
             let end = tail.dropFirst().range(of: "\n    private ")?.lowerBound ?? tail.endIndex
             let body = String(tail[..<end])
             #expect(body.contains(".frame(width: 38, height: 38)"), "\(name) still draws 38pt")
-            #expect(body.contains(".contentShape(Circle().inset(by: -3))"), "\(name) lost its 44pt hit area")
-            #expect(!body.contains(".contentShape(Circle())"), "\(name) is back to a 38pt hit area")
+            #expect(body.contains(".inset(by: -3)"), "\(name) lost its 44pt hit area")
+            #expect(body.contains("style: .continuous"), "\(name) is not a squircle")
+            #expect(!body.contains("Circle()"), "\(name) is back to a circle")
         }
         // The megaphone is drawn by the same function as the other header
         // buttons, so its size, fill and stroke cannot drift from theirs.
         let megaphone = try declarationBody("private var announcementFindsButton: some View", in: source)
-        #expect(megaphone.contains("headerCircle(icon: \"megaphone.fill\""))
-        let circle = try declarationBody("private func headerCircle(", in: source)
+        #expect(megaphone.contains("headerButton(icon: \"megaphone.fill\""))
+        let circle = try declarationBody("private func headerButton(", in: source)
         #expect(circle.contains(".frame(width: 48, height: 48)"))
-        #expect(circle.contains(".contentShape(Circle())"))
+        #expect(circle.contains(".contentShape(Self.headerShape)"))
+        #expect(source.contains("RoundedRectangle(cornerRadius: 48 * 0.32, style: .continuous)"))
         // The reference the others copy.
         let controls = try uiSource("DashboardControls.swift")
-        #expect(controls.contains(".contentShape(Circle().inset(by: -3))"))
+        #expect(controls.contains(".contentShape(shape.inset(by: -3))"))
+        #expect(controls.contains("RoundedRectangle(cornerRadius: 38 * 0.32, style: .continuous)"))
     }
 
     @Test("the todo empty state does not claim a week, because todo is only overdue plus two days")

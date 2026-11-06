@@ -749,7 +749,7 @@ struct AnnouncementSheetStructureTests {
         let tokens = try GradeWatcherRemovalTests.uiSource("RedesignTokens.swift")
         guard !content.isEmpty, !controls.isEmpty, !tokens.isEmpty else { return }
 
-        #expect(content.contains("headerCircle(icon: \"megaphone.fill\", color: .smoothMarigold)"))
+        #expect(content.contains("headerButton(icon: \"megaphone.fill\", color: .smoothMarigold)"))
 
         let menuStart = try #require(controls.range(of: "struct ClassFilterMenu: View"))
         let menuEnd = try #require(controls.range(of: "struct ClassFilterChip: View", range: menuStart.upperBound..<controls.endIndex))

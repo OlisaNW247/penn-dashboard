@@ -466,11 +466,17 @@ struct ContentView: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Color.smoothTomatoInk)
                 .frame(width: 38, height: 38)
-                .background(Circle().fill(Color.smoothTomato.opacity(0.22)))
-                // Drawn 38pt, tappable 44pt: the same inset `DashCircleIcon`
+                .background(
+                    RoundedRectangle(cornerRadius: 38 * 0.32, style: .continuous)
+                        .fill(Color.smoothTomato.opacity(0.22))
+                )
+                // Drawn 38pt, tappable 44pt: the same inset `DashButtonIcon`
                 // gives the filter button next to it, so the three controls
                 // share one hit size without widening the row.
-                .contentShape(Circle().inset(by: -3))
+                .contentShape(
+                    RoundedRectangle(cornerRadius: 38 * 0.32, style: .continuous)
+                        .inset(by: -3)
+                )
         }
         .buttonStyle(.plain)
         .accessibilityLabel("add assignment or recurring task")
@@ -490,22 +496,21 @@ struct ContentView: View {
     }
 
     /// The megaphone, in the header (it was a 38pt control in the row under
-    /// it until 2026-10-18). Same circle as `navButton`; only the action
+    /// it until 2026-10-18). Same squircle as `navButton`; only the action
     /// differs.
     private var announcementFindsButton: some View {
         Button { openAnnouncements() } label: {
-            // Marigold, the owner's pick (2026-10-18). The circle is a fill
+            // Marigold, the owner's pick (2026-10-18). The squircle is a fill
             // under an ink glyph, so the pastel is safe here; the sheet's own
             // teal accent is unchanged.
-            headerCircle(icon: "megaphone.fill", color: .smoothMarigold)
+            headerButton(icon: "megaphone.fill", color: .smoothMarigold)
                 // Unread only: the total never went down, so after the first
                 // week it said nothing. No badge at all once everything's
                 // been seen.
                 //
-                // Sits on the circle's upper-right rim, not in the square
-                // frame's corner: at the corner (the 38pt button's
-                // placement) a badge floats clear of a 48pt circle, whose
-                // corners are empty. The 2pt offsets leave it overhanging
+                // Sits on the squircle's upper-right corner. The continuous
+                // 15pt radius cuts the corner far less than the circle did,
+                // so the same 2pt offsets still land on the shape. They leave it overhanging
                 // the 48pt frame by 2pt, which nothing above or beside it
                 // clips (the profile button is 10pt away). A capsule, not a
                 // circle, so "12" and "99+" widen it rather than overflow it.
@@ -720,25 +725,30 @@ struct ContentView: View {
 
     private func navButton(to route: DashRoute, icon: String, title: String, color: Color) -> some View {
         NavigationLink(value: route) {
-            headerCircle(icon: icon, color: color)
+            headerButton(icon: icon, color: color)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
         .help(title)
     }
 
-    /// The header's 48pt circle, shared by the push buttons above and the
+    /// The header's 48pt squircle, shared by the push buttons above and the
     /// megaphone (which presents a sheet, so it is a `Button`, not a
     /// `NavigationLink`). One drawing, so the buttons cannot drift apart in
     /// size, fill or stroke.
-    private func headerCircle(icon: String, color: Color) -> some View {
+    /// A squircle, not a rounded square: `.continuous` corners are what make
+    /// it one, and 0.32 of the side matches the other controls. The owner
+    /// replaced the circles with these on 2026-11-06.
+    private static let headerShape = RoundedRectangle(cornerRadius: 48 * 0.32, style: .continuous)
+
+    private func headerButton(icon: String, color: Color) -> some View {
         Image(systemName: icon)
             .font(.system(size: 17, weight: .semibold))
             .foregroundStyle(Color.smoothInk)
             .frame(width: 48, height: 48)
-            .background(Circle().fill(color.opacity(0.18)))
-            .overlay { Circle().stroke(color.opacity(0.48), lineWidth: 1.25) }
-            .contentShape(Circle())
+            .background(Self.headerShape.fill(color.opacity(0.18)))
+            .overlay { Self.headerShape.stroke(color.opacity(0.48), lineWidth: 1.25) }
+            .contentShape(Self.headerShape)
     }
 
     /// Silent refresh: re-fetch the cookieless Canvas feed, re-sync Gradescope
