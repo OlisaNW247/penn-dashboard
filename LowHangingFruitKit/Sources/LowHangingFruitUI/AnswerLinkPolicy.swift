@@ -58,9 +58,17 @@ enum AnswerLinkPolicy {
     }
 
     /// The action `AssistantView` installs on the answer text.
+    ///
+    /// An allowed link on the Canvas host goes through `CanvasAppLink`, so an
+    /// answer's Canvas link opens the Canvas Student app the way a card's
+    /// "open in canvas" does, instead of always landing in Safari. Ed links
+    /// keep the system default, and `CanvasAppLink` itself falls back to the
+    /// system for any URL that is not a `/courses/<id>` page.
     static func openURLAction(canvasHost: String?) -> OpenURLAction {
         OpenURLAction { url in
-            allows(url, canvasHost: canvasHost) ? .systemAction : .discarded
+            guard allows(url, canvasHost: canvasHost) else { return .discarded }
+            guard let host = url.host?.lowercased(), !edHosts.contains(host) else { return .systemAction }
+            return CanvasAppLink.result(for: url)
         }
     }
 }

@@ -514,8 +514,17 @@ export function parseFacts(text: string, doc: FactsDocument): ParsedFacts {
       reject("target_required");
       continue;
     }
-    const trimmedTitle = typeof e.title === "string" ? e.title.trim().slice(0, MAX_FACT_TITLE_CHARS).trim() : undefined;
-    const title = trimmedTitle === undefined ? undefined : trimmedTitle;
+    let trimmedTitle = typeof e.title === "string" ? e.title.trim().slice(0, MAX_FACT_TITLE_CHARS).trim() : undefined;
+    // A new_task title names the work; the model still sometimes appends
+    // "(Dec 14, 4-8, Annenberg...)". Drop one trailing parenthetical group,
+    // terminated or cut off, and keep the title if nothing would be left.
+    // Never a reason to reject, and never applied to scope_change or note,
+    // whose titles carry the change itself.
+    if (type === "new_task" && trimmedTitle !== undefined) {
+      const stripped = trimmedTitle.replace(/\s*\([^()]*\)?$/, "").trim();
+      if (stripped.length > 0) trimmedTitle = stripped;
+    }
+    const title = trimmedTitle;
     // new_task names the work in its title; scope_change and note carry the
     // change / the note in it (see the prompt). needs_review has no title in
     // the schema ("target is optional"), so it is left alone.

@@ -29,6 +29,13 @@ struct AssistantPresentationTests {
         }
     }
 
+    @Test("Canvas app links: calendar, discussion and userinfo URLs")
+    func canvasLinkEdges() {
+        #expect(CanvasAppLink.appURL(for: URL(string: "https://canvas.umich.edu/calendar?include_contexts=course_1&month=9#assignment_1")!) == nil)
+        #expect(CanvasAppLink.appURL(for: URL(string: "https://canvas.umich.edu/courses/12/discussion_topics/34")!)?.absoluteString == "canvas-courses://canvas.umich.edu/courses/12/discussion_topics/34")
+        #expect(CanvasAppLink.appURL(for: URL(string: "https://me@canvas.umich.edu/courses/12")!) == nil)
+    }
+
     @Test("Late or repeated Canvas callbacks cannot send Gradescope or reminders backward")
     func onboardingCallbacks() {
         #expect(OnboardingView.acceptsCanvasConnection(in: .canvasLogin, alreadyReady: false))

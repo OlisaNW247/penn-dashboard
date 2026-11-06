@@ -830,6 +830,16 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-06 (later).** Marco's two asks: a fact-created card shows the
+  name of the work when collapsed ("Final exam") and the whole title when
+  opened (`FactTitle.short`, display only; a matching prompt change lost two
+  real tasks on the bench twice and was parked, round 5 in
+  `docs/FACTS_PROMPT_OWNER_RULE_2026-11-05.md`); and the Canvas-app link
+  question gets DEBUG `LHF-LINK` lines plus ask's answer links routed
+  through the app opener (CLAUDE.md -> Known gaps). Handoff items 4-6
+  scoped in `docs/HANDOFF_V10_2026-11-04.md`: item 4 is Olisa's collector
+  shape, Phase 4 needs Marco's design answers, item 6 is a held deploy.
+  3696/352 Swift, Deno 713, iOS simulator build green. Not on a phone.
 - **2026-11-06.** The two open bug-hunt code items: the megaphone's changed
   row has `undo` (item 5), and Profile's "save pennkey" row shows after a
   failed Keychain save even with an older password on file (item 17); item

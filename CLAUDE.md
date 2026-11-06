@@ -1213,7 +1213,14 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v10` (2026-11-06): 3691 tests / 351 suites, all green, `swift test
+**Current on `v10` (2026-11-06, later): 3696 tests / 352 suites, all green,
+`swift test --no-parallel` on Marco's Mac (52 s), the only test run on the
+machine; the iOS Debug simulator build (`iPhone 17 Pro`) succeeded on the
+same tree; Deno 713 and `deno task check` clean.** +5 tests / +1 suite over
+3691 / 351: `FactTitleTests` (the short collapsed title of a fact row),
+`AssistantPresentationTests.canvasLinkEdges` and two `AnswerLinkPolicyTests`
+(ask's Canvas links go through `CanvasAppLink`). Deno +2: the `new_task`
+title strip. Earlier the same day: **3691 tests / 351 suites, all green, `swift test
 --no-parallel` on Marco's Mac (66 s), the only test run on the machine; the iOS
 Debug simulator build (`iPhone 17 Pro`) succeeded on the same tree; Deno 711
 and `deno task check` clean.** +3 tests / +1 suite over 3688 / 350:
@@ -3416,6 +3423,20 @@ none is a ship line.
 
 ## Known gaps
 
+- **"open in canvas" may not reach the Canvas Student app** (Marco,
+  2026-11-06: "it hasn't been for me"). `CanvasAppLink.result(for:)` tries
+  the universal link, then `canvas-courses://<host>/courses/...` (the scheme
+  Canvas documents for its Student app), then Safari; cards and megaphone
+  rows use it, and since 2026-11-06 ask's answer links do too (they went
+  to Safari by policy before). Which branch fires on his phone is unknown:
+  a DEBUG build now prints one `LHF-LINK <branch> <host><path>` line per
+  tap (never query, fragment or token) and a `canOpenURL canvas-courses:`
+  line, which reads false when `LSApplicationQueriesSchemes` is undeclared
+  (it is) even where `open(_:)` would succeed. Two candidate causes from
+  the code: a card whose stored URL has no `#assignment_<id>` fragment
+  (override rows, `#quiz_`) keeps a calendar-shaped URL that `appURL`
+  rejects, so it opens Safari by design; or the Student app does not map
+  `canvas.upenn.edu` paths. One tap on a debug build settles it.
 - **The 2026-11-05 bug-hunt fixes (facts, structured sources, silent
   re-login, backend) are on Marco's phone and looked right to him, and the
   `finish_fact_extraction` migration is not applied in production.** The

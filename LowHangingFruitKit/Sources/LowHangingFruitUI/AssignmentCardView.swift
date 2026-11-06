@@ -78,6 +78,16 @@ struct AssignmentCardView: View {
     @State private var exitScale: CGFloat = 1
     @State private var dragX: CGFloat = 0
     @State private var isExpanded = false
+
+    /// A card a server fact created carries the model's whole title, padded
+    /// with the when and where. Collapsed, it reads as the name alone; opened,
+    /// the full title shows. Display only; the ledger row keeps the fact's
+    /// words, and every other row is untouched.
+    private var displayTitle: String {
+        let title = item.assignment.title
+        guard !isExpanded, AppState.isFactRow(item.assignment) else { return title }
+        return FactTitle.short(item.assignment.title)
+    }
     @State private var isCompleting = false
     @State private var paperScatter = false
     @State private var isArmed = false
@@ -228,7 +238,7 @@ struct AssignmentCardView: View {
                     }
                 }
 
-                Text(item.assignment.title)
+                Text(displayTitle)
                     .font(.lhfAssignmentTitle(20))
                     .foregroundStyle(primaryTextColor)
                     .lineLimit(isExpanded ? nil : 1)

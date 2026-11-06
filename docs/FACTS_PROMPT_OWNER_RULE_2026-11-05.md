@@ -371,3 +371,44 @@ uploads. The 17 stored facts (seq 1-23) are round 3's and were left alone:
 deleting server rows does not retract facts a phone has already applied
 (bug hunt item 7), so a clear-and-re-extract would have doubled them on
 Marco's phone.
+
+## Round 5: noun-phrase titles, tried and parked (2026-11-06)
+
+Marco's request: a card from a `new_task` fact read "Take the final exam
+(Dec 14, 4-8, anns....)" and should read "Final exam", the rest on tap.
+Two halves were tried. The phone half shipped: `FactTitle.short`
+(`Kit/Facts/FactTitle.swift`) shortens a fact row's title on the collapsed
+card only (drops a trailing parenthetical, a trailing " - "/": " clause
+after two or more words, and one leading imperative such as "Take the"),
+and the opened card shows the whole title; the ledger row is never
+rewritten. The server half was a prompt change to the `new_task` bullet
+("the NAME of the work ... a noun phrase of at most 60 characters with no
+leading verb and no date, time or place") plus a validator strip of one
+trailing parenthetical on `new_task` titles.
+
+Benched twice on the round-4c corpus (121 documents, Haiku 5.5, low
+reasoning, tags `round5-title` and `round5-title-b`, about $0.06 each):
+
+| TP/FP/FN | round4c | round5-title | round5-title-b |
+|---|---|---|---|
+| `new_task` | 9/0/5 | 7/0/7 | 7/0/7 |
+| `cancel` | 4/0/0 | 4/0/0 | 4/0/0 |
+| `reschedule` | 19/1/0 | 19/1/0 | 15/1/4 |
+| `scope_change` | 4/8/0 | 3/2/1 | 3/1/1 |
+| `note` | 11/6/1 | 9/5/3 | 11/7/1 |
+| `needs_review` | 6/2/0 | 5/3/1 | 5/5/1 |
+| overall P / R | 76% / 90% | 81% / 80% | 76% / 76% |
+
+The gate passed both times (0 false tasks, 0 invented). The titles came
+out as wanted ("Take Midterm 1 (Tue Oct 13, 1:45-3:15 pm, LEVH 101)" ->
+"Midterm 1"). But the same two real tasks were lost in both runs, each
+coming back as `needs_review` instead ("Bring Arches cover paper ... for
+9/24", "Take Quiz 2 for Chap. 22"): a repeat, not noise, so the prompt
+bullet was reverted before commit and only the validator strip (never a
+reject) and its tests stayed. The `reschedule` dip in the second run is
+one-run noise of the kind rounds 4a/4b showed. Lesson: asking the model
+for a noun phrase makes it less sure an instruction is a task; the
+display rule on the phone gets the short title without that cost. A
+later round could try "keep the imperative, drop the date and place"
+alone, which is a different experiment.
+

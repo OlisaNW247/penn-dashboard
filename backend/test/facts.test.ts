@@ -439,3 +439,21 @@ Deno.test("parseFacts: note and scope_change need a title, needs_review does not
   assert.equal(parsed.facts[0].type, "needs_review");
   assert.equal(parsed.facts[0].title, undefined, "a blank title is left off, not stored empty");
 });
+
+Deno.test("parseFacts: new_task title loses one trailing parenthetical, terminated or cut off", () => {
+  const mk = (title: string, type = "new_task") => ({ ...base, type, target: type === "new_task" ? null : "a1", title, quote: "read chapter 5" });
+  const parsed = parseFacts(wrap([
+    mk("Final exam (Dec 14, 4-8, Annenberg)"),
+    mk("Final exam (Dec 14, 4-8, Annenberg..."),
+    mk("Problem set 7"),
+    mk("(Optional)"),
+    mk("Quiz 3 (Chapters 4 (part 1))"),
+  ]), doc);
+  assert.deepEqual(parsed.facts.map((f) => f.title), ["Final exam", "Final exam", "Problem set 7", "(Optional)", "Quiz 3 (Chapters 4 (part 1))"]);
+});
+
+Deno.test("parseFacts: note and scope_change titles keep their parentheticals", () => {
+  const mk = (type: string, title: string) => ({ ...base, type, target: "a1", title, quote: "read chapter 5" });
+  const parsed = parseFacts(wrap([mk("note", "Covers ch. 5 (not 6)"), mk("scope_change", "Only problems 1-4 (not 5)")]), doc);
+  assert.deepEqual(parsed.facts.map((f) => f.title), ["Covers ch. 5 (not 6)", "Only problems 1-4 (not 5)"]);
+});

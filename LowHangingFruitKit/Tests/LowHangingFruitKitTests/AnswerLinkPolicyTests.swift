@@ -22,6 +22,24 @@ struct AnswerLinkPolicyTests {
         #expect(Self.allowed("https://canvas.upenn.edu"))
     }
 
+    @Test("allows is unchanged for the Canvas and Ed hosts")
+    func allowsUnchanged() {
+        #expect(Self.allowed("https://canvas.upenn.edu/courses/1"))
+        #expect(Self.allowed("https://edstem.org/us/courses/9"))
+        #expect(!Self.allowed("http://canvas.upenn.edu/courses/1"))
+        #expect(!Self.allowed("https://example.com/courses/1"))
+    }
+
+    @Test("openURLAction routes Canvas links through CanvasAppLink")
+    func openURLActionUsesCanvasAppLink() throws {
+        let file = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/LowHangingFruitUI/AnswerLinkPolicy.swift")
+        let source = try String(contentsOf: file, encoding: .utf8)
+        let body = try #require(source.components(separatedBy: "static func openURLAction").last)
+        #expect(body.contains("CanvasAppLink"))
+    }
+
     @Test("Ed Discussion's two hosts open")
     func edHostsOpen() {
         #expect(Self.allowed("https://edstem.org/us/courses/9/discussion/101"))
