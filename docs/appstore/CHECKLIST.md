@@ -4,8 +4,9 @@
 
 Marco's "push to appstore" after the megaphone's third and fourth rounds
 (todo · prev over every retained post, the 3-day grace rule, uniform rows,
-the final-exam dedup). Attach **20**. Archive and upload time recorded
-below once done.
+the final-exam dedup). Attach **20**. Archived from `c3a4feb` and uploaded at
+16:39 EST on 2026-11-07 ("Upload succeeded"), after 3674/351 Swift and the
+signed Debug build of the same tree, which is on Marco's phone.
 
 ### 3.4.1 (19), 2026-11-07 (uploaded, superseded)
 

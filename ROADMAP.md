@@ -862,6 +862,8 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-07 (16:39 EST).** 3.4.1 (20) archived from `c3a4feb` and
+  uploaded, superseding builds 18 and 19. Marco attaches 20 and submits.
 - **2026-11-07 (evening).** The megaphone lists every post the phone keeps
   (no 7-day window, Ed staff posts included); todo is "still applies":
   an open find, a live fact, an event or task judgment not yet over, or
