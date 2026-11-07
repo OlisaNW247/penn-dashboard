@@ -1,6 +1,13 @@
 # App Store submission checklist — LHF (iOS + macOS)
 
-## 3.4.1 (19) submission, 2026-11-07 (supersedes build 18; Marco submits)
+## 3.4.1 (20) submission, 2026-11-07 (supersedes builds 18 and 19; Marco submits)
+
+Marco's "push to appstore" after the megaphone's third and fourth rounds
+(todo · prev over every retained post, the 3-day grace rule, uniform rows,
+the final-exam dedup). Attach **20**. Archive and upload time recorded
+below once done.
+
+### 3.4.1 (19), 2026-11-07 (uploaded, superseded)
 
 Archived from `5bc1a9f` and uploaded at 15:38 EST on 2026-11-07 ("Upload
 succeeded"), after 3698/351 Swift and the signed Debug build of the same

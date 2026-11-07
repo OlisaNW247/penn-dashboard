@@ -862,6 +862,11 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-07 (evening).** The megaphone lists every post the phone keeps
+  (no 7-day window, Ed staff posts included); todo is "still applies":
+  an open find, a live fact, an event or task judgment not yet over, or
+  under 3 days old; prev is the rest. The badge counts unread todo posts
+  only; NEW shows only in todo. Marco's "push to appstore": build 20.
 - **2026-11-07 (later).** The megaphone sheet is todo · prev over posts
   only, every row the same, split by open finds, live facts and a 7-day
   recency rule (`announcementSheetSplit`); the model's document verdict is

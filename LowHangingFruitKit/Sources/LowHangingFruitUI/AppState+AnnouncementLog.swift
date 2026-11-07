@@ -436,7 +436,7 @@ extension AppState {
     func announcementBadgeCount(now: Date) -> Int {
         AnnouncementReadState.unreadCount(
             finds: announcementFoundItems(now: now),
-            records: announcementSheetRecords(now: now),
+            records: announcementBadgeRecords(now: now),
             seen: announcementSeenIDs,
             facts: appliedFactKeys
         )

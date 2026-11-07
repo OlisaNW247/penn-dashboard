@@ -25,8 +25,8 @@ import LowHangingFruitKit
 /// (`AnnouncementReadState`).
 struct AnnouncementFindsView: View {
     /// The posts the sheet lists, already limited to classes the student still
-    /// has and sorted newest first (`AppState.announcementSheetRecords`: the
-    /// standing set and the keep-check).
+    /// has and sorted newest first (`AppState.announcementSheetRecords`: every
+    /// post the phone keeps).
     var records: [AnnouncementRecord] = []
     /// Ids that were unread when the sheet opened, so their rows can say
     /// "new" even though opening the sheet has just marked them seen. A
@@ -40,6 +40,9 @@ struct AnnouncementFindsView: View {
     var facts: [AppliedFact] = []
     /// Where each post's finds stand (`AppState.announcementFindStates()`).
     var findStates: [String: AnnouncementFindState] = [:]
+    /// The stored judgment of each post, by `AnnouncementReadState.key(for:)`
+    /// (`AppState.announcementRelevance`), for the todo / prev split.
+    var relevance: [String: AnnouncementRelevance] = [:]
 
     /// The one class the sheet is narrowed to (a class key), nil for all of
     /// them. Starts nil every time the sheet opens, and is the sheet's own: it
@@ -99,7 +102,8 @@ struct AnnouncementFindsView: View {
                     // than appear here in a second shape. The split is
                     // `AppState.announcementSheetSplit`.
                     let split = AppState.announcementSheetSplit(
-                        records: visibleRecords, facts: facts, findStates: findStates, now: now
+                        records: visibleRecords, facts: facts, findStates: findStates,
+                        relevance: { relevance[AnnouncementReadState.key(for: $0)] }, now: now
                     )
                     let shown = view == .todo ? split.todo : split.prev
                     if shown.isEmpty {
@@ -182,7 +186,10 @@ struct AnnouncementFindsView: View {
     @ViewBuilder
     private func recordRow(for record: AnnouncementRecord, now: Date) -> some View {
         let link = record.safeWebURL
-        let isNew = newIDs.contains(AnnouncementReadState.key(for: record))
+        // NEW only in todo: opening the sheet marks every listed post seen,
+        // and with the whole log listed the first open would tag weeks of
+        // history NEW under prev, which says nothing a student can act on.
+        let isNew = view == .todo && newIDs.contains(AnnouncementReadState.key(for: record))
         rowChrome(
             url: link,
             caption: record.isEd ? AnnouncementSheetCopy.goToEd : AnnouncementSheetCopy.goToCanvas,

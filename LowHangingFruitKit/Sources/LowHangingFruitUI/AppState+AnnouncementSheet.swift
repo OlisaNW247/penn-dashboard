@@ -1,14 +1,8 @@
 import Foundation
 import LowHangingFruitKit
 
-// What the megaphone sheet is allowed to show, and so what its badge may count.
-//
-// The owner's note on the old sheet was that it should "honestly just be the
-// most recent announcements from each class", over "just the past 7 days", with
-// the tasks and exams found in them beside it ("Midterm 2 looks great like
-// that"), and that old found tasks from September are "not helpful". So the
-// sheet has two lists, and this file is the one place that says which rows
-// belong in each:
+// What the megaphone sheet shows, and so what its badge may count. This file is
+// the one place that says which rows belong where:
 //
 // - **Found**: tasks found in Canvas announcements and Ed posts, plus found
 //   exams, including the syllabus's. Only what is still ahead of the student:
@@ -20,49 +14,18 @@ import LowHangingFruitKit
 //   upcoming is missing. (The per-class "announcements on dashboard" and
 //   "nothing to submit" switches are not applied: they decide what becomes a
 //   dashboard card, and this list is about what the posts said.)
-// - **Announcements**: Canvas announcements and Ed announcements/pinned posts.
-//   Two sets, then one rule over them.
+// - **Announcements**: every Canvas announcement and Ed post the phone keeps
+//   (`announcementSheetRecords`), newest first, with no window and no
+//   staff-post hiding. Owner's call, 2026-11-07, after seeing a nearly empty
+//   sheet: list everything, and let the todo / prev split
+//   (`announcementSheetSplit`) say which posts still apply.
 //
-//   *The standing set* is every post from the last 7 days plus, for every
-//   class, its single newest post however old it is (inside the 60 days the
-//   log holds). Without that second half a quiet class vanishes from the sheet:
-//   on the owner's phone (2026-10-23) Canvas returned 21 posts in 60 days, 20
-//   of them PHYS 0151 and one FNAR 0010 from September 22, so a strict week
-//   showed PHYS alone and FNAR not at all. Older posts beyond each class's
-//   newest stay in the log (nothing here deletes) and are simply not listed.
-//
-//   *The keep-check* then takes a post out of the standing set when it is
-//   over, and brings an older one back when it still matters, from two facts
-//   about the post: its relevance (`AnnouncementRelevance`, the server's one
-//   judgment of how long the post as a whole stays worth listing, kept on the
-//   phone, `AnnouncementRelevanceStore`) and the state of the finds that came
-//   from it (`AnnouncementFindState`: none, some still to do, or all done or
-//   past). The rule is `announcementRecordsForSheet`. The state of the finds
-//   needs no AI, and it is the case that prompted this: the PHYS post
-//   "derivation of discharging process & combined worksheet 6-7 & exam 2
-//   review" produced one find, "combined worksheet 6-7", and went on being
-//   listed for a week after the student had turned the worksheet in. A post
-//   with no stored judgment (read before the judgment existed, a school the
-//   server does not serve, offline) can still be removed by that clause, and
-//   otherwise falls back to the standing set alone.
-//
-//   *Ed staff posts* are candidates of a different kind. A TA's "No recitation
-//   today + HW 5" or "Practice questions midterm" is a staff post, which the
-//   Ed filter keeps as course material but which is mostly answers and notes,
-//   so a staff-post row is listed only when its judgment says it still
-//   matters: an `event` whose `until` is ahead, or a `task` whose `until` is
-//   ahead or with a find still to do. (The Ed pass reads a staff post for
-//   that judgment alone and throws its tasks away, so a staff post has no
-//   finds of its own and a `task` is judged by its date.) Never by the 7-day window, never as its class's latest post (so
-//   they are left out of the standing set altogether, and a staff post can
-//   never be picked as a class's latest only to be hidden, leaving the class
-//   unrepresented), never as `standing` or `news`, and never without a
-//   judgment.
-//
-// The badge counts exactly these two lists, so it can never count something the
-// student cannot find. Everything here is read-only: it neither creates nor
-// removes a ledger row, and it leaves the dashboard's own placement and
-// visibility rules alone.
+// The badge counts unread finds plus unread posts in **todo** only
+// (`announcementBadgeRecords`), through the same split the view draws, so it
+// can never count something the student cannot find and does not read "99+"
+// because 60 days of history became visible. Everything here is read-only: it
+// neither creates nor removes a ledger row, and it leaves the dashboard's own
+// placement and visibility rules alone.
 
 /// What the finds of one announcement say about whether the post is still
 /// worth listing: nothing was found in it, something found is still to do, or
@@ -95,214 +58,6 @@ enum AnnouncementSheetView: String, CaseIterable, Identifiable {
 }
 
 extension AppState {
-    /// How far back the sheet lists announcements.
-    nonisolated static let announcementSheetWindowDays = 7
-
-    nonisolated static var announcementSheetWindow: TimeInterval {
-        TimeInterval(announcementSheetWindowDays) * 24 * 60 * 60
-    }
-
-    /// The posts the sheet may list, newest first: every post within the
-    /// window (`AnnouncementRecord.sortDate`, so an undated post counts from
-    /// when this phone first saw it), plus each class's single newest post
-    /// even when it is older than the window.
-    ///
-    /// Exactly seven days ago is in, because "the past 7 days" read at the
-    /// second it turns seven is still the past 7 days, and a rule that drops a
-    /// post a second early is the kind of edge nobody can see coming. There is
-    /// no upper bound: a post stamped slightly ahead by clock skew is today's,
-    /// not a stranger's.
-    ///
-    /// The newest post of a class is chosen with `AnnouncementRecord.isNewer`,
-    /// the order the list is shown in, and classes are told apart by
-    /// `announcementCourseIdentity` and not by the raw string: an Ed row can
-    /// carry `PHYS 151` where the Canvas log has the descriptor's `PHYS 0151`,
-    /// and two spellings of one class must not each earn a "newest" post. A
-    /// class whose newest post is already inside the window adds nothing, and
-    /// no post is listed twice.
-    ///
-    /// **Ed staff posts are not in this set**, neither by the window nor as a
-    /// class's latest (`AnnouncementRecord.isStaffPost`; they have their own
-    /// rule in `announcementRecordsForSheet`). Counting one as a class's latest
-    /// would pick it, find it has no judgment, and drop it, leaving the class
-    /// without the announcement that should have represented it.
-    ///
-    /// The wrong fix is widening the window (to 14 or 30 days): a class that
-    /// posts daily would flood the sheet while a class that posted once a
-    /// month would still be missing, and the sheet's job is "where does each
-    /// class stand", not "how far back can we go".
-    nonisolated static func announcementRecordsInSheetWindow(
-        _ allRecords: [AnnouncementRecord],
-        now: Date
-    ) -> [AnnouncementRecord] {
-        let records = allRecords.filter { !$0.isStaffPost }
-        let cutoff = now.addingTimeInterval(-announcementSheetWindow)
-        // Each distinct course string is parsed once: a log of 60 days can hold
-        // hundreds of rows for a handful of classes.
-        var identities: [String: String] = [:]
-        var newestByClass: [String: Int] = [:]
-        for (index, record) in records.enumerated() {
-            let identity: String
-            if let known = identities[record.courseCode] {
-                identity = known
-            } else {
-                identity = announcementCourseIdentity(record.courseCode)
-                identities[record.courseCode] = identity
-            }
-            if let held = newestByClass[identity],
-               !AnnouncementRecord.isNewer(record, than: records[held]) {
-                continue
-            }
-            newestByClass[identity] = index
-        }
-        let newestOfAClass = Set(newestByClass.values)
-        return records.enumerated()
-            .filter { $0.element.sortDate >= cutoff || newestOfAClass.contains($0.offset) }
-            .map(\.element)
-            .sorted(by: AnnouncementRecord.isNewer(_:than:))
-    }
-
-    /// The posts the sheet lists: the standing set (`announcementRecordsInSheetWindow`)
-    /// minus the posts that are over, plus the older posts that still matter,
-    /// newest first. `relevance` and `findState` answer for one record; both
-    /// may say "nothing known" (`nil`, `.none`).
-    ///
-    /// A post in the standing set is shown **unless it is over**:
-    /// - it is an `event` whose `until` has passed; or
-    /// - every find from it is finished or past (`.allDone`), unless the post
-    ///   is `standing` (a resource that outlives its tasks) or an `event` whose
-    ///   `until` is still ahead (the happening is still to come, whatever was
-    ///   asked of the student for it); or
-    /// - it is a `task` whose `until` has passed and no find from it is still
-    ///   to do.
-    ///
-    /// A post **not** in the standing set is shown only if it **still
-    /// matters**: it is `standing`; or an `event` whose `until` is not yet
-    /// past; or a `task` with a find still to do. A `news` post, and a post
-    /// with no judgment, never comes back: those are what the 7-day window
-    /// exists to let go of.
-    ///
-    /// `until` equal to `now` is not past: the same edge the window takes, and
-    /// the one a task due this very second takes in `isHiddenAnnouncementTask`.
-    /// An `event` or `task` with no `until` is not over by date (nothing says
-    /// when), and an `event` with none gets no exemption from the all-done
-    /// clause (nothing says it is still ahead).
-    ///
-    /// An Ed **staff post** is outside both halves above: it is shown only if
-    /// it is an `event` whose `until` is not yet past, or a `task` whose `until`
-    /// is not yet past or with a find still to do
-    /// (`announcementStaffPostMatters`), and otherwise not at all.
-    ///
-    /// With no judgment stored, only the all-done clause can take a post out,
-    /// so the rule degrades to the standing set plus finished-work removal and
-    /// never to something worse than the sheet before this rule existed. The
-    /// wrong version is deciding "no judgment" means "over": a school or an
-    /// offline phone would then lose its whole list.
-    ///
-    /// Pure and `nonisolated`, like the window it builds on, so tests call it
-    /// with plain closures (CLAUDE.md's `decidedText` trap).
-    nonisolated static func announcementRecordsForSheet(
-        _ records: [AnnouncementRecord],
-        now: Date,
-        relevance: (AnnouncementRecord) -> AnnouncementRelevance?,
-        findState: (AnnouncementRecord) -> AnnouncementFindState
-    ) -> [AnnouncementRecord] {
-        let standing = announcementRecordsInSheetWindow(records, now: now)
-        let standingKeys = Set(standing.map(AnnouncementReadState.key(for:)))
-        return records
-            .filter { record in
-                let judged = relevance(record)
-                let state = findState(record)
-                if record.isStaffPost {
-                    return announcementStaffPostMatters(judged, findState: state, now: now)
-                }
-                if standingKeys.contains(AnnouncementReadState.key(for: record)) {
-                    return !announcementIsOver(judged, findState: state, now: now)
-                }
-                return announcementStillMatters(judged, findState: state, now: now)
-            }
-            .sorted(by: AnnouncementRecord.isNewer(_:than:))
-    }
-
-    /// The "unless it is over" half of `announcementRecordsForSheet`, for a post
-    /// in the standing set.
-    nonisolated static func announcementIsOver(
-        _ judged: AnnouncementRelevance?,
-        findState: AnnouncementFindState,
-        now: Date
-    ) -> Bool {
-        if let judged, judged.kind == .event, let until = judged.until, until < now {
-            return true
-        }
-        if findState == .allDone {
-            var outlivesItsTasks = false
-            switch judged?.kind {
-            case .standing:
-                outlivesItsTasks = true
-            case .event:
-                if let until = judged?.until { outlivesItsTasks = until >= now }
-            case .task, .news, nil:
-                break
-            }
-            if !outlivesItsTasks { return true }
-        }
-        if let judged, judged.kind == .task, let until = judged.until, until < now, findState != .open {
-            return true
-        }
-        return false
-    }
-
-    /// The "only if it still matters" half of `announcementRecordsForSheet`, for
-    /// a post older than the window that is not its class's newest.
-    nonisolated static func announcementStillMatters(
-        _ judged: AnnouncementRelevance?,
-        findState: AnnouncementFindState,
-        now: Date
-    ) -> Bool {
-        switch judged?.kind {
-        case .standing:
-            return true
-        case .event:
-            if let until = judged?.until { return until >= now }
-            return false
-        case .task:
-            return findState == .open
-        case .news, nil:
-            return false
-        }
-    }
-
-    /// Whether an Ed staff post is worth listing: an `event` whose `until` is
-    /// not past, or a `task` whose `until` is not past or with a find still to
-    /// do. `standing` is not enough (a staff post is rarely a resource the class
-    /// was pointed to, and listing them all is the Ed board), `news` is never
-    /// enough, and a post with no judgment is not listed: nothing says it
-    /// matters.
-    ///
-    /// The date clause for a `task` is what makes a staff post listable at all:
-    /// the Ed pass reads a staff post for its judgment only and discards its
-    /// tasks, so no find ever comes from one and "a find is still open" alone
-    /// would never be true. The find clause stays for a row that has some
-    /// (a ledger written by another build). A task with no `until` and no open
-    /// find is not listed: nothing says when it ends, and an undated staff post
-    /// is the Ed board again.
-    nonisolated static func announcementStaffPostMatters(
-        _ judged: AnnouncementRelevance?,
-        findState: AnnouncementFindState,
-        now: Date
-    ) -> Bool {
-        switch judged?.kind {
-        case .event:
-            if let until = judged?.until { return until >= now }
-            return false
-        case .task:
-            if let until = judged?.until, until >= now { return true }
-            return findState == .open
-        case .standing, .news, nil:
-            return false
-        }
-    }
-
     /// Where each post's finds stand, by the post's read-state key
     /// (`AnnouncementReadState.key(for:)`): `finds` is every find on the ledger,
     /// finished ones included, and `isDone` says whether one is finished or
@@ -476,15 +231,29 @@ extension AppState {
     /// 2. a fact the server read out of this document is still live: not
     ///    rejected by the student, of type `new_task`, `reschedule`, `cancel`
     ///    or `scope_change`, and with no date or a date not yet past;
-    /// 3. the post is newer than `recencyWindow` (`sortDate`).
+    /// 3. the post's stored judgment (`relevance`, the server's
+    ///    `AnnouncementRelevance`, keyed like `findStates`) is an `event` or a
+    ///    `task` whose `until` is absent or not yet past;
+    /// 4. the post is newer than `graceWindow` (`sortDate`).
     ///
-    /// This is the rule-based half of "sort by what the text says" (owner,
-    /// 2026-11-07: "need [the model] to sort based on text"): the model's
-    /// facts are its reading of each post, recency covers the posts it found
-    /// nothing in, and a document-level verdict from the model (ROADMAP ->
-    /// Next) will replace (3) later. The wrong fix is a date-only split: it
-    /// would put a still-open "bring X on Nov 20" post into prev the day it
-    /// turned a week old.
+    /// The owner's words (2026-11-07): "prev being either from way before or
+    /// unapplicable", sorted "based on text". The sheet lists every post the
+    /// phone keeps (`announcementSheetRecords`) and this is the only thing
+    /// that decides which view a post is in. There is no window any more: the
+    /// old 7-day window existed because the sheet was one list and had to
+    /// drop something; a sheet with a prev view has no reason to drop what the
+    /// phone holds, only to sort it. On 2026-11-07 the newest Canvas post was
+    /// 11 days old, the window kept two posts, and 45 Ed posts were hidden.
+    ///
+    /// Why 3 days of grace (4): it only has to cover the gap between a post
+    /// appearing and the student seeing it, before the model has read it. At
+    /// 7 days a week of office-hour notes sat in todo. The model's document
+    /// verdict (ROADMAP -> Next) replaces (4) when it exists. The wrong fix is
+    /// a longer window: it hides history instead of sorting it, and a
+    /// date-only split would put a still-open "bring X on Nov 20" post into
+    /// prev the day it turned a few days old.
+    ///
+    /// An Ed staff post is treated like any other post here.
     ///
     /// Both lists keep the order of `records`, which is newest first.
     ///
@@ -492,13 +261,14 @@ extension AppState {
     /// `CourseDocument.id`, `"<kind>:<courseID>:<sourceID>"`. An Ed record's id
     /// is that same string (`ed:<course>:<thread>`); a Canvas record's id is the
     /// bare announcement id (the document's `sourceID`), so its document id is
-    /// `"announcement:" + courseID + ":" + id`. Both are tried.
+    /// `"announcement:" + courseID + ":" + id`.
     nonisolated static func announcementSheetSplit(
         records: [AnnouncementRecord],
         facts: [AppliedFact],
         findStates: [String: AnnouncementFindState],
+        relevance: (AnnouncementRecord) -> AnnouncementRelevance?,
         now: Date,
-        recencyWindow: TimeInterval = 7 * 86_400
+        graceWindow: TimeInterval = 3 * 86_400
     ) -> (todo: [AnnouncementRecord], prev: [AnnouncementRecord]) {
         var liveDocuments = Set<String>()
         for fact in facts where fact.studentOverride != .rejected {
@@ -514,9 +284,14 @@ extension AppState {
         var prev: [AnnouncementRecord] = []
         for record in records {
             let documentID = record.isEd ? record.id : "announcement:\(record.courseID):\(record.id)"
+            var judgedLive = false
+            if let judged = relevance(record), judged.kind == .event || judged.kind == .task {
+                judgedLive = judged.until.map { $0 >= now } ?? true
+            }
             let isTodo = findStates[AnnouncementReadState.key(for: record)] == .open
                 || liveDocuments.contains(documentID)
-                || record.sortDate > now.addingTimeInterval(-recencyWindow)
+                || judgedLive
+                || record.sortDate > now.addingTimeInterval(-graceWindow)
             if isTodo { todo.append(record) } else { prev.append(record) }
         }
         return (todo, prev)
@@ -579,22 +354,31 @@ extension AppState {
         }
     }
 
-    /// The posts the sheet lists as of `now`: `announcementRecordsOnPage`
-    /// (Canvas log and Ed rows, classes still selected) through the keep-check
-    /// (`announcementRecordsForSheet`: the 7-day window plus each class's
-    /// newest post, less what is over, plus what still matters). The badge
-    /// counts these same records (`announcementBadgeCount`), so it follows the
-    /// rule without a rule of its own.
+    /// The posts the sheet lists as of `now`: all of `announcementRecordsOnPage`
+    /// (Canvas log and Ed rows, classes still selected), newest first, with no
+    /// window and no staff-post hiding. Which view a post is in is
+    /// `announcementSheetSplit`'s business alone.
     func announcementSheetRecords(now: Date = Date()) -> [AnnouncementRecord] {
-        // The badge asks this on every refresh; with no posts there is nothing
-        // to judge, so the finds are not walked for nothing.
-        guard !announcementRecordsOnPage.isEmpty else { return [] }
-        let states = announcementFindStates(now: now)
-        return Self.announcementRecordsForSheet(
-            announcementRecordsOnPage,
-            now: now,
+        announcementRecordsOnPage.sorted(by: AnnouncementRecord.isNewer(_:than:))
+    }
+
+    /// The sheet's todo and prev lists as of `now`, the one split the view
+    /// draws and the badge counts.
+    func announcementSheetSplit(now: Date = Date()) -> (todo: [AnnouncementRecord], prev: [AnnouncementRecord]) {
+        let records = announcementSheetRecords(now: now)
+        guard !records.isEmpty else { return ([], []) }
+        return Self.announcementSheetSplit(
+            records: records,
+            facts: currentAppliedFacts(),
+            findStates: announcementFindStates(now: now),
             relevance: { announcementRelevance[AnnouncementReadState.key(for: $0)] },
-            findState: { states[AnnouncementReadState.key(for: $0)] ?? .none }
+            now: now
         )
+    }
+
+    /// The posts the megaphone badge counts: todo only. History being visible
+    /// (60 days of it) must not push the badge to "99+".
+    func announcementBadgeRecords(now: Date = Date()) -> [AnnouncementRecord] {
+        announcementSheetSplit(now: now).todo
     }
 }

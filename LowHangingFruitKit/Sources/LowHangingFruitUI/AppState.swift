@@ -109,9 +109,9 @@ final class AppState: ObservableObject {
     /// The announcement log as stored: every Canvas announcement logged in
     /// the last 60 days (plus the Ed rows) for a class that is still
     /// selected, newest first. Plain announcements, not extracted tasks; the
-    /// finds above are the tasks. The megaphone sheet lists a subset of it
-    /// (`announcementSheetRecords(now:)`: the past 7 days and each class's
-    /// newest post, less what the keep-check says is over). Backed by `AnnouncementLogStore` and
+    /// finds above are the tasks. The megaphone sheet lists all of it since
+    /// 2026-11-07 (`announcementSheetRecords(now:)`), sorted into todo and
+    /// prev by `announcementSheetSplit`. Backed by `AnnouncementLogStore` and
     /// maintained by `AppState+AnnouncementLog.swift`, whose methods write
     /// these, so (like `courseKnowledge`) they are internal rather than
     /// `private(set)`: `private` is file-scoped.
@@ -6545,8 +6545,7 @@ final class AppState: ObservableObject {
     /// `PHYS 151`). Department stays in the key, so different subjects never
     /// collide merely because their numbers match.
     ///
-    /// `nonisolated` because it is a pure string rule that the sheet's window
-    /// (`announcementRecordsInSheetWindow`) and the twin matcher
+    /// `nonisolated` because it is a pure string rule that the twin matcher
     /// (`announcementRealTwins`) call from their own `nonisolated` helpers,
     /// which tests call directly; `AppState` is `@MainActor`, and Swift 6
     /// enforces that at run time (see CLAUDE.md, the `decidedText` trap).

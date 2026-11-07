@@ -41,11 +41,14 @@ public struct AnnouncementRecord: Codable, Sendable, Equatable, Hashable, Identi
     /// True for an Ed "staff post": a staff-authored non-question that the Ed
     /// filter keeps as course material (`EdDocumentHeader.isStaffPost`), as
     /// opposed to an announcement or a pinned thread. Such a row is a
-    /// *candidate* for the megaphone sheet and no more: it is listed only when
+    /// *candidate* for the megaphone's todo view: it sits there only while
     /// the post's relevance judgment says it still matters (`AppState
-    /// .announcementRecordsForSheet`), never by the 7-day window and never as
-    /// its class's latest post, because most staff posts are answers and
-    /// course notes and a sheet that listed them all would be the Ed board.
+    /// .announcementSheetSplit`), and otherwise under prev with every other
+    /// post. Until 2026-11-07 a staff post was hidden outright unless it
+    /// mattered, because most are answers and course notes and a sheet that
+    /// listed them all would be the Ed board; the owner chose a prev view
+    /// that holds everything over hiding, so the mark now only keeps staff
+    /// posts out of todo by default.
     /// Always false for a Canvas announcement and for an announcement or
     /// pinned Ed row.
     ///

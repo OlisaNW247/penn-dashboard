@@ -694,11 +694,16 @@ Keep this current. It is the fastest way for a new session to know what exists.
     the dashboard's class filter menu to its right and the same chip under
     the row. Every row is the same post row (class, date, NEW, title, one
     preview line, an arrow with `go to canvas` or `go to ed` under it;
-    Canvas rows open the Canvas Student app). **todo** holds a post while
-    a find from it is open, while a live `new_task` / `reschedule` /
-    `cancel` / `scope_change` fact from it has no past date, or while it is
-    under 7 days old; everything else is **prev**
-    (`AppState.announcementSheetSplit`, pure). The found task cards and the
+    Canvas rows open the Canvas Student app). The sheet lists every post
+    the phone keeps (the log's 60 days / 300 posts, Ed staff posts
+    included; the old 7-day window and the staff-post rule went on
+    2026-11-07 when Marco found two posts on the sheet). **todo** holds a
+    post while a find from it is open, while a live `new_task` /
+    `reschedule` / `cancel` / `scope_change` fact from it has no past
+    date, while its stored judgment is an event or task not yet over, or
+    while it is under 3 days old (the grace for the unread); everything
+    else is **prev** (`AppState.announcementSheetSplit`, pure). The badge
+    counts unread posts in todo only. The found task cards and the
     fact rows are the dashboard's and no longer appear on the sheet; a
     new-task fact whose shortened title and date match an item the course
     already lists is redundant (the Dec 14 double final exam). A
@@ -1258,7 +1263,16 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v10` (2026-11-07, the megaphone's todo · prev split): 3700
+**Current on `v10` (2026-11-07, evening, every post listed, the 3-day grace):
+3674 tests / 351 suites, all green, `swift test --no-parallel` on Marco's Mac
+(85 s); the signed iOS Debug device build (3.4.1 (20)) is on his phone and
+launched.** -26 over 3700 / 351 on purpose: 31 tests that pinned the 7-day
+window, the keep-check and the staff-post hiding went with those rules
+(`AnnouncementSheetRulesTests` 10, `AnnouncementRelevanceTests` 21), 5 added
+(`AnnouncementSheetSplitTests` judgment cases, the badge history test); one
+Ed-rows test re-pinned to list the staff post.
+
+Before it: **on `v10` (2026-11-07, the megaphone's todo · prev split): 3700
 tests / 351 suites, all green, `swift test --no-parallel` on Marco's Mac
 (86 s); the signed iOS Debug device build succeeded and is installed on his
 phone (launch refused while locked).** +2 over 3698 / 351 on purpose:

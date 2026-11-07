@@ -502,13 +502,14 @@ struct AnnouncementEdSyncTests {
             #expect(h.state.showsAnnouncementsButton)
 
             // A second Ed post and a plain staff post. The staff post is on the
-            // page as a candidate, but with no judgment the sheet does not list it.
+            // page and the sheet lists it like any post (nothing is hidden any
+            // more); it ties with `first` on date, so the higher id goes first.
             let second = ed("9200002", daysAgo: 0.5)
             let staff = ed("9200003", reason: "staff post")
             h.state.courseKnowledge = knowledge([first, second, staff])
             #expect(Set(h.state.announcementRecordsOnPage.map(\.id)) == [second.id, first.id, staff.id])
             #expect(h.state.announcementRecordsOnPage.first { $0.id == staff.id }?.isStaffPost == true)
-            #expect(h.state.announcementSheetRecords().map(\.id) == [second.id, first.id])
+            #expect(h.state.announcementSheetRecords().map(\.id) == [second.id, staff.id, first.id])
 
             h.state.courseKnowledge = .empty
             #expect(h.state.announcementRecordsOnPage.isEmpty)

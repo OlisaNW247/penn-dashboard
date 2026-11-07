@@ -126,7 +126,9 @@ Smooth now reads your classes, not just the Canvas calendar.
   your section's own due date, and a tick in Canvas counts here too
 • Staying signed in: Smooth checks your Canvas session quietly when you
   open it and signs back in for you, so the "needs a refresh" banner is gone
-• The megaphone groups what changed by assignment, with undo on each row
+• The megaphone is now todo and prev, like the dashboard: every post your
+  classes made this term, with the ones that still apply on top, filtered
+  by class, each with a "go to canvas" link
 • Exam cards are grey instead of black; a card with nothing to hand in says
   "in class" under its due time; where a task came from shows when you open it
 • Shorter names on tasks found in announcements, with the details inside
@@ -350,10 +352,10 @@ unless it is licensed: confirm the licence is in hand before uploading.)
 
 - Marketing version: **3.4.1** (stamped 2026-11-06; 3.4.0 (17) is live since
   2026-10-28; before it 3.3.0 (16), 3.2.1 (15), 3.2.0 (14), 3.1.0 (13))
-- Build: **19** (must exceed every build App Store Connect has seen; 18 was
-  uploaded 2026-11-06 from `bd9d20c` and superseded the same day. **Before
+- Build: **20** (must exceed every build App Store Connect has seen; 18 and
+  19 were uploaded 2026-11-06/07 and superseded before submission. **Before
   archiving, confirm in App Store Connect → TestFlight → Builds that no
-  build 19 exists**, and pick the next number if one does.)
+  build 20 exists**, and pick the next number if one does.)
 - The widget target's `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` must match
   the app's or validation fails. Both are stamped from `project.yml` and are
-  3.4.1 / 19 in `project.yml` and the committed project.
+  3.4.1 / 20 in `project.yml` and the committed project.

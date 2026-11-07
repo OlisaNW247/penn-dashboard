@@ -85,7 +85,10 @@ struct AnnouncementRelevanceSyncTests {
         /// The judgments as a second reader of the same defaults sees them.
         var stored: [String: AnnouncementRelevance] { AnnouncementRelevanceStore(defaults: scratch).all }
 
+        /// Every post the sheet lists (all of them, newest first).
         func sheetIDs(at now: Date) -> [String] { state.announcementSheetRecords(now: now).map(\.id) }
+        /// The posts in the sheet's todo view.
+        func todoIDs(at now: Date) -> [String] { state.announcementSheetSplit(now: now).todo.map(\.id) }
     }
 
     /// - Parameter serverJudges: whether the install has already seen the
@@ -289,13 +292,13 @@ struct AnnouncementRelevanceSyncTests {
 
     // MARK: The sheet follows it
 
-    @Test("the sheet drops an event that is over, keeps one still ahead, and brings back an older standing post but not older news")
+    @Test("the sheet lists every post; todo keeps an event still ahead and the fresh one, and sends an event that is over, standing and news to prev")
     func sheetFollowsRelevance() async throws {
         try await withHarness { h in
             let now = Date()
             h.response = [
-                post("72010061", daysAgo: 2, now: now),
-                post("72010062", daysAgo: 1, now: now),
+                post("72010061", daysAgo: 5, now: now),
+                post("72010062", daysAgo: 6, now: now),
                 post("72010063", daysAgo: 10, now: now),
                 post("72010064", daysAgo: 11, now: now),
                 post("72010065", daysAgo: 0.5, now: now),
@@ -309,13 +312,14 @@ struct AnnouncementRelevanceSyncTests {
             await h.state.syncAnnouncements(now: now)
 
             #expect(h.state.announcementRecordsOnPage.count == 5)
-            #expect(h.sheetIDs(at: now) == ["72010065", "72010062", "72010063"])
+            #expect(h.sheetIDs(at: now) == ["72010065", "72010061", "72010062", "72010063", "72010064"])
+            #expect(h.todoIDs(at: now) == ["72010065", "72010062"])
         }
     }
 
     // MARK: The owner's case, end to end
 
-    @Test("the PHYS post whose one find is the worksheet leaves the sheet and the badge once Canvas's CombinedWorksheets6-7 is finished")
+    @Test("the PHYS post whose one find is the worksheet leaves todo and the badge once Canvas's CombinedWorksheets6-7 is finished")
     func ownersWorksheetCase() async throws {
         let now = Date()
         // Read off the owner's phone 2026-10-23: the Canvas assignment is
@@ -335,7 +339,7 @@ struct AnnouncementRelevanceSyncTests {
             h.response = [post("72010070", daysAgo: 6, now: now)]
             await h.state.syncAnnouncements(now: now)
             h.extractor.tasks = [ExtractedAssignment(title: "Combined worksheet 6-7", dueAt: nil, kind: .submission)]
-            h.response.append(post("72010071", daysAgo: 2, now: now, title: postTitle, message: postBody))
+            h.response.append(post("72010071", daysAgo: 5, now: now, title: postTitle, message: postBody))
             await h.state.syncAnnouncements(now: now)
 
             // No judgment came with it (an older server, or an offline phone):
@@ -346,7 +350,7 @@ struct AnnouncementRelevanceSyncTests {
 
             // The student has not turned it in: the post is listed, and the
             // post and its find are both unread.
-            #expect(h.sheetIDs(at: now).contains("72010071"))
+            #expect(h.todoIDs(at: now).contains("72010071"))
             #expect(h.state.announcementFindStates(now: now)[key("72010071")] == .open)
             #expect(h.state.announcementBadgeCount(now: now) == 2)
 
@@ -355,8 +359,9 @@ struct AnnouncementRelevanceSyncTests {
 
             #expect(h.state.announcementFindsWithFinishedTwinIDs.contains(find.id))
             #expect(h.state.announcementFindStates(now: now)[key("72010071")] == .allDone)
-            #expect(!h.sheetIDs(at: now).contains("72010071"))
-            #expect(h.sheetIDs(at: now) == ["72010070"])
+            #expect(!h.todoIDs(at: now).contains("72010071"))
+            #expect(h.todoIDs(at: now).isEmpty)
+            #expect(h.sheetIDs(at: now) == ["72010071", "72010070"], "still listed, under prev")
             // The find left the found list with it, so nothing about the post is counted.
             #expect(h.state.announcementBadgeCount(now: now) == 0)
             #expect(h.state.unreadAnnouncementCount == 0)
@@ -365,11 +370,11 @@ struct AnnouncementRelevanceSyncTests {
             // twin brings it straight back.
             #expect(h.state.announcementLogRecords.contains { $0.id == "72010071" })
             h.state.markActive(canvasWorksheet)
-            #expect(h.sheetIDs(at: now).contains("72010071"))
+            #expect(h.todoIDs(at: now).contains("72010071"))
         }
     }
 
-    @Test("a standing post stays on the sheet after its find is finished")
+    @Test("a standing post stays on the sheet, under prev, after its find is finished")
     func standingPostSurvivesItsFinishedFind() async throws {
         let now = Date()
         let canvasWorksheet = Assignment(
@@ -380,12 +385,13 @@ struct AnnouncementRelevanceSyncTests {
         try await withHarness(canvasItems: [canvasWorksheet]) { h in
             h.extractor.tasks = [ExtractedAssignment(title: "Combined worksheet 6-7", dueAt: nil, kind: .submission)]
             h.extractor.relevanceByID = ["72010081": AnnouncementRelevance(kind: .standing)]
-            h.response = [post("72010081", daysAgo: 2, now: now)]
+            h.response = [post("72010081", daysAgo: 5, now: now)]
             await h.state.syncAnnouncements(now: now)
 
             h.state.markCompleted(canvasWorksheet)
             #expect(h.state.announcementFindStates(now: now)[key("72010081")] == .allDone)
             #expect(h.sheetIDs(at: now) == ["72010081"])
+            #expect(h.todoIDs(at: now).isEmpty)
         }
     }
 
@@ -429,41 +435,43 @@ struct AnnouncementRelevanceSyncTests {
         }
     }
 
-    @Test("an Ed post leaves the sheet once the find read from it is finished")
+    @Test("an Ed post leaves todo once the find read from it is finished, and is still listed")
     func edPostLeavesWhenItsFindIsDone() async throws {
         try await withHarness { h in
             let now = Date()
-            let document = edDocument("9711", now: now)
+            let document = edDocument("9711", now: now, daysAgo: 5)
             h.extractor.tasks = [ExtractedAssignment(title: "Submit the lab report", dueAt: nil, kind: .submission)]
             h.state.courseKnowledge = CourseKnowledgeBase(documents: [document])
             await h.state.syncEdAnnouncementTasks(now: now)
 
             let find = try #require(h.store.assignments(source: .canvasAnnouncement).first { $0.announcementOrigin == .ed })
             #expect(h.state.announcementFindStates(now: now)[AnnouncementReadState.edKey(document.id)] == .open)
-            #expect(h.sheetIDs(at: now) == [document.id])
+            #expect(h.todoIDs(at: now) == [document.id])
 
             h.state.markCompleted(find)
             #expect(h.state.announcementFindStates(now: now)[AnnouncementReadState.edKey(document.id)] == .allDone)
-            #expect(h.sheetIDs(at: now).isEmpty)
+            #expect(h.todoIDs(at: now).isEmpty)
+            #expect(h.sheetIDs(at: now) == [document.id])
         }
     }
 
     // MARK: Ed staff posts
 
-    @Test("a staff post is a candidate row, listed and counted only while its judgment says it matters, and the Ed seeding does not file it as seen")
+    @Test("a staff post is listed like any post, counted while it is unread and in todo, and the Ed seeding does not file it as seen")
     func staffPostThroughAnAppState() async throws {
         try await withHarness { h in
             let now = Date()
             let staff = edDocument("9801", now: now, reason: "staff post", title: "Midterm", body: "Midterm is Thursday in class.")
 
-            // Only a staff post on Ed: it is a candidate on the page, nothing is
-            // listed or counted, and the seeding has not happened (it waits for
-            // the first announcement or pinned post).
+            // Only a staff post on Ed: it is listed, fresh so in todo, unread so
+            // counted, and the seeding has not happened (it waits for the first
+            // announcement or pinned post).
             h.state.courseKnowledge = CourseKnowledgeBase(documents: [staff])
             #expect(h.state.announcementRecordsOnPage.map(\.id) == [staff.id])
             #expect(h.state.announcementRecordsOnPage.first?.isStaffPost == true)
-            #expect(h.sheetIDs(at: now).isEmpty)
-            #expect(h.state.announcementBadgeCount(now: now) == 0)
+            #expect(h.sheetIDs(at: now) == [staff.id])
+            #expect(h.todoIDs(at: now) == [staff.id])
+            #expect(h.state.announcementBadgeCount(now: now) == 1)
             #expect(!AnnouncementReadState(defaults: h.scratch).edSeeded)
             #expect(!h.state.showsAnnouncementsButton)
 
@@ -472,27 +480,23 @@ struct AnnouncementRelevanceSyncTests {
             h.state.courseKnowledge = CourseKnowledgeBase(documents: [staff, announcement])
             #expect(AnnouncementReadState(defaults: h.scratch).edSeeded)
             #expect(h.state.announcementSeenIDs == [AnnouncementReadState.edKey(announcement.id)])
-            #expect(h.sheetIDs(at: now) == [announcement.id])
-            #expect(h.state.announcementBadgeCount(now: now) == 0)
+            #expect(Set(h.sheetIDs(at: now)) == [staff.id, announcement.id])
+            #expect(h.state.announcementBadgeCount(now: now) == 1)
 
-            // Its judgment arrives: an exam three days out. It is listed, unread, counted.
+            // A judgment arriving changes nothing about whether it is listed.
             let until = now.addingTimeInterval(3 * Self.day)
             h.state.recordAnnouncementRelevance([AnnouncementReadState.edKey(staff.id): AnnouncementRelevance(kind: .event, until: until)])
             #expect(Set(h.sheetIDs(at: now)) == [staff.id, announcement.id])
-            #expect(h.state.announcementBadgeCount(now: now) == 1)
             #expect(h.state.unreadAnnouncementCount == 1)
 
             // Opened, it is seen and the count is down; it is reported as new once.
             let new = h.state.openAnnouncementsSheet(now: now)
             #expect(new == [AnnouncementReadState.edKey(staff.id)])
             #expect(h.state.unreadAnnouncementCount == 0)
-
-            // After the exam it is gone from the sheet, though the announcement stays.
-            #expect(h.sheetIDs(at: until.addingTimeInterval(60)) == [announcement.id])
         }
     }
 
-    @Test("a staff post with no judgment, news, or standing is not listed however fresh it is")
+    @Test("a staff post is listed whatever its judgment, and is todo while it is fresh")
     func staffPostWithoutAQualifyingJudgment() async throws {
         try await withHarness { h in
             let now = Date()
@@ -503,18 +507,17 @@ struct AnnouncementRelevanceSyncTests {
 
             for judgment in [nil, AnnouncementRelevance(kind: .news), AnnouncementRelevance(kind: .standing)] {
                 h.state.recordAnnouncementRelevance(judgment.map { [key: $0] } ?? [:])
-                // The class is represented by its announcement, the staff post is
-                // not picked as the class's latest and then hidden.
-                #expect(h.sheetIDs(at: now) == [announcement.id], "\(String(describing: judgment))")
+                #expect(h.sheetIDs(at: now) == [staff.id, announcement.id], "\(String(describing: judgment))")
+                #expect(h.todoIDs(at: now) == [staff.id], "\(String(describing: judgment))")
             }
         }
     }
 
-    @Test("a staff post whose judgment is a task is listed while a find from it is open, and leaves with it")
+    @Test("a staff post is in todo while a find from it is open, and leaves todo with it")
     func staffTaskFollowsItsFind() async throws {
         try await withHarness { h in
             let now = Date()
-            let staff = edDocument("9821", now: now, reason: "staff post", title: "No recitation + HW 5", body: "Submit HW 5 on Gradescope.")
+            let staff = edDocument("9821", now: now, reason: "staff post", daysAgo: 5, title: "No recitation + HW 5", body: "Submit HW 5 on Gradescope.")
             h.state.courseKnowledge = CourseKnowledgeBase(documents: [staff])
             let find = Assignment(
                 source: .canvasAnnouncement,
@@ -523,14 +526,14 @@ struct AnnouncementRelevanceSyncTests {
             )
             h.store.upsert([find])
             h.state.applyAnnouncementLedgerChange()
-            h.state.recordAnnouncementRelevance([AnnouncementReadState.edKey(staff.id): AnnouncementRelevance(kind: .task)])
 
             #expect(h.state.announcementFindStates(now: now)[AnnouncementReadState.edKey(staff.id)] == .open)
-            #expect(h.sheetIDs(at: now) == [staff.id])
+            #expect(h.todoIDs(at: now) == [staff.id])
 
             h.state.markCompleted(find)
             #expect(h.state.announcementFindStates(now: now)[AnnouncementReadState.edKey(staff.id)] == .allDone)
-            #expect(h.sheetIDs(at: now).isEmpty)
+            #expect(h.todoIDs(at: now).isEmpty)
+            #expect(h.sheetIDs(at: now) == [staff.id])
         }
     }
 
@@ -569,10 +572,12 @@ struct AnnouncementRelevanceSyncTests {
             #expect(h.state.announcementPageItems.map(\.sourceID) == rows.map(\.sourceID))
             #expect(h.state.announcementFindStates(now: now)[AnnouncementReadState.edKey(staff.id)] == nil)
 
-            // The staff post is on the sheet through its judgment (a task not yet
-            // due) and leaves when the date passes; the standing announcement stays.
+            // Both are listed and, fresh and judged, both are todo; two days on
+            // the staff task's date and the grace are past, so both are prev.
             #expect(Set(h.sheetIDs(at: now)) == [staff.id, announcement.id])
-            #expect(h.sheetIDs(at: until.addingTimeInterval(60)) == [announcement.id])
+            #expect(Set(h.todoIDs(at: now)) == [staff.id, announcement.id])
+            #expect(h.todoIDs(at: until.addingTimeInterval(60)).isEmpty)
+            #expect(Set(h.sheetIDs(at: until.addingTimeInterval(60))) == [staff.id, announcement.id])
         }
     }
 

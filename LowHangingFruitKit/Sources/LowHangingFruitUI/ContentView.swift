@@ -1055,7 +1055,8 @@ struct ContentView: View {
             // hidden class's posts, so its bubble would always be empty.
             courses: filterableCourses.filter { state.isCourseSelected($0.key) },
             facts: state.currentAppliedFacts(),
-            findStates: state.announcementFindStates()
+            findStates: state.announcementFindStates(),
+            relevance: state.announcementRelevance
         )
     }
 

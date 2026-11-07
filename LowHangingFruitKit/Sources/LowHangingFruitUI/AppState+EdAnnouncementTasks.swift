@@ -26,9 +26,10 @@ import LowHangingFruitKit
 //    extractor returns for a staff post are thrown away, so a staff post
 //    never writes a ledger row, a card or a find. What the read is for is the
 //    judgment: a TA's "No recitation today + HW 5" or "Midterm" is worth a
-//    line on the megaphone sheet while it still matters
-//    (`announcementStaffPostMatters`), and the sheet cannot know that without
-//    asking. The wrong version is reading staff posts for tasks too, which
+//    line on the megaphone sheet's todo view while it still matters (the
+//    event / task judgment in `AppState.announcementSheetSplit`; since
+//    2026-11-07 every staff post is listed, under prev once it no longer
+//    applies), and the sheet cannot know that without asking. The wrong version is reading staff posts for tasks too, which
 //    would turn every answer that mentions a deadline into a dashboard card.
 //    Everything else is shared with the other posts: the window, the retry
 //    clock, the processed ids, the informational gate (an informational

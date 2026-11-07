@@ -20,7 +20,7 @@ import Testing
 /// the shared preferences domain or Application Support (CLAUDE.md's
 /// shared-defaults trap).
 @MainActor
-@Suite("Announcements sheet: window, found list, class filter")
+@Suite("Announcements sheet: found list, class filter")
 struct AnnouncementSheetRulesTests {
     static let day: TimeInterval = 24 * 60 * 60
     static let now = Date(timeIntervalSince1970: 1_800_000_000)
@@ -52,145 +52,6 @@ struct AnnouncementSheetRulesTests {
 
     private func found(_ items: [Assignment], at now: Date = AnnouncementSheetRulesTests.now) -> [Assignment] {
         AppState.foundAnnouncementItems(items, dueAt: { $0.dueAt }, now: now)
-    }
-
-    // MARK: The 7-day window
-
-    // The three window tests below are unchanged by the "each class's newest
-    // post" rule on purpose: every older post in them has a newer post of its
-    // own class inside the window, so it is still out. The cases where the
-    // newest post is itself older than the window are the tests after them.
-
-    @Test("a post from exactly 7 days ago is in, one second older is out, and nothing newer is dropped")
-    func windowBoundary() {
-        let now = Self.now
-        let edge = record("1", posted: now.addingTimeInterval(-7 * Self.day))
-        let justOutside = record("2", posted: now.addingTimeInterval(-7 * Self.day - 1))
-        let recent = record("3", posted: now.addingTimeInterval(-2 * Self.day))
-        let today = record("4", posted: now)
-        let ahead = record("5", posted: now.addingTimeInterval(60))
-
-        let shown = AppState.announcementRecordsInSheetWindow([justOutside, edge, recent, today, ahead], now: now)
-        #expect(shown.map(\.id) == ["5", "4", "3", "1"])
-        #expect(AppState.announcementSheetWindowDays == 7)
-    }
-
-    @Test("an undated post counts from when this phone first saw it, and the list is newest first whatever order it came in")
-    func windowUsesSortDateAndOrders() {
-        let now = Self.now
-        let undatedSeenYesterday = record("10", posted: nil, recorded: now.addingTimeInterval(-Self.day))
-        let undatedSeenLongAgo = record("11", posted: nil, recorded: now.addingTimeInterval(-30 * Self.day))
-        let older = record("12", posted: now.addingTimeInterval(-5 * Self.day))
-        let newer = record("13", posted: now.addingTimeInterval(-3 * Self.day))
-
-        let shown = AppState.announcementRecordsInSheetWindow(
-            [older, undatedSeenLongAgo, undatedSeenYesterday, newer], now: now
-        )
-        #expect(shown.map(\.id) == ["10", "13", "12"])
-        #expect(AppState.announcementRecordsInSheetWindow([], now: now).isEmpty)
-    }
-
-    @Test("an Ed post is held to the same window as a Canvas one")
-    func edPostsShareTheWindow() throws {
-        let now = Self.now
-        let fresh = try #require(AnnouncementRecord.edRecord(
-            from: AnnouncementEdRowsTests.edDocument(thread: "801", daysAgo: 3, now: now), now: now
-        ))
-        let stale = try #require(AnnouncementRecord.edRecord(
-            from: AnnouncementEdRowsTests.edDocument(thread: "802", daysAgo: 9, now: now), now: now
-        ))
-        #expect(fresh.isEd && stale.isEd)
-        #expect(AppState.announcementRecordsInSheetWindow([stale, fresh], now: now).map(\.id) == [fresh.id])
-    }
-
-    // MARK: Each class's newest post, however old
-
-    @Test("a class with posts 2 and 10 days old lists only the 2-day one")
-    func newestInsideWindowAddsNothing() {
-        let now = Self.now
-        let recent = record("21", posted: now - 2 * Self.day)
-        let older = record("20", posted: now - 10 * Self.day)
-
-        #expect(AppState.announcementRecordsInSheetWindow([older, recent], now: now).map(\.id) == ["21"])
-    }
-
-    @Test("a class whose only post is 20 days old lists it")
-    func onlyPostOutsideWindowIsListed() {
-        let now = Self.now
-        let lone = record("30", posted: now - 20 * Self.day)
-
-        #expect(AppState.announcementRecordsInSheetWindow([lone], now: now).map(\.id) == ["30"])
-    }
-
-    @Test("a class with posts 10 and 20 days old lists only the 10-day one")
-    func newestOutsideWindowIsTheOnlyOne() {
-        let now = Self.now
-        let tenDays = record("41", posted: now - 10 * Self.day)
-        let twentyDays = record("40", posted: now - 20 * Self.day)
-
-        #expect(AppState.announcementRecordsInSheetWindow([twentyDays, tenDays], now: now).map(\.id) == ["41"])
-    }
-
-    @Test("two spellings of one class are one class: PHYS 0151 and PHYS 151 earn a single newest post between them")
-    func spellingsOfOneClassGroupTogether() {
-        let now = Self.now
-        // The newest is under the descriptor's spelling, the older under the
-        // cleaned code. Grouped by raw string, the 10-day post would be the
-        // newest of "PHYS 151" and be listed beside the 2-day one.
-        let newerLeadingZero = record("51", course: "PHYS 0151", posted: now - 2 * Self.day)
-        let olderPlain = record("50", course: "PHYS 151", posted: now - 10 * Self.day)
-        #expect(AppState.announcementRecordsInSheetWindow([olderPlain, newerLeadingZero], now: now).map(\.id) == ["51"])
-
-        // And when both are outside the window, one of them is still just one.
-        let tenDays = record("53", course: "PHYS 151", posted: now - 10 * Self.day)
-        let twentyDays = record("52", course: "PHYS 0151", posted: now - 20 * Self.day)
-        #expect(AppState.announcementRecordsInSheetWindow([twentyDays, tenDays], now: now).map(\.id) == ["53"])
-    }
-
-    @Test("every class gets its newest post, mixed with the week's posts newest first, and no post is listed twice")
-    func everyClassIsRepresented() {
-        let now = Self.now
-        // The owner's phone on 2026-10-23: a busy class, a class that posted
-        // once in September, and a class that has not posted for weeks.
-        let busyToday = record("60", course: "PHYS 0151", posted: now - 1 * Self.day)
-        let busyMid = record("61", course: "PHYS 0151", posted: now - 4 * Self.day)
-        let busyOld = record("62", course: "PHYS 0151", posted: now - 9 * Self.day)
-        let quiet = record("63", course: "FNAR 0010", posted: now - 31 * Self.day)
-        let quieterNewest = record("64", course: "CIS 2620", posted: now - 40 * Self.day)
-        let quieterOlder = record("65", course: "CIS 2620", posted: now - 50 * Self.day)
-
-        let shown = AppState.announcementRecordsInSheetWindow(
-            [quieterOlder, busyOld, quiet, busyMid, quieterNewest, busyToday], now: now
-        )
-        #expect(shown.map(\.id) == ["60", "61", "63", "64"])
-        #expect(Set(shown.map(\.id)).count == shown.count)
-    }
-
-    @Test("a class's newest post is chosen in the sheet's own order, so a same-second tie goes to the higher id, and an undated post counts from when it was first seen")
-    func newestFollowsTheSheetsOrder() {
-        let now = Self.now
-        let moment = now - 12 * Self.day
-        let tieLow = record("9", posted: moment)
-        let tieHigh = record("10", posted: moment)
-        #expect(AppState.announcementRecordsInSheetWindow([tieLow, tieHigh], now: now).map(\.id) == ["10"])
-
-        // Undated and first seen 15 days ago is newer than one posted 20 days ago.
-        let undated = record("71", course: "PHYS 0151", posted: nil, recorded: now - 15 * Self.day)
-        let dated = record("70", course: "PHYS 0151", posted: now - 20 * Self.day)
-        #expect(AppState.announcementRecordsInSheetWindow([dated, undated], now: now).map(\.id) == ["71"])
-    }
-
-    @Test("a Canvas post and an Ed post of one class compete as one class")
-    func canvasAndEdShareAClass() throws {
-        let now = Self.now
-        let ed = try #require(AnnouncementRecord.edRecord(
-            from: AnnouncementEdRowsTests.edDocument(
-                thread: "803", course: "ANSHEET 7000", daysAgo: 12, now: now
-            ), now: now
-        ))
-        let canvas = record("80", course: "ANSHEET 7000", posted: now - 20 * Self.day)
-        #expect(ed.isEd)
-        #expect(AppState.announcementRecordsInSheetWindow([canvas, ed], now: now).map(\.id) == [ed.id])
     }
 
     // MARK: The found list
@@ -471,7 +332,7 @@ struct AnnouncementSheetBadgeTests {
         }
     }
 
-    @Test("the badge counts unread found items and unread posts from the past 7 days, and nothing the sheet cannot show")
+    @Test("the badge counts unread found items and unread todo posts, not the old ones the sheet lists under prev")
     func badgeCountsOnlyWhatTheSheetShows() async throws {
         try await withHarness { h, now in
             // The first Ed rows an install sees count as seen, so give it one
@@ -479,21 +340,22 @@ struct AnnouncementSheetBadgeTests {
             h.state.courseKnowledge = CourseKnowledgeBase(documents: [ed("9701", daysAgo: 1, now: now)])
             #expect(h.state.announcementBadgeCount(now: now) == 3, "only the three upcoming finds are unread")
 
-            let inside = ed("9702", daysAgo: 3, now: now)
+            let inside = ed("9702", daysAgo: 2, now: now)
             let outside = ed("9703", daysAgo: 10, now: now)
             h.state.courseKnowledge = CourseKnowledgeBase(documents: [ed("9701", daysAgo: 1, now: now), inside, outside])
 
-            // The log holds all three Ed rows, but the sheet lists two.
+            // The log holds all three Ed rows and the sheet lists all three.
             #expect(h.state.announcementRecordsOnPage.count == 3)
-            #expect(h.state.announcementSheetRecords(now: now).map(\.id) == [ed("9701", daysAgo: 1, now: now).id, inside.id])
-            // Three finds + the one unread post in the window. Not the ten-day-old
-            // post, and not the past task the page still holds.
+            #expect(h.state.announcementSheetRecords(now: now).map(\.id) == [ed("9701", daysAgo: 1, now: now).id, inside.id, outside.id])
+            #expect(h.state.announcementSheetSplit(now: now).prev.map(\.id) == [outside.id])
+            // Three finds + the one unread todo post. Not the ten-day-old
+            // post (prev), and not the past task the page still holds.
             #expect(h.state.announcementBadgeCount(now: now) == 4)
             #expect(h.state.unreadAnnouncementCount == 4)
         }
     }
 
-    @Test("a class's newest post is listed and counted even when it is older than 7 days; the post before it is not")
+    @Test("old posts are listed but not counted: an unread 20-day-old post is on the sheet under prev and not in the badge")
     func newestPostOutsideTheWindowIsListedAndCounted() async throws {
         try await withHarness { h, now in
             // The first Ed row an install sees counts as seen; the newer one
@@ -505,20 +367,21 @@ struct AnnouncementSheetBadgeTests {
             let newest = ed("9722", daysAgo: 20, now: now)
             h.state.courseKnowledge = CourseKnowledgeBase(documents: [seeded, newest])
 
-            // Neither is within 7 days. The class's newest is listed (and
-            // unread, so counted); the 25-day-old one before it is not.
+            // Both are listed, newest first; both are prev, so the unread one
+            // is not counted.
             #expect(h.state.announcementRecordsOnPage.count == 2)
-            #expect(h.state.announcementSheetRecords(now: now).map(\.id) == [newest.id])
-            #expect(h.state.announcementBadgeCount(now: now) == 4)
-            #expect(h.state.unreadAnnouncementCount == 4)
+            #expect(h.state.announcementSheetRecords(now: now).map(\.id) == [newest.id, seeded.id])
+            #expect(h.state.announcementSheetSplit(now: now).todo.isEmpty)
+            #expect(h.state.announcementBadgeCount(now: now) == 3)
+            #expect(h.state.unreadAnnouncementCount == 3)
         }
     }
 
-    @Test("opening the sheet marks only what it shows as seen, and reports those as new")
+    @Test("opening the sheet marks every post it lists as seen, and reports the unread ones as new")
     func openingMarksOnlyShownRows() async throws {
         try await withHarness { h, now in
             h.state.courseKnowledge = CourseKnowledgeBase(documents: [ed("9711", daysAgo: 1, now: now)])
-            let inside = ed("9712", daysAgo: 3, now: now)
+            let inside = ed("9712", daysAgo: 2, now: now)
             let outside = ed("9713", daysAgo: 10, now: now)
             h.state.courseKnowledge = CourseKnowledgeBase(
                 documents: [ed("9711", daysAgo: 1, now: now), inside, outside]
@@ -527,16 +390,34 @@ struct AnnouncementSheetBadgeTests {
             let newIDs = h.state.openAnnouncementsSheet(now: now)
             #expect(newIDs == [
                 h.rows["upcoming"]!.id, h.rows["ed"]!.id, h.rows["exam"]!.id,
-                AnnouncementReadState.edKey(inside.id),
+                AnnouncementReadState.edKey(inside.id), AnnouncementReadState.edKey(outside.id),
             ])
             #expect(h.state.announcementBadgeCount(now: now) == 0)
 
             let seen = h.seenOnDisk
             #expect(seen.contains(h.rows["exam"]!.id))
             #expect(seen.contains(AnnouncementReadState.edKey(inside.id)))
-            // Not shown, so not marked: the past task and the ten-day-old post.
+            #expect(seen.contains(AnnouncementReadState.edKey(outside.id)))
+            // Not shown, so not marked: the past task.
             #expect(!seen.contains(h.rows["past"]!.id))
-            #expect(!seen.contains(AnnouncementReadState.edKey(outside.id)))
+        }
+    }
+
+    @Test("thirty old unread posts and two unread todo posts make a badge of two posts, not thirty-two")
+    func historyDoesNotInflateTheBadge() async throws {
+        try await withHarness { h, now in
+            h.state.courseKnowledge = CourseKnowledgeBase(documents: [ed("9800", daysAgo: 1, now: now)])
+            #expect(h.state.announcementBadgeCount(now: now) == 3, "only the three upcoming finds are unread")
+
+            let old = (0..<30).map { ed("981\($0)", daysAgo: 10 + Double($0), now: now) }
+            let fresh = [ed("9830", daysAgo: 0.5, now: now), ed("9831", daysAgo: 2, now: now)]
+            h.state.courseKnowledge = CourseKnowledgeBase(
+                documents: [ed("9800", daysAgo: 1, now: now)] + old + fresh
+            )
+            #expect(h.state.announcementSheetRecords(now: now).count == 33)
+            #expect(h.state.announcementSheetSplit(now: now).todo.count == 3)
+            // Three finds + the two unread todo posts.
+            #expect(h.state.announcementBadgeCount(now: now) == 5)
         }
     }
 
@@ -756,6 +637,7 @@ struct AnnouncementSheetStructureTests {
         #expect(!content.contains("onUndoFacts"))
         #expect(content.contains("facts: state.currentAppliedFacts()"))
         #expect(content.contains("findStates: state.announcementFindStates()"))
+        #expect(content.contains("relevance: state.announcementRelevance"))
         #expect(!content.contains("found: state.announcementFoundCards()"))
     }
 
@@ -805,9 +687,13 @@ struct AnnouncementSheetSplitTests {
 
     private func split(
         _ records: [AnnouncementRecord], facts: [AppliedFact] = [],
-        states: [String: AnnouncementFindState] = [:]
+        states: [String: AnnouncementFindState] = [:],
+        judgments: [String: AnnouncementRelevance] = [:]
     ) -> (todo: [String], prev: [String]) {
-        let out = AppState.announcementSheetSplit(records: records, facts: facts, findStates: states, now: Self.now)
+        let out = AppState.announcementSheetSplit(
+            records: records, facts: facts, findStates: states,
+            relevance: { judgments[$0.id] }, now: Self.now
+        )
         return (out.todo.map(\.id), out.prev.map(\.id))
     }
 
@@ -853,19 +739,61 @@ struct AnnouncementSheetSplitTests {
         #expect(out.prev == ["1"])
     }
 
-    @Test("a 2-day-old post with nothing is todo; a 10-day-old one is prev")
+    @Test("a 2-day-old post with nothing is todo; a 5-day-old one is prev (the grace is 3 days)")
     func recency() {
         #expect(split([post("1", daysAgo: 2)]).todo == ["1"])
-        #expect(split([post("1", daysAgo: 10)]).prev == ["1"])
+        #expect(split([post("1", daysAgo: 5)]).prev == ["1"])
+    }
+
+    private func judged(_ kind: AnnouncementRelevance.Kind, untilInDays days: Double? = nil) -> AnnouncementRelevance {
+        AnnouncementRelevance(kind: kind, until: days.map { Self.now.addingTimeInterval($0 * Self.day) })
+    }
+
+    @Test("a 40-day-old post judged an event until next week is todo; an event that has ended is prev")
+    func eventJudgment() {
+        #expect(split([post("1", daysAgo: 40)], judgments: ["1": judged(.event, untilInDays: 7)]).todo == ["1"])
+        #expect(split([post("1", daysAgo: 40)], judgments: ["1": judged(.event, untilInDays: -1)]).prev == ["1"])
+        #expect(split([post("1", daysAgo: 40)], judgments: ["1": judged(.event)]).todo == ["1"], "no until: not over by date")
+    }
+
+    @Test("a task judgment is todo until its until has passed")
+    func taskJudgment() {
+        #expect(split([post("1", daysAgo: 40)], judgments: ["1": judged(.task, untilInDays: -2)]).prev == ["1"])
+        #expect(split([post("1", daysAgo: 40)], judgments: ["1": judged(.task, untilInDays: 2)]).todo == ["1"])
+    }
+
+    @Test("an old standing or news post is prev")
+    func standingAndNews() {
+        let out = split(
+            [post("1", daysAgo: 40), post("2", daysAgo: 40)],
+            judgments: ["1": judged(.standing), "2": judged(.news)]
+        )
+        #expect(out.prev == ["1", "2"])
+    }
+
+    @Test("an Ed staff post is sorted like any post")
+    func staffPost() {
+        let when = Self.now.addingTimeInterval(-40 * Self.day)
+        let staff = AnnouncementRecord(
+            id: "ed:1:9", courseID: "1", courseCode: "COMP 100", title: "TA notes", postedAt: when,
+            url: nil, snippet: "", recordedAt: when, isStaffPost: true
+        )
+        #expect(split([staff]).prev == ["ed:1:9"])
+        #expect(split([staff], judgments: ["ed:1:9": judged(.event, untilInDays: 1)]).todo == ["ed:1:9"])
+        let recent = AnnouncementRecord(
+            id: "ed:1:10", courseID: "1", courseCode: "COMP 100", title: "TA notes", postedAt: Self.now,
+            url: nil, snippet: "", recordedAt: Self.now, isStaffPost: true
+        )
+        #expect(split([recent]).todo == ["ed:1:10"])
     }
 
     @Test("order is preserved within each list")
     func order() {
         let out = split([
-            post("a", daysAgo: 1), post("b", daysAgo: 20), post("c", daysAgo: 3),
+            post("a", daysAgo: 1), post("b", daysAgo: 20), post("c", daysAgo: 2),
             post("d", daysAgo: 40), post("e", daysAgo: 5),
         ])
-        #expect(out.todo == ["a", "c", "e"])
-        #expect(out.prev == ["b", "d"])
+        #expect(out.todo == ["a", "c"])
+        #expect(out.prev == ["b", "d", "e"])
     }
 }
