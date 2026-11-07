@@ -78,46 +78,18 @@ enum AnnouncementFindState: Sendable, Equatable {
 
 /// The sheet's two views, switched by the same capsule switch the dashboard
 /// uses for todo · all · prev (`SmoothSegmentPicker`). Owner's call,
-/// 2026-11-06: the sheet learns the dashboard's controls instead of its own.
+/// 2026-11-06: the sheet learns the dashboard's controls instead of its own;
+/// 2026-11-07: and uses the dashboard's own words, todo and prev.
 enum AnnouncementSheetView: String, CaseIterable, Identifiable {
     case todo
-    case brief
+    case prev
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
-        case .todo: return "to-do"
-        case .brief: return "brief"
-        }
-    }
-}
-
-/// One row of the sheet's "to-do" section (`AppState.announcementSheetTodo`):
-/// a found card or a fact change group.
-enum AnnouncementTodoEntry: Equatable, Identifiable {
-    case found(DashItem)
-    case change(FactChangeGroup)
-
-    /// Distinct across the two kinds, so a card and a change can share a list.
-    var id: String {
-        switch self {
-        case .found(let item): return "found:" + item.id
-        case .change(let group): return "change:" + group.id
-        }
-    }
-}
-
-/// One row of the sheet's "brief" section (`AppState.announcementSheetBrief`):
-/// a post or a fact the app held back for review.
-enum AnnouncementBriefEntry: Equatable, Identifiable {
-    case post(AnnouncementRecord)
-    case review(FactReviewRow)
-
-    var id: String {
-        switch self {
-        case .post(let record): return "post:" + AnnouncementReadState.key(for: record)
-        case .review(let row): return "review:" + row.id
+        case .todo: return "todo"
+        case .prev: return "prev"
         }
     }
 }
@@ -494,72 +466,60 @@ extension AppState {
         announcementSheetNarrowed(records, toCourses: course.map { [$0] } ?? [])
     }
 
-    // MARK: The sheet's two sections
+    // MARK: The sheet's two views
 
-    /// Orders (date, input index) pairs newest first; undated last; equal
-    /// dates keep input order by an explicit index, not by trusting the sort
-    /// to be stable.
-    nonisolated private static func announcementSheetOrder(_ dates: [Date?]) -> [Int] {
-        dates.indices.sorted { l, r in
-            switch (dates[l], dates[r]) {
-            case let (a?, b?) where a != b: return a > b
-            case (nil, .some): return false
-            case (.some, nil): return true
-            default: return l < r
+    /// Splits the sheet's posts into **todo** and **prev**. A post is todo
+    /// when any of these holds, else prev:
+    ///
+    /// 1. a find from this post is still open (`findStates`, keyed the way
+    ///    `announcementFindStates` keys them, `AnnouncementReadState.key(for:)`);
+    /// 2. a fact the server read out of this document is still live: not
+    ///    rejected by the student, of type `new_task`, `reschedule`, `cancel`
+    ///    or `scope_change`, and with no date or a date not yet past;
+    /// 3. the post is newer than `recencyWindow` (`sortDate`).
+    ///
+    /// This is the rule-based half of "sort by what the text says" (owner,
+    /// 2026-11-07: "need [the model] to sort based on text"): the model's
+    /// facts are its reading of each post, recency covers the posts it found
+    /// nothing in, and a document-level verdict from the model (ROADMAP ->
+    /// Next) will replace (3) later. The wrong fix is a date-only split: it
+    /// would put a still-open "bring X on Nov 20" post into prev the day it
+    /// turned a week old.
+    ///
+    /// Both lists keep the order of `records`, which is newest first.
+    ///
+    /// Id shapes, checked against the code: a fact's `documentID` is the
+    /// `CourseDocument.id`, `"<kind>:<courseID>:<sourceID>"`. An Ed record's id
+    /// is that same string (`ed:<course>:<thread>`); a Canvas record's id is the
+    /// bare announcement id (the document's `sourceID`), so its document id is
+    /// `"announcement:" + courseID + ":" + id`. Both are tried.
+    nonisolated static func announcementSheetSplit(
+        records: [AnnouncementRecord],
+        facts: [AppliedFact],
+        findStates: [String: AnnouncementFindState],
+        now: Date,
+        recencyWindow: TimeInterval = 7 * 86_400
+    ) -> (todo: [AnnouncementRecord], prev: [AnnouncementRecord]) {
+        var liveDocuments = Set<String>()
+        for fact in facts where fact.studentOverride != .rejected {
+            switch fact.type {
+            case .newTask, .reschedule, .cancel, .scopeChange:
+                if let due = fact.dueAt, due < now { continue }
+                liveDocuments.insert(fact.documentID)
+            case .note, .needsReview:
+                continue
             }
         }
-    }
-
-    /// The "to-do" section: the found cards and the fact change groups as one
-    /// list, newest first. A found card is dated by the post it came from
-    /// (`AnnouncementRecord.recordID(fromFindSourceID:)` matched against
-    /// `records`), so a task found in Monday's post sits with Monday's
-    /// changes and not at its due date; with no listed post (a syllabus exam)
-    /// it falls back to its card's date, `dueOverride ?? assignment.dueAt`. A
-    /// change group is dated by its `postedAt`. Undated entries go last, in
-    /// the order they came in (cards, then changes).
-    nonisolated static func announcementSheetTodo(
-        found: [DashItem],
-        changes: [FactChangeGroup],
-        records: [AnnouncementRecord]
-    ) -> [AnnouncementTodoEntry] {
-        var postDates: [String: Date] = [:]
-        for record in records where postDates[record.id] == nil {
-            postDates[record.id] = record.sortDate
-        }
-        var entries: [AnnouncementTodoEntry] = []
-        var dates: [Date?] = []
-        for item in found {
-            entries.append(.found(item))
-            let post = AnnouncementRecord.recordID(fromFindSourceID: item.assignment.sourceID)
-                .flatMap { postDates[$0] }
-            dates.append(post ?? item.due)
-        }
-        for group in changes {
-            entries.append(.change(group))
-            dates.append(group.postedAt)
-        }
-        return announcementSheetOrder(dates).map { entries[$0] }
-    }
-
-    /// The "brief" section: every listed post and every needs-review row,
-    /// newest first (`sortDate` for a post, `postedAt` for a review); undated
-    /// last, input order (posts, then reviews) on ties.
-    nonisolated static func announcementSheetBrief(
-        records: [AnnouncementRecord],
-        reviews: [FactReviewRow]
-    ) -> [AnnouncementBriefEntry] {
-        var entries: [AnnouncementBriefEntry] = []
-        var dates: [Date?] = []
+        var todo: [AnnouncementRecord] = []
+        var prev: [AnnouncementRecord] = []
         for record in records {
-            entries.append(.post(record))
-            dates.append(record.sortDate)
+            let documentID = record.isEd ? record.id : "announcement:\(record.courseID):\(record.id)"
+            let isTodo = findStates[AnnouncementReadState.key(for: record)] == .open
+                || liveDocuments.contains(documentID)
+                || record.sortDate > now.addingTimeInterval(-recencyWindow)
+            if isTodo { todo.append(record) } else { prev.append(record) }
         }
-        for review in reviews {
-            entries.append(.review(review))
-            dates.append(review.postedAt)
-        }
-        return announcementSheetOrder(dates).map { entries[$0] }
+        return (todo, prev)
     }
 
     // MARK: What the sheet and the badge read

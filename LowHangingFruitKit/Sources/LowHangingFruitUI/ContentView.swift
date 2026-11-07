@@ -1049,16 +1049,13 @@ struct ContentView: View {
     /// expression stays small enough to type-check.
     private var announcementFindsSheet: some View {
         AnnouncementFindsView(
-            found: state.announcementFoundCards(),
             records: state.announcementSheetRecords(),
             newIDs: announcementNewIDs,
             // Classes the student has on only: the sheet never lists a
             // hidden class's posts, so its bubble would always be empty.
             courses: filterableCourses.filter { state.isCourseSelected($0.key) },
-            onComplete: { state.markCompleted($0.assignment) },
-            onSetDue: { assignment, date in state.setDueDateEdit(date, for: assignment) },
-            factChanges: state.factChangeGroups,
-            factReviews: state.factReviewRows
+            facts: state.currentAppliedFacts(),
+            findStates: state.announcementFindStates()
         )
     }
 

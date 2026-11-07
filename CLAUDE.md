@@ -686,24 +686,24 @@ Keep this current. It is the fastest way for a new session to know what exists.
     announcements" card. Caveats: a cancelled item already overdue appears
     nowhere (todo hides it, all excludes overdue, prev is completed-only);
     a medium-confidence cancel is never applied.
-    The **megaphone** sheet mirrors the dashboard's controls since
-    2026-11-06 (Marco, from the phone, in two rounds: "should just be one
-    tab", then "like on the dashboard where it's todo and prev"): a
-    to-do · brief capsule switch (`SmoothSegmentPicker`, the same view the
-    dashboard's todo · all · prev is built on) with the dashboard's class
-    filter menu to its right and the same chip under the row. **to-do** is
-    the found tasks and exams as dashboard cards plus the items a fact
-    changed, newest first; **brief** is every post and every fact the app
-    held back, newest first. Rows are flat and uniform (no accent bar), and
-    every row that opens elsewhere shows an arrow with `go to canvas` or
-    `go to ed` under it; Canvas rows open the Canvas Student app. There is
-    no undo on the sheet; the card's own undo on the dashboard is the place
-    for it. Earlier that day it had class bubbles and four groups
-    (`changed`, `needs a look`, `found`, `announcements`). A new-task fact
-    whose shortened title and date match an item the course already lists
-    (the watcher's "Final Exam" against the fact's "Take the final exam
-    (Dec 14, ...)") is redundant and makes no second card. Ranking to-do by
-    urgency is in ROADMAP → Next.
+    The **megaphone** sheet is a list of posts with the dashboard's controls
+    (Marco, from the phone, 2026-11-06 and 11-07: "should just be one tab",
+    "like on the dashboard where it's todo and prev", "all the
+    announcements should look the same"): a todo · prev capsule switch
+    (`SmoothSegmentPicker`, the view the dashboard's switch is built on),
+    the dashboard's class filter menu to its right and the same chip under
+    the row. Every row is the same post row (class, date, NEW, title, one
+    preview line, an arrow with `go to canvas` or `go to ed` under it;
+    Canvas rows open the Canvas Student app). **todo** holds a post while
+    a find from it is open, while a live `new_task` / `reschedule` /
+    `cancel` / `scope_change` fact from it has no past date, or while it is
+    under 7 days old; everything else is **prev**
+    (`AppState.announcementSheetSplit`, pure). The found task cards and the
+    fact rows are the dashboard's and no longer appear on the sheet; a
+    new-task fact whose shortened title and date match an item the course
+    already lists is redundant (the Dec 14 double final exam). A
+    document-level verdict from the model, to replace the recency rule, is
+    designed in ROADMAP → Next.
   - **Canvas's own signals** (2026-11-04, behind
     `FeatureFlags.structuredCanvasSources`): Planner ticks and dismissals,
     met module requirements and section due-date overrides now move cards;
@@ -1258,7 +1258,14 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v10` (2026-11-06, night, the megaphone's dashboard controls):
+**Current on `v10` (2026-11-07, the megaphone's todo · prev split): 3700
+tests / 351 suites, all green, `swift test --no-parallel` on Marco's Mac
+(86 s); the signed iOS Debug device build succeeded and is installed on his
+phone (launch refused while locked).** +2 over 3698 / 351 on purpose:
+`AnnouncementSheetSectionsTests` (5) went with the sheet's cards and fact
+rows; `AnnouncementSheetSplitTests` (7) pins the todo · prev rule.
+
+Before it: **on `v10` (2026-11-06, night, the megaphone's dashboard controls):
 3698 tests / 351 suites, all green, `swift test --no-parallel` on Marco's Mac
 (87 s); the signed iOS Debug device build succeeded (built 14:55 EST; the
 phone was unreachable for the install).** -2 / -1 over 3700 / 352 on

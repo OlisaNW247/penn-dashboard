@@ -4,7 +4,7 @@ import Testing
 @testable import LowHangingFruitUI
 
 /// The megaphone sheet's class filter, as pure rules: which rows a selection
-/// keeps, and the to-do and brief lists. Nothing here builds a view or an
+/// keeps. Nothing here builds a view or an
 /// `AppState`; the rules are `nonisolated static`, and these suites are not
 /// `@MainActor`, which is how the main-actor isolation trap (CLAUDE.md,
 /// `decidedText`) would show up if one were not.
@@ -91,112 +91,5 @@ struct AnnouncementSheetSelectionNarrowingTests {
         #expect(AppState.announcementSheetCourseMatches("anything", filter: nil))
         #expect(AppState.announcementSheetCourseMatches("PHYS 0151", selection: ["CIS 1200", "PHYS 151"]))
         #expect(!AppState.announcementSheetCourseMatches("PHYS 0151", selection: ["CIS 1200"]))
-    }
-}
-
-@Suite("Announcements sheet: the to-do and brief sections")
-struct AnnouncementSheetSectionsTests {
-    static let day: TimeInterval = 24 * 60 * 60
-    static let now = Date(timeIntervalSince1970: 1_800_000_000)
-
-    private func post(_ id: String, daysAgo: Double) -> AnnouncementRecord {
-        let when = Self.now.addingTimeInterval(-daysAgo * Self.day)
-        return AnnouncementRecord(
-            id: id, courseID: "1", courseCode: "COMP 100", title: "Post \(id)", postedAt: when,
-            url: nil, snippet: "", recordedAt: when
-        )
-    }
-
-    private func find(sourceID: String, dueInDays: Double?) -> DashItem {
-        DashItem(
-            assignment: Assignment(
-                source: .canvasAnnouncement, sourceID: sourceID, kind: .assignment, course: "COMP 100",
-                title: "Task \(sourceID)", dueAt: dueInDays.map { Self.now.addingTimeInterval($0 * Self.day) }, url: nil
-            ),
-            dueOverride: nil, isCompleted: false, completedAt: nil
-        )
-    }
-
-    private func change(_ id: String, daysAgo: Double?) -> FactChangeGroup {
-        FactChangeGroup(
-            id: id, courseCode: "COMP 100", title: "Change \(id)",
-            rows: [FactChangeRow(
-                id: "f-\(id)", word: "moved",
-                postedAt: daysAgo.map { Self.now.addingTimeInterval(-$0 * Self.day) }, url: nil
-            )]
-        )
-    }
-
-    private func review(_ id: String, daysAgo: Double) -> FactReviewRow {
-        FactReviewRow(
-            id: id, courseCode: "COMP 100", quote: "q", url: nil,
-            postedAt: Self.now.addingTimeInterval(-daysAgo * Self.day)
-        )
-    }
-
-    private func todoIDs(_ entries: [AnnouncementTodoEntry]) -> [String] {
-        entries.map { entry in
-            switch entry {
-            case .found(let item): return "find:" + item.assignment.sourceID
-            case .change(let group): return "change:" + group.id
-            }
-        }
-    }
-
-    @Test("a found card is dated by its post, so it sorts by that post's date and not its due date")
-    func foundDatedByPost() {
-        // Found in a 5-day-old post but due in 9 days; a change sits at 3 days.
-        let entries = AppState.announcementSheetTodo(
-            found: [find(sourceID: "announcement-1-0", dueInDays: 9)],
-            changes: [change("c", daysAgo: 3)],
-            records: [post("1", daysAgo: 5)]
-        )
-        #expect(todoIDs(entries) == ["change:c", "find:announcement-1-0"])
-    }
-
-    @Test("a change group newer than a found card's post comes first")
-    func newerChangeFirst() {
-        let entries = AppState.announcementSheetTodo(
-            found: [find(sourceID: "syllabus-1-final", dueInDays: -4)],
-            changes: [change("c", daysAgo: 1)],
-            records: []
-        )
-        #expect(todoIDs(entries) == ["change:c", "find:syllabus-1-final"])
-    }
-
-    @Test("undated entries go last, in the order they came in")
-    func undatedLast() {
-        let entries = AppState.announcementSheetTodo(
-            found: [find(sourceID: "syllabus-1-x", dueInDays: nil), find(sourceID: "syllabus-1-z", dueInDays: -30)],
-            changes: [change("u", daysAgo: nil), change("d", daysAgo: 2)],
-            records: []
-        )
-        #expect(todoIDs(entries) == ["change:d", "find:syllabus-1-z", "find:syllabus-1-x", "change:u"])
-    }
-
-    @Test("every todo entry has its own id, and nothing in is nothing out")
-    func todoIDsDistinct() {
-        #expect(AppState.announcementSheetTodo(found: [], changes: [], records: []).isEmpty)
-        let entries = AppState.announcementSheetTodo(
-            found: [find(sourceID: "a", dueInDays: 1)], changes: [change("a", daysAgo: 1)], records: []
-        )
-        #expect(Set(entries.map(\.id)).count == 2)
-    }
-
-    @Test("brief: a review newer than a post comes first, posts stay newest first")
-    func briefNewestFirst() {
-        let entries = AppState.announcementSheetBrief(
-            records: [post("1", daysAgo: 4), post("2", daysAgo: 2)],
-            reviews: [review("r", daysAgo: 1), review("old", daysAgo: 3)]
-        )
-        let ids = entries.map { entry -> String in
-            switch entry {
-            case .post(let record): return "post:" + record.id
-            case .review(let row): return "review:" + row.id
-            }
-        }
-        #expect(ids == ["review:r", "post:2", "review:old", "post:1"])
-        #expect(Set(entries.map(\.id)).count == 4)
-        #expect(AppState.announcementSheetBrief(records: [], reviews: []).isEmpty)
     }
 }

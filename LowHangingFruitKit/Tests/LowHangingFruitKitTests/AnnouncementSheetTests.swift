@@ -706,21 +706,18 @@ struct AnnouncementSheetStructureTests {
         #expect(!source.contains("Button(\"done\")"))
     }
 
-    @Test("the switch labels are to-do and brief, in that order")
+    @Test("the switch labels are todo and prev, in that order")
     func switchLabels() {
-        #expect(AnnouncementSheetView.allCases.map(\.label) == ["to-do", "brief"])
+        #expect(AnnouncementSheetView.allCases.map(\.label) == ["todo", "prev"])
         #expect(AnnouncementSheetCopy.emptyTodo == "nothing to do")
     }
 
     @Test("the two section words, the link captions and the empty line are short and lowercase")
     func sectionCopy() {
-        #expect(AnnouncementSheetCopy.todoHeader == "to-do")
-        #expect(AnnouncementSheetCopy.briefHeader == "brief")
         #expect(AnnouncementSheetCopy.goToCanvas == "go to canvas")
         #expect(AnnouncementSheetCopy.goToEd == "go to ed")
         #expect(AnnouncementSheetCopy.emptyState == "no announcements")
         for line in [
-            AnnouncementSheetCopy.todoHeader, AnnouncementSheetCopy.briefHeader,
             AnnouncementSheetCopy.goToCanvas, AnnouncementSheetCopy.goToEd,
             AnnouncementSheetCopy.emptyState, AnnouncementSheetCopy.emptyTodo, AnnouncementSheetCopy.dismiss,
         ] {
@@ -728,7 +725,7 @@ struct AnnouncementSheetStructureTests {
         }
     }
 
-    @Test("the sheet wears the dashboard's switch and class menu, one view at a time, flat rows, and ContentView passes no onUndoFacts")
+    @Test("the sheet wears the dashboard's switch and class menu, one view at a time, post rows only, and ContentView passes facts and findStates")
     func viewStructure() throws {
         let source = try GradeWatcherRemovalTests.uiSource("AnnouncementFindsView.swift")
         guard !source.isEmpty else { return }
@@ -742,20 +739,24 @@ struct AnnouncementSheetStructureTests {
         // The 4pt teal accent bar is gone from every row. (The NEW badge is
         // still a capsule, so the bar is pinned by its shape, not by the word.)
         #expect(!source.contains(".frame(width: 4)"))
-        #expect(source.contains("AssignmentCardView("))
-        #expect(source.contains("isExamOverride: item.examStyleOverride"))
-        #expect(source.contains("AppState.announcementSheetTodo("))
-        #expect(source.contains("AppState.announcementSheetBrief("))
+        #expect(!source.contains("AssignmentCardView("))
+        #expect(!source.contains("FactChangeGroup"))
+        #expect(!source.contains("FactReviewRow"))
+        #expect(source.contains("AppState.announcementSheetSplit("))
         #expect(!source.contains("onUndo"))
         #expect(!source.contains("announcementSheetCompiled"))
-        // Both row kinds draw the arrow through the one shared mark.
+        // The one row builder draws the arrow through the one shared mark.
         #expect(source.contains("LinkOutMark(caption: caption)"))
-        #expect(source.contains("caption: AnnouncementSheetCopy.goToCanvas"))
+        #expect(source.contains("AnnouncementSheetCopy.goToCanvas"))
+        #expect(!source.contains("factRowChrome"))
         #expect(source.contains("AnnouncementSheetCopy.goToEd"))
 
         let content = try GradeWatcherRemovalTests.uiSource("ContentView.swift")
         guard !content.isEmpty else { return }
         #expect(!content.contains("onUndoFacts"))
+        #expect(content.contains("facts: state.currentAppliedFacts()"))
+        #expect(content.contains("findStates: state.announcementFindStates()"))
+        #expect(!content.contains("found: state.announcementFoundCards()"))
     }
 
     @Test("the header megaphone is marigold and the dashboard's class filter is cobalt, and nothing else was repointed")
@@ -775,5 +776,96 @@ struct AnnouncementSheetStructureTests {
 
         // The sheet's own teal is where it was.
         #expect(tokens.contains("static let smoothAnnouncementAccent = Color.dynamic(light: 0x087D86, dark: 0x69DCE3)"))
+    }
+}
+
+@Suite("Announcements sheet: the todo / prev split")
+struct AnnouncementSheetSplitTests {
+    static let day: TimeInterval = 24 * 60 * 60
+    static let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func post(_ id: String, daysAgo: Double, ed: Bool = false) -> AnnouncementRecord {
+        let when = Self.now.addingTimeInterval(-daysAgo * Self.day)
+        return AnnouncementRecord(
+            id: ed ? "ed:1:\(id)" : id, courseID: "1", courseCode: "COMP 100", title: "Post \(id)",
+            postedAt: when, url: nil, snippet: "", recordedAt: when
+        )
+    }
+
+    private func fact(
+        _ doc: String, _ type: CourseFactWire.FactType, dueInDays: Double? = nil,
+        override: FactOverride = .none
+    ) -> AppliedFact {
+        AppliedFact(
+            seq: 1, courseID: "1", documentID: doc, contentHash: "h", type: type,
+            dueAt: dueInDays.map { Self.now.addingTimeInterval($0 * Self.day) },
+            studentOverride: override
+        )
+    }
+
+    private func split(
+        _ records: [AnnouncementRecord], facts: [AppliedFact] = [],
+        states: [String: AnnouncementFindState] = [:]
+    ) -> (todo: [String], prev: [String]) {
+        let out = AppState.announcementSheetSplit(records: records, facts: facts, findStates: states, now: Self.now)
+        return (out.todo.map(\.id), out.prev.map(\.id))
+    }
+
+    @Test("an old post with an open find is todo; an all-done one is prev")
+    func openFind() {
+        let old = post("1", daysAgo: 30)
+        let key = AnnouncementReadState.key(for: old)
+        #expect(split([old], states: [key: .open]).todo == ["1"])
+        #expect(split([old], states: [key: .allDone]).prev == ["1"])
+    }
+
+    @Test("an Ed post's find is read under its Ed key")
+    func edFind() {
+        let old = post("5", daysAgo: 30, ed: true)
+        #expect(split([old], states: [AnnouncementReadState.key(for: old): .open]).todo == ["ed:1:5"])
+    }
+
+    @Test("an old post with a live new_task fact is todo, Canvas and Ed document ids alike")
+    func liveFact() {
+        let canvas = post("1", daysAgo: 30)
+        let ed = post("5", daysAgo: 30, ed: true)
+        let out = split([canvas, ed], facts: [
+            fact("announcement:1:1", .newTask, dueInDays: 7),
+            fact("ed:1:5", .cancel),
+        ])
+        #expect(out.todo == ["1", "ed:1:5"])
+        #expect(out.prev.isEmpty)
+    }
+
+    @Test("an old post whose only fact is a note, or whose fact is past due, is prev")
+    func deadFacts() {
+        let out = split([post("1", daysAgo: 30), post("2", daysAgo: 30)], facts: [
+            fact("announcement:1:1", .note),
+            fact("announcement:1:2", .newTask, dueInDays: -2),
+        ])
+        #expect(out.todo.isEmpty)
+        #expect(out.prev == ["1", "2"])
+    }
+
+    @Test("an old post with a rejected new_task is prev")
+    func rejectedFact() {
+        let out = split([post("1", daysAgo: 30)], facts: [fact("announcement:1:1", .newTask, dueInDays: 7, override: .rejected)])
+        #expect(out.prev == ["1"])
+    }
+
+    @Test("a 2-day-old post with nothing is todo; a 10-day-old one is prev")
+    func recency() {
+        #expect(split([post("1", daysAgo: 2)]).todo == ["1"])
+        #expect(split([post("1", daysAgo: 10)]).prev == ["1"])
+    }
+
+    @Test("order is preserved within each list")
+    func order() {
+        let out = split([
+            post("a", daysAgo: 1), post("b", daysAgo: 20), post("c", daysAgo: 3),
+            post("d", daysAgo: 40), post("e", daysAgo: 5),
+        ])
+        #expect(out.todo == ["a", "c", "e"])
+        #expect(out.prev == ["b", "d"])
     }
 }

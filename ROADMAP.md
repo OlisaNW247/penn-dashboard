@@ -402,13 +402,38 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
 
 ## Next: features
 
-- **Megaphone: judge what is urgent** (Marco, 2026-11-06, on the phone,
-  after asking for the sheet to be one list with "to-do" and "brief"): once
-  the sheet is two sections, rank what lands in to-do by recency and by
-  what the post's text says ("we'll assess what's necessary and what's
-  urgent, based on recency and what the text says"). The inputs exist
-  (facts carry `postedAt`, `type` and `confidence`; the tree's freshness
-  scoring is in `CourseSearch`); the rule and the look are undecided.
+- **Megaphone: the model sorts posts into todo and prev** (Marco,
+  2026-11-07: "prev being either from way before or unapplicable, need
+  [the model] to sort based on text"). What ships first is the rule half
+  (`AppState.announcementSheetSplit`): a post is todo when a find from it is
+  still open, when a live `new_task` / `reschedule` / `cancel` /
+  `scope_change` fact from it has no past date, or when it is under 7 days
+  old; everything else is prev. The facts are already the model's reading
+  of each post, so most of the sort is the model's; recency only covers
+  posts it found nothing in. The model half, to replace the recency rule:
+  1. `extract-facts` emits one document-level verdict beside the facts:
+     `status: "current" | "past" | "fyi"` and `applies_until` (an ISO date
+     or null), in the same call, same strict schema (`_shared/facts.ts`),
+     so no new model cost beyond a few output tokens. "current" means the
+     post still asks the student for something or tells them about a
+     coming event; "fyi" is information with nothing to do; "past" is a
+     post whose every date has gone by. The document's date and the
+     meeting pattern are already in the prompt.
+  2. Storage: two nullable columns on `course_fact_extractions`
+     (`doc_status text`, `applies_until timestamptz`), written by
+     `finish_fact_extraction`; the manifest's `facts` answer gains a
+     `documents: [{documentID, status, appliesUntil}]` list for the
+     requested courses (PROTOCOL.md → Facts). Nothing personal: course-level,
+     like a fact.
+  3. Phone: `AppliedFactStore` keeps the verdicts; the split reads
+     `status`/`appliesUntil` first and falls back to the rules above only
+     for documents without one (older extractions, or the pool's
+     `assignment` rows which extraction skips).
+  4. Bench: the round-4c corpus gains a `status` label per document (about
+     120 judgment calls, Marco's); the gate is "no `past` on a post with a
+     future date", measured before deploy as every prompt round has been.
+  Needs the usual deploy with a person's go; `sync` is the facts path, not
+  the collector, so no change to what Olisa's code collects.
 - **A composed day: facts applied to the ledger, not a list built by a
   model** (Marco's idea, 2026-11-03; research only, nothing agreed or
   built). `docs/DAY_PLANNER_RESEARCH_2026-11-03.md` maps what is already
@@ -837,6 +862,10 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-07 (later).** The megaphone sheet is todo · prev over posts
+  only, every row the same, split by open finds, live facts and a 7-day
+  recency rule (`announcementSheetSplit`); the model's document verdict is
+  designed under Next. 3700/351. On Marco's phone; not in build 19.
 - **2026-11-07.** 3.4.1 (19) archived from `5bc1a9f` and uploaded at 15:38
   EST, superseding build 18 (which lacked the megaphone redesign and the
   final-exam dedup). The Debug build of the same tree is on Marco's phone.
