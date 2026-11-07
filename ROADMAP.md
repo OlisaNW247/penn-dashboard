@@ -402,6 +402,21 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
 
 ## Next: features
 
+- **Agent connection for v11** (Marco, 2026-11-07: "a connection for an
+  agent to have all the context to your classes and the possibility to
+  submit assignments"). Plan in `docs/AGENT_CONNECTION_PLAN_V11_2026-11-07.md`
+  on `research/agent-connection-v11` (docs only, off `v10`). The shape: a
+  local MCP server (`smooth-mcp`, Node, for Claude Desktop and Claude
+  Code) paired to the phone as a third device, decrypting the same
+  end-to-end snapshot the Chrome extension uses and reading pooled
+  material and facts; read tools plus one write, `propose_submission`,
+  which only creates a draft; the extension shows the draft and the
+  student taps submit in their own signed-in Chrome. No submit tool for
+  the agent, ever; the server stays blind. Phase 0 is two spikes (Canvas
+  cookie-plus-CSRF POST from the extension; the phone's snapshot decoder
+  tolerating unknown fields) and the owner's confirmation of six
+  decisions listed in the plan. Supersedes the 2026-10-30 plan on
+  `research/agent-canvas-via-smooth`. Nothing built.
 - **Megaphone: the model sorts posts into todo and prev** (Marco,
   2026-11-07: "prev being either from way before or unapplicable, need
   [the model] to sort based on text"). What ships first is the rule half
