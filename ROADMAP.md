@@ -837,6 +837,10 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-07.** 3.4.1 (19) archived from `5bc1a9f` and uploaded at 15:38
+  EST, superseding build 18 (which lacked the megaphone redesign and the
+  final-exam dedup). The Debug build of the same tree is on Marco's phone.
+  Marco attaches 19 and submits.
 - **2026-11-06 (night).** The megaphone sheet takes the dashboard's own
   controls (to-do · brief switch, class filter menu and chip), one view at a
   time, flat uniform rows; a fact's new task no longer duplicates an exam the

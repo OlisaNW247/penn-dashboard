@@ -2,6 +2,10 @@
 
 ## 3.4.1 (19) submission, 2026-11-07 (supersedes build 18; Marco submits)
 
+Archived from `5bc1a9f` and uploaded at 15:38 EST on 2026-11-07 ("Upload
+succeeded"), after 3698/351 Swift and the signed Debug build of the same
+tree, which is on Marco's iPhone 17 Pro since 15:20 EST.
+
 Build 18 (`bd9d20c`, uploaded 2026-11-06 14:00 EST) was superseded at Marco's
 word before submission: it predates the megaphone sheet's two redesign rounds
 and the final-exam dedup (`56c4d81`). Build 19 is the same 3.4.1 version

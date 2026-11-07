@@ -179,14 +179,16 @@ mode, the S app mark, and bundled type registered at runtime by
 
 **Release state.** Live on the App Store: **3.4.0 (build 17)**, released
 2026-10-28 at 21:43 UTC per the public iTunes lookup, read 2026-11-06. **3.4.1
-(build 18) was archived from `v10` `bd9d20c` and uploaded at 14:00 EST (19:00
-UTC) on 2026-11-06** ("Upload succeeded"), after 3708/353 Swift, Deno 713 and
+(build 19) was archived from `v10` `5bc1a9f` and uploaded at 15:38 EST (20:38
+UTC) on 2026-11-07** ("Upload succeeded"; it supersedes build 18, archived
+from `bd9d20c` and uploaded 2026-11-06 14:00 EST, which predates the
+megaphone redesign and the final-exam dedup; attach 19, not 18), after 3708/353 Swift, Deno 713 and
 the iOS simulator build on the same tree, and after the facts backend was
 redeployed from the same commit (`sync` v22, `extract-facts` v6, the
 `finish_fact_extraction` migration applied). The Debug build of the same
 tree is on Marco's iPhone 17 Pro since 14:06 EST the same day, over the 3.4.0
 (17) store copy, so the App Group container is readable again. Marco creates the 3.4.1 version
-record, attaches build 18, pastes `docs/appstore/LISTING.md` → What's New in
+record, attaches build 19, pastes `docs/appstore/LISTING.md` → What's New in
 3.4.1 and submits; the floor automation raises `update-manifest` six hours
 after it is live. What 3.4.1 carries beyond 3.4.0 is listed in
 `docs/appstore/CHECKLIST.md` → "3.4.1 (18) submission". Before 3.4.0: **3.3.0
