@@ -292,7 +292,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "App/LHFApp-macOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEVELOPMENT_TEAM = 24A3TDB277;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Info.plist;
@@ -382,7 +382,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = LHFWidget/LHFWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEVELOPMENT_TEAM = 24A3TDB277;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = LHFWidget/Info.plist;
@@ -411,7 +411,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "App/LHFApp-macOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEVELOPMENT_TEAM = 24A3TDB277;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Info.plist;
@@ -494,7 +494,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = LHFWidget/LHFWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEVELOPMENT_TEAM = 24A3TDB277;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = LHFWidget/Info.plist;

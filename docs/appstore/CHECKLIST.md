@@ -1,6 +1,13 @@
 # App Store submission checklist — LHF (iOS + macOS)
 
-## 3.4.1 (18) submission, 2026-11-06 (uploaded 14:00 EST from `bd9d20c`; Marco submits)
+## 3.4.1 (19) submission, 2026-11-07 (supersedes build 18; Marco submits)
+
+Build 18 (`bd9d20c`, uploaded 2026-11-06 14:00 EST) was superseded at Marco's
+word before submission: it predates the megaphone sheet's two redesign rounds
+and the final-exam dedup (`56c4d81`). Build 19 is the same 3.4.1 version
+from the tree that stamps it; attach 19, not 18.
+
+### 3.4.1 (18), 2026-11-06 (uploaded, superseded)
 
 Steps 1, 2, 4 and 5 below were done on 2026-11-06: backend deployed (`sync`
 v22, `extract-facts` v6, migration applied), gate green, archive and export

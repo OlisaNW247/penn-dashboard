@@ -350,10 +350,10 @@ unless it is licensed: confirm the licence is in hand before uploading.)
 
 - Marketing version: **3.4.1** (stamped 2026-11-06; 3.4.0 (17) is live since
   2026-10-28; before it 3.3.0 (16), 3.2.1 (15), 3.2.0 (14), 3.1.0 (13))
-- Build: **18** (must exceed every build App Store Connect has seen; the
-  last uploaded was 17. **Before archiving, confirm in App Store Connect →
-  TestFlight → Builds that no build 18 exists**, and pick the next number if
-  one does.)
+- Build: **19** (must exceed every build App Store Connect has seen; 18 was
+  uploaded 2026-11-06 from `bd9d20c` and superseded the same day. **Before
+  archiving, confirm in App Store Connect → TestFlight → Builds that no
+  build 19 exists**, and pick the next number if one does.)
 - The widget target's `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` must match
   the app's or validation fails. Both are stamped from `project.yml` and are
-  3.4.1 / 18 in `project.yml` and the committed project.
+  3.4.1 / 19 in `project.yml` and the committed project.
