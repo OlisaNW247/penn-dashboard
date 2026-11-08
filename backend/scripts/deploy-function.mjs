@@ -6,7 +6,7 @@
 // the real deploy story, if this project settles on one, belongs in CI.
 //
 // Usage:
-//   node backend/scripts/deploy-function.mjs <slug> [--from <source-slug>] [--also <slug>]... [--production]
+//   node backend/scripts/deploy-function.mjs <slug> [--from <source-slug>] [--also <slug>]... [--production] [--no-verify-jwt]
 //
 // `<slug>` = `ask` is the production function every student's question goes
 // through, and CLAUDE.md says deploying it needs a person's go, so it is
@@ -109,8 +109,9 @@ export function describeTokenSource(source) {
 
 function usageAndExit(message) {
   if (message) console.error(message);
-  console.error("Usage: node backend/scripts/deploy-function.mjs <slug> [--from <source-slug>] [--also <slug>]... [--production]");
+  console.error("Usage: node backend/scripts/deploy-function.mjs <slug> [--from <source-slug>] [--also <slug>]... [--production] [--no-verify-jwt]");
   console.error("  <slug> ask is production and is refused without --production; --from ask and --also ask are fine.");
+  console.error("  mcp and agent-auth are deployed with verify_jwt false by default; --no-verify-jwt forces it for another slug.");
   process.exit(1);
 }
 
@@ -119,6 +120,7 @@ function parseArgs(argv) {
   let from;
   const also = [];
   let production = false;
+  let noVerifyJwt = false;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--from") {
@@ -130,6 +132,8 @@ function parseArgs(argv) {
       also.push(extra);
     } else if (arg === "--production") {
       production = true;
+    } else if (arg === "--no-verify-jwt") {
+      noVerifyJwt = true;
     } else if (arg.startsWith("--")) {
       usageAndExit(`unknown flag: ${arg}`);
     } else {
@@ -137,7 +141,7 @@ function parseArgs(argv) {
     }
   }
   if (positional.length !== 1) usageAndExit("expected exactly one <slug> argument");
-  return { slug: positional[0], from, also, production };
+  return { slug: positional[0], from, also, production, noVerifyJwt };
 }
 
 /** Recursively lists every file under `dir`, returning `{ abs, rel }` pairs
@@ -172,8 +176,20 @@ function collectFiles(dir, relPrefix) {
  *  opts: { from, also = [], dryRun = false, production = false, fetchImpl = fetch, log = console.log, env = process.env } */
 export const PRODUCTION_SLUG = "ask";
 
+/** Functions the gateway must let through without a Supabase JWT: the agent
+ *  connection's OAuth server (a browser and Claude's servers call it with no
+ *  token at all) and the MCP endpoint (its bearer is our own opaque token,
+ *  which the gateway cannot verify; `mcp/index.ts` checks it). Every other
+ *  function keeps `verify_jwt: true`, the default this script always sent,
+ *  because for them the gateway check is the first line of auth. */
+export const PUBLIC_SLUGS = new Set(["mcp", "agent-auth"]);
+
+export function verifyJwtFor(slug, noVerifyJwt = false) {
+  return !(noVerifyJwt || PUBLIC_SLUGS.has(slug));
+}
+
 export async function deployFunction(slug, opts = {}) {
-  const { from, also: alsoSlugs = [], dryRun = false, production = false, fetchImpl = fetch, log = console.log, env = process.env } = opts;
+  const { from, also: alsoSlugs = [], dryRun = false, production = false, noVerifyJwt = false, fetchImpl = fetch, log = console.log, env = process.env } = opts;
 
   if (slug === PRODUCTION_SLUG && !production) {
     throw new Error(
@@ -211,11 +227,13 @@ export async function deployFunction(slug, opts = {}) {
 
   log(`Deploying slug "${slug}" from source "${sourceSlug}" (${files.length} files) to project ${PROJECT_REF}...`);
 
+  const verifyJwt = verifyJwtFor(slug, noVerifyJwt);
   const metadata = {
     entrypoint_path: `functions/${slug}/index.ts`,
     name: slug,
-    verify_jwt: true,
+    verify_jwt: verifyJwt,
   };
+  log(`verify_jwt: ${verifyJwt}`);
 
   const form = new FormData();
   form.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }));
@@ -232,7 +250,7 @@ export async function deployFunction(slug, opts = {}) {
 
   if (dryRun) {
     log(`[dry-run] POST ${url} (multipart, ${files.length} files, ${bytesTotal} bytes)`);
-    return { dryRun: true, url, files: files.map((f) => f.rel), bytes: bytesTotal };
+    return { dryRun: true, url, files: files.map((f) => f.rel), bytes: bytesTotal, verifyJwt };
   }
 
   const res = await fetchImpl(url, { method: "POST", headers: managementHeaders(token), body: form });
@@ -258,8 +276,8 @@ export async function deployFunction(slug, opts = {}) {
 }
 
 async function main() {
-  const { slug, from, also, production } = parseArgs(process.argv.slice(2));
-  const result = await deployFunction(slug, { from, also, production });
+  const { slug, from, also, production, noVerifyJwt } = parseArgs(process.argv.slice(2));
+  const result = await deployFunction(slug, { from, also, production, noVerifyJwt });
   console.log(JSON.stringify(result, null, 2));
 }
 

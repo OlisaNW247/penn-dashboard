@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { deployFunction } from "./deploy-function.mjs";
+import { deployFunction, verifyJwtFor } from "./deploy-function.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const quiet = { dryRun: true, log: () => {}, env: {} };
@@ -38,3 +38,18 @@ test("the usage text names --production", () => {
   assert.match(run.stderr, /--production/);
 });
 
+
+// The agent connection's two functions are the only ones the gateway must
+// not guard (their callers hold no Supabase JWT); every other slug keeps the
+// `verify_jwt: true` this script always sent, and only an explicit flag
+// changes that.
+test("mcp and agent-auth deploy with verify_jwt false, everything else true unless --no-verify-jwt", async () => {
+  assert.equal(verifyJwtFor("mcp"), false);
+  assert.equal(verifyJwtFor("agent-auth"), false);
+  assert.equal(verifyJwtFor("sync"), true);
+  assert.equal(verifyJwtFor("sync", true), false);
+  const plan = await deployFunction("mcp", quiet);
+  assert.equal(plan.verifyJwt, false);
+  const sync = await deployFunction("sync", quiet);
+  assert.equal(sync.verifyJwt, true);
+});

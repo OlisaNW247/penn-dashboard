@@ -1245,6 +1245,21 @@ export async function upsertDirectoryCache(client: SupabaseClient, key: string, 
  * resolved owner id from a linked device's token -- `delete-account`
  * guards that with `decideDeleteAccount`. */
 export async function deleteUserData(client: SupabaseClient, userId: string): Promise<void> {
+  // The agent connection (20261108090000_agent_connection.sql). Drafts and
+  // the snapshot first (they hold the student's own work), then connections
+  // (their tokens cascade), then any authorization still waiting.
+  const { error: draftsError } = await client.from("agent_drafts").delete().eq("user_id", userId);
+  if (draftsError) throw draftsError;
+
+  const { error: snapshotsError } = await client.from("agent_snapshots").delete().eq("user_id", userId);
+  if (snapshotsError) throw snapshotsError;
+
+  const { error: connectionsError } = await client.from("agent_connections").delete().eq("user_id", userId);
+  if (connectionsError) throw connectionsError;
+
+  const { error: pendingError } = await client.from("agent_pending_auth").delete().eq("user_id", userId);
+  if (pendingError) throw pendingError;
+
   const { error: enrollmentsError } = await client.from("enrollments").delete().eq("user_id", userId);
   if (enrollmentsError) throw enrollmentsError;
 

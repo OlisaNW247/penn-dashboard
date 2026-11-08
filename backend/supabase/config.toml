@@ -32,3 +32,20 @@ verify_jwt = true
 
 [functions.extract-announcement]
 verify_jwt = true
+
+# The agent connection (docs/AGENT_CONNECTION_PLAN_V11_2026-11-07.md). Both
+# are called without a Supabase JWT: `agent-auth` by a browser and by Claude's
+# servers during OAuth discovery, `mcp` with our own opaque bearer token that
+# `mcp/index.ts` verifies itself. With the gateway check on, discovery would
+# 401 before our code ran. `backend/scripts/deploy-function.mjs` sends the
+# same two as `verify_jwt: false` (`PUBLIC_SLUGS`).
+[functions.agent-auth]
+verify_jwt = false
+
+[functions.mcp]
+verify_jwt = false
+
+# The phone uploads the agent-visible snapshot here with the student's own
+# Supabase JWT, so the gateway check stays on.
+[functions.agent-snapshot]
+verify_jwt = true

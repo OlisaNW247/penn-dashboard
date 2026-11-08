@@ -21,6 +21,9 @@ P -f /m/20261104090000_course_facts.sql >/dev/null 2>&1 || { echo "FAIL: course_
 echo "course_facts migration: idempotent"
 P -f /m/20261105090000_finish_fact_extraction.sql >/dev/null 2>&1 || { echo "FAIL: finish_fact_extraction migration is not idempotent"; exit 1; }
 echo "finish_fact_extraction migration: idempotent"
+P -f /m/20261108090000_agent_connection.sql >/dev/null 2>&1 || { echo "FAIL: agent_connection migration is not idempotent"; exit 1; }
+echo "agent_connection migration: idempotent"
 P -f /t/rls.test.sql 2>&1 | tail -1 || exit 1
 P -f /t/claim_fact_extraction.test.sql 2>&1 | grep -E 'passed|ERROR' | tail -1
 P -f /t/finish_fact_extraction.test.sql 2>&1 | grep -E 'passed|ERROR' | tail -1
+P -f /t/agent_connection.test.sql 2>&1 | grep -E 'passed|ERROR' | tail -1

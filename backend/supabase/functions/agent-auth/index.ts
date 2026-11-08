@@ -1,0 +1,644 @@
+// The `agent-auth` edge function: the OAuth authorization server for the
+// agent connection (docs/AGENT_CONNECTION_RESEARCH_2026-11-08.md §3). Claude
+// and other MCP clients send the student's browser to `/authorize`; the page
+// there shows a code and a number; the student's phone approves through
+// `/phone`; the browser's poll of `/status` sees the approval and carries
+// the one-time code back to the client; the client trades it at `/token`.
+//
+// The decisions are in `_shared/agentAuth.ts` and `_shared/agentTokens.ts`;
+// storage is the `AgentStore` interface, so the tests run this whole file
+// over `MemoryAgentStore`. Deployed with `verify_jwt = false`: the gateway
+// has to let a browser's unauthenticated GET through, so the phone endpoint
+// authenticates itself with `requireUser`.
+//
+// Never logs codes, tokens, nonces, user ids or URLs, only outcome codes.
+import { createClient } from "npm:@supabase/supabase-js@2.115.0";
+import { corsHeaders, errorResponse, HttpError, json, readJSON } from "../_shared/http.ts";
+import { enforceMinimumVersion } from "../_shared/version.ts";
+import { requireUser } from "../_shared/auth.ts";
+import { guardedFetch, productionNetGuard, readTextCapped } from "../_shared/netguard.ts";
+import type { AgentConnectionRow, AgentStore, AgentTokenRow, PendingAuthRow } from "../_shared/agentStore.ts";
+import { PostgrestAgentStore } from "../_shared/agentStorePostgrest.ts";
+import {
+  authorizationServerMetadata,
+  issuerURL,
+  mcpURL as mcpURLFor,
+  publicBaseFromEnv,
+} from "../_shared/agentMetadata.ts";
+import {
+  ACCESS_TOKEN_TTL_MS,
+  AUTH_CODE_TTL_MS,
+  base64url,
+  digestsEqual,
+  generateToken,
+  hashToken,
+  looksLikeToken,
+  PENDING_AUTH_TTL_MS,
+  REFRESH_TOKEN_TTL_MS,
+  tokenKindOf,
+} from "../_shared/agentTokens.ts";
+import {
+  authorizePage,
+  clientHost,
+  errorPage,
+  generateId,
+  generateUserCode,
+  isRegisteredClientId,
+  matchChoices,
+  nonceCookieName,
+  normalizeUserCode,
+  parseCookies,
+  redirectURIMatches,
+  validateAuthorizeRequest,
+  validateClientMetadata,
+  validateRegistrationRequest,
+  verifyPKCE,
+} from "../_shared/agentAuth.ts";
+
+export interface AgentAuthDeps {
+  store: AgentStore;
+  /** Origin plus `/functions/v1` (see `_shared/agentMetadata.ts`). */
+  publicBase: string;
+  now?: () => Date;
+  random?: (n: number) => Uint8Array;
+  /** Fetches and parses a client's metadata document. Throws on any failure. */
+  fetchClientMetadata: (url: string) => Promise<unknown>;
+  /** The phone's student, or throws `HttpError(401)`. */
+  requireUserId: (req: Request) => Promise<string>;
+  /** Local development only. */
+  devApproveURL?: (pendingId: string) => string;
+}
+
+const PAGE_HEADERS = {
+  "Content-Type": "text/html; charset=utf-8",
+  "Cache-Control": "no-store",
+  "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'",
+  "Referrer-Policy": "no-referrer",
+  "X-Frame-Options": "DENY",
+};
+const MAX_FORM_BYTES = 16 * 1024;
+const USER_CODE_ATTEMPTS = 5;
+
+export async function handleAgentAuth(req: Request, deps: AgentAuthDeps): Promise<Response> {
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
+
+  const url = new URL(req.url);
+  const segments = url.pathname.split("/");
+  const at = segments.indexOf("agent-auth");
+  if (at < 0) return logged(json(404, { error: "not_found" }), "route");
+  const root = segments.slice(0, at + 1).join("/");
+  const route = "/" + segments.slice(at + 1).join("/");
+
+  try {
+    const ctx: Ctx = {
+      deps,
+      url,
+      root,
+      now: deps.now ?? (() => new Date()),
+      random: deps.random ?? ((n) => crypto.getRandomValues(new Uint8Array(n))),
+      issuer: issuerURL(deps.publicBase),
+      mcpURL: mcpURLFor(deps.publicBase),
+    };
+
+    if (route === "/.well-known/oauth-authorization-server" || route === "/.well-known/openid-configuration") {
+      if (req.method !== "GET") return logged(json(405, { error: "method_not_allowed" }), "method");
+      return json(200, authorizationServerMetadata(deps.publicBase), { "Cache-Control": "public, max-age=300" });
+    }
+    if (route === "/authorize") {
+      if (req.method !== "GET") return logged(json(405, { error: "method_not_allowed" }), "method");
+      return await authorize(req, ctx);
+    }
+    if (route === "/register") {
+      if (req.method !== "POST") return logged(json(405, { error: "method_not_allowed" }), "method");
+      return await register(req, ctx);
+    }
+    if (route === "/status") {
+      if (req.method !== "GET") return logged(json(405, { error: "method_not_allowed" }), "method");
+      return await status(req, ctx);
+    }
+    if (route === "/token") {
+      if (req.method !== "POST") return logged(json(405, { error: "method_not_allowed" }), "method");
+      return await token(req, ctx);
+    }
+    if (route === "/revoke") {
+      if (req.method !== "POST") return logged(json(405, { error: "method_not_allowed" }), "method");
+      return await revoke(req, ctx);
+    }
+    if (route === "/phone") {
+      if (req.method !== "POST") return logged(json(405, { error: "method_not_allowed" }), "method");
+      return await phone(req, ctx);
+    }
+    return logged(json(404, { error: "not_found" }), "route");
+  } catch (err) {
+    if (err instanceof HttpError) {
+      console.error(`agent-auth error: ${err.code} (${err.status})`);
+      return errorResponse(err.code, err.message, err.status);
+    }
+    console.error("agent-auth error: unexpected", err instanceof Error ? err.name : "unknown");
+    return errorResponse("internal_error", "unexpected server error", 500);
+  }
+}
+
+interface Ctx {
+  deps: AgentAuthDeps;
+  url: URL;
+  root: string;
+  now: () => Date;
+  random: (n: number) => Uint8Array;
+  issuer: string;
+  mcpURL: string;
+}
+
+/** Logs the outcome code and status of a refusal and passes it through. */
+function logged(res: Response, code: string): Response {
+  if (res.status >= 400) console.error(`agent-auth error: ${code} (${res.status})`);
+  return res;
+}
+
+function iso(ctx: Ctx, plusMs = 0): string {
+  return new Date(ctx.now().getTime() + plusMs).toISOString();
+}
+
+function html(status: number, body: string, extra: Record<string, string> = {}): Response {
+  return new Response(body, { status, headers: { ...PAGE_HEADERS, ...extra } });
+}
+
+function redirect(location: string): Response {
+  return new Response(null, { status: 302, headers: { Location: location, "Cache-Control": "no-store" } });
+}
+
+function redirectWith(base: string, params: Record<string, string | null>, issuer: string): string {
+  const target = new URL(base);
+  for (const [k, v] of Object.entries(params)) if (v !== null) target.searchParams.set(k, v);
+  target.searchParams.set("iss", issuer);
+  return target.toString();
+}
+
+// ---------------------------------------------------------------------
+// POST /register (RFC 7591)
+// ---------------------------------------------------------------------
+
+async function register(req: Request, ctx: Ctx): Promise<Response> {
+  const refuse = (description: string) => {
+    console.error("agent-auth error: register_invalid_client_metadata (400)");
+    return json(400, { error: "invalid_client_metadata", error_description: description }, { "Cache-Control": "no-store" });
+  };
+  let body: unknown;
+  try {
+    const text = await req.text();
+    if (text.length > MAX_FORM_BYTES) return refuse("body is too large");
+    body = JSON.parse(text);
+  } catch {
+    return refuse("body must be JSON");
+  }
+  const checked = validateRegistrationRequest(body);
+  if (!checked.ok) return refuse(checked.description);
+
+  const row = {
+    clientId: `smc_${generateId(ctx.random)}`,
+    clientName: checked.clientName,
+    redirectUris: checked.redirectUris,
+    createdAt: iso(ctx),
+  };
+  await ctx.deps.store.insertClient(row);
+  return json(201, {
+    client_id: row.clientId,
+    client_name: row.clientName,
+    redirect_uris: row.redirectUris,
+    token_endpoint_auth_method: "none",
+    grant_types: ["authorization_code", "refresh_token"],
+    response_types: ["code"],
+    client_id_issued_at: Math.floor(ctx.now().getTime() / 1000),
+  }, { "Cache-Control": "no-store" });
+}
+
+/** The client behind a `client_id`, with the redirect URI vouched for: a
+ *  registered client from its stored row, anything else from its fetched
+ *  metadata document. Never throws; `ok: false` means "do not redirect". */
+async function resolveClient(
+  ctx: Ctx,
+  clientId: string,
+  redirectUri: string,
+): Promise<{ ok: true; clientName: string } | { ok: false }> {
+  try {
+    if (isRegisteredClientId(clientId)) {
+      const row = await ctx.deps.store.selectClient(clientId);
+      if (!row || !row.redirectUris.some((registered) => redirectURIMatches(redirectUri, registered))) return { ok: false };
+      return { ok: true, clientName: row.clientName };
+    }
+    const checked = validateClientMetadata(await ctx.deps.fetchClientMetadata(clientId), clientId, redirectUri);
+    return checked.ok ? { ok: true, clientName: checked.clientName } : { ok: false };
+  } catch {
+    return { ok: false };
+  }
+}
+
+// ---------------------------------------------------------------------
+// GET /authorize
+// ---------------------------------------------------------------------
+
+async function authorize(_req: Request, ctx: Ctx): Promise<Response> {
+  const checked = validateAuthorizeRequest(ctx.url.searchParams, ctx.mcpURL);
+  if (!checked.ok) {
+    if (!checked.redirectable) {
+      return logged(
+        html(400, errorPage("this sign-in link is not valid", "Close this tab and try again from the app.")),
+        `authorize_${checked.error}`,
+      );
+    }
+    // Even an "ordinary" OAuth error is only ever sent back to a redirect
+    // URI the client's own metadata document lists. Bouncing to the URI as
+    // given would let anyone craft a link that lands a student on an
+    // arbitrary site with an official-looking error, which the OAuth
+    // security BCP (RFC 9700 §4.1) forbids. So the metadata is fetched and
+    // checked here too, and an unverifiable URI gets the plain error page.
+    const clientId = ctx.url.searchParams.get("client_id")!;
+    const redirectUri = ctx.url.searchParams.get("redirect_uri")!;
+    if (!(await resolveClient(ctx, clientId, redirectUri)).ok) {
+      return logged(
+        html(400, errorPage("this app's sign-in details could not be read", "Close this tab and try again from the app.")),
+        "authorize_client_metadata",
+      );
+    }
+    const state = ctx.url.searchParams.get("state");
+    const location = redirectWith(redirectUri, {
+      error: checked.error,
+      error_description: checked.description,
+      state,
+    }, ctx.issuer);
+    console.error(`agent-auth error: authorize_${checked.error} (302)`);
+    return redirect(location);
+  }
+  const { clientKind: _kind, ...params } = checked.request;
+  const request = params;
+
+  // A document that cannot be fetched or does not vouch for the redirect
+  // URI is never answered with a redirect: that URI is exactly the thing
+  // we failed to verify.
+  const unreadable = () =>
+    logged(
+      html(400, errorPage("this app's sign-in details could not be read", "Close this tab and try again from the app.")),
+      "authorize_client_metadata",
+    );
+  const metadata = await resolveClient(ctx, request.clientId, request.redirectUri);
+  if (!metadata.ok) return unreadable();
+
+  const id = generateId(ctx.random);
+  const { answer, choices } = matchChoices(ctx.random);
+  const nonce = base64url(ctx.random(32));
+  const base: Omit<PendingAuthRow, "userCode"> = {
+    id,
+    matchNumber: answer,
+    matchChoices: choices,
+    nonceHash: await hashToken(nonce),
+    params,
+    userId: null,
+    authCodeHash: null,
+    authCodeExpiresAt: null,
+    clientName: metadata.clientName,
+    status: "pending",
+    createdAt: iso(ctx),
+    expiresAt: iso(ctx, PENDING_AUTH_TTL_MS),
+  };
+
+  let userCode = "";
+  let stored = false;
+  for (let attempt = 0; attempt < USER_CODE_ATTEMPTS && !stored; attempt++) {
+    userCode = generateUserCode(ctx.random);
+    try {
+      await ctx.deps.store.insertPending({ ...base, userCode });
+      stored = true;
+    } catch {
+      // A duplicate live code; draw another.
+    }
+  }
+  if (!stored) throw new HttpError(503, "code_unavailable");
+
+  const page = authorizePage({
+    clientName: metadata.clientName,
+    clientHost: clientHost(request.clientId),
+    scopes: request.scopes,
+    pendingId: id,
+    userCode,
+    matchNumber: answer,
+    statusURL: `${ctx.root}/status?p=${encodeURIComponent(id)}`,
+    devApproveURL: ctx.deps.devApproveURL?.(id),
+  });
+  return html(200, page, {
+    "Set-Cookie": `${nonceCookieName(id)}=${nonce}; HttpOnly; Secure; SameSite=Lax; Max-Age=600; Path=${ctx.root}`,
+  });
+}
+
+// ---------------------------------------------------------------------
+// GET /status
+// ---------------------------------------------------------------------
+
+function pendingState(row: PendingAuthRow, ctx: Ctx): "pending" | "approved" | "denied" | "expired" {
+  if (row.status === "pending") return Date.parse(row.expiresAt) <= ctx.now().getTime() ? "expired" : "pending";
+  if (row.status === "consumed") return "approved";
+  return row.status;
+}
+
+async function status(req: Request, ctx: Ctx): Promise<Response> {
+  const forbidden = () => logged(json(403, { error: "forbidden" }, { "Cache-Control": "no-store" }), "status_forbidden");
+  const id = ctx.url.searchParams.get("p");
+  if (!id) return forbidden();
+  const row = await ctx.deps.store.selectPendingById(id);
+  const nonce = parseCookies(req.headers.get("cookie")).get(nonceCookieName(id));
+  if (!row || !nonce || !digestsEqual(await hashToken(nonce), row.nonceHash)) return forbidden();
+
+  const state = pendingState(row, ctx);
+  if (ctx.url.searchParams.get("go") !== "1") return json(200, { state }, { "Cache-Control": "no-store" });
+  if (state !== "approved") return logged(json(400, { error: "not_approved" }), "status_go_state");
+  // The pending row's five minutes bound the whole hand-off, approval
+  // included: a browser that comes back for its code after that gets
+  // nothing, even though the phone said yes in time.
+  if (Date.parse(row.expiresAt) <= ctx.now().getTime()) return logged(json(400, { error: "expired" }), "status_go_expired");
+
+  const code = generateToken("code", ctx.random);
+  const issued = await ctx.deps.store.issueAuthCode(id, await hashToken(code), iso(ctx, AUTH_CODE_TTL_MS));
+  if (!issued) return logged(json(409, { error: "already_issued" }), "status_go_issued");
+  return redirect(redirectWith(row.params.redirectUri, { code, state: row.params.state }, ctx.issuer));
+}
+
+// ---------------------------------------------------------------------
+// POST /token
+// ---------------------------------------------------------------------
+
+function tokenError(error: string, description: string): Response {
+  console.error(`agent-auth error: token_${error} (400)`);
+  return json(400, { error, error_description: description }, { "Cache-Control": "no-store", "Pragma": "no-cache" });
+}
+
+async function readForm(req: Request): Promise<URLSearchParams | null> {
+  const type = req.headers.get("content-type") ?? "";
+  if (!type.toLowerCase().startsWith("application/x-www-form-urlencoded")) return null;
+  const text = await req.text();
+  if (text.length > MAX_FORM_BYTES) return null;
+  return new URLSearchParams(text);
+}
+
+function stripSlash(value: string): string {
+  return value.endsWith("/") ? value.slice(0, -1) : value;
+}
+
+async function mintTokens(
+  ctx: Ctx,
+  connectionId: string,
+  resource: string,
+  scopes: string[],
+  rotatedFrom: string | null,
+): Promise<{ response: Response; rows: AgentTokenRow[] }> {
+  const access = generateToken("access", ctx.random);
+  const refresh = generateToken("refresh", ctx.random);
+  const createdAt = iso(ctx);
+  const rows: AgentTokenRow[] = [
+    {
+      hash: await hashToken(access),
+      kind: "access",
+      connectionId,
+      resource,
+      scopes,
+      expiresAt: iso(ctx, ACCESS_TOKEN_TTL_MS),
+      rotatedFrom: null,
+      usedAt: null,
+      createdAt,
+    },
+    {
+      hash: await hashToken(refresh),
+      kind: "refresh",
+      connectionId,
+      resource,
+      scopes,
+      expiresAt: iso(ctx, REFRESH_TOKEN_TTL_MS),
+      rotatedFrom,
+      usedAt: null,
+      createdAt,
+    },
+  ];
+  const response = json(200, {
+    access_token: access,
+    token_type: "Bearer",
+    expires_in: ACCESS_TOKEN_TTL_MS / 1000,
+    refresh_token: refresh,
+    scope: scopes.join(" "),
+  }, { "Cache-Control": "no-store", "Pragma": "no-cache" });
+  return { response, rows };
+}
+
+async function token(req: Request, ctx: Ctx): Promise<Response> {
+  const form = await readForm(req);
+  if (!form) return tokenError("invalid_request", "send application/x-www-form-urlencoded");
+  const grantType = form.get("grant_type");
+  if (grantType === "authorization_code") return await codeGrant(form, ctx);
+  if (grantType === "refresh_token") return await refreshGrant(form, ctx);
+  return tokenError("unsupported_grant_type", "grant_type must be authorization_code or refresh_token");
+}
+
+async function codeGrant(form: URLSearchParams, ctx: Ctx): Promise<Response> {
+  const code = form.get("code");
+  const verifier = form.get("code_verifier");
+  const redirectUri = form.get("redirect_uri");
+  const clientId = form.get("client_id");
+  if (!code || !verifier || !redirectUri || !clientId) {
+    return tokenError("invalid_request", "code, code_verifier, redirect_uri and client_id are required");
+  }
+  if (!looksLikeToken(code) || tokenKindOf(code) !== "code") return tokenError("invalid_grant", "unknown code");
+
+  const row = await ctx.deps.store.consumeAuthCode(await hashToken(code));
+  if (!row || row.userId === null) return tokenError("invalid_grant", "unknown code");
+
+  const resource = form.get("resource");
+  if (
+    row.authCodeExpiresAt === null || Date.parse(row.authCodeExpiresAt) <= ctx.now().getTime() ||
+    clientId !== row.params.clientId || redirectUri !== row.params.redirectUri ||
+    (resource !== null && stripSlash(resource) !== row.params.resource) ||
+    !(await verifyPKCE(verifier, row.params.codeChallenge))
+  ) {
+    return tokenError("invalid_grant", "the code cannot be used");
+  }
+
+  const connection: AgentConnectionRow = {
+    id: generateId(ctx.random),
+    userId: row.userId,
+    clientId: row.params.clientId,
+    clientName: row.clientName,
+    scopes: row.params.scopes,
+    createdAt: iso(ctx),
+    lastUsedAt: null,
+    revokedAt: null,
+  };
+  await ctx.deps.store.insertConnection(connection);
+  const minted = await mintTokens(ctx, connection.id, row.params.resource, row.params.scopes, null);
+  await ctx.deps.store.insertTokens(minted.rows);
+  return minted.response;
+}
+
+async function refreshGrant(form: URLSearchParams, ctx: Ctx): Promise<Response> {
+  const presented = form.get("refresh_token");
+  if (!presented) return tokenError("invalid_request", "refresh_token is required");
+  if (!looksLikeToken(presented) || tokenKindOf(presented) !== "refresh") {
+    return tokenError("invalid_grant", "unknown refresh token");
+  }
+  const hash = await hashToken(presented);
+  const old = await ctx.deps.store.selectToken(hash);
+  if (!old || old.kind !== "refresh" || Date.parse(old.expiresAt) <= ctx.now().getTime()) {
+    return tokenError("invalid_grant", "unknown refresh token");
+  }
+  const connection = await ctx.deps.store.selectConnection(old.connectionId);
+  if (!connection || connection.revokedAt !== null) return tokenError("invalid_grant", "unknown refresh token");
+  // A public client sends its client_id with the refresh; when it does, it
+  // has to be the client the connection was made for.
+  const refreshClientId = form.get("client_id");
+  if (refreshClientId !== null && refreshClientId !== connection.clientId) {
+    return tokenError("invalid_grant", "unknown refresh token");
+  }
+
+  const resource = form.get("resource");
+  if (resource !== null && stripSlash(resource) !== old.resource) return tokenError("invalid_target", "resource does not match");
+  const scopeParam = form.get("scope");
+  let scopes = old.scopes;
+  if (scopeParam !== null && scopeParam.trim() !== "") {
+    const asked = scopeParam.split(" ").filter((s) => s !== "");
+    if (!asked.every((s) => old.scopes.includes(s))) return tokenError("invalid_scope", "scope exceeds the original grant");
+    scopes = asked;
+  }
+
+  // A refresh token redeems once. A second presentation means two parties
+  // hold it (one of them stole it), and the whole connection goes.
+  if (!(await ctx.deps.store.markRefreshUsed(hash, iso(ctx)))) {
+    await ctx.deps.store.revokeConnection(connection.id, connection.userId, iso(ctx));
+    return tokenError("invalid_grant", "refresh token was already used");
+  }
+  const minted = await mintTokens(ctx, connection.id, old.resource, scopes, hash);
+  await ctx.deps.store.insertTokens(minted.rows);
+  return minted.response;
+}
+
+// ---------------------------------------------------------------------
+// POST /revoke (RFC 7009)
+// ---------------------------------------------------------------------
+
+async function revoke(req: Request, ctx: Ctx): Promise<Response> {
+  const form = await readForm(req);
+  const presented = form?.get("token") ?? null;
+  // Unknown, malformed or already gone all answer 200: the caller learns
+  // nothing about what exists.
+  if (presented && looksLikeToken(presented)) {
+    const kind = tokenKindOf(presented);
+    const hash = await hashToken(presented);
+    if (kind === "access") {
+      await ctx.deps.store.deleteToken(hash);
+    } else if (kind === "refresh") {
+      const row = await ctx.deps.store.selectToken(hash);
+      const connection = row ? await ctx.deps.store.selectConnection(row.connectionId) : null;
+      if (connection) await ctx.deps.store.revokeConnection(connection.id, connection.userId, iso(ctx));
+    }
+  }
+  return json(200, {}, { "Cache-Control": "no-store" });
+}
+
+// ---------------------------------------------------------------------
+// POST /phone
+// ---------------------------------------------------------------------
+
+function liveForPhone(row: PendingAuthRow | null, ctx: Ctx): row is PendingAuthRow {
+  return row !== null && row.status === "pending" && Date.parse(row.expiresAt) > ctx.now().getTime();
+}
+
+async function phone(req: Request, ctx: Ctx): Promise<Response> {
+  await enforceMinimumVersion(req, { headerOptional: true });
+  const userId = await ctx.deps.requireUserId(req);
+  const raw = await readJSON<unknown>(req);
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw new HttpError(400, "bad_request");
+  const body = raw as Record<string, unknown>;
+  const notFound = () => logged(json(404, { error: "not_found" }), "phone_not_found");
+  const store = ctx.deps.store;
+
+  switch (body.action) {
+    case "lookup": {
+      let row: PendingAuthRow | null = null;
+      if (typeof body.c === "string") {
+        row = await store.selectPendingById(body.c);
+      } else if (typeof body.code === "string") {
+        const code = normalizeUserCode(body.code);
+        row = code ? await store.selectPendingByUserCode(code) : null;
+      } else {
+        throw new HttpError(400, "bad_request");
+      }
+      if (!liveForPhone(row, ctx)) return notFound();
+      return json(200, {
+        id: row.id,
+        clientName: row.clientName,
+        clientHost: clientHost(row.params.clientId),
+        scopes: row.params.scopes,
+        choices: row.matchChoices,
+        expiresAt: row.expiresAt,
+      });
+    }
+    case "approve": {
+      if (typeof body.c !== "string" || typeof body.picked !== "number") throw new HttpError(400, "bad_request");
+      const row = await store.selectPendingById(body.c);
+      if (!liveForPhone(row, ctx)) return notFound();
+      if (body.picked !== row.matchNumber) {
+        await store.denyPending(row.id);
+        return json(200, { approved: false, reason: "match" });
+      }
+      if (!(await store.approvePending(row.id, userId))) return logged(json(409, { error: "already_decided" }), "phone_decided");
+      return json(200, { approved: true, clientName: row.clientName });
+    }
+    case "deny": {
+      if (typeof body.c !== "string") throw new HttpError(400, "bad_request");
+      return json(200, { denied: await store.denyPending(body.c) });
+    }
+    case "list": {
+      const rows = (await store.listConnections(userId)).filter((c) => c.revokedAt === null);
+      return json(200, {
+        connections: rows.map((c) => ({
+          id: c.id,
+          clientName: c.clientName,
+          clientHost: clientHost(c.clientId),
+          scopes: c.scopes,
+          createdAt: c.createdAt,
+          lastUsedAt: c.lastUsedAt,
+        })),
+      });
+    }
+    case "revoke": {
+      if (typeof body.id !== "string") throw new HttpError(400, "bad_request");
+      return json(200, { revoked: await store.revokeConnection(body.id, userId, iso(ctx)) });
+    }
+    case "revokeAll":
+      return json(200, { revoked: await store.revokeAllConnections(userId, iso(ctx)) });
+    default:
+      throw new HttpError(400, "bad_request");
+  }
+}
+
+// ---------------------------------------------------------------------
+// Production wiring
+// ---------------------------------------------------------------------
+
+function productionDeps(): AgentAuthDeps {
+  const client = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  // Client metadata hosts are the agents' (claude.ai, chatgpt.com), not
+  // Penn's: the course-site allow-list (`LHF_DISCOVERY_HOSTS`) must not
+  // apply, so only the public-address and https rules are kept.
+  const guard = { ...productionNetGuard(), allowedHostSuffixes: null };
+  return {
+    store: new PostgrestAgentStore(client),
+    publicBase: publicBaseFromEnv(),
+    fetchClientMetadata: async (url) => {
+      const response = await guardedFetch(fetch, url, { timeoutMs: 5000, headers: { Accept: "application/json" } }, guard);
+      if (!response.ok) throw new Error(`metadata status ${response.status}`);
+      const body = await readTextCapped(response, { maxBytes: 64 * 1024, deadlineMs: 5000 });
+      if (!body || body.truncated) throw new Error("metadata unreadable");
+      return JSON.parse(body.text);
+    },
+    requireUserId: async (req) => (await requireUser(req)).userId,
+  };
+}
+
+if (import.meta.main) Deno.serve((req) => handleAgentAuth(req, productionDeps()));
