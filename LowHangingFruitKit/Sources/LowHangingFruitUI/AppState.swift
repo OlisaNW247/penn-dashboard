@@ -1491,6 +1491,30 @@ final class AppState: ObservableObject {
             UserDefaults.lhf.removeObject(forKey: Self.lastBackgroundSilentRenewalAttemptAtKey)
             lastBackgroundSilentRenewalAttemptAt = nil
         }
+        // `-LHFSubmitSpike <courseID> <assignmentID>`: Phase 0 diagnostic for
+        // docs/AGENT_CONNECTION_RESEARCH_2026-11-08.md §8 items 1-2. Submits a
+        // one-word text entry through URLSession with the saved cookies and
+        // reports what Canvas said. Lines carry no cookie, token or query
+        // string; they go to the console and to `debugSubmitSpikeLogV1`.
+        if let flag = ProcessInfo.processInfo.arguments.firstIndex(of: "-LHFSubmitSpike") {
+            let args = ProcessInfo.processInfo.arguments
+            let ids = args.dropFirst(flag + 1).prefix(2).map { String($0) }
+            if ids.count == 2, ids.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) }) {
+                let host = canvasInstallation.host
+                let base = canvasInstallation.baseURL
+                Task.detached {
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    let cookies = await AutoSyncCoordinator.canvasCookies(forHost: host)
+                    let runner = CanvasSubmitSpikeRunner(session: .shared, baseURL: base, cookies: cookies)
+                    await runner.run(courseID: ids[0], assignmentID: ids[1]) { line in
+                        print(line)
+                        Self.appendSubmitSpikeLog(line)
+                    }
+                }
+            } else {
+                print("LHF-SUBMIT abort: usage -LHFSubmitSpike <courseID> <assignmentID>")
+            }
+        }
         // `-LHFForgetDuoTrust`: stages a genuine PennKey + Duo re-login for
         // this launch. It deletes Duo's cookies (the remembered-device trust)
         // AND the live Canvas session cookies from the hidden login store
@@ -2843,6 +2867,17 @@ final class AppState: ObservableObject {
     /// this process, so the aged clock goes straight to the renewal.
     private var debugSkipSessionProbe = false
     private var loggedProbeSkip = false
+
+    /// `-LHFSubmitSpike`'s trail, kept like `debugRenewalLogV1` so it can be
+    /// read off the phone's App Group plist afterwards (last 50 lines).
+    nonisolated private static func appendSubmitSpikeLog(_ line: String) {
+        guard !SharedDefaults.isTestRunner else { return }
+        let key = "debugSubmitSpikeLogV1"
+        var entries = UserDefaults.lhf.stringArray(forKey: key) ?? []
+        entries.append(line)
+        if entries.count > 50 { entries.removeFirst(entries.count - 50) }
+        UserDefaults.lhf.set(entries, forKey: key)
+    }
 
     private func noteProbeSkipped() {
         guard !loggedProbeSkip else { return }
