@@ -73,19 +73,28 @@ submits.
 6. **Submission types:** text entry, URL, file upload. Media, annotation,
    Classic Quizzes: not in v11. New Quizzes, LTI, Gradescope: the card says
    so and deep-links.
-7. _(mine, still to confirm with Marco; nothing built on it yet)_ **Drafts
-   reach the phone by polling**, on open and in the 5-minute refresh, with
+7. _(decided 2026-11-08 evening: Marco asked the session to decide each
+   open item on feasibility and the goal)_ **Drafts reach the phone by
+   polling**, on open and in the 5-minute refresh, with
    a local notification when one is found. The app has no remote push, and
    adding APNs is a project of its own.
-8. _(mine, to confirm with Marco; built on 2026-11-08 as the smaller bet,
-   recoverable if he says otherwise)_ **Our own small authorization
-   server**, not Supabase Auth's OAuth server: students have no login to
+8. _(decided 2026-11-08 evening, same basis; built and proven the same
+   day)_ **Our own small authorization server**, not Supabase Auth's OAuth server: students have no login to
    show a consent page to, so the phone approves each connection (pairing
    as authorization), and the tokens are opaque and only good at the MCP
    endpoint (research §3). It exists as `agent-auth` and completed a
    Claude Code sign-in on a dev tunnel the same day (research §8).
-9. _(new, 2026-11-08, Marco's call)_ **A host we control in front of the two
-   functions.** Claude Code's sign-in step only reads the OAuth discovery
+9. _(decided 2026-11-08 evening, same basis)_ **A host we control in front
+   of the two functions: a Deno Deploy project on its free `*.deno.dev`
+   subdomain** (`backend/connector-front/`), because Smooth has no domain
+   of its own today (the privacy and support pages are static files in
+   `docs/site`), Deno is already the backend's language, the free tier
+   covers a few students' traffic, and a custom domain can be attached
+   later without changing the code. Creating the Deno Deploy account is
+   the one thing that needs a person (Marco or Olisa); the issuer and MCP
+   URL then become `https://<project>.deno.dev/functions/v1/agent-auth`
+   and `.../mcp`, and the functions are deployed with
+   `LHF_AGENT_PUBLIC_BASE` set to that. Background:** Claude Code's sign-in step only reads the OAuth discovery
    documents at the *root* `.well-known` paths of the MCP URL's host
    (research §8 item 3), which `<ref>.supabase.co` cannot serve. So the
    MCP URL and the issuer have to live on a domain of ours (for example
@@ -169,12 +178,14 @@ Detailed, with files and acceptance tests, in the session brief.
 
 ## Limits and risks, stated on purpose
 
-**Open asks for Marco (2026-11-08), in the order they unblock things:**
+**Open asks for Marco (2026-11-08 evening; decisions 7, 8 and 9 were taken
+by the session at his word, "decide based on feasibility and our goal", and
+are recorded above). What remains needs his hands, not a decision:**
 
-1. Decisions 7 (polling for drafts) and 8 (our own authorization server):
-   confirm, or say otherwise.
-2. Decision 9: a domain for the connector's host (`mcp.<domain>`) and the
-   account that will run the small proxy in front of the functions.
+1. A Deno Deploy account (free) for the connector front, or Olisa's, with
+   the project name `smooth-agent` (any name works; the name becomes the
+   host). Five minutes in a browser; `backend/connector-front/README.md`.
+2. (kept as the earlier item 2 for numbering) nothing: decision 9 is taken.
 3. Add the dev tunnel (or, once it exists, the real host) as a custom
    connector on his claude.ai account, so three Phase 0 answers can be
    taken: whether claude.ai's flow also needs the root paths, what a model
