@@ -139,6 +139,17 @@ enum FeatureFlags {
     /// deletes). Turn it off if a bad fact keeps hiding or moving real work.
     static let appliedFacts = true
 
+    /// **The agent connection** (docs/AGENT_CONNECTION_PLAN_V11_2026-11-07.md):
+    /// a student connects an agent such as Claude to Smooth, approves the
+    /// sign-in on this phone, and the phone uploads a closed-field snapshot
+    /// of the work list for it to read.
+    ///
+    /// **This is the kill switch for every agent-connection surface on the
+    /// phone**: the `smooth://link` handler, the Settings section, the
+    /// snapshot upload. False leaves none of them reachable and uploads
+    /// nothing. The branch is unmerged, so it is on while it is built.
+    static let agentConnection = true
+
     /// Evaluates a token-store read only while the experiment is enabled.
     /// Keeping the guard around the closure (rather than around its result)
     /// is load-bearing: Keychain reads are synchronous and must not happen at
