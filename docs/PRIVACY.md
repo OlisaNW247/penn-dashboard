@@ -1,6 +1,6 @@
 # Privacy Policy — Low Hanging Fruit (LHF)
 
-_Last updated: 2026-11-05_
+_Last updated: 2026-11-08_
 
 Low Hanging Fruit ("LHF", "the app") is a personal academic dashboard that shows
 your Canvas assignments and deadlines in one place. This policy explains what
@@ -12,7 +12,9 @@ below: a summary of it, including which items are done, goes with each
 question you ask "the tree"; if you pair the Smooth Chrome extension, it
 travels end-to-end encrypted between your own phone and your own laptop,
 where we cannot read it; and if you turn on iCloud sync, it goes to your own
-iCloud. Course materials — syllabi, course pages, assignment descriptions,
+iCloud. If you turn on "connect an agent", your list of work (never grades,
+never your name) is kept readable on our server so an AI assistant you
+connect, such as Claude, can read it; it is off by default. Course materials — syllabi, course pages, assignment descriptions,
 announcements — are pooled with classmates in the same Canvas course, so
 everyone shares one copy instead of each of you re-fetching it. Questions you
 ask "the tree" are answered by an AI model running on our server. The
@@ -49,7 +51,8 @@ does not remove everything it saved on the phone: see "Deleting your data".
   you earned on it, goes to your own iCloud (see "iCloud sync").
 - **Your work list and your name.** Assignments you add yourself, due-date
   edits, reminder settings, and the first name you enter never go to our
-  server. The work Canvas and Gradescope give you is the exception: its titles
+  server, with one opt-in exception for the work list and your own tasks
+  described under "Connecting an AI assistant" (never your name). The work Canvas and Gradescope give you is the exception: its titles
   and due dates are in the summary sent with each question you ask "the tree"
   (see "What is sent to our server"), though your own tasks and your due-date
   edits are not. Your own tasks and due-date edits are shared, encrypted, with
@@ -343,6 +346,57 @@ nothing until you pair it with your phone.
   Canvas on the phone does the same on the server side for every paired
   laptop, along with everything listed under "Deleting your data".
 
+## Connecting an AI assistant (optional, Penn, off by default)
+
+- **What it is.** From Profile → accounts → connect an agent, you can let an
+  AI assistant you already use read your classes through Smooth, and propose
+  drafts: Claude at claude.ai or in the Claude apps, or ChatGPT where its
+  plan allows custom connectors. Nothing happens until you turn it on and
+  approve each connection on this phone.
+- **How a connection is approved.** The assistant's sign-in page shows a
+  short code and a two-digit number. You open Smooth (a button, or typing the
+  code) and pick the matching number. Nothing is approved from the
+  assistant's side alone. Each connection shows under Profile with when it
+  was last used, and you can revoke it there; revoking stops the assistant at
+  once.
+- **What the assistant can read.**
+  - For each item of work: an id, the class code, the title, the kind, the
+    due date (with your own edits applied), whether it is done, whether there
+    is anything to submit, the Canvas assignment link, and where it came
+    from.
+  - The list of your classes: code, name and Canvas course id.
+  - Your own tasks: title, class, due date and whether it repeats weekly.
+  - The course material already pooled per class (syllabus, pages,
+    announcements, Ed posts, and the facts derived from them), which is the
+    material described under "What is sent to our server", through the same
+    enrollment rule.
+- **What it can never read or do.** Grades or scores; your name; any
+  password, cookie or session; anything about other students; Canvas
+  directly (our server never talks to Canvas). It cannot submit anything. The
+  only thing it can do is propose a draft (text, a link or a file), which
+  appears on the assignment's card marked as drafted by that assistant. Only
+  you, in Smooth, can review and submit it.
+- **What our server keeps for this.** The work list above, in readable form,
+  replaced each time the phone uploads it; the connection records (which
+  assistant, when it was made, when it was last used); and the drafts the
+  assistant proposed, including a file it attached, until you submit or
+  decline them. This is the one place Smooth keeps a readable copy of your
+  work list; everything else in this policy stands.
+- **Who receives it.** The AI assistant provider you chose, under that
+  provider's own terms (Anthropic:
+  https://www.anthropic.com/legal/privacy; OpenAI:
+  https://openai.com/policies/privacy-policy), and our own server (Supabase).
+  We send nothing to a provider on our own; the assistant pulls what it asks
+  for, when you are using it.
+- **How to stop it.** Revoke one connection under Profile → accounts. Turn
+  the feature off, which deletes the stored work list and revokes every
+  connection. Disconnecting Canvas or deleting the account does the same.
+  Deleting the app does not revoke connections on the assistant's side; you
+  remove the connector there.
+- **Academic integrity.** What you submit is your responsibility under your
+  school's rules, and Smooth marks every draft with the assistant's name so
+  that is never hidden.
+
 ## Who we send data to
 
 - **Supabase** hosts our database and server functions. They act as our
@@ -386,6 +440,12 @@ and API access.
 - **Encrypted sync copies**, if you paired the Chrome extension: one
   encrypted copy per device, replaced each time that device syncs, deleted
   when you unpair or disconnect Canvas. We hold no key to them.
+- **Agent connection records, your work list and drafts**, only if you turned
+  on "connect an agent": the readable work list (replaced on each upload),
+  one record per connected assistant, and the drafts it proposed. They are
+  deleted when you revoke the connection (its record), turn the feature off,
+  disconnect Canvas or delete your account (all of them), and a draft is
+  deleted when you submit or decline it.
 
 ## Deleting your data
 
@@ -395,7 +455,8 @@ your usage counters, your per-request log rows (see "What we keep"), and the
 anonymous account itself, and it removes the Canvas calendar feed address, the
 saved PennKey password and the Ed Discussion session from this phone, and it
 unpairs every laptop: their anonymous accounts and encrypted sync copies are
-deleted too. The confirmation says so before you tap it. If our server can't be reached at that moment, your login still comes off
+deleted too. It also revokes every connected AI assistant and deletes the
+stored work list and the drafts. The confirmation says so before you tap it. If our server can't be reached at that moment, your login still comes off
 the phone right away, and the app keeps retrying the server-side deletion
 on later launches until it succeeds (Settings shows "couldn't reach smooth
 · will retry" meanwhile). If the server refuses the deletion outright, the
@@ -445,7 +506,9 @@ worth stating plainly rather than implying a guarantee we haven't built.
 - **No push notifications.** Reminders are scheduled and delivered locally on
   your device.
 - We don't sell your data. There's nothing to sell: we keep no questions,
-  answers, grades or lists of your work that we can read.
+  answers or grades, and no readable list of your work unless you turn on
+  "connect an AI assistant", which keeps exactly that list for you and
+  deletes it when you turn it off.
 
 ## Affiliation
 

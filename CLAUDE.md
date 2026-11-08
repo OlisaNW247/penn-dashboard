@@ -133,12 +133,18 @@ with the backend unreachable, ask answers on-device:
 items, retrieves policy and content answers from synced course materials
 (`CourseKnowledgeCollector` → `CourseKnowledgeStore`), and on iOS 26 /
 macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
-(`OnDeviceLanguageModel`). Eleven Edge Functions are in
-`backend/supabase/functions/` (all eleven are deployed; `extract-facts` was
-the last, on 2026-11-05): `ask`,
+(`OnDeviceLanguageModel`). Fourteen Edge Functions are in
+`backend/supabase/functions/`: eleven deployed (`extract-facts` was the last,
+on 2026-11-05): `ask`,
 `ask-canary`, `delete-account`, `device-sync`, `discover-websites`,
 `extract-announcement`, **`extract-facts`**, `extract-profile`,
-`map-categories`, `pair`, `sync`. `extract-facts` (written 2026-11-04 on
+`map-categories`, `pair`, `sync`; and three written on 2026-11-08 for the
+v11 agent connection and **not deployed**: `agent-auth` (our own OAuth
+authorization server, the phone approves each connection), `mcp` (the
+remote MCP server Claude connects to) and `agent-snapshot` (the opted-in
+student's work list), on `agent/connection-v11`, `backend/PROTOCOL.md` →
+"The agent connection". The first two need `verify_jwt = false`, which
+`config.toml` and `deploy-function.mjs` now carry. `extract-facts` (written 2026-11-04 on
 `v10`, **live since 2026-11-05 01:20-01:45 UTC**, the evening of
 2026-11-04 US Eastern; version 1, with the `sync` that serves its facts at
 version 17 and migration `20261104090000_course_facts.sql` applied; the
@@ -1264,7 +1270,16 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v10` (2026-11-07, evening, every post listed, the 3-day grace):
+**Current on `agent/connection-v11` (2026-11-08): 3683 tests / 352 suites,
+all green, `swift test --no-parallel` alone on Marco's Mac (85 s), +9 over
+`v10`'s 3674 (`CanvasSubmitSpikeTests`); the iOS Debug build
+(`generic/platform=iOS`, `CODE_SIGNING_ALLOWED=NO`) succeeds. Deno 818 passed
+(was 713: the agent connection's store, auth, mcp, tools, snapshot tests),
+`deno task check` clean, `node --test backend/scripts/*.test.mjs` 30,
+`backend/scripts/sql-check.sh` green with the agent migration applied twice.
+Nothing from this branch is on a phone or deployed.**
+
+Before it: **on `v10` (2026-11-07, evening, every post listed, the 3-day grace):
 3674 tests / 351 suites, all green, `swift test --no-parallel` on Marco's Mac
 (85 s); the signed iOS Debug device build (3.4.1 (20)) is on his phone and
 launched.** -26 over 3700 / 351 on purpose: 31 tests that pinned the 7-day
@@ -3489,6 +3504,7 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
+| `agent/connection-v11` | **2026-11-08, off `research/agent-connection-v11` (so off `v10` `4c136b2`), local, not pushed, not merged.** The build session's branch: the Canvas submit spike (`f5da516`), the Phase 1 backend (`7ca84a5`: `agent-auth`, `mcp`, `agent-snapshot`, migration `20261108090000_agent_connection.sql`, the `AgentStore` contract with PostgREST and memory implementations, `scripts/serve-agent.ts`), the docs. A Claude Code sign-in completed end to end against the dev tunnel the same day (research §8). Never push to or merge into `v10` without Marco's approval. |
 | `research/agent-connection-v11` | 2026-11-07/08, docs only, off `v10` `4c136b2`: the v11 agent-connection plan (`docs/AGENT_CONNECTION_PLAN_V11_2026-11-07.md`, revised to cloud-first and phone-submits on Marco's word), the research write-up (`docs/AGENT_CONNECTION_RESEARCH_2026-11-08.md`) and the brief for the build session (`docs/AGENT_CONNECTION_SESSION_PROMPT.md`). Supersedes `research/agent-canvas-via-smooth` (2026-10-30, also docs only). Nothing built. |
 | `v10` | **Current line (2026-11-03 onward).** `v9` (the no-banner sign-in, the onboarding polish, the composed-day research) plus `origin/v8` `7e004c5` (the tree's recency and follow-up work) plus `phase0/extract-facts-bench`. The merge's Swift run is recorded under Test baseline. |
 | `phase0/extract-facts-bench` | 2026-11-03, off `v9`: the extract-facts bench, prompt, schema and parser; the model decision (Haiku 5.5, `docs/EXTRACT_FACTS_BENCH_2026-11-03.md`). In `v10`. |
@@ -3529,6 +3545,18 @@ none is a ship line.
 
 ## Known gaps
 
+- **The agent connection's backend is written and tested, not deployed, and
+  cannot be signed in to from `<ref>.supabase.co` as it stands** (2026-11-08,
+  `agent/connection-v11`). Claude Code's sign-in step reads the OAuth
+  discovery documents only at the root `.well-known` paths of the MCP URL's
+  host (research §8 item 3), which an Edge Function cannot serve, so the
+  MCP URL and the issuer need a host of ours in front (plan decision 9,
+  Marco's call). Also open: the submit spike (`-LHFSubmitSpike`) has never
+  run against Canvas, the iPhone `smooth://link` hand-off is untried, what a
+  model sends as `file_base64` and what Claude shows for the write tool are
+  unmeasured (both need a signed-in Claude client), and `agent-auth` has no
+  rate limits and no sweeper for expired rows (`backend/PROTOCOL.md` →
+  Limitations). The phone side (Phases 2 to 4) does not exist.
 - **A finished item whose completion is Canvas's alone has no swipe back
   in prev** (since 2026-11-06, `AppState.completionIsLockedByCanvas`,
   `DashItem.canMarkActive`). Before that the swipe was offered, did nothing

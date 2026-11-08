@@ -1,8 +1,9 @@
 # Agent connection for v11: the agent reads Smooth, Smooth submits
 
 _Design record and plan. Written 2026-11-07 from research only; revised
-2026-11-08 after Marco confirmed the direction. Nothing in it is built or
-compiled. `docs/AGENT_CONNECTION_RESEARCH_2026-11-08.md` has the mechanics
+2026-11-08 after Marco confirmed the direction, and again that evening with
+the Phase 0 and Phase 1 status (the backend is built and tested, not
+deployed; see each phase's Status line). `docs/AGENT_CONNECTION_RESEARCH_2026-11-08.md` has the mechanics
 and sources; `docs/AGENT_CONNECTION_SESSION_PROMPT.md` is the brief for the
 session that builds it. The 2026-10-30 research on
 `research/agent-canvas-via-smooth` (docs only) holds the sourced reasons for
@@ -72,13 +73,30 @@ submits.
 6. **Submission types:** text entry, URL, file upload. Media, annotation,
    Classic Quizzes: not in v11. New Quizzes, LTI, Gradescope: the card says
    so and deep-links.
-7. _(mine, to confirm)_ **Drafts reach the phone by polling**, on open and
-   in the 5-minute refresh, with a local notification when one is found.
-   The app has no remote push, and adding APNs is a project of its own.
-8. _(mine, to confirm)_ **Our own small authorization server**, not Supabase
-   Auth's OAuth server: students have no login to show a consent page to,
-   so the phone approves each connection (pairing as authorization), and
-   the tokens are opaque and only good at the MCP endpoint (research §3).
+7. _(mine, still to confirm with Marco; nothing built on it yet)_ **Drafts
+   reach the phone by polling**, on open and in the 5-minute refresh, with
+   a local notification when one is found. The app has no remote push, and
+   adding APNs is a project of its own.
+8. _(mine, to confirm with Marco; built on 2026-11-08 as the smaller bet,
+   recoverable if he says otherwise)_ **Our own small authorization
+   server**, not Supabase Auth's OAuth server: students have no login to
+   show a consent page to, so the phone approves each connection (pairing
+   as authorization), and the tokens are opaque and only good at the MCP
+   endpoint (research §3). It exists as `agent-auth` and completed a
+   Claude Code sign-in on a dev tunnel the same day (research §8).
+9. _(new, 2026-11-08, Marco's call)_ **A host we control in front of the two
+   functions.** Claude Code's sign-in step only reads the OAuth discovery
+   documents at the *root* `.well-known` paths of the MCP URL's host
+   (research §8 item 3), which `<ref>.supabase.co` cannot serve. So the
+   MCP URL and the issuer have to live on a domain of ours (for example
+   `mcp.<our domain>`) whose root answers
+   `/.well-known/oauth-protected-resource/...` and
+   `/.well-known/oauth-authorization-server/...` and forwards everything
+   else to the Supabase functions: a Cloudflare Worker or any small proxy.
+   Which domain, and whose account, is the question for Marco; until it is
+   answered the backend can be deployed but no Claude client can sign in to
+   it. (claude.ai may behave differently from Claude Code; the connector
+   test on Marco's account will say.)
 
 ## Architecture
 
@@ -122,10 +140,22 @@ Detailed, with files and acceptance tests, in the session brief.
    sandbox assignment; metadata discovery and the phone hand-off from the
    Claude iPhone app; the file-argument size Claude will send; the prompt
    Claude shows for the write tool. Each ends with a dated answer in
-   research §8.
+   research §8. **Status 2026-11-08:** discovery answered for Claude Code
+   (root paths required, decision 9) and the decode cost measured (1.5 MB in
+   under 2 ms); the submit spike is built and compiled but needs a sandbox
+   assignment; the iPhone hand-off, the claude.ai connector, what a model
+   sends as a file and the write-tool prompt wait on Marco (the asks are
+   listed under Limits and risks).
 1. **Backend**: tables with RLS, `agent-auth`, `mcp` read tools,
    `agent-snapshot`, tests, deploy with Olisa's go. Done when claude.ai
-   answers from Marco's real work.
+   answers from Marco's real work. **Status 2026-11-08:** written, tested
+   (Deno 818, the SQL check green, the authorization server reviewed) and
+   committed on `agent/connection-v11`; a Claude Code sign-in completed
+   against it on a dev tunnel and `tools/list` was served. Not deployed
+   (Olisa's go, the token, and decision 9 first), so "answers from Marco's
+   real work" is still open; it also needs the Phase 2 snapshot upload
+   from the phone, since the server has no work list until a phone sends
+   one. `backend/PROTOCOL.md` → "The agent connection" is the contract.
 2. **Phone, opt-in**: the connect-an-agent screen, the approve sheet, the
    snapshot upload, revoke, `PRIVACY.md`. Done when the iPhone-app flow
    works end to end on Marco's phone.
@@ -138,6 +168,29 @@ Detailed, with files and acceptance tests, in the session brief.
    listing. Version and upload are Marco's call.
 
 ## Limits and risks, stated on purpose
+
+**Open asks for Marco (2026-11-08), in the order they unblock things:**
+
+1. Decisions 7 (polling for drafts) and 8 (our own authorization server):
+   confirm, or say otherwise.
+2. Decision 9: a domain for the connector's host (`mcp.<domain>`) and the
+   account that will run the small proxy in front of the functions.
+3. Add the dev tunnel (or, once it exists, the real host) as a custom
+   connector on his claude.ai account, so three Phase 0 answers can be
+   taken: whether claude.ai's flow also needs the root paths, what a model
+   actually sends as `file_base64`, and what Claude shows for
+   `propose_submission` under each `destructiveHint`. Or run `claude
+   /login` once in a terminal on his Mac so the CLI can do the same.
+4. A Canvas sandbox for the submit spike: a Free-for-Teacher course with a
+   student test user, signed in through the Mac build of Smooth (the
+   school picker takes any Canvas address), or a Penn assignment he
+   controls that allows resubmission. **Never a graded one.** Then
+   `-LHFSubmitSpike <courseID> <assignmentID>`.
+5. His phone, for the `smooth://link` hand-off from the Claude iPhone app
+   (Phase 2 builds the `link` branch first).
+6. Olisa's go and a Management API token for the first deploy (the
+   migration, then `agent-auth`, `mcp`, `agent-snapshot`; the deploy
+   script already sends `verify_jwt: false` for the first two).
 
 - **Instructure 3(i)** names MCP servers that connect to its APIs. Ours
   serves Smooth's own data; the submission is the student's act in their

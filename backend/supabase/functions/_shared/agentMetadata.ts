@@ -41,9 +41,10 @@ export function publicBaseFromEnv(env: { get(name: string): string | undefined }
 /** RFC 8414 document. `client_id_metadata_document_supported` plus `none`
  *  in the token auth methods is what makes Claude use CIMD instead of
  *  dynamic registration; `authorization_response_iss_parameter_supported`
- *  is what ChatGPT requires before it will use its redirect URI. No
- *  `registration_endpoint`: DCR is deliberately absent until a client
- *  that cannot do CIMD turns up (Phase 0 answers that). */
+ *  is what ChatGPT requires before it will use its redirect URI.
+ *  `registration_endpoint` (RFC 7591) is there because MCP Inspector 2.14
+ *  refused to connect without it on 2026-11-08 and never tries CIMD; CIMD
+ *  stays the first-class path for Claude and ChatGPT. */
 export function authorizationServerMetadata(publicBase: string): Record<string, unknown> {
   const issuer = issuerURL(publicBase);
   return {

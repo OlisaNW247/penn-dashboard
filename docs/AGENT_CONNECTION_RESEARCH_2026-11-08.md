@@ -458,3 +458,83 @@ disclosed in `PRIVACY.md`.
    era (the handler serves both; this only matters for logging).
 
 Everything else above is read from a primary source or this repo.
+
+### Phase 0 answers (2026-11-08, the build session, branch `agent/connection-v11`)
+
+Each item above, with what was run and what it showed. "Dev tunnel" means
+`backend/scripts/serve-agent.ts` (the two functions over an in-memory store
+and a fixture backend) behind an ngrok free tunnel; nothing was deployed.
+
+1. **Canvas cookie + CSRF POST: built, not run.** `CanvasSubmitSpike` and
+   the `-LHFSubmitSpike <courseID> <assignmentID>` DEBUG launch argument
+   are on the branch (commit `f5da516`), compiled (3683 / 352 green, iOS
+   Debug build succeeds), and proven only against a `URLProtocol` stub: the
+   POST carries `X-CSRF-Token` from the preflight's `Set-Cookie`, no line
+   logs a cookie value, a 422 gets exactly one retry. It needs a sandbox
+   assignment and a signed-in build; see the open asks in the plan. **Still
+   unverified.**
+2. **`_csrf_token` in the jar: unverified.** The spike logs `jar csrf
+   present` on its first line for exactly this; not yet run on a device.
+3. **Metadata discovery: answered for Claude Code and SDK clients; open for
+   claude.ai.** Claude Code 2.1.314 (`claude mcp add --transport http`) and
+   MCP Inspector 2.14 both do their *health check* the same way: `POST /mcp`
+   → 401, `GET <mcp>/oauth-protected-resource` (from the header), then the
+   RFC 8414 root forms `/.well-known/oauth-authorization-server/functions/v1/agent-auth`
+   and `/.well-known/openid-configuration/functions/v1/agent-auth` (404 on
+   the dev tunnel without the root routes), then the **path-appended**
+   `<issuer>/.well-known/openid-configuration`, which they accept (the
+   Inspector logs that it is handing an RFC 8414 document found there to
+   discovery as such, because the TypeScript SDK would otherwise reject it,
+   typescript-sdk#2733). So far so good for the Edge Function. But Claude
+   Code's *sign-in* step (`/mcp` → Authenticate) is a different code path:
+   it probed only root forms (`/.well-known/oauth-protected-resource/functions/v1/mcp`,
+   `/.well-known/oauth-protected-resource`, `/.well-known/oauth-authorization-server`,
+   `/.well-known/openid-configuration`, `<mcp>/.well-known/openid-configuration`)
+   and then fell back to RFC 8414's defaults at the origin, `POST /register`
+   at the root, and failed. Once the dev tunnel served the root-path
+   documents (`/.well-known/oauth-protected-resource/functions/v1/mcp` and
+   `/.well-known/oauth-authorization-server/functions/v1/agent-auth`), the
+   same step built a correct authorize URL (CIMD client id
+   `https://claude.ai/oauth/claude-code-client-metadata`, loopback redirect
+   `http://localhost:<port>/callback`, S256, `scope=read draft
+   offline_access` from our PRM, `resource=<mcp>`, `prompt=consent`), our page
+   rendered (code, match number, "Open Smooth"), a dev approval made
+   `status` answer 302, `token` answered 200, and `claude mcp get` read
+   "Connected" with `tools/list` served. **Conclusion:** a path-based
+   issuer on `<ref>.supabase.co` cannot complete a Claude Code sign-in,
+   because an Edge Function cannot answer the root `.well-known` paths; the
+   two functions need a host whose root we control in front of them (a
+   small proxy that serves the two documents at the root forms and
+   forwards `/functions/v1/mcp` and `/functions/v1/agent-auth/*`), and the
+   issuer and MCP URL then live on that host. Whether claude.ai's web
+   connector flow does the same is not yet known: it needs a connector
+   added to Marco's account, which is the first open ask. One more finding:
+   MCP Inspector refuses an AS without `registration_endpoint`
+   ("Incompatible auth server: does not support dynamic client
+   registration") and never tries CIMD, so `agent-auth` gained a minimal
+   RFC 7591 `register` (`smc_…` client ids) beside CIMD.
+4. **`smooth://link` from the Claude iPhone app: not run** (needs Marco's
+   phone and a connector on his account). The page's "Open Smooth" is a
+   real anchor styled as a button, so the tap is a user gesture.
+5. **File argument size and CPU: half answered.** Through the tunnel with a
+   dev token, `propose_submission` decoded 262,144 bytes in 0.34 ms,
+   1,048,576 in 0.84 ms and 1,572,864 in 1.84 ms (Deno 2.9.8 on the Mac;
+   the Edge Runtime will be slower, but not a thousand times), so the 2 s
+   CPU cap is not the constraint for the decode; writing the bytes to
+   Storage is Phase 3's measurement. A 1.6 MB file was refused from the
+   base64 length alone (no decode); a 3 MB file never reached the tool: the
+   SDK's own 4 MiB request-body limit answered 413. What a *model* will
+   actually emit as `file_base64` is the other half and is still open: a
+   model generates the argument token by token, so megabytes of base64 are
+   unlikely in practice; the test (ask Claude to attach a 12,000-character
+   essay as a file) needs a signed-in Claude client (claude.ai, or `claude
+   /login` on this Mac, which has no Anthropic login of its own: `claude
+   -p` answered "OAuth session expired" for every model call).
+6. **What Claude shows for `propose_submission`: not run** (needs a model
+   client; see 5). The knob exists (`LHF_MCP_PROPOSE_HINT=none|false|true`).
+7. **Wire format: Claude Code spoke the 2025 era** to the dev tunnel
+   (`initialize` then `tools/list`, served by the stateless legacy leg). The
+   handler's modern (2026-07-28) envelope also works in tests, and needs the
+   full `_meta` envelope (`protocolVersion`, `clientCapabilities`,
+   `clientInfo`); a request without `clientCapabilities` is a 400 `-32602`.
+

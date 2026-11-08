@@ -12,7 +12,11 @@ file; when they disagree, this file wins and the code is wrong.
 2. **Only course-level material is shared.** Syllabus, pages, modules,
    assignment descriptions, announcements. Never grades, completions,
    submission state, the work list, the student's name, or transcripts of
-   questions. `CourseDocument.submitted` is stripped before upload.
+   questions, **unless the student turns on an agent connection**, in which
+   case exactly the fields listed under `agent-snapshot` are stored for that
+   student alone, in `agent_snapshots`, and deleted on opt-out, Canvas
+   disconnect and account deletion. `CourseDocument.submitted` is stripped
+   before upload.
 3. **The sharing key is the Canvas numeric course id.** Every student in the
    same Canvas site sees identical material. Section ids are recorded on the
    enrollment row for later scoping but do not partition documents in v1.
@@ -1207,6 +1211,390 @@ across every model-calling function, not a separate counter per function.
 A cache hit, or a `mapping: null` response, never calls
 `checkAndConsumeQuota` at all.
 
+## The agent connection (agent-auth, mcp, agent-snapshot)
+
+A student can connect an agent (Claude first) to Smooth as a remote MCP
+connector. The agent reads the student's work list and the pooled course
+material through `mcp`; it signs in through `agent-auth`, where the student's
+phone approves; the phone uploads what the agent may see through
+`agent-snapshot`. The standing rule: **the agent gets no submit tool.** Its
+only write is `propose_submission`, which makes a draft the student reviews
+and submits from the app (Phase 3; both draft tools refuse today). The
+server never talks to Canvas (principle 1 stands): the work list comes from
+the phone, the course material from the tables the phone already fills.
+
+Code: `functions/agent-auth`, `functions/mcp`, `functions/agent-snapshot`,
+and `_shared/agent*.ts`. Migration `20261108090000_agent_connection.sql`.
+Design: `docs/AGENT_CONNECTION_PLAN_V11_2026-11-07.md`; the reasons behind the
+OAuth choices: `docs/AGENT_CONNECTION_RESEARCH_2026-11-08.md` §3 and §7.
+
+### Discovery
+
+`<base>` is `LHF_AGENT_PUBLIC_BASE` when set, else `SUPABASE_URL` +
+`/functions/v1` (never the request's `Host`: the value ends up inside
+documents clients compare exactly). The issuer is `<base>/agent-auth`; the
+MCP URL, which is also the token audience (RFC 8707 `resource`), is
+`<base>/mcp`. `_shared/agentMetadata.ts` builds both documents so they cannot
+disagree.
+
+`GET <base>/agent-auth/.well-known/oauth-authorization-server` (also
+`/.well-known/openid-configuration`; `Cache-Control: public, max-age=300`):
+
+```
+{ issuer, authorization_endpoint: "<issuer>/authorize",
+  token_endpoint: "<issuer>/token", revocation_endpoint: "<issuer>/revoke",
+  registration_endpoint: "<issuer>/register",
+  response_types_supported: ["code"], response_modes_supported: ["query"],
+  grant_types_supported: ["authorization_code", "refresh_token"],
+  code_challenge_methods_supported: ["S256"],
+  token_endpoint_auth_methods_supported: ["none"],
+  revocation_endpoint_auth_methods_supported: ["none"],
+  scopes_supported: ["read", "draft", "offline_access"],
+  client_id_metadata_document_supported: true,
+  authorization_response_iss_parameter_supported: true,
+  service_documentation: <docs/PRIVACY.md on GitHub> }
+```
+
+`GET <base>/mcp/oauth-protected-resource` (also
+`/mcp/.well-known/oauth-protected-resource`; same cache header):
+
+```
+{ resource: "<base>/mcp", authorization_servers: ["<issuer>"],
+  scopes_supported: ["read", "draft", "offline_access"],
+  bearer_methods_supported: ["header"], resource_name: "Smooth",
+  resource_documentation: <docs/PRIVACY.md on GitHub> }
+```
+
+A `POST <base>/mcp` without a usable token is `401` with the body
+`{ "error": "unauthorized" }` and
+
+```
+WWW-Authenticate: Bearer resource_metadata="<base>/mcp/oauth-protected-resource", scope="read draft"
+```
+
+When a token was presented and refused, the body is `{ "error":
+"invalid_token" }` and the header gains `error="invalid_token"` first and
+`error_description="token is not valid for this server"` last. The words are
+the same for unknown, expired, wrong-audience and revoked, so a response never
+says which. A token without scope `read` is `403 { "error":
+"insufficient_scope" }` with `error="insufficient_scope"` in the challenge.
+The `resource_metadata` URL is how Claude finds the authorization server (it
+ignores the header on a 200), and `scope` is what it asks for.
+
+**Found 2026-11-08, with Claude Code 2.1.314 and MCP Inspector 2.14 against a
+tunnel.** SDK-based clients' *health check* accepts the path-appended
+`<issuer>/.well-known/openid-configuration` as a fallback, which the function
+serves. Claude Code's *sign-in* step does not: it probes only the RFC 9728 and
+RFC 8414 root forms, `/.well-known/oauth-protected-resource/functions/v1/mcp`
+and `/.well-known/oauth-authorization-server/functions/v1/agent-auth`, and a
+root `/register`. An Edge Function on `<ref>.supabase.co` cannot answer at that
+host's root, so **production needs a host whose root we control in front of the
+two functions.** This is an open item in the plan. `scripts/serve-agent.ts`
+shows what that front answers (the two root documents, then the two functions
+under `/functions/v1/…`).
+
+### Sign-in (pairing as authorization)
+
+Students have no login, so "authorize" is pairing: the agent's sign-in tab
+shows a code and a number, the phone approves, the tab proceeds. `agent-auth`
+is deployed `verify_jwt = false` (a browser's unauthenticated GET has to get
+through); only `/phone` authenticates, itself, with `requireUser`. Clients are
+public (`none`); PKCE `S256` is mandatory; there are no client secrets.
+
+1. **`GET /authorize`** with `client_id`, `redirect_uri`, `response_type=code`,
+   `code_challenge` (43 to 128 characters of `[A-Za-z0-9._~-]`),
+   `code_challenge_method=S256`, optional `resource` (must equal the MCP URL
+   up to a trailing slash), `scope` (space separated; unknown scopes dropped;
+   a scope that names only unknown things is `invalid_scope`; absent means
+   `read draft offline_access`), optional `state` (at most 512 characters).
+   `client_id` is one of two kinds.
+   - **CIMD**: an https URL on a public name (no fragment, userinfo, IP
+     literal, `localhost` or single-label host). The server fetches it
+     (5 s, 64 KB, https only, public addresses only, no host allow-list) and
+     requires `client_id` to equal the URL, `redirect_uris` to contain the
+     requested URI, `token_endpoint_auth_method` absent or `none`, and
+     `grant_types` absent or containing `authorization_code`. `client_name`
+     (trimmed, 80 characters) is shown; absent, the host is.
+   - **Registered**: `smc_` + 22 base64url characters from `/register`; the
+     requested URI must match a stored one.
+   A redirect URI matches exactly, except that for `http://localhost`,
+   `127.0.0.1` and `[::1]` the port is ignored (RFC 8252 §7.3; Claude Code picks
+   its port at run time) while scheme, host, path and query must match.
+
+   On success: `200` HTML (`no-store`, a CSP of `default-src 'none'` plus inline
+   style and script and `connect-src 'self'`, `X-Frame-Options: DENY`,
+   `Referrer-Policy: no-referrer`) showing the client's name and host, an
+   8-letter code in two groups of four from the alphabet
+   `BCDFGHJKLMNPQRSTVWXZ` (RFC 8628's consonants: no words, nothing to misread),
+   a two-digit match number, an "Open Smooth" button to
+   `smooth://link?c=<id>` (`<id>` is 128 random bits, base64url, 22
+   characters), and a script that polls `/status` every 2 s. The response sets
+   the browser nonce: `Set-Cookie: sa_<id>=<nonce>; HttpOnly; Secure;
+   SameSite=Lax; Max-Age=600; Path=<agent-auth root>`. A unique code is drawn
+   up to 5 times against the live-code index, then `503 code_unavailable`.
+   The pending row lives 5 minutes.
+
+   Errors. If `client_id` or `redirect_uri` is unusable, or the client's
+   metadata cannot be fetched or does not vouch for the redirect URI, the
+   answer is a `400` page and **never a redirect**: that URI is exactly the
+   thing that was not verified, and bouncing to it would be an open redirect
+   (RFC 9700 §4.1). Every other error (`unsupported_response_type`,
+   `invalid_request`, `invalid_scope`, `invalid_target`) is a `302` to the
+   redirect URI with `error`, `error_description`, `state` (when sent) and
+   `iss`, but only after the metadata has vouched for that URI, so the document
+   is fetched for errors too.
+
+2. **The phone** receives the deep link (`smooth://link?c=<id>`) or the typed
+   code, and calls `POST /phone` (below): `lookup`, then `approve` with the
+   number the student picked from three.
+
+3. **`GET /status?p=<id>`** (the page's poll). Bound to the browser: the
+   `sa_<id>` cookie's sha256 must equal the stored nonce hash (constant-time),
+   else `403 { "error": "forbidden" }`, the same for an unknown id. Answers
+   `200 { "state": "pending" | "approved" | "denied" | "expired" }`
+   (`no-store`). With `&go=1` and state `approved`, it mints the one-time
+   authorization code (`smt_c_…`, valid 60 seconds, stored as a hash) and
+   answers `302` to `redirect_uri` with `code`, `state` and `iss`. `go=1` in any
+   other state is `400 { "error": "not_approved" }`; after the pending row's
+   5 minutes it is `400 { "error": "expired" }` even if the phone said yes in
+   time; a second code for the same authorization is `409 { "error":
+   "already_issued" }`. The phone approves, but only the browser that started
+   the flow may be handed the code, which is why the code is minted here and not
+   at approval.
+
+4. **`POST /token`**, `application/x-www-form-urlencoded`, at most 16 KB. Every
+   answer is `Cache-Control: no-store`, `Pragma: no-cache`. Errors are `400
+   { "error", "error_description" }`.
+   - `grant_type=authorization_code`: `code`, `code_verifier`, `redirect_uri`,
+     `client_id` required (else `invalid_request`), `resource` optional. The
+     code is **burnt first** (an atomic approved -> consumed), then checked: not
+     past its 60 seconds, `client_id` and `redirect_uri` equal to the
+     authorization's, `resource` equal when sent, PKCE verifies. **Every failure
+     is `invalid_grant`**, so a guess learns nothing and a stolen code that
+     fails once is gone. On success a connection row is created for the
+     approving student.
+   - `grant_type=refresh_token`: `refresh_token` required. Unknown, expired,
+     wrong-kind or revoked-connection is `invalid_grant`. `client_id`, when
+     sent, must equal the connection's (else `invalid_grant`). `resource` that
+     differs is `invalid_target`; `scope` must be a subset of the original
+     grant (else `invalid_scope`), and narrows it when sent. **Rotation**: each
+     refresh token redeems once and the response carries a new pair. **Reuse
+     detection**: presenting a redeemed refresh token again means two parties
+     hold it, so the whole connection is revoked and the answer is
+     `invalid_grant`.
+   - Other grant types: `unsupported_grant_type`. Other content types:
+     `invalid_request`.
+
+   ```
+   200 { access_token, token_type: "Bearer", expires_in: 3600,
+         refresh_token, scope: "read draft offline_access" }
+   ```
+
+5. **`POST /revoke`** (RFC 7009), form field `token`. An access token is
+   deleted; a refresh token revokes its whole connection. Unknown, malformed
+   or missing tokens change nothing. Always `200 {}`, so the caller learns
+   nothing about what exists.
+
+6. **`POST /register`** (RFC 7591), JSON, at most 16 KB, for SDK-based clients
+   (Claude Code's SDK, MCP Inspector) that do not use a metadata document.
+   `redirect_uris`: 1 to 10 strings, each https or loopback http, no fragment
+   or userinfo. `token_endpoint_auth_method` absent or `none`; `grant_types`
+   within `authorization_code`, `refresh_token`; `response_types` within
+   `code`; `client_name` a string (trimmed to 80, default "MCP client"). Anything
+   else is `400 { "error": "invalid_client_metadata", "error_description" }`:
+   refused, never quietly downgraded. Answers `201`:
+
+   ```
+   { client_id: "smc_<22>", client_name, redirect_uris,
+     token_endpoint_auth_method: "none",
+     grant_types: ["authorization_code", "refresh_token"],
+     response_types: ["code"], client_id_issued_at }
+   ```
+
+7. **`POST /phone`**, JSON, `Authorization: Bearer <Supabase JWT>` (a linked
+   device acts as its owner, as everywhere), minimum-version header optional.
+   `{ "action": ... }`; anything else is `400 bad_request`.
+   - `lookup { "c": id }` or `{ "code": "BCDF-GHJK" }` (case, spaces and
+     dashes ignored; not 8 letters of the alphabet is `404`). Answers
+     `{ id, clientName, clientHost, scopes, choices: [n, n, n], expiresAt }`.
+     `choices` is the right number and two others, shuffled; the right one is
+     not marked. `clientHost` is the client's host name, or "registered client".
+   - `approve { "c": id, "picked": number }`. If `picked` is not the page's
+     number the authorization is **denied** and the answer is `200 { "approved":
+     false, "reason": "match" }`: a relayed code (QRLJacking) reaches a phone
+     whose owner is not looking at the page that started it, and that student
+     cannot pick the right number. Otherwise the row is bound to the student:
+     `200 { "approved": true, "clientName" }`; a row someone else decided in the
+     meantime is `409 already_decided`.
+   - `deny { "c": id }`: `200 { "denied": bool }`.
+   - `list`: `{ "connections": [{ id, clientName, clientHost, scopes,
+     createdAt, lastUsedAt }] }`, the caller's live connections.
+   - `revoke { "id" }`: `200 { "revoked": bool }`, only the caller's own.
+   - `revokeAll`: `200 { "revoked": n }`.
+
+   `lookup` and `approve` answer one `404 { "error": "not_found" }` for unknown,
+   expired and already-decided ids, so ids cannot be probed.
+
+### Tokens
+
+Opaque strings, not JWTs: `smt_a_` (access), `smt_r_` (refresh), `smt_c_`
+(authorization code), then 256 random bits as 43 base64url characters. Only
+the sha256 (hex) of the whole string is stored, so a database read never yields
+a usable credential; a string of another shape is refused before any lookup.
+
+```
+access token        1 hour
+refresh token       60 days, rotated on every use
+pending authorization  5 minutes
+authorization code  60 seconds
+scopes              read, draft, offline_access
+```
+
+`offline_access` is what makes Claude ask for a refresh token. Why opaque: a
+student revokes a connection from Profile and expects the agent to stop reading
+at once; a self-contained JWT keeps working until it expires unless the
+resource server consults a list anyway, at which point the signature bought
+nothing, while an opaque token is one row lookup and deleting the row is the
+revocation (`_shared/agentTokens.ts`).
+
+### `mcp`
+
+The remote MCP server, `POST <base>/mcp`, deployed `verify_jwt = false`
+because it checks its own bearer token. **Stateless** (`legacy: 'stateless'`):
+no session is ever created and no `Mcp-Session-Id` minted; `GET` and `DELETE`
+are `405 { "error": "method_not_allowed" }` with `Allow: POST`; a path below
+`/mcp` other than the metadata is `404`. A request whose `Origin` is present
+and not `https://` is `403 forbidden_origin` (a host list was rejected: Claude's
+egress is a published range and a list would turn into initialize timeouts).
+
+The SDK's handler verifies nothing, so the bearer is checked here, in this
+order, every failure the same `401 invalid_token` described under Discovery:
+the header parses and the string has the shape of an access token; its hash is
+found; the row is an access token; it is not expired; its `resource` equals the
+MCP URL; its connection exists and is not revoked; then the scope `read` (a
+`403`, not a `401`). The connection's `last_used_at` is touched and the
+principal (student, connection, client name) is passed to the tools. Logs carry
+error classes only.
+
+Every tool result is plain text (Claude documents text and image results only).
+Long material is paged with a trailing line "page N of more; call again with
+page=N+1" rather than a link the model would have to fetch. One result is cut
+at `MAX_RESULT_CHARS` = 120,000 characters (claude.ai and Desktop accept about
+150,000), ending "[truncated; narrow with course or page]". Execution
+failures are results with `isError: true`, never protocol errors. `course` is a
+course code such as `PHYS 0151` (case, spaces and dashes ignored) or a Canvas
+course id; a course the student is not enrolled in matches nothing rather than
+erroring. Pooled reads apply `is_enrolled` by hand (the service role bypasses
+RLS): `course_id in (the caller's enrolled ids)`, live documents only
+(`gone_at is null`), the window kinds' 120-day age-out, and never `collector`.
+
+| tool | arguments | reads | caps |
+|---|---|---|---|
+| `list_courses` | none | the snapshot's `courses`; with no snapshot, the caller's enrolled courses from `courses` | |
+| `list_work` | `view` (`todo` \| `all` \| `prev`, default `todo`), `course?` | the snapshot's `workList` plus `manual` tasks (shown as kind `other`, source `manual`); with no snapshot, nothing | |
+| `get_assignment` | `id` (a work item's id) | the snapshot item; the `assignment` document whose `source_id` is the item's Canvas assignment id (from `/assignments/<n>` in its link, else an id `canvas:<n>` or ending `:<n>`), and the facts targeting it | description 20,000 characters |
+| `search_course_material` | `query`, `course?`, `kind?`, `page?` | `course_documents.text` by PostgREST websearch with the `english` config, newest `updated_at` first | 10 per page, 600-character excerpt starting a third before the first hit |
+| `get_facts` | `course?`, `since?` (Unix seconds) | `course_facts` of enrolled courses, by `seq`; `since` compares `posted_at`, and a fact with none is always included; facts of a gone or since-edited document are dropped, as in the manifest | 200 facts |
+| `get_announcements` | `course?`, `days` (1 to 365, default 14), `page?` | `announcement` documents, newest `posted_at` first | 10 per page, 8,000 characters a post |
+| `get_ed_posts` | `course?`, `page?` | `ed` documents, newest first | 10 per page, 8,000 characters a post |
+| `propose_submission` | `assignment_id`, `kind` (`text` \| `url` \| `file`), `body?`, `url?`, `file_base64?`, `file_name?`, `mime_type?`, `note?` | writes a draft (Phase 3) | body 100,000 characters; note 2,000; file name 200 with no path separator; file 1,572,864 bytes (1.5 MB) decoded, judged from the base64 length without decoding; url https only; the SDK's own 4 MiB body limit applies on top |
+| `draft_status` | `id` | a draft's state (Phase 3) | |
+
+**`propose_submission` and `draft_status` refuse today**: the store's methods
+reject with "drafts are Phase 3". `propose_submission` also needs scope
+`draft` ("this connection cannot propose drafts"), checks its arguments, and
+checks that the assignment exists before it would write.
+
+Annotations: every read tool carries `readOnlyHint: true`.
+`propose_submission` carries `readOnlyHint: false`, `idempotentHint: false`,
+`openWorldHint: false`, and `destructiveHint` set by `LHF_MCP_PROPOSE_HINT`:
+`none` omits it, `true` sets it, anything else (the default) sets `false`. It
+is a knob because what Claude shows for each setting is a Phase 0
+measurement, not a known fact.
+
+**`list_work` views** (`workView` in `_shared/agentSnapshot.ts`; the
+dashboard's three lists, flattened):
+- `todo`: not done, with a due date that is overdue or within the next 48
+  hours (inclusive). Undated items are not in it. Most overdue first, then
+  soonest.
+- `all`: not done, due now or later, or undated. Soonest first, undated last.
+- `prev`: done, and either undated or due within the last 150 days
+  (`TERM_DAYS`, standing in for the dashboard's term start, which the snapshot
+  does not carry). **The snapshot carries no completion time**, so `prev` is
+  newest *due date* first, not newest completion first as on the dashboard.
+
+`course` narrows first. The dashboard's cancelled-fact rule is not applied:
+facts are served separately by `get_facts`.
+
+### `agent-snapshot`
+
+The phone's side, called with the student's own Supabase JWT (`verify_jwt =
+true`; a linked device acts as its owner). POST only, `{ "action": ... }`.
+Logs counts and outcome codes, never ids, titles or bodies. Table
+`agent_snapshots`: one row per opted-in student, replaced whole on every `put`.
+
+- `put { "snapshot": { courses, workList, manual? } }` answers `{ "writtenAt",
+  "items" }` (`items` = work plus manual entries).
+- `status` answers `{ "hasSnapshot": bool, "writtenAt": string | null, "items":
+  n }`.
+- `delete` removes the snapshot **and revokes every agent connection** of the
+  student, answering `{ "deleted": true, "revoked": n }`. A student with no
+  snapshot has nothing for an agent to read, so opting out leaves no live
+  connection behind.
+
+The snapshot, rebuilt field by field (unknown keys are dropped):
+
+```
+courses  ≤ 60   { courseID (digits, ≤ 40), code (1-40), name (1-200) }
+workList ≤ 2000 { id (1-200), course (1-40), title (1-300),
+                  kind: "assignment" | "quiz" | "discussion" | "event" | "other",
+                  dueAt: ISO 8601 with offset | null, done: bool,
+                  noSubmission: bool, url: Canvas link | null, source (1-40) }
+manual   ≤ 500  { id (1-200), course (0-40), title (1-300),
+                  dueAt: ISO 8601 | null, repeatsWeekly: bool }   -- optional array
+```
+
+That is everything an agent can learn about the student's own state. There is
+no grade, score, points, name, email or submission content. **Forbidden
+fields:** a key named `score`, `grade`, `points`, `firstName` or `email`
+(compared lower-cased) anywhere, or `name` on a work or manual item (a course
+has a `name` by design), refuses the whole snapshot with `400 bad_request` and
+reason `forbidden_field` rather than trimming it: the phone does not send them,
+so one arriving is a bug or an attack. Other violations are `400` with the
+failing path in the message.
+
+**Canvas URL rule.** `url` must be https, at most 2000 characters, without
+userinfo, on a host ending `.instructure.com` or starting `canvas.`, or with
+`/courses/` in its path. A `/feeds/calendars/` path, or a `user_` segment
+followed by 8 or more token characters, is refused whatever the host: a Canvas
+calendar feed URL is a bearer credential, and whoever holds one reads the
+student's calendar with no login.
+
+Size: a body over 1 MB (`MAX_SNAPSHOT_BYTES` = 1,048,576) is `413
+payload_too_large`, judged by `Content-Length` and again on what was read, since
+a chunked body declares none.
+
+### Tables
+
+All six are service role only: RLS on, no policy for `anon` or `authenticated`,
+all privileges revoked from them and granted to `service_role`. Nothing but
+these three functions reads or writes them. Of the six, **`agent_snapshots` is
+the one that holds a student's own data**; deleted on opt-out (`agent-snapshot`
+`delete`), on Canvas disconnect, and on account deletion (`deleteUserData`; the
+row also cascades from `auth.users`).
+
+- `agent_pending_auth`: an authorization a browser started and a phone has not
+  finished. Holds the typed code (unique among live rows), the match number and
+  choices, the nonce hash, the request's parameters, the code hash.
+- `agent_clients`: `smc_` clients from `/register`.
+- `agent_connections`: one per connected agent; revoking sets `revoked_at` and
+  deletes its tokens, and the row stays so Profile can show what was connected.
+- `agent_tokens`: access and refresh tokens as hashes, with `rotated_from` and
+  `used_at` for rotation; they die with their connection.
+- `agent_snapshots`: as above.
+- `agent_drafts`: designed now, used from Phase 3; survives a revoked
+  connection (`connection_id` set null), because the student may still want it.
+
 ## `pair` — link the Chrome extension to a phone
 
 Request `{ "action": ... }`, all POST, all authenticated as the caller's own
@@ -1331,3 +1719,26 @@ a 502 on a real phone while a 53-word one succeeded.
   custom URL scheme can in principle hand to another app on the phone. It is
   useless without the phone's own approval and token (`claim`), and links
   only the claiming phone's account.
+- The agent connection has no rate limits on `/authorize`, `/register`, the
+  `/phone` `lookup` or `/token`. Each `/authorize` stores a row and fetches a
+  client-chosen https URL (guarded: public addresses, 5 s, 64 KB), and each
+  `/register` stores a row; the five-minute expiry bounds what is live but not
+  what an abuser can create.
+- `/phone` `deny` accepts any pending id from any signed-in student. Ids are 128
+  random bits and cannot be listed, so this needs an id the attacker already
+  holds; `lookup` and `approve` answer one `404` for unknown and decided ids.
+- Nothing sweeps expired pending rows or tokens yet. `deleteExpiredPending` and
+  `deleteExpiredTokens` exist on the store and are called by nothing, so the
+  tables only grow until a scheduled job calls them.
+- The typed code is guessable in theory: 20^8 (about 2.6e10) codes, live five
+  minutes, and no attempt limit enforced. What stops a guessed code being
+  enough is the match number: `approve` needs the number the page shows, and a
+  wrong pick denies the authorization.
+- Any https host can act as a CIMD client, so a stranger's page can start an
+  authorization that reads as "Claude". The page and the phone therefore show
+  the client's host beside its self-declared name, and the match number is the
+  defence: the student must be looking at the page that started the flow.
+- `search_course_material` has no full-text index yet (a GIN index on
+  `to_tsvector('english', text)`); the query scans the caller's enrolled
+  courses' live documents. Fine at today's pool size; add the index before it is
+  not.

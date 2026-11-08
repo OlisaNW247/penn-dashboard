@@ -420,7 +420,17 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   has the mechanics with sources; `docs/AGENT_CONNECTION_SESSION_PROMPT.md`
   is the brief for the session that builds it, starting with five Phase 0
   spikes. Supersedes the 2026-10-30 plan on
-  `research/agent-canvas-via-smooth`. Nothing built.
+  `research/agent-canvas-via-smooth`. **Built so far (2026-11-08, branch
+  `agent/connection-v11` off `research/agent-connection-v11`, not pushed,
+  not deployed):** the Phase 1 backend (`agent-auth`, `mcp`,
+  `agent-snapshot`, six service-role tables, Deno 818 / SQL check green,
+  the authorization server reviewed), the Canvas submit spike
+  (`-LHFSubmitSpike`, compiled, never run), and a Claude Code sign-in
+  completed end to end against a dev tunnel. What stops the next step is
+  in the plan's "Open asks for Marco": a host of ours in front of the
+  functions (Claude Code's sign-in only reads root `.well-known` paths), a
+  connector on his claude.ai account, a Canvas sandbox, his phone, Olisa's
+  deploy go, and decisions 7 and 8. Phases 2 to 5 are not started.
 - **Megaphone: the model sorts posts into todo and prev** (Marco,
   2026-11-07: "prev being either from way before or unapplicable, need
   [the model] to sort based on text"). What ships first is the rule half
