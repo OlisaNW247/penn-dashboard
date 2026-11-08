@@ -27,6 +27,8 @@ struct RootCore: View {
     /// The `smooth://pair` link the phone was opened with, while the sheet that
     /// asks "pair this laptop?" is up (`AppState+DeviceSync.swift`).
     @State private var pendingPairing: PendingPairing?
+    @State private var pendingAgentLink: PendingAgentLink?
+    @State private var agentLookup: AgentLookupPresentation?
 
     /// True while the running build is below the enforced floor.
     private var isWalled: Bool {
@@ -107,12 +109,22 @@ struct RootCore: View {
         .onOpenURL { url in
             guard !isWalled else { return }
             if let pending = state.pendingPairing(from: url) { pendingPairing = pending }
+            if let link = state.pendingAgentLink(from: url) { pendingAgentLink = PendingAgentLink(request: link) }
+        }
+        .task(id: pendingAgentLink?.id) {
+            guard let pending = pendingAgentLink else { return }
+            let found = await state.lookupAgentLink(pending.request)
+            pendingAgentLink = nil
+            if let found, !isWalled { agentLookup = AgentLookupPresentation(lookup: found) }
         }
         .onChange(of: updateGate.verdict) { _, verdict in
-            if case .updateRequired = verdict { pendingPairing = nil }
+            if case .updateRequired = verdict { pendingPairing = nil; pendingAgentLink = nil; agentLookup = nil }
         }
         .sheet(item: $pendingPairing) { pending in
             PairLaptopSheet(link: pending.link).environmentObject(state)
+        }
+        .sheet(item: $agentLookup) { shown in
+            AgentLinkApproveSheet(lookup: shown.lookup).environmentObject(state)
         }
 #if os(macOS)
         .frame(minWidth: 480, minHeight: 600)
@@ -184,6 +196,7 @@ struct RootCore: View {
                     // Foreground only (this view never exists in a background
                     // wake), throttled and silent; see `deviceSyncPass`.
                     await state.deviceSyncPass()
+                    await state.agentSnapshotPass()
                 }
         }
     }

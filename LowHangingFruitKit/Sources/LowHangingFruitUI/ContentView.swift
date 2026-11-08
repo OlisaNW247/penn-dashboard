@@ -773,6 +773,7 @@ struct ContentView: View {
         // the lists and the reminders in this same pass. A no-op without a
         // key, throttled to once per two minutes, never a banner.
         await state.deviceSyncPass()
+        await state.agentSnapshotPass()
         await settleAfterFetch()
         await announceGradeChanges()
         await announceTurnedIn()

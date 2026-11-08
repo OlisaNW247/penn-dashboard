@@ -1095,6 +1095,27 @@ Keep this current. It is the fastest way for a new session to know what exists.
   listed.
 - **Mac.** The same app, plus a menu-bar extra that keeps the sync loop
   alive (`LHFScenes.swift`) and open-at-login.
+- **Connect an agent** (2026-11-08, `agent/connection-v11`, compiled, never
+  on a phone; behind `FeatureFlags.agentConnection`, Penn installs past
+  onboarding with a backend only). Profile → accounts gains a "connect an
+  agent" row (on / off) opening `AgentConnectionsView`: the opt-in switch,
+  the disclosure (the exact fields shared, the recipients by name, that
+  turning it off deletes the list and disconnects every agent, the privacy
+  policy link), the connected agents with "last used" and "disconnect",
+  and a "have a code?" field for the typed 8-letter code. A
+  `smooth://link?c=…` URL (the "Open Smooth" button on the agent's sign-in
+  page) or a typed code looks the pending request up and shows
+  `AgentLinkApproveSheet`: "connect Claude?", what it reads, "did you just
+  start this?", three numbers to pick from (a wrong one denies the request
+  on the server), "not now". Approving turns the opt-in on if it was off.
+  With it on, `agentSnapshotPass` uploads the work list
+  (`AgentSnapshotBuilder` over `syncWorkList()`, courses, own tasks; no
+  grades, no name) right after `deviceSyncPass` in `ContentView.refresh()`
+  and the launch task, foreground only, at most every 10 minutes, every
+  failure silent. Turning it off, disconnecting Canvas and account deletion
+  delete the server's list and revoke every agent. `docs/PRIVACY.md` →
+  "Connecting an AI assistant" is the student-facing text. Copy in
+  `AgentConnectionCopy`, pinned by `AgentConnectionCopyTests`.
 - **Pair a laptop** (2026-10-22, never compiled). Scanning the Chrome
   extension's QR code with the iPhone camera opens Smooth
   (`smooth://pair?c=…#k=…`, `.onOpenURL` in `RootCore`) on "pair this
@@ -1270,14 +1291,18 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `agent/connection-v11` (2026-11-08): 3683 tests / 352 suites,
-all green, `swift test --no-parallel` alone on Marco's Mac (85 s), +9 over
-`v10`'s 3674 (`CanvasSubmitSpikeTests`); the iOS Debug build
-(`generic/platform=iOS`, `CODE_SIGNING_ALLOWED=NO`) succeeds. Deno 818 passed
-(was 713: the agent connection's store, auth, mcp, tools, snapshot tests),
-`deno task check` clean, `node --test backend/scripts/*.test.mjs` 30,
-`backend/scripts/sql-check.sh` green with the agent migration applied twice.
-Nothing from this branch is on a phone or deployed.**
+**Current on `agent/connection-v11` (2026-11-08, evening): 3714 tests / 358
+suites, all green, `swift test --no-parallel` alone on Marco's Mac (85 s), +40
+/ +6 over `v10`'s 3674 / 352 (`CanvasSubmitSpikeTests` 9; the Phase 2 agent
+connection: `AgentLinkRequestTests`, `AgentSnapshotBuilderTests`,
+`AgentConnectionClientTests`, `AgentConnectionCopyTests`,
+`AgentConnectionWiringTests`, `AgentSnapshotPassTests`); the iOS Debug build
+(`generic/platform=iOS`, `CODE_SIGNING_ALLOWED=NO`) succeeds. Deno 824 passed
+(was 713: the agent connection's store, auth, mcp, tools, snapshot and
+connector-front tests), `deno task check` clean, `node --test
+backend/scripts/*.test.mjs` 30, `backend/scripts/sql-check.sh` green with the
+agent migration applied twice. Nothing from this branch is on a phone or
+deployed.**
 
 Before it: **on `v10` (2026-11-07, evening, every post listed, the 3-day grace):
 3674 tests / 351 suites, all green, `swift test --no-parallel` on Marco's Mac

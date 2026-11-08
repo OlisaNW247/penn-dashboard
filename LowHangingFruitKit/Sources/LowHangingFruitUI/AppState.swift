@@ -547,6 +547,16 @@ final class AppState: ObservableObject {
     var isDeviceSyncRunning = false
     var lastDeviceSyncAt: Date?
 
+    // MARK: Agent connection (AppState+AgentConnection.swift)
+
+    /// True when the server lists at least one connected agent. Set by
+    /// `refreshAgentConnections()`; nothing reads the network per frame.
+    @Published var hasAgentConnections = false
+    /// The student's opt-in to the snapshot upload.
+    @Published var agentConnectionEnabled: Bool = UserDefaults.lhf.bool(forKey: SharedDefaults.agentConnectionEnabledKey)
+    var lastAgentSnapshotAt: Date?
+    var isAgentSnapshotRunning = false
+
     /// Grade changes detected by the last refresh and not yet announced. The
     /// view layer drains this (it owns the `NotificationScheduler`), so the
     /// store stays free of notification plumbing.
@@ -5088,6 +5098,16 @@ final class AppState: ObservableObject {
                 await CanvasAccessTokenMinter.revoke(outgoingToken)
             }
         }
+        // The agent connection goes the same way, after the revoke above for
+        // the same reason: detached, best-effort, so the server's list and
+        // every agent's access are removed even if the local clear below
+        // races or the account deletion never lands.
+        if let backend = BackendServices.client {
+            Task.detached { _ = try? await AgentConnectionClient(client: backend).deleteSnapshot() }
+        }
+        UserDefaults.lhf.removeObject(forKey: SharedDefaults.agentConnectionEnabledKey)
+        agentConnectionEnabled = false
+        hasAgentConnections = false
         CanvasAccessTokenStore.clear()
         forcedCanvasAccessTokenForTesting = nil
         updateCanvasICSURL("")

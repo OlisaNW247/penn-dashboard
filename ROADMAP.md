@@ -430,7 +430,14 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   in the plan's "Open asks for Marco": a host of ours in front of the
   functions (Claude Code's sign-in only reads root `.well-known` paths), a
   connector on his claude.ai account, a Canvas sandbox, his phone, Olisa's
-  deploy go, and decisions 7 and 8. Phases 2 to 5 are not started.
+  deploy go. Decisions 7, 8 and 9 were taken by the session that evening at
+  Marco's word ("decide based on feasibility and our goal"): polling,
+  our own authorization server, a Deno Deploy front
+  (`backend/connector-front/`). **Phase 2 (the phone's opt-in screen,
+  approve sheet, snapshot upload, `smooth://link`) is built and compiled
+  the same evening (3714 / 358), never on a phone.** Phases 3 to 5 are not
+  started. The one person-step left before the end-to-end test is a Deno
+  Deploy account for the front, then Olisa's deploy go.
 - **Megaphone: the model sorts posts into todo and prev** (Marco,
   2026-11-07: "prev being either from way before or unapplicable, need
   [the model] to sort based on text"). What ships first is the rule half
