@@ -405,17 +405,21 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
 - **Agent connection for v11** (Marco, 2026-11-07: "a connection for an
   agent to have all the context to your classes and the possibility to
   submit assignments"). Plan in `docs/AGENT_CONNECTION_PLAN_V11_2026-11-07.md`
-  on `research/agent-connection-v11` (docs only, off `v10`). The shape: a
-  local MCP server (`smooth-mcp`, Node, for Claude Desktop and Claude
-  Code) paired to the phone as a third device, decrypting the same
-  end-to-end snapshot the Chrome extension uses and reading pooled
-  material and facts; read tools plus one write, `propose_submission`,
-  which only creates a draft; the extension shows the draft and the
-  student taps submit in their own signed-in Chrome. No submit tool for
-  the agent, ever; the server stays blind. Phase 0 is two spikes (Canvas
-  cookie-plus-CSRF POST from the extension; the phone's snapshot decoder
-  tolerating unknown fields) and the owner's confirmation of six
-  decisions listed in the plan. Supersedes the 2026-10-30 plan on
+  on `research/agent-connection-v11` (docs only, off `v10`), direction
+  confirmed by Marco 2026-11-08: a cloud MCP connector on the Supabase
+  backend so claude.ai, the Claude iPhone app, Desktop and Code (ChatGPT
+  where its plans allow) read the student's work list, courses, pooled
+  material and facts, and propose drafts (text, URL, file); the draft
+  shows on the card as "drafted by Claude" and the student reviews and
+  submits from the app, Smooth doing the Canvas POST with the student's
+  own session. No submit tool for the agent, ever. Sign-in is pairing as
+  authorization (the phone approves each connection; our own small
+  authorization server, opaque tokens). The one privacy change: the
+  server stores the opted-in student's work list, disclosed in an opt-in
+  screen and `PRIVACY.md`. `docs/AGENT_CONNECTION_RESEARCH_2026-11-08.md`
+  has the mechanics with sources; `docs/AGENT_CONNECTION_SESSION_PROMPT.md`
+  is the brief for the session that builds it, starting with five Phase 0
+  spikes. Supersedes the 2026-10-30 plan on
   `research/agent-canvas-via-smooth`. Nothing built.
 - **Megaphone: the model sorts posts into todo and prev** (Marco,
   2026-11-07: "prev being either from way before or unapplicable, need
