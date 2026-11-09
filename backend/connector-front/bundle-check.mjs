@@ -1,4 +1,4 @@
-// Bundles api/connector-front.ts with esbuild and exercises it under Node against a stub
+// Bundles connector-front/vercel-entry.ts (as deploy.sh does) with esbuild and exercises it under Node against a stub
 // upstream. Usage: node backend/connector-front/bundle-check.mjs [scratchDir]
 import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 const here = dirname(fileURLToPath(import.meta.url));
 const dir = process.argv[2] ?? mkdtempSync(join(tmpdir(), "front-"));
 const out = join(dir, "front.mjs");
-execFileSync("npx", ["--yes", "esbuild@0.24.0", join(here, "../api/connector-front.ts"), "--bundle", "--format=esm", "--platform=browser", `--outfile=${out}`], { stdio: "inherit" });
+execFileSync("npx", ["--yes", "esbuild@0.24.0", join(here, "vercel-entry.ts"), "--bundle", "--format=esm", "--platform=browser", "--define:import.meta.main=false", `--outfile=${out}`], { stdio: "inherit" });
 
 const seen = [];
 const stub = createServer((req, res) => {

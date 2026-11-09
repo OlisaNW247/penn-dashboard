@@ -17,7 +17,7 @@ It logs one line per request (method, path, status) and nothing else. Bodies are
 
 ## Deploy (Vercel)
 
-`backend/` is the Vercel project root. `vercel.json` rewrites every path to `api/connector-front.ts`, an Edge Function that calls `handle` with `UPSTREAM_BASE`, `PUBLIC_BASE` and `UPSTREAM_APIKEY` from the project's environment; `.vercelignore` uploads only `api/`, `connector-front/`, `supabase/functions/_shared/` and `vercel.json`.
+`backend/` is the Vercel project root. `vercel.json` rewrites every path to `api/connector-front.js, which imports the esbuild bundle deploy.sh makes of connector-front/vercel-entry.ts`, an Edge Function that calls `handle` with `UPSTREAM_BASE`, `PUBLIC_BASE` and `UPSTREAM_APIKEY` from the project's environment; `.vercelignore` uploads only `api/`, `connector-front/`, `supabase/functions/_shared/` and `vercel.json`.
 
 1. Once: `vercel login`.
 2. `connector-front/deploy.sh` (`--dry-run` prints the commands and runs nothing). It links the project `smooth-agent` (`LHF_CONNECTOR_PROJECT` to pick another name; `PUBLIC_BASE` follows it), replaces the production env vars and runs `vercel deploy --prod --yes`.

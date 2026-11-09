@@ -1,0 +1,3 @@
+# built by connector-front/deploy.sh and bundle-check.mjs
+connector-front/dist/
+.vercel

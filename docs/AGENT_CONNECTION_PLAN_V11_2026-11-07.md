@@ -189,12 +189,19 @@ was: the session cannot create accounts, sign in as him, or deploy to
 production without Olisa's go, so each item below is now one person-step
 followed by a command the session (or anyone) runs:**
 
-1. **The connector front.** `vercel login` once in a terminal on the Mac
-   (the CLI is installed and its old token has expired; Deno Deploy, the
-   first pick, had sign-ups closed). Then `backend/connector-front/deploy.sh`
-   creates the Vercel project `smooth-agent`, sets the env vars and makes a
-   production deployment. The adapter was bundled and exercised offline
-   (`backend/connector-front/bundle-check.mjs`).
+1. **The connector front: DONE 2026-11-08 night.** Marco ran `vercel login`;
+   `backend/connector-front/deploy.sh` created the project `smooth-agent`
+   under his Vercel account and deployed. Live at
+   `https://smooth-agent.vercel.app`: both root discovery documents answer
+   with that host as issuer and resource, `/functions/v1/mcp` and
+   `/register` forward to Supabase (which answers 404 until the functions
+   are deployed), unknown paths get our 404. Two fixes the first deploy
+   forced: Vercel's bundler refuses Deno's explicit `.ts` imports, so
+   deploy.sh pre-bundles with esbuild; and it reads `export const config`
+   only as a literal, so `api/connector-front.js` is a hand-written
+   three-line file importing the bundle (otherwise it ran on Node as
+   CommonJS and died on `import.meta`). The upstream `apikey` question
+   (README) is still open until the functions exist.
 2. **The functions.** Olisa's go. The Management API token in
    `~/lhf-bench/supabase.token` still answers 200 (checked 2026-11-08
    evening). Then `node backend/scripts/deploy-agent.mjs --public-base

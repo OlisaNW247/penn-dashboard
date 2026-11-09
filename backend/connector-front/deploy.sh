@@ -1,6 +1,9 @@
 #!/bin/sh
-# Deploys the connector front to Vercel as an Edge Function (backend/api/connector-front.ts,
-# every path rewritten to it by backend/vercel.json). Run from anywhere; it cd's to backend/.
+# Deploys the connector front to Vercel as an Edge Function: esbuild bundles
+# connector-front/vercel-entry.ts into connector-front/dist/front.mjs (Vercel's bundler refuses
+# Deno's explicit .ts import extensions), api/connector-front.js imports that bundle and
+# carries the literal `export const config = { runtime: "edge" }` Vercel reads statically, and backend/vercel.json
+# rewrites every path to it. Run from anywhere; it cd's to backend/.
 #
 # One-time: `vercel login`. This script never logs in and never prints a secret.
 #
@@ -41,6 +44,7 @@ if [ "$DRY" = 0 ]; then
   "$VERCEL" whoami >/dev/null 2>&1 || { echo "not logged in: run \`vercel login\` once" >&2; exit 1; }
 fi
 
+run npx --yes esbuild@0.24.0 connector-front/vercel-entry.ts --bundle --format=esm --platform=browser --define:import.meta.main=false --outfile=connector-front/dist/front.mjs
 run "$VERCEL" link --yes --project "$PROJECT"
 setenv UPSTREAM_BASE "$UPSTREAM_BASE"
 setenv PUBLIC_BASE "$PUBLIC_BASE"
