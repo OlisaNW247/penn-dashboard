@@ -273,6 +273,9 @@ export async function run(argv, { fetchImpl = fetch, log = console.log } = {}) {
       const res = await fetchImpl(u, { redirect: "manual" });
       const page = parseAuthorizePage(await res.text());
       const nonce = cookieFrom(res.headers.getSetCookie ? res.headers.getSetCookie() : res.headers.get("set-cookie"), `sa_${page.pendingId}`);
+      // Like the phone: look the request up first; approve is bound to it.
+      const look2 = await phone({ action: "lookup", c: page.pendingId });
+      must(look2.status === 200, `lookup HTTP ${look2.status}`);
       const ap = await phone({ action: "approve", c: page.pendingId, picked: page.matchNumber });
       must(ap.json?.approved === true, `approve HTTP ${ap.status}`);
       const go = await fetchImpl(`${base}/agent-auth/status?p=${encodeURIComponent(page.pendingId)}&go=1`, {

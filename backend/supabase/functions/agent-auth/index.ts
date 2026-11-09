@@ -669,7 +669,11 @@ async function phone(req: Request, ctx: Ctx): Promise<Response> {
       if (typeof body.c !== "string" || typeof body.picked !== "number") throw new HttpError(400, "bad_request");
       if (!(await withinLimit(ctx, `approve:${userId}`, LIMITS.approve))) return tooMany("approve_rate");
       const row = await store.selectPendingById(body.c);
-      if (!liveForPhone(row, ctx)) return notFound();
+      // Same binding as `deny`: only the student who last looked the request
+      // up may decide it. Without it, anyone holding an id could approve a
+      // request they never saw the page of (the match number would still
+      // stop them, but a wrong pick would deny the real student's request).
+      if (!liveForPhone(row, ctx) || row.claimedBy !== userId) return notFound();
       if (body.picked !== row.matchNumber) {
         await store.denyPending(row.id);
         return json(200, { approved: false, reason: "match" });

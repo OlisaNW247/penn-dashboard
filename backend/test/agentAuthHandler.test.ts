@@ -98,6 +98,7 @@ async function startFlow(h: Harness) {
 /** The full pairing up to a minted authorization code. */
 async function pairAndGetCode(h: Harness): Promise<{ code: string }> {
   const { cookie, row } = await startFlow(h);
+  assert.strictEqual((await phone(h, { action: "lookup", c: row.id })).status, 200);
   const ok = await phone(h, { action: "approve", c: row.id, picked: row.matchNumber });
   assert.deepStrictEqual(await ok.json(), { approved: true, clientName: "Claude" });
   const go = await h.call(`/status?p=${row.id}&go=1`, { headers: { cookie } });
@@ -174,6 +175,7 @@ Deno.test("happy path: authorize, phone approve, status, code, token", async () 
   assert.deepStrictEqual(await (await h.call(`/status?p=${row.id}`, { headers: { cookie } })).json(), { state: "pending" });
   assert.strictEqual((await h.call(`/status?p=${row.id}&go=1`, { headers: { cookie } })).status, 400);
 
+  assert.strictEqual((await phone(h, { action: "lookup", c: row.id })).status, 200);
   const approve = await phone(h, { action: "approve", c: row.id, picked: row.matchNumber });
   assert.deepStrictEqual(await approve.json(), { approved: true, clientName: "Claude" });
   assert.deepStrictEqual(await (await h.call(`/status?p=${row.id}`, { headers: { cookie } })).json(), { state: "approved" });
@@ -210,6 +212,7 @@ Deno.test("a wrong match number denies the request", async () => {
   const h = harness();
   const { cookie, row } = await startFlow(h);
   const wrong = row.matchChoices.find((n) => n !== row.matchNumber)!;
+  assert.strictEqual((await phone(h, { action: "lookup", c: row.id })).status, 200);
   const res = await phone(h, { action: "approve", c: row.id, picked: wrong });
   assert.deepStrictEqual(await res.json(), { approved: false, reason: "match" });
   assert.deepStrictEqual(await (await h.call(`/status?p=${row.id}`, { headers: { cookie } })).json(), { state: "denied" });
@@ -617,4 +620,18 @@ Deno.test("memory sweep: expired pending, old tokens, idle limits, unused old cl
   now += 2 * day;
   assert.strictEqual(await h.store.sweep(), 2); // the idle rate row and the unused old client
   assert.deepStrictEqual([...h.store.clients.keys()].sort(), ["smc_new", "smc_old_connected"]);
+});
+
+Deno.test("approve needs a lookup by the same student, like deny", async () => {
+  const h = harness();
+  const { cookie, row } = await startFlow(h);
+  const pick = { action: "approve", c: row.id, picked: row.matchNumber };
+  // Never looked up, or looked up by someone else: 404, and nothing is decided
+  // (a wrong pick from a stranger must not deny the real student's request).
+  assert.strictEqual((await phone(h, pick)).status, 404);
+  assert.strictEqual((await phone(h, { ...pick, picked: -1 }, "student-2")).status, 404);
+  assert.strictEqual((await phone(h, { action: "lookup", code: row.userCode }, "student-2")).status, 200);
+  assert.strictEqual((await phone(h, pick, "student-1")).status, 404);
+  assert.deepStrictEqual(await (await h.call(`/status?p=${row.id}`, { headers: { cookie } })).json(), { state: "pending" });
+  assert.deepStrictEqual(await (await phone(h, pick, "student-2")).json(), { approved: true, clientName: "Claude" });
 });

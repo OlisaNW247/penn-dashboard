@@ -1428,7 +1428,10 @@ public (`none`); PKCE `S256` is mandatory; there are no client secrets.
      `{ id, clientName, clientHost, scopes, choices: [n, n, n], expiresAt }`.
      `choices` is the right number and two others, shuffled; the right one is
      not marked. `clientHost` is the client's host name, or "registered client".
-   - `approve { "c": id, "picked": number }`. If `picked` is not the page's
+   - `approve { "c": id, "picked": number }`. Only for a request this student
+     has looked up (the same `claimed_by` binding as `deny`; otherwise the
+     same `404`, and nothing is decided, so a stranger's wrong pick cannot
+     deny the real student's request). If `picked` is not the page's
      number the authorization is **denied** and the answer is `200 { "approved":
      false, "reason": "match" }`: a relayed code (QRLJacking) reaches a phone
      whose owner is not looking at the page that started it, and that student
