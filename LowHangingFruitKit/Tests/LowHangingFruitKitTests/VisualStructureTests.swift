@@ -37,6 +37,8 @@ struct VisualStructureTests {
             "ProfileClassesSection",
             "ProfileNotificationsSection",
             "iCloudSyncSection",
+            // Added 2026-11-09: ambassador mode, one row, after sync.
+            "ambassadorSection",
             // Added 2026-10-27: the feedback section is the last one.
             "SmoothSectionHeader(\"feedback\"",
         ]

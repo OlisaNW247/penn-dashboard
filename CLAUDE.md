@@ -1044,7 +1044,52 @@ Keep this current. It is the fastest way for a new session to know what exists.
      dashboard, items with nothing to submit, the announcement "ai assist"
      opt-out)
   7. sync (iCloud sync, off by default; on macOS, open at login)
-  8. feedback (since 3.3.0, 2026-10-27): one "send feedback ↗" row that
+  8. ambassador (2026-11-09, `claude/new-session-b3ylkg`, for `v11`; not
+     compiled locally, CI run pending): one row, "ambassador mode", with
+     "sign in" or "maya · uva", that pushes `AmbassadorPage`
+     (`DashRoute.ambassador`). The campus ambassador program's closed loop
+     inside the app, for the founders' friends at other schools; every
+     other student sees the one row. **Sign in is a code, not an
+     account**: the unguessable code from the ambassador's private page
+     link (`https://smooth-poster-scans…/a/{code}`), pasted as the code,
+     the link, or opened from the page's "open in the smooth app" button
+     (`smooth://ambassador?code=…`, `RootView.onOpenURL`). Parsed by
+     `AmbassadorCode` (Kit), checked against the server
+     (`GET /a/{code}/plan.json`), kept in the Keychain
+     (`AmbassadorCodeStore`, Tier 3, inert under tests). Signed in, the
+     page shows **today's post** (written by the server from a bank of
+     daily variants, filled with the ambassador's own tracked link and
+     their chosen anonymous app: fizz, sidechat or yik yak; "rest day"
+     once a fortnight), **copy** and **"i posted it"** (logs the post on
+     the server in that channel; remembered per server day), their
+     numbers (link opens, their school's poster scans, posts logged), the
+     **daily reminder** (every day / weekdays / off, a time picker, default
+     7 pm), the onboarding checklist, the other messages and posting tips
+     behind disclosures, a feedback field, "my page" (Safari), pause for
+     4 weeks, sign out. The server is the ambassador Worker in
+     `smooth-ambassadors/` (the poster-scan tracker's domain), not
+     Supabase; what leaves the phone is in `docs/PRIVACY.md` →
+     "Ambassador mode". **The reminder is local notifications**
+     (`AmbassadorReminders`): one repeating daily request, or five weekly
+     ones for weekdays, identifiers `ambassador:*`, fixed body ("today's
+     post is written, maya. tap to copy it."), because a request per day
+     with the day's words would blow the 64 cap. The due-date pass
+     spares that prefix (`applyNotifications`) and the slots are taken
+     out of its budget (`NotificationScheduler.reservedForeignSlots`,
+     zero for everyone else). `removeAllPending()` and the update wall
+     still clear them; `AmbassadorModel.sceneBecameActive()` puts them
+     back. A tap on one raises `AmbassadorModel.pendingOpen`
+     (`NotificationResponseRouter`, by identifier prefix) and the dashboard
+     sets `path = [.profile, .ambassador]`. State in
+     `AmbassadorModel.shared` (`ambassador.*` keys in `UserDefaults.lhf`:
+     the plan cache, cadence, time, anonymous app, posted day). Nothing
+     here mentions ratings or reviews, and a test keeps it that way
+     (`AmbassadorWiringTests`). Tests: `AmbassadorTests.swift` (code
+     shapes, plan decoding, requests, the pass sparing the prefix, the
+     model against fakes, the wiring). Never on a phone; the first thing
+     to see is that the reminder survives a reschedule and that a cold
+     launch from its tap lands on the page.
+  9. feedback (since 3.3.0, 2026-10-27): one "send feedback ↗" row that
      opens the Google feedback form in Safari (`FeedbackForm.defaultURL`,
      or the live notice's link when the manifest carries one)
 
@@ -1263,6 +1308,13 @@ Chromium, not by `npm test`.
 Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
+
+**`claude/new-session-b3ylkg` (2026-11-09): not run locally; the authoring
+session had no Swift toolchain. The `tests` workflow (`swift test
+--no-parallel` on a macOS runner) was dispatched against the branch; its
+run is the gate, and whoever reads this should check it before trusting the
+count. Predicted: 3674 + 27 (`AmbassadorTests.swift`: 5 suites) with no
+loss; `VisualStructureTests` learned the new section marker.**
 
 **Current on `v10` (2026-11-07, evening, every post listed, the 3-day grace):
 3674 tests / 351 suites, all green, `swift test --no-parallel` on Marco's Mac
@@ -3489,6 +3541,7 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
+| `claude/new-session-b3ylkg` | **2026-11-09, `v10` `4c136b2` plus two commits, meant to become `v11`.** (1) `smooth-ambassadors/`: the poster-scan tracker plus the campus ambassador system as a Cloudflare Worker + D1 (private pages per ambassador, tracked links, a founder view with a digest generator, 17 Miniflare tests), drafted here to move to a private repo. (2) **Ambassador mode in the app** (What the app does → Profile → 8): a code-based sign-in in Profile, today's post, a daily local reminder, the planner carve-out. Swift not compiled on the authoring machine (no toolchain in the cloud session); the `tests` workflow was dispatched on the branch, see Test baseline. Olisa or Marco creates `v11` from it. |
 | `v10` | **Current line (2026-11-03 onward).** `v9` (the no-banner sign-in, the onboarding polish, the composed-day research) plus `origin/v8` `7e004c5` (the tree's recency and follow-up work) plus `phase0/extract-facts-bench`. The merge's Swift run is recorded under Test baseline. |
 | `phase0/extract-facts-bench` | 2026-11-03, off `v9`: the extract-facts bench, prompt, schema and parser; the model decision (Haiku 5.5, `docs/EXTRACT_FACTS_BENCH_2026-11-03.md`). In `v10`. |
 | `v9` | 2026-11-01 to 11-03: the no-banner sign-in and keepalive, proven on Marco's phone; the onboarding polish merged; the composed-day research. In `v10`. |
@@ -3528,6 +3581,15 @@ none is a ship line.
 
 ## Known gaps
 
+- **Ambassador mode (2026-11-09) has not been on a phone.** Unseen: the
+  daily notification firing and surviving the next reschedule pass (the
+  carve-out is unit-tested, the center is not), a cold launch from its
+  tap landing on Profile → ambassador, the `smooth://ambassador` link
+  from Safari, and the page in dark mode. The server half is on
+  `claude/new-session-b3ylkg` under `smooth-ambassadors/` and is **not
+  deployed**: until it is, sign-in answers "couldn't reach smooth"
+  (`/a/{code}/plan.json` does not exist on the live Worker yet). The
+  review notes need a test code once a roster exists.
 - **A finished item whose completion is Canvas's alone has no swipe back
   in prev** (since 2026-11-06, `AppState.completionIsLockedByCanvas`,
   `DashItem.canMarkActive`). Before that the swipe was offered, did nothing

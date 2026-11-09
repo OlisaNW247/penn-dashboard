@@ -343,6 +343,28 @@ nothing until you pair it with your phone.
   Canvas on the phone does the same on the server side for every paired
   laptop, along with everything listed under "Deleting your data".
 
+## Ambassador mode (optional, for campus ambassadors only)
+
+A few students help spread the word about Smooth at their schools. If one
+of them signs in to **Profile → ambassador** with the code a founder texted
+them, the app talks to our ambassador server (the same small service that
+counts poster scans, at smooth-poster-scans.jazzysmile20.chatgpt.site). It
+is separate from the server described above and shares nothing with it.
+
+What it sends, and only while signed in: the code; which anonymous campus
+app the ambassador picked and the phone's time-zone offset (so "today's
+post" is their today); and what they tap on that page: "i posted it", a
+checklist tick, a pause, and the feedback they type. It never sends
+anything about classes, Canvas, Gradescope, Ed, or the rest of the app, and
+no name or contact detail beyond what the founder already typed into the
+ambassador roster. The daily reminder is a local notification scheduled on
+the phone, not a push from a server. "Sign out" removes the code from the
+Keychain, the cached page from the phone, and the reminders. The server
+keeps the ambassador's roster row, their link-open counts, their logged
+posts and their feedback until the founders remove them. Students who are
+not ambassadors never trigger any of this; the row in Profile does
+nothing until a code is entered.
+
 ## Who we send data to
 
 - **Supabase** hosts our database and server functions. They act as our

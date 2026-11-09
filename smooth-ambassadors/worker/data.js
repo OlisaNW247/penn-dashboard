@@ -297,4 +297,20 @@ export async function markFeedbackSeen(env, id) {
   await env.DB.prepare("UPDATE feedback SET seen = 1 WHERE id = ?1").bind(id).run();
 }
 
+// The app's daily post: one entry from messages.daily per day, rotating.
+// `anon` entries become the ambassador's chosen anonymous app (fizz by
+// default). Deterministic per day so a notification and the page agree.
+export function dailyPost({ daily, dayIndex, anonApp = "fizz" }) {
+  if (!daily?.length) return null;
+  const entry = daily[((dayIndex % daily.length) + daily.length) % daily.length];
+  const channel = entry.kind === "anon" ? (CHANNELS[anonApp] ? anonApp : "fizz") : entry.kind === "rest" ? null : entry.kind;
+  return { kind: entry.kind, channel, platform: channel ? CHANNELS[channel] : "rest", text: entry.text };
+}
+
+export function dayIndex(date = new Date(), tzOffsetMinutes = 300) {
+  // Local day for the US east coast by default (the founders' zone); the
+  // app passes its own offset so "today" matches the phone.
+  return Math.floor((date.getTime() - tzOffsetMinutes * 60000) / 86400000);
+}
+
 export { CHANNELS };

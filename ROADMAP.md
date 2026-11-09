@@ -862,6 +862,13 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-09.** Ambassador mode in the app (Profile → ambassador, for
+  `v11`): sign in with the code from your ambassador page, today's post
+  written and ready to copy, "i posted it", your numbers, a daily local
+  reminder (or weekdays, or off) at a chosen time, checklist, feedback,
+  pause, sign out. Server side in `smooth-ambassadors/` (`plan.json`, JSON
+  answers for the app, a 14-entry daily post bank, "open in the smooth
+  app" on the web page). Not compiled locally; CI dispatched. Not deployed.
 - **2026-11-07 (16:39 EST).** 3.4.1 (20) archived from `c3a4feb` and
   uploaded, superseding builds 18 and 19. Marco attaches 20 and submits.
 - **2026-11-07 (evening).** The megaphone lists every post the phone keeps

@@ -164,6 +164,16 @@ final class NotificationScheduler: ObservableObject {
     static let maxPending = 60
     static let horizonDays = 14
 
+    /// Pending slots held by requests this planner does not own and must not
+    /// count on: ambassador mode's daily reminder (one, or five for
+    /// weekdays; `AmbassadorReminders.reservedSlots`). Subtracted from
+    /// `maxPending` in `plannedRequests` so the queue as a whole stays under
+    /// the cap, since `applyNotifications` leaves those requests in place.
+    /// Set by `AmbassadorModel` whenever its cadence or sign-in state
+    /// changes; zero for every student who is not an ambassador, which keeps
+    /// every existing plan byte-identical.
+    static var reservedForeignSlots = 0
+
     // MARK: The loud 10-minute alert's shape
 
     /// How long before the due time the first of the three fires.
@@ -835,7 +845,7 @@ final class NotificationScheduler: ObservableObject {
         let buzzes = loudByItem
             .filter { !loudAlertsAsAlarms || buzzFallbackAssignmentIDs.contains($0.id) }
             .flatMap(\.requests)
-        let budget = Self.maxPending - buzzes.count
+        let budget = max(0, Self.maxPending - buzzes.count - Self.reservedForeignSlots)
 
         let requests: [UNNotificationRequest] = Self.allocate(byCourse, budget: budget, now: now).map { pair in
             let content = UNMutableNotificationContent()

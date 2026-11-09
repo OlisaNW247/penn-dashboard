@@ -100,6 +100,7 @@ export function ambassadorPage({ amb, stats, origin, flash }) {
     <p class="small muted">smooth · ${esc(school.name.toLowerCase())}</p>
     <h1>hey ${esc(firstName(amb.name))}</h1>
     <p class="muted">your page. nobody else sees this link. ${esc(amb.title)}.</p>
+    <p class="noprint"><a class="btn small" href="smooth://ambassador?code=${attr(amb.token)}">open in the smooth app</a> <span class="small muted">daily reminders + today's post, inside smooth</span></p>
     ${flash ? `<p class="ok">${esc(flash)}</p>` : ""}
     <nav class="tabs noprint">
       <a href="#numbers">numbers</a><a href="#messages">messages</a><a href="#drop">log a drop</a><a href="#posters">posters</a><a href="#feedback">feedback</a><a href="#start">checklist</a>

@@ -87,6 +87,10 @@ struct RootCore: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 Task { await updateGate.refresh() }
+                // Ambassador mode: put its daily reminder back if something
+                // cleared the pending queue, and fetch a fresh plan if the
+                // cached one is old. A no-op when nobody is signed in.
+                AmbassadorModel.shared.sceneBecameActive()
             }
         }
         // Applied at the root so the dashboard, onboarding and the update wall
@@ -106,6 +110,10 @@ struct RootCore: View {
         // dismissed by the `onChange` below.
         .onOpenURL { url in
             guard !isWalled else { return }
+            // `smooth://ambassador?code=…` from the ambassador's own web page
+            // ("open in the smooth app"): signs in with that code and opens
+            // Profile → ambassador. Anything else falls through to pairing.
+            if AmbassadorModel.shared.receive(url: url) { return }
             if let pending = state.pendingPairing(from: url) { pendingPairing = pending }
         }
         .onChange(of: updateGate.verdict) { _, verdict in

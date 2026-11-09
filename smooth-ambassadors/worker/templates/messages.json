@@ -1,5 +1,5 @@
 {
-  "_help": "Messages ambassadors copy with one tap. Edit freely. Placeholders: {link} = their tracked link for that channel, {school} = school name, {name} = ambassador first name. Keep it short and lowercase. Never ask for ratings or reviews here.",
+  "_help": "Messages ambassadors copy with one tap. Edit freely. Placeholders: {link} = their tracked link for that channel, {school} = school name, {name} = ambassador first name. Keep it short and lowercase. Never ask for ratings or reviews here. `daily` is the bank the app's daily reminder draws from: one per day, rotating, with the ambassador's chosen anonymous app on anon days. `anon` means fizz/sidechat/yik yak.",
   "messages": [
     {
       "key": "gc",
@@ -45,5 +45,63 @@
     "if someone asks whether you're involved, say yes, you're an ambassador. honesty does better than hype.",
     "posters only where the campus allows them. check the board's rules first. never over someone else's poster.",
     "reviews: if you like the app, an honest review helps. never ask for stars, never trade anything for a review. apple bans incentivised reviews and it would put the app at risk."
+  ],
+  "daily": [
+    {
+      "kind": "anon",
+      "text": "the number of people who found out about a gradescope deadline from the 'closed' page is too high. smooth lists every canvas + gradescope deadline and reminds you before they close. free, made by students. {link}"
+    },
+    {
+      "kind": "anon",
+      "text": "if you have 5 classes and 5 different places deadlines hide, smooth puts them in one list and pings you before anything closes. free. {link}"
+    },
+    {
+      "kind": "gc",
+      "text": "unrelated but useful: smooth pulls every canvas/gradescope deadline into one list with reminders. my friend at penn built it, free. {link}"
+    },
+    {
+      "kind": "anon",
+      "text": "psa: smooth is a free app that takes your canvas and gradescope deadlines and makes one list with reminders before things close. built by students at penn. {link}"
+    },
+    {
+      "kind": "anon",
+      "text": "real talk, what tanks grades isn't the hard stuff, it's the 5-point check-in you didn't know existed. smooth catches those. free, one list, reminders. {link}"
+    },
+    {
+      "kind": "ig",
+      "text": "the app that stopped me missing small deadlines: smooth. one list from canvas + gradescope, reminders before things close. free. link in sticker {link}"
+    },
+    {
+      "kind": "anon",
+      "text": "midweek reminder that smooth exists: every canvas + gradescope deadline, one list, reminders before they close. free, by students. {link}"
+    },
+    {
+      "kind": "anon",
+      "text": "anyone else find assignments through the 'you missed it' email? smooth puts every deadline from canvas and gradescope in one list and reminds you first. free. {link}"
+    },
+    {
+      "kind": "dm",
+      "text": "hey, you mentioned deadlines sneaking up. this is the app i meant, 2 min to connect canvas: {link} tell me if anything's confusing, i'll pass it to the people who built it."
+    },
+    {
+      "kind": "anon",
+      "text": "students at penn built an app that pulls canvas + gradescope deadlines into one list and reminds you before they close. it's free and i'm using it at {school}. {link}"
+    },
+    {
+      "kind": "gc",
+      "text": "for anyone drowning in tabs: smooth puts your canvas + gradescope deadlines in one list with reminders. free, built by students. {link}"
+    },
+    {
+      "kind": "anon",
+      "text": "smooth = one list of every canvas + gradescope deadline + a reminder before each one closes. free. that's the whole pitch. {link}"
+    },
+    {
+      "kind": "anon",
+      "text": "the 11:58pm moment is avoidable. smooth lists every canvas and gradescope deadline and reminds you before they close. free, by students. {link}"
+    },
+    {
+      "kind": "rest",
+      "text": "rest day. nothing to post. if someone asked about smooth this week, send them the dm follow-up instead."
+    }
   ]
 }

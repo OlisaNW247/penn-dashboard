@@ -1,5 +1,15 @@
 # App Review notes — paste into App Store Connect → App Review Information → Notes
 
+> **For the first build that carries ambassador mode (2026-11-09, `v11`):**
+> add this paragraph to the block, under PROFILE, so the code-gated screen
+> is disclosed (Guideline 2.3.1 forbids undocumented features). Replace the
+> code with a real one from the founder view before pasting.
+>
+> ```text
+> AMBASSADOR MODE
+> Profile > ambassador is for a handful of student volunteers who help spread the word about Smooth at their schools. It asks for a code we text them (no account, no password) and then shows a suggested post for the day, a copy button, a daily local reminder they can turn off, and their own link-open counts. It never asks for or rewards App Store ratings or reviews. To see it, enter this test code: <code>. Any other student sees only the row.
+> ```
+
 ## To paste for 3.2.0 (14), 2026-10-23 (the same block served 3.1.0 (13) on 2026-10-20)
 
 This is the block to paste for 3.2.0; nothing a reviewer meets changed

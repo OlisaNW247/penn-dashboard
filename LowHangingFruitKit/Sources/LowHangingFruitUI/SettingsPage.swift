@@ -22,6 +22,9 @@ import ServiceManagement
 struct SettingsPage: View {
     @EnvironmentObject var state: AppState
     @EnvironmentObject var scheduler: NotificationScheduler
+    /// Ambassador mode's state, for the one row below that opens it
+    /// (`ambassadorSection`). Shared for the reason its doc comment gives.
+    @ObservedObject private var ambassador = AmbassadorModel.shared
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @Environment(\.feedbackFormURL) private var feedbackFormURL
@@ -201,6 +204,7 @@ struct SettingsPage: View {
             ProfileClassesSection { showRecurring = true }
             ProfileNotificationsSection()
             iCloudSyncSection
+            ambassadorSection
 
             // Always last of the student's sections. The link is the live
             // notice's when the manifest has one, else the default form; no
@@ -359,6 +363,34 @@ struct SettingsPage: View {
             SmoothSectionHeader("reminders", accent: .smoothCobalt)
         }
         .smoothSectionBackground(.smoothTomato)
+    }
+
+    // MARK: Ambassador mode
+
+    /// One row: "ambassador mode", with who is signed in or "sign in", that
+    /// pushes `AmbassadorPage` (2026-11-09). A row and not the page's
+    /// controls inline, because the page is a whole feature (a code, a daily
+    /// post, numbers, a reminder schedule) and every other student, the ones
+    /// who are not one of the founders' friends, should see one quiet line
+    /// they can ignore. Sits after sync and before feedback: it is the last
+    /// per-student thing, and feedback stays last by the 2026-10-27 rule
+    /// (`VisualStructureTests` pins the order).
+    @ViewBuilder
+    private var ambassadorSection: some View {
+        Section {
+            NavigationLink(value: ContentView.DashRoute.ambassador) {
+                HStack {
+                    Text("ambassador mode")
+                    Spacer()
+                    Text(ambassador.statusLine)
+                        .font(.lhfSecondary(12, weight: .medium))
+                        .foregroundStyle(Color.smoothMuted)
+                }
+            }
+        } header: {
+            SmoothSectionHeader("ambassador", accent: .smoothCobalt)
+        }
+        .smoothSectionBackground(.smoothGrape)
     }
 
     // MARK: iCloud sync

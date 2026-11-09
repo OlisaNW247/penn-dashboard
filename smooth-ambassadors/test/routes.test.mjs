@@ -184,3 +184,43 @@ test("public leaderboard has schools only, no people", async () => {
   assert.equal(uva.linkOpensRecent, 1);
   assert.ok(uva.recent >= 2);
 });
+
+test("plan.json: today's post carries the ambassador's link and their anon app", async () => {
+  const r = await get(`/a/${token}/plan.json?anon=sidechat&tz=300`);
+  assert.equal(r.status, 200);
+  const p = await r.json();
+  assert.equal(p.school, "uva");
+  assert.equal(p.schoolName, "UVA");
+  assert.ok(p.today && typeof p.today.text === "string");
+  if (p.today.kind === "anon") {
+    assert.equal(p.today.channel, "sidechat");
+    assert.match(p.today.text, new RegExp(`https://example.test/a/${token}/s/sidechat`));
+  }
+  if (p.today.channel) assert.match(p.today.text, /example\.test\/a\//);
+  assert.equal(p.checklist.find((c) => c.key === "download").done, true);
+  assert.equal(p.messages.length, 6);
+  assert.ok(p.numbers.linkOpens >= 1);
+  assert.doesNotMatch(JSON.stringify(p), /555/);
+  // The same day gives the same post; the next day moves on.
+  const again = await (await get(`/a/${token}/plan.json?anon=sidechat&tz=300`)).json();
+  assert.equal(again.today.dayIndex, p.today.dayIndex);
+});
+
+test("the app's posts get JSON instead of a redirect", async () => {
+  const r = await mf.dispatchFetch(`https://example.test/a/${token}/post`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ channel: "sidechat", place: "daily" }),
+  });
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { ok: true, message: "logged. thank you." });
+  const me = await (await get(`/a/${token}/me.json`)).json();
+  assert.equal(me.posts, 2);
+});
+
+test("every daily entry has a kind the plan understands", async () => {
+  const m = JSON.parse(readFileSync(join(root, "worker/templates/messages.json"), "utf8"));
+  assert.ok(m.daily.length >= 10);
+  for (const d of m.daily) assert.ok(["anon", "gc", "ig", "dm", "rest"].includes(d.kind), d.kind);
+  assert.ok(m.daily.filter((d) => d.kind === "anon").length >= 7);
+});

@@ -274,6 +274,12 @@ final class NotificationResponseDelegate: NSObject, UNUserNotificationCenterDele
         let arrivedAt = Date()
         var buzzID: String?
         var deposit: LoudAlertAction?
+        // Ambassador mode's daily reminder: a plain tap on it opens the app on
+        // Profile → ambassador. Decided from the identifier prefix alone,
+        // pure and `nonisolated`, like everything else read here; the flag is
+        // raised in the main-actor task below with the others.
+        let ambassadorTap = response.actionIdentifier == UNNotificationDefaultActionIdentifier
+            && AmbassadorReminders.isAmbassadorIdentifier(response.notification.request.identifier)
 
         // A tap on a loud buzz's body opens the app as it always has, and now
         // also raises the takeover. A tap on one of its buttons does not: the
@@ -305,6 +311,9 @@ final class NotificationResponseDelegate: NSObject, UNUserNotificationCenterDele
             }
             if let pendingAction {
                 NotificationActionInbox.shared.deposit(pendingAction, arrivedAt: arrivedAt)
+            }
+            if ambassadorTap {
+                AmbassadorModel.shared.noteReminderTapped()
             }
             done()
         }

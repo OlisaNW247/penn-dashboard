@@ -13,7 +13,10 @@
 //   /api/leaderboard            public, school level only
 
 import qrcode from "qrcode-generator";
-import { CHANNELS, isValidCombo, scanKey } from "./catalog.js";
+import { CHANNELS, SCHOOLS, isValidCombo, scanKey } from "./catalog.js";
+import messages from "./templates/messages.json";
+import checklist from "./templates/checklist.json";
+import { ambassadorLinks } from "./digest.js";
 import { html } from "./html.js";
 import {
   ambassadorByToken,
@@ -26,6 +29,8 @@ import {
   addFeedback,
   schoolLeaderboard,
   founderStats,
+  dailyPost,
+  dayIndex,
   recordReminder,
   markReplied,
   markFeedbackSeen,
@@ -44,10 +49,64 @@ function origin(request, env) {
   return env.PUBLIC_ORIGIN || new URL(request.url).origin;
 }
 
-function redirectBack(path, flash) {
+function wantsJSON(request) {
+  const accept = request.headers.get("accept") || "";
+  const ct = request.headers.get("content-type") || "";
+  return accept.includes("application/json") || ct.includes("application/json");
+}
+
+// Forms get a redirect back to the page; the app gets JSON.
+function redirectBack(path, flash, request) {
+  if (request && wantsJSON(request)) return Response.json({ ok: true, message: flash || null });
   const u = new URL(path, "https://x");
   if (flash) u.searchParams.set("ok", flash);
   return new Response(null, { status: 303, headers: { location: u.pathname + u.search } });
+}
+
+// What the app shows: the ambassador's own numbers, today's post with their
+// link in it, the checklist, the tips. Never anyone else's data.
+async function planPayload(env, amb, url, pub) {
+  const stats = await ambassadorStats(env, amb);
+  const links = ambassadorLinks(pub, amb.token);
+  const anonApp = url.searchParams.get("anon") || "fizz";
+  const tz = parseInt(url.searchParams.get("tz") || "300", 10);
+  const idx = dayIndex(new Date(), Number.isFinite(tz) ? tz : 300);
+  const school = SCHOOLS[amb.school];
+  const fill = (t, ch) => t.replace(/\{(\w+)\}/g, (_, k) =>
+    ({ link: ch ? links.share(ch) : links.page, school: school.name.toLowerCase(), name: amb.name.split(/\s+/)[0] })[k] ?? `{${k}}`);
+  const today = dailyPost({ daily: messages.daily, dayIndex: idx, anonApp });
+  const paused = amb.paused_until && new Date(amb.paused_until) > new Date();
+  return {
+    name: amb.name,
+    school: amb.school,
+    schoolName: school.name,
+    title: amb.title,
+    status: amb.status,
+    pausedUntil: paused ? amb.paused_until : null,
+    page: links.page,
+    appStore: "https://apps.apple.com/us/app/smooth-for-students/id6783911002",
+    numbers: {
+      linkOpens: stats.linkOpens + stats.posterOpens,
+      linkOpensRecent: stats.linkOpensRecent + stats.posterOpensRecent,
+      schoolScans: stats.schoolScansTotal,
+      schoolScansRecent: stats.schoolScansRecent,
+      drops: stats.drops,
+      posts: stats.posts,
+      days: stats.days,
+    },
+    today: today && {
+      dayIndex: idx,
+      kind: today.kind,
+      channel: today.channel,
+      platform: today.platform,
+      text: fill(today.text, today.channel),
+    },
+    messages: messages.messages.map((m) => ({ key: m.key, label: m.label, channel: m.channel, text: fill(m.text, m.channel) })),
+    checklist: checklist.steps.map((s) => ({ key: s.key, label: s.label, hint: s.hint, done: stats.checked.has(s.key) })),
+    tips: messages.posting_tips,
+    channels: CHANNELS,
+    generatedAt: new Date().toISOString(),
+  };
 }
 
 async function form(request) {
@@ -108,6 +167,9 @@ async function ambassadorRoutes(request, env, parts, url) {
       return appStoreRedirect(env, `${key.replace("/", "-")}-a${amb.id}`);
     }
     if (action === "stickers") return html(stickersPage({ amb, origin: pub, qrSvg }));
+    if (action === "plan.json") {
+      return Response.json(await planPayload(env, amb, url, pub), { headers: { "cache-control": "no-store" } });
+    }
     if (action === "me.json") {
       const s = await ambassadorStats(env, amb);
       return Response.json({ name: amb.name, school: amb.school, ...s, checked: [...s.checked] }, { headers: { "cache-control": "no-store" } });
@@ -121,23 +183,23 @@ async function ambassadorRoutes(request, env, parts, url) {
       case "drop":
         if (!isValidCombo(amb.school, f.design)) return new Response("bad design", { status: 400 });
         await logActivity(env, amb, { kind: "drop", design: f.design, place: f.place, copies: f.copies });
-        return redirectBack(base + "#drop", "logged. thank you.");
+        return redirectBack(base + "#drop", "logged. thank you.", request);
       case "post":
         if (!CHANNELS[f.channel]) return new Response("bad channel", { status: 400 });
         await logActivity(env, amb, { kind: "post", channel: f.channel, place: f.place, note: f.note });
-        return redirectBack(base + "#drop", "logged. thank you.");
+        return redirectBack(base + "#drop", "logged. thank you.", request);
       case "check":
         if (!f.step) return new Response("bad step", { status: 400 });
         await setChecklist(env, amb, String(f.step).slice(0, 40), f.done === "1" || f.done === 1 || f.done === true);
-        return redirectBack(base + "#start");
+        return redirectBack(base + "#start", null, request);
       case "feedback":
         await addFeedback(env, amb, f.body);
-        return redirectBack(base + "#feedback", "sent. thank you, seriously.");
+        return redirectBack(base + "#feedback", "sent. thank you, seriously.", request);
       case "pause": {
         const weeks = parseInt(f.weeks, 10) || 0;
         const until = weeks > 0 ? new Date(Date.now() + weeks * 7 * 86400000).toISOString() : "";
         await updateAmbassador(env, amb.id, { paused_until: until });
-        return redirectBack(base, weeks > 0 ? `paused for ${weeks} weeks.` : "reminders back on.");
+        return redirectBack(base, weeks > 0 ? `paused for ${weeks} weeks.` : "reminders back on.", request);
       }
       default:
         return new Response("not found", { status: 404 });

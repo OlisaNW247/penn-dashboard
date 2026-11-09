@@ -37,6 +37,10 @@ struct ContentView: View {
     /// Where taps on a loud alert's buttons wait for this view
     /// (`NotificationResponseRouter`); drained by `takeLoudAlertActions()`.
     @ObservedObject private var actionInbox = NotificationActionInbox.shared
+    /// Ambassador mode's "open the page" signal: set by a tap on the daily
+    /// reminder (`NotificationResponseRouter`) or a `smooth://ambassador`
+    /// link (`RootView`), consumed here by pushing Profile → ambassador.
+    @ObservedObject private var ambassador = AmbassadorModel.shared
     /// Set in `.onAppear` once `vm` holds the dashboard's items, and read by
     /// `takeLoudAlertActions()`. Until then nothing is taken, because a tap
     /// handled against an empty `vm.items` completes nothing and re-plans the
@@ -69,6 +73,10 @@ struct ContentView: View {
         case grades
         case report(courseID: String, courseName: String)
         case assistant
+        /// Profile → ambassador mode (2026-11-09). A route of its own so a
+        /// reminder tap can land on it (`path = [.profile, .ambassador]`)
+        /// with Profile underneath for the back button.
+        case ambassador
     }
 
     /// How often to silently re-sync while the dashboard is open. 5 minutes is a
@@ -206,9 +214,17 @@ struct ContentView: View {
                 case let .report(courseID, courseName):
                     GradeReportView(store: state.gradeWatcher, courseID: courseID, courseName: courseName)
                         .environmentObject(state)
+                case .ambassador:
+                    AmbassadorPage()
+                        .environmentObject(state)
                 }
             }
         }
+        // A reminder tap or an ambassador link: land on the page, with
+        // Profile under it. Read at appearance too, because a cold launch
+        // from the notification sets the flag before this view exists.
+        .onAppear { openAmbassadorIfAsked() }
+        .onChange(of: ambassador.pendingOpen) { _, _ in openAmbassadorIfAsked() }
         // Class renames live in AppState but are read by the cards, which are
         // deliberately AppState-free so they still render in previews.
         .environment(\.courseNameOverrides, state.courseNameOverrides)
@@ -415,6 +431,12 @@ struct ContentView: View {
             vm.reload(preservingEdits: true)
             rescheduleNotifications()
         }
+    }
+
+    private func openAmbassadorIfAsked() {
+        guard ambassador.pendingOpen else { return }
+        ambassador.consumePendingOpen()
+        path = [.profile, .ambassador]
     }
 
     /// Reads `AppState.isReconnecting`; the only write it makes is closing the

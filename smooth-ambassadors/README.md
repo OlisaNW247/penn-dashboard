@@ -48,7 +48,8 @@ New:
 | `/a/{token}/p/{design}` | public (their QR stickers) | poster code, counts for **the school and them**, redirects |
 | `/a/{token}/stickers` | ambassador | printable QR sheet, one per design |
 | `/a/{token}/me.json` | ambassador | their numbers only |
-| `POST /a/{token}/drop` `post` `check` `feedback` `pause` | ambassador | forms on their page |
+| `/a/{token}/plan.json?anon=fizz&tz=300` | the Smooth app (ambassador mode) | today's post, numbers, checklist, messages. `anon` picks their anonymous app, `tz` is the phone's UTC offset in minutes |
+| `POST /a/{token}/drop` `post` `check` `feedback` `pause` | ambassador | forms on their page; with `Accept: application/json` (the app) they answer JSON instead of redirecting |
 | `/f/{FOUNDER_TOKEN}` | founders | roster, add ambassador, performance by school / design / ambassador, digest generator, campus moments, feedback |
 | `/f/{FOUNDER_TOKEN}/export.json` | founders | full export (backup) |
 | `/api/leaderboard` | public | school totals only. never a person |
