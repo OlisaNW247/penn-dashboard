@@ -34,7 +34,8 @@ insert into auth.users (id) values ('c3333333-3333-3333-3333-333333333333');
 insert into public.agent_pending_auth
   (id, user_code, match_number, match_choices, nonce_hash, params, client_name, status, expires_at)
 values
-  ('sw-old', 'WXYZBCDF', 1, '{1,2,3}', 'n', '{}'::jsonb, 'c', 'pending', now() - interval '1 minute'),
+  ('sw-old', 'WXYZBCDF', 1, '{1,2,3}', 'n', '{}'::jsonb, 'c', 'pending', now() - interval '3 minutes'),
+  ('sw-grace', 'QRSTVWXZ', 1, '{1,2,3}', 'n', '{}'::jsonb, 'c', 'pending', now() - interval '30 seconds'),
   ('sw-live', 'GHJKLMNP', 1, '{1,2,3}', 'n', '{"clientId":"smc_used_by_pending"}'::jsonb, 'c', 'pending', now() + interval '5 minutes');
 
 insert into public.agent_connections (id, user_id, client_id, client_name, scopes) values
@@ -63,6 +64,7 @@ begin
   -- sw-old pending, sw-tok-old, sw-rate-old, smc_unused_old (k1/k2 rows are fresh).
   if n <> 4 then raise exception 'sweep removed %, expected 4', n; end if;
   if exists (select 1 from public.agent_pending_auth where id = 'sw-old') then raise exception 'expired pending survived'; end if;
+  if not exists (select 1 from public.agent_pending_auth where id = 'sw-grace') then raise exception 'row 30 s past expiry was swept (live code could die)'; end if;
   if not exists (select 1 from public.agent_pending_auth where id = 'sw-live') then raise exception 'live pending was removed'; end if;
   if exists (select 1 from public.agent_tokens where hash = 'sw-tok-old') then raise exception 'old token survived'; end if;
   if (select count(*) from public.agent_tokens where hash in ('sw-tok-recent', 'sw-tok-live')) <> 2 then raise exception 'recent/live token removed'; end if;

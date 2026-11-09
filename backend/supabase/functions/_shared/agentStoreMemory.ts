@@ -211,7 +211,8 @@ export class MemoryAgentStore implements AgentStore {
     const day = 24 * 60 * 60 * 1000;
     let n = 0;
     for (const [id, row] of this.pending) {
-      if (Date.parse(row.expiresAt) <= now) {
+      // Two minutes' margin: see PENDING_SWEEP_MARGIN_MS / AUTH_CODE_TTL_MS.
+      if (Date.parse(row.expiresAt) <= now - 2 * 60_000) {
         this.pending.delete(id);
         n++;
       }

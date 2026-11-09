@@ -96,13 +96,32 @@ const HOUR = 3600;
 // 20-letter alphabet (2.6e10 codes) live for five minutes, so 20 tries an
 // hour is nothing against that, and a student typing by hand never needs
 // more than a few.
+//
+// Why `/authorize` is per ip and `/token` and `/register` are not: the
+// browser that opens `/authorize` is the student's own, so its address is
+// one person's. `/token` and `/register` are called server to server by a
+// hosted connector (claude.ai and the like) from a small set of shared
+// egress addresses, so a per-ip cap there would throttle every student on
+// that connector at once. `/token` is therefore limited per subject (the
+// connection behind a refresh token, the one authorization code being
+// redeemed), with a per-ip ceiling high enough never to bind real traffic and
+// there only as a DoS backstop. `/register` has no subject yet; its per-ip
+// number is generous for the same reason.
 const LIMITS = {
   authorize: 60,
-  register: 10,
-  token: 60,
+  register: 60,
+  tokenIP: 1200,
+  tokenConnection: 30,
+  tokenCode: 5,
   lookup: 20,
   approve: 10,
 } as const;
+/** A pending row is swept only this long past its own `expires_at`.
+ *  `status?go=1` on a row seen just before expiry mints a code valid for
+ *  `AUTH_CODE_TTL_MS` more, so deleting the row at `expires_at` could kill a
+ *  live code. Twice that TTL; keep in step with the SQL sweeper
+ *  (`agent_sweep_expired`) if the TTL changes. */
+export const PENDING_SWEEP_MARGIN_MS = 2 * 60_000;
 /** One `/authorize` in about fifty (5 of 256 byte values) sweeps. */
 const SWEEP_BELOW = 5;
 const USER_CODE_ATTEMPTS = 5;
@@ -510,7 +529,7 @@ async function mintTokens(
 }
 
 async function token(req: Request, ctx: Ctx): Promise<Response> {
-  if (!(await withinLimit(ctx, `token:${clientIP(req)}`, LIMITS.token))) return tooMany("token_rate");
+  if (!(await withinLimit(ctx, `token-ip:${clientIP(req)}`, LIMITS.tokenIP))) return tooMany("token_rate");
   const form = await readForm(req);
   if (!form) return tokenError("invalid_request", "send application/x-www-form-urlencoded");
   const grantType = form.get("grant_type");
@@ -529,7 +548,11 @@ async function codeGrant(form: URLSearchParams, ctx: Ctx): Promise<Response> {
   }
   if (!looksLikeToken(code) || tokenKindOf(code) !== "code") return tokenError("invalid_grant", "unknown code");
 
-  const row = await ctx.deps.store.consumeAuthCode(await hashToken(code));
+  // Per code, before it is burnt: five tries at one code is all a legitimate
+  // client needs (it redeems once), and it stops guessing at a single code.
+  const codeHash = await hashToken(code);
+  if (!(await withinLimit(ctx, `token-code:${codeHash}`, LIMITS.tokenCode))) return tooMany("token_code_rate");
+  const row = await ctx.deps.store.consumeAuthCode(codeHash);
   if (!row || row.userId === null) return tokenError("invalid_grant", "unknown code");
 
   const resource = form.get("resource");
@@ -571,6 +594,9 @@ async function refreshGrant(form: URLSearchParams, ctx: Ctx): Promise<Response> 
   }
   const connection = await ctx.deps.store.selectConnection(old.connectionId);
   if (!connection || connection.revokedAt !== null) return tokenError("invalid_grant", "unknown refresh token");
+  // Per connection, and only now that the token is known and live: an unknown
+  // or expired token is `invalid_grant` above and never counts.
+  if (!(await withinLimit(ctx, `token-conn:${connection.id}`, LIMITS.tokenConnection))) return tooMany("token_connection_rate");
   // A public client sends its client_id with the refresh; when it does, it
   // has to be the client the connection was made for.
   const refreshClientId = form.get("client_id");
@@ -652,9 +678,12 @@ async function phone(req: Request, ctx: Ctx): Promise<Response> {
         throw new HttpError(400, "bad_request");
       }
       if (!liveForPhone(row, ctx)) return notFound();
-      // Binds the request to the student who has now seen it; `deny` asks
-      // for exactly this. Last lookup wins: first-wins would let a stranger
-      // who guessed a code lock the real student out of denying it.
+      // Binds the request to the student who has now seen it; `deny` and
+      // `approve` ask for exactly this. Last lookup wins: first-wins would let
+      // a stranger who guessed a code lock the real student out for good. The
+      // cost of last-wins is that a stranger who looks the code up after the
+      // student takes the binding, and the student's approve or deny answers
+      // 404 until they look it up again, which the phone's flow does anyway.
       await store.claimPending(row.id, userId);
       return json(200, {
         id: row.id,

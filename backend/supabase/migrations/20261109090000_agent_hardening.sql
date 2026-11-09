@@ -66,7 +66,7 @@ end;
 $$;
 
 -- Deletes what nothing can use any more and returns how many rows went:
--- pending authorizations past their five minutes (which also covers
+-- pending authorizations two minutes past their five (which also covers
 -- consumed and denied ones, whose codes expire inside that window), tokens
 -- of either kind a day past their expiry (the day keeps a just-expired
 -- refresh token answerable as "expired" rather than "unknown" for
@@ -82,7 +82,11 @@ declare
   v_total integer := 0;
   v_n integer;
 begin
-  delete from public.agent_pending_auth where expires_at <= now();
+  -- Not at `expires_at` itself: `status?go=1` on a row seen just before expiry
+  -- mints an authorization code valid for AUTH_CODE_TTL_MS (60 s,
+  -- _shared/agentTokens.ts) more, and deleting the row would kill it. The
+  -- two minute margin is twice that TTL; change both together.
+  delete from public.agent_pending_auth where expires_at <= now() - interval '2 minutes';
   get diagnostics v_n = row_count;
   v_total := v_total + v_n;
 

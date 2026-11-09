@@ -539,21 +539,52 @@ Deno.test("/authorize is limited to 60 an hour per ip, then 429 slow_down", asyn
   assert.strictEqual((await a(authorizeQuery())).status, 200);
 });
 
-Deno.test("/register 10, /token 60 an hour per ip; cf-connecting-ip and unknown are buckets", async () => {
+Deno.test("/register is 60 an hour per ip; cf-connecting-ip and unknown are buckets", async () => {
   const h = harness();
   const body = JSON.stringify({ client_name: "X", redirect_uris: ["https://x.test/cb"], token_endpoint_auth_method: "none" });
   const reg = (headers: Record<string, string>) =>
     h.call("/register", { method: "POST", headers: { "content-type": "application/json", ...headers }, body });
-  for (let i = 0; i < 10; i++) assert.notStrictEqual((await reg({ "cf-connecting-ip": "198.51.100.1" })).status, 429);
+  for (let i = 0; i < 60; i++) assert.notStrictEqual((await reg({ "cf-connecting-ip": "198.51.100.1" })).status, 429);
   assert.strictEqual((await reg({ "cf-connecting-ip": "198.51.100.1" })).status, 429);
   assert.notStrictEqual((await reg({ "cf-connecting-ip": "198.51.100.2" })).status, 429);
   // No header at all shares one "unknown" bucket.
-  for (let i = 0; i < 10; i++) await reg({});
+  for (let i = 0; i < 60; i++) await reg({});
   assert.strictEqual((await reg({})).status, 429);
-  for (let i = 0; i < 60; i++) assert.notStrictEqual((await form(h, "/token", { grant_type: "bad" })).status, 429);
-  const over = await form(h, "/token", { grant_type: "bad" });
+});
+
+Deno.test("/token: a shared egress ip is not throttled by students; per code 5, per connection 30, ip ceiling 1200", async () => {
+  const h = harness();
+  // Fifty different codes from one ip (a hosted connector): all answered, none 429.
+  for (let i = 0; i < 50; i++) {
+    const r = await form(h, "/token", tokenFields("smt_c_" + String(i).padStart(43, "x")));
+    assert.strictEqual(r.status, 400);
+  }
+  // Guessing one code: the sixth try is 429.
+  const guess = "smt_c_" + "g".repeat(43);
+  for (let i = 0; i < 5; i++) assert.strictEqual((await form(h, "/token", tokenFields(guess))).status, 400);
+  const over = await form(h, "/token", tokenFields(guess));
   assert.strictEqual(over.status, 429);
+  assert.strictEqual(over.headers.get("retry-after"), "60");
   assert.deepStrictEqual(await over.json(), { error: "slow_down" });
+
+  // Refresh: unknown tokens never count; a real connection gets 30.
+  for (let i = 0; i < 40; i++) {
+    const r = await form(h, "/token", { grant_type: "refresh_token", refresh_token: "smt_r_" + String(i).padStart(43, "y") });
+    assert.strictEqual(r.status, 400);
+  }
+  const { code } = await pairAndGetCode(h);
+  let refresh = (await (await form(h, "/token", tokenFields(code))).json()).refresh_token as string;
+  for (let i = 0; i < 30; i++) {
+    const r = await form(h, "/token", { grant_type: "refresh_token", refresh_token: refresh });
+    assert.strictEqual(r.status, 200);
+    refresh = (await r.json()).refresh_token;
+  }
+  assert.strictEqual((await form(h, "/token", { grant_type: "refresh_token", refresh_token: refresh })).status, 429);
+
+  // The ip ceiling is a backstop: 1200 an hour from one ip, then 429 for anything.
+  const h2 = harness();
+  for (let i = 0; i < 1200; i++) await form(h2, "/token", { grant_type: "password" });
+  assert.strictEqual((await form(h2, "/token", { grant_type: "password" })).status, 429);
 });
 
 Deno.test("/phone lookup 20 an hour and approve 10 an hour per student", async () => {
@@ -634,4 +665,15 @@ Deno.test("approve needs a lookup by the same student, like deny", async () => {
   assert.strictEqual((await phone(h, pick, "student-1")).status, 404);
   assert.deepStrictEqual(await (await h.call(`/status?p=${row.id}`, { headers: { cookie } })).json(), { state: "pending" });
   assert.deepStrictEqual(await (await phone(h, pick, "student-2")).json(), { approved: true, clientName: "Claude" });
+});
+
+Deno.test("sweep keeps a pending row until two minutes past its expiry", async () => {
+  const h = harness();
+  h.store.clock = () => new Date(h.clock.ms);
+  await startFlow(h);
+  const row = [...h.store.pending.values()][0];
+  h.clock.ms = Date.parse(row.expiresAt) + 30_000;
+  assert.strictEqual(await h.store.sweep(), 0);
+  h.clock.ms = Date.parse(row.expiresAt) + 3 * 60_000;
+  assert.strictEqual(await h.store.sweep(), 1);
 });
