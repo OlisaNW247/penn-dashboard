@@ -1,0 +1,23 @@
+{
+  "name": "smooth-ambassadors",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Smooth for Students: poster scan tracker + campus ambassador system (Cloudflare Worker + D1)",
+  "scripts": {
+    "dev": "wrangler dev --local --port 8787",
+    "test": "node --test test/*.test.mjs",
+    "check": "node scripts/check-no-secrets.mjs",
+    "migrate:local": "wrangler d1 migrations apply smooth-scans --local",
+    "migrate:remote": "wrangler d1 migrations apply smooth-scans --remote",
+    "backup:remote": "wrangler d1 export smooth-scans --remote --output backups/$(date +%Y%m%d-%H%M%S).sql",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "miniflare": "^4.0.0",
+    "wrangler": "^4.0.0"
+  },
+  "dependencies": {
+    "qrcode-generator": "^2.0.4"
+  }
+}

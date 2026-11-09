@@ -1,0 +1,43 @@
+# Deploys on push to main. Pick ONE of the two jobs below and delete the other
+# once the hosting question is settled (see docs/deploy.md).
+name: deploy
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  # Option A: mirror this repository into the ChatGPT Sites git repository
+  # that serves smooth-poster-scans.jazzysmile20.chatgpt.site. Needs two
+  # repository secrets: SITES_GIT_URL (ssh url) and SITES_DEPLOY_KEY (private
+  # key with write access there). Skips itself until they exist.
+  mirror-to-sites:
+    runs-on: ubuntu-latest
+    if: ${{ vars.DEPLOY_MODE == 'mirror' }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - run: npm ci && npm test
+      - name: push to sites
+        env:
+          SITES_GIT_URL: ${{ secrets.SITES_GIT_URL }}
+          SITES_DEPLOY_KEY: ${{ secrets.SITES_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh && printf '%s\n' "$SITES_DEPLOY_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$(echo "$SITES_GIT_URL" | sed -E 's#^[^@]*@([^:/]+).*#\1#')" >> ~/.ssh/known_hosts 2>/dev/null || true
+          git remote add sites "$SITES_GIT_URL"
+          git push sites HEAD:main
+  # Option B: deploy straight to a Cloudflare account with wrangler. Only if
+  # the Worker is ever moved off ChatGPT Sites. Needs CLOUDFLARE_API_TOKEN and
+  # CLOUDFLARE_ACCOUNT_ID secrets and the real database_id in wrangler.toml.
+  wrangler:
+    runs-on: ubuntu-latest
+    if: ${{ vars.DEPLOY_MODE == 'wrangler' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci && npm test
+      - run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

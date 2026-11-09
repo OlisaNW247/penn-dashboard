@@ -1,0 +1,10 @@
+{
+  "_help": "Onboarding checklist shown on each ambassador's page. Keep it to 5 or 6 steps. `key` is stored in D1, so don't rename a key once people have checked it.",
+  "steps": [
+    { "key": "download", "label": "download smooth and connect canvas", "hint": "takes about 2 minutes. if anything is confusing, tell us below, that's the most useful feedback there is." },
+    { "key": "feedback", "label": "send one piece of feedback", "hint": "anything. what confused you, what you'd change, what you liked." },
+    { "key": "first-post", "label": "drop one message in one chat", "hint": "pick a message below, copy it, paste it. that's it. your link in it is yours, so you'll see the opens here." },
+    { "key": "anon", "label": "post once on fizz / sidechat / yik yak", "hint": "once. if it gets buried, that's fine." },
+    { "key": "poster", "label": "optional: put up a poster or two", "hint": "only where your campus allows it. log it below so we know where they are." }
+  ]
+}

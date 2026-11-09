@@ -1,0 +1,20 @@
+# Local/dev config. In production the Worker is the ChatGPT Sites project
+# (appgprj_6aebbfcc56e48191a690c176014ceddf) on
+# smooth-poster-scans.jazzysmile20.chatgpt.site, which already binds D1 as
+# `DB`. Keep the binding name and the entry path identical so the same code
+# runs in both places.
+name = "smooth-poster-scans"
+main = "worker/index.js"
+compatibility_date = "2026-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "smooth-scans"
+database_id = "00000000-0000-0000-0000-000000000000"   # replace with the real id when deploying from here
+migrations_dir = "migrations"
+
+[vars]
+# Public origin the printed QR codes encode. Used to build ambassador links.
+PUBLIC_ORIGIN = "https://smooth-poster-scans.jazzysmile20.chatgpt.site"
+
+# Secrets (never in git): FOUNDER_TOKEN. Locally: copy .dev.vars.example to .dev.vars.

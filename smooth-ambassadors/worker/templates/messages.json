@@ -1,0 +1,49 @@
+{
+  "_help": "Messages ambassadors copy with one tap. Edit freely. Placeholders: {link} = their tracked link for that channel, {school} = school name, {name} = ambassador first name. Keep it short and lowercase. Never ask for ratings or reviews here.",
+  "messages": [
+    {
+      "key": "gc",
+      "channel": "gc",
+      "label": "group chat",
+      "text": "random but a friend of mine at penn built an app that pulls all your canvas/gradescope deadlines into one place and reminds you before stuff closes. it's free, i've been using it. {link}"
+    },
+    {
+      "key": "anon",
+      "channel": "fizz",
+      "label": "fizz / sidechat / yik yak",
+      "text": "psa for anyone who keeps finding out about assignments at 11:58pm: smooth puts every canvas + gradescope deadline in one list and pings you before they close. made by students, free. {link}"
+    },
+    {
+      "key": "ig",
+      "channel": "ig",
+      "label": "instagram story",
+      "text": "if you miss deadlines because they're buried in canvas, try smooth. one list, reminders before things close. free, built by students. link in the sticker {link}"
+    },
+    {
+      "key": "dm",
+      "channel": "dm",
+      "label": "dm follow-up",
+      "text": "hey! you mentioned deadlines sneaking up on you. this is the app i was talking about, takes 2 min to connect canvas: {link} tell me if anything's confusing and i'll pass it on to the people who built it."
+    },
+    {
+      "key": "pitch",
+      "channel": "dm",
+      "label": "in person (say it, don't paste it)",
+      "text": "it's called smooth. it pulls your canvas and gradescope deadlines into one list and reminds you before they close. my friend at penn built it, it's free. want the link?"
+    },
+    {
+      "key": "club",
+      "channel": "gc",
+      "label": "club or org chat",
+      "text": "not club related but useful: smooth puts all your canvas/gradescope deadlines in one place with reminders. free, built by students at penn, i'm helping them get it to {school}. {link}"
+    }
+  ],
+  "posting_tips": [
+    "post once per place. if it gets downvoted or removed, let it go. don't repost the same thing.",
+    "say it like you'd say it. edit the message so it sounds like you.",
+    "on anonymous apps, no links in the first post if the app strips them. put 'smooth for students' and people can search it.",
+    "if someone asks whether you're involved, say yes, you're an ambassador. honesty does better than hype.",
+    "posters only where the campus allows them. check the board's rules first. never over someone else's poster.",
+    "reviews: if you like the app, an honest review helps. never ask for stars, never trade anything for a review. apple bans incentivised reviews and it would put the app at risk."
+  ]
+}

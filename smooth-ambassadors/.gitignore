@@ -1,0 +1,14 @@
+node_modules/
+.wrangler/
+.dev.vars
+*.sqlite
+*.sqlite3
+*.db
+backups/*
+!backups/.gitkeep
+# roster exports, contact lists, anything with people in it
+*.csv
+roster*
+contacts*
+.env
+.DS_Store
