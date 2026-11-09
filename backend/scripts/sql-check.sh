@@ -23,7 +23,10 @@ P -f /m/20261105090000_finish_fact_extraction.sql >/dev/null 2>&1 || { echo "FAI
 echo "finish_fact_extraction migration: idempotent"
 P -f /m/20261108090000_agent_connection.sql >/dev/null 2>&1 || { echo "FAIL: agent_connection migration is not idempotent"; exit 1; }
 echo "agent_connection migration: idempotent"
+P -f /m/20261109090000_agent_hardening.sql >/dev/null 2>&1 || { echo "FAIL: agent_hardening migration is not idempotent"; exit 1; }
+echo "agent_hardening migration: idempotent"
 P -f /t/rls.test.sql 2>&1 | tail -1 || exit 1
 P -f /t/claim_fact_extraction.test.sql 2>&1 | grep -E 'passed|ERROR' | tail -1
 P -f /t/finish_fact_extraction.test.sql 2>&1 | grep -E 'passed|ERROR' | tail -1
 P -f /t/agent_connection.test.sql 2>&1 | grep -E 'passed|ERROR' | tail -1
+P -f /t/agent_hardening.test.sql 2>&1 | grep -E 'passed|ERROR' | tail -1

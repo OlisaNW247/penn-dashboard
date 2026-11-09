@@ -1435,7 +1435,11 @@ public (`none`); PKCE `S256` is mandatory; there are no client secrets.
      cannot pick the right number. Otherwise the row is bound to the student:
      `200 { "approved": true, "clientName" }`; a row someone else decided in the
      meantime is `409 already_decided`.
-   - `deny { "c": id }`: `200 { "denied": bool }`.
+   - `deny { "c": id }`: `200 { "denied": bool }`. Only for a request this
+     student has looked up (`lookup` records the caller as `claimed_by`, last
+     lookup wins); an unknown id, or one nobody or another student looked up,
+     is the same `404 not_found`. The phone already does lookup first, so its
+     wire is unchanged.
    - `list`: `{ "connections": [{ id, clientName, clientHost, scopes,
      createdAt, lastUsedAt }] }`, the caller's live connections.
    - `revoke { "id" }`: `200 { "revoked": bool }`, only the caller's own.
@@ -1443,6 +1447,20 @@ public (`none`); PKCE `S256` is mandatory; there are no client secrets.
 
    `lookup` and `approve` answer one `404 { "error": "not_found" }` for unknown,
    expired and already-decided ids, so ids cannot be probed.
+
+   **Rate limits** (`agent_rate_check`, Postgres, one hour windows, keys hold a
+   sha256 of the address or user id): `/authorize` 60 and `/token` 60 per ip,
+   `/register` 10 per ip, `/phone` `lookup` 20 and `approve` 10 per student.
+   The ip is the first `x-forwarded-for` entry (the connector front forwards
+   it; Vercel sets it), else `cf-connecting-ip`, else one shared "unknown".
+   Over the limit: `429 { "error": "slow_down" }` with `Retry-After: 60`
+   (RFC 6749 §5.2 has no rate-limit code; `slow_down` is RFC 8628's). A check
+   that throws fails open.
+
+   **Sweeping** (`agent_sweep_expired`): about one `/authorize` in fifty
+   deletes expired pending rows, tokens a day past expiry, rate rows idle a
+   day and registered clients older than 30 days that no connection or pending
+   row names. Failure is ignored; the log line carries the count only.
 
 ### Tokens
 
@@ -1728,21 +1746,18 @@ a 502 on a real phone while a 53-word one succeeded.
   custom URL scheme can in principle hand to another app on the phone. It is
   useless without the phone's own approval and token (`claim`), and links
   only the claiming phone's account.
-- The agent connection has no rate limits on `/authorize`, `/register`, the
-  `/phone` `lookup` or `/token`. Each `/authorize` stores a row and fetches a
-  client-chosen https URL (guarded: public addresses, 5 s, 64 KB), and each
-  `/register` stores a row; the five-minute expiry bounds what is live but not
-  what an abuser can create.
-- `/phone` `deny` accepts any pending id from any signed-in student. Ids are 128
-  random bits and cannot be listed, so this needs an id the attacker already
-  holds; `lookup` and `approve` answer one `404` for unknown and decided ids.
-- Nothing sweeps expired pending rows or tokens yet. `deleteExpiredPending` and
-  `deleteExpiredTokens` exist on the store and are called by nothing, so the
-  tables only grow until a scheduled job calls them.
 - The typed code is guessable in theory: 20^8 (about 2.6e10) codes, live five
-  minutes, and no attempt limit enforced. What stops a guessed code being
+  minutes, and attempts limited to 20 an hour per student (see "Rate limits" and
+  "Sweeping" under the agent connection). What stops a guessed code being
   enough is the match number: `approve` needs the number the page shows, and a
   wrong pick denies the authorization.
+- Expired rows are swept opportunistically (about one `/authorize` in fifty),
+  not on a schedule, so on a quiet project they linger until the next
+  authorize. `pg_cron` calling `agent_sweep_expired()` would be better; it
+  needs enabling in the Supabase dashboard, which a migration cannot do.
+- Rate-limit keys use the first `x-forwarded-for` entry. A caller who can
+  reach the function directly (not through the front) could spoof that header
+  to dodge the per-ip limits; the per-student phone limits do not depend on it.
 - Any https host can act as a CIMD client, so a stranger's page can start an
   authorization that reads as "Claude". The page and the phone therefore show
   the client's host beside its self-declared name, and the match number is the

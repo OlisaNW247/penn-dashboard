@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import {
   AGENT_FUNCTIONS,
   AGENT_MIGRATION,
+  AGENT_MIGRATIONS,
   checkAuthMetadata,
   checkChallenge,
   checkResourceMetadata,
@@ -41,8 +42,11 @@ function ctxFor(opts = {}, extra = {}) {
 
 test("the agent migration exists and is idempotent", async () => {
   const { scanIdempotency } = await import("./deploy-facts.mjs");
-  const sql = fs.readFileSync(path.join(here, "..", "supabase", "migrations", AGENT_MIGRATION), "utf8");
-  assert.deepEqual(scanIdempotency(sql), []);
+  assert.deepEqual(AGENT_MIGRATIONS, [AGENT_MIGRATION, "20261109090000_agent_hardening.sql"]);
+  for (const f of AGENT_MIGRATIONS) {
+    const sql = fs.readFileSync(path.join(here, "..", "supabase", "migrations", f), "utf8");
+    assert.deepEqual(scanIdempotency(sql), [], f);
+  }
 });
 
 test("validatePublicBase", () => {

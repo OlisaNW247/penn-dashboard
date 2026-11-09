@@ -55,6 +55,10 @@ export interface PendingAuthRow {
   /** sha256 of the one-time authorization code; set on approval. */
   authCodeHash: string | null;
   authCodeExpiresAt: string | null;
+  /** The student who last looked this request up on their phone; `deny`
+   *  requires it to be the caller. Optional because rows written before
+   *  20261109090000_agent_hardening.sql and test fixtures lack it (null). */
+  claimedBy?: string | null;
   /** Host of the client's metadata URL plus its `client_name`, for the page
    *  and the phone to show. */
   clientName: string;
@@ -129,6 +133,10 @@ export interface AgentStore {
    *  none yet. False when the row is not `approved` or already has a code,
    *  so one pending authorization yields exactly one code. */
   issueAuthCode(id: string, authCodeHash: string, authCodeExpiresAt: string): Promise<boolean>;
+  /** Records that `userId` looked the pending request up (last lookup
+   *  wins). Only a `pending` row changes; False otherwise. Binds `deny` to a
+   *  student who has seen the request. */
+  claimPending(id: string, userId: string): Promise<boolean>;
   /** pending -> denied. False when it was not pending. */
   denyPending(id: string): Promise<boolean>;
   /** approved -> consumed by authorization-code hash, returning the row so
@@ -164,6 +172,15 @@ export interface AgentStore {
   deleteToken(hash: string): Promise<void>;
   deleteTokensForConnection(connectionId: string): Promise<void>;
   deleteExpiredTokens(now: string): Promise<number>;
+
+  // Abuse limits and housekeeping (20261109090000_agent_hardening.sql).
+  /** Counts one hit on `key` and answers whether it is within `limit` hits
+   *  per `windowSeconds`. False means over the limit. May throw; callers
+   *  fail open. */
+  rateCheck(key: string, limit: number, windowSeconds: number): Promise<boolean>;
+  /** Deletes expired pending rows, tokens a day past expiry and idle rate
+   *  limit rows; returns how many rows went. May throw; callers fail open. */
+  sweep(): Promise<number>;
 
   // The opted-in student's work list.
   upsertSnapshot(row: AgentSnapshotRow): Promise<void>;

@@ -3606,9 +3606,10 @@ none is a ship line.
   item 3), which is why the front exists. Also open: the submit spike (`-LHFSubmitSpike`) has never
   run against Canvas, the iPhone `smooth://link` hand-off is untried, what a
   model sends as `file_base64` and what Claude shows for the write tool are
-  unmeasured (both need a signed-in Claude client), and `agent-auth` has no
-  rate limits and no sweeper for expired rows (`backend/PROTOCOL.md` →
-  Limitations). Phase 2 (the phone side) is built, never on a phone; Phases
+  unmeasured (both need a signed-in Claude client), and `agent-auth` has rate limits, a sweeper
+  and a `deny` bound to a lookup since 2026-11-09 (migration
+  `20261109090000_agent_hardening.sql`, not yet applied in production;
+  `backend/PROTOCOL.md` → Limitations). Phase 2 (the phone side) is built, never on a phone; Phases
   3 and 4 do not exist. The deploy is scripted and waits on two people:
   `backend/connector-front/deploy.sh` (needs `vercel login` once; the front
   runs as a Vercel Edge Function, Deno Deploy's sign-ups being closed) and

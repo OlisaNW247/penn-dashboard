@@ -219,7 +219,9 @@ Deno.test("a wrong match number denies the request", async () => {
 Deno.test("deny from the phone", async () => {
   const h = harness();
   const { cookie, row } = await startFlow(h);
+  assert.strictEqual((await phone(h, { action: "lookup", c: row.id })).status, 200);
   assert.deepStrictEqual(await (await phone(h, { action: "deny", c: row.id })).json(), { denied: true });
+  // Decided now; the student's own claim stays, so this is "nothing to deny".
   assert.deepStrictEqual(await (await phone(h, { action: "deny", c: row.id })).json(), { denied: false });
   assert.deepStrictEqual(await (await h.call(`/status?p=${row.id}`, { headers: { cookie } })).json(), { state: "denied" });
 });
@@ -499,4 +501,120 @@ Deno.test("authorize page announces its content type and CSP for the connector f
   assert.strictEqual(res.headers.get("x-smooth-content-type"), "text/html; charset=utf-8");
   assert.strictEqual(res.headers.get("x-smooth-csp"), csp);
   assert.strictEqual(res.headers.get("content-security-policy"), csp);
+});
+
+Deno.test("deny needs a lookup by the same student", async () => {
+  const h = harness();
+  const { cookie, row } = await startFlow(h);
+  // Never looked up: 404, and the request stays pending.
+  assert.strictEqual((await phone(h, { action: "deny", c: row.id })).status, 404);
+  assert.strictEqual((await phone(h, { action: "deny", c: "nope" })).status, 404);
+  // Another student looked it up (typed code); the first still cannot deny.
+  assert.strictEqual((await phone(h, { action: "lookup", code: row.userCode }, "student-2")).status, 200);
+  assert.strictEqual((await phone(h, { action: "deny", c: row.id }, "student-1")).status, 404);
+  assert.deepStrictEqual(await (await h.call(`/status?p=${row.id}`, { headers: { cookie } })).json(), { state: "pending" });
+  assert.deepStrictEqual(await (await phone(h, { action: "deny", c: row.id }, "student-2")).json(), { denied: true });
+});
+
+function withIP(h: Harness, ip: string) {
+  return (path: string, init: RequestInit = {}) =>
+    h.call(path, { ...init, headers: { ...(init.headers as Record<string, string>), "x-forwarded-for": `${ip}, 10.0.0.1` } });
+}
+
+Deno.test("/authorize is limited to 60 an hour per ip, then 429 slow_down", async () => {
+  const h = harness();
+  h.store.clock = () => new Date(h.clock.ms);
+  const a = withIP(h, "203.0.113.5");
+  for (let i = 0; i < 60; i++) assert.strictEqual((await a(authorizeQuery())).status, 200);
+  const over = await a(authorizeQuery());
+  assert.strictEqual(over.status, 429);
+  assert.strictEqual(over.headers.get("retry-after"), "60");
+  assert.deepStrictEqual(await over.json(), { error: "slow_down" });
+  // Another address is unaffected; the first recovers after the hour.
+  assert.strictEqual((await withIP(h, "203.0.113.6")(authorizeQuery())).status, 200);
+  h.clock.ms += 3601 * 1000;
+  assert.strictEqual((await a(authorizeQuery())).status, 200);
+});
+
+Deno.test("/register 10, /token 60 an hour per ip; cf-connecting-ip and unknown are buckets", async () => {
+  const h = harness();
+  const body = JSON.stringify({ client_name: "X", redirect_uris: ["https://x.test/cb"], token_endpoint_auth_method: "none" });
+  const reg = (headers: Record<string, string>) =>
+    h.call("/register", { method: "POST", headers: { "content-type": "application/json", ...headers }, body });
+  for (let i = 0; i < 10; i++) assert.notStrictEqual((await reg({ "cf-connecting-ip": "198.51.100.1" })).status, 429);
+  assert.strictEqual((await reg({ "cf-connecting-ip": "198.51.100.1" })).status, 429);
+  assert.notStrictEqual((await reg({ "cf-connecting-ip": "198.51.100.2" })).status, 429);
+  // No header at all shares one "unknown" bucket.
+  for (let i = 0; i < 10; i++) await reg({});
+  assert.strictEqual((await reg({})).status, 429);
+  for (let i = 0; i < 60; i++) assert.notStrictEqual((await form(h, "/token", { grant_type: "bad" })).status, 429);
+  const over = await form(h, "/token", { grant_type: "bad" });
+  assert.strictEqual(over.status, 429);
+  assert.deepStrictEqual(await over.json(), { error: "slow_down" });
+});
+
+Deno.test("/phone lookup 20 an hour and approve 10 an hour per student", async () => {
+  const h = harness();
+  const { row } = await startFlow(h);
+  for (let i = 0; i < 20; i++) assert.strictEqual((await phone(h, { action: "lookup", code: "BCDFGHJK" })).status, 404);
+  const over = await phone(h, { action: "lookup", code: "BCDFGHJK" });
+  assert.strictEqual(over.status, 429);
+  assert.strictEqual(over.headers.get("retry-after"), "60");
+  // Another student has their own allowance, and a real lookup works.
+  assert.strictEqual((await phone(h, { action: "lookup", c: row.id }, "student-2")).status, 200);
+  for (let i = 0; i < 10; i++) assert.strictEqual((await phone(h, { action: "approve", c: "nope", picked: 1 }, "student-3")).status, 404);
+  assert.strictEqual((await phone(h, { action: "approve", c: "nope", picked: 1 }, "student-3")).status, 429);
+  // list is not limited.
+  assert.strictEqual((await phone(h, { action: "list" }, "student-3")).status, 200);
+});
+
+Deno.test("a failing rate check fails open", async () => {
+  const h = harness();
+  h.store.rateCheck = () => Promise.reject(new Error("relation does not exist"));
+  assert.strictEqual((await h.call(authorizeQuery())).status, 200);
+});
+
+Deno.test("one /authorize in ~50 sweeps; a failing sweep is ignored", async () => {
+  const h = harness();
+  h.store.clock = () => new Date(h.clock.ms);
+  await startFlow(h);
+  h.clock.ms += 3 * 60 * 60 * 1000;
+  // random() == 0 forces the sweep; the expired pending row is removed.
+  // Only the sweep's one-byte draw is forced to 0; ids and codes stay random
+  // (an all-zero source would spin their rejection sampling forever).
+  const forced = (n: number) => (n === 1 ? new Uint8Array(1) : crypto.getRandomValues(new Uint8Array(n)));
+  const deps = {
+    store: h.store,
+    publicBase: BASE,
+    now: () => new Date(h.clock.ms),
+    random: forced,
+    fetchClientMetadata: () =>
+      Promise.resolve({ client_id: CLIENT, client_name: "Claude", redirect_uris: [REDIRECT], token_endpoint_auth_method: "none" }),
+    requireUserId: () => Promise.resolve("student-1"),
+  };
+  const before = h.store.pending.size;
+  assert.strictEqual(before, 1);
+  const res = await handleAgentAuth(new Request(`${ROOT}${authorizeQuery()}`), deps);
+  assert.strictEqual(res.status, 200);
+  const ids = [...h.store.pending.values()];
+  assert.strictEqual(ids.length, 1);
+  assert.ok(Date.parse(ids[0].expiresAt) > h.clock.ms, "only the new row is left");
+  h.store.sweep = () => Promise.reject(new Error("down"));
+  assert.strictEqual((await handleAgentAuth(new Request(`${ROOT}${authorizeQuery()}`), deps)).status, 200);
+});
+
+Deno.test("memory sweep: expired pending, old tokens, idle limits, unused old clients", async () => {
+  const h = harness();
+  const day = 86400000;
+  let now = START;
+  h.store.clock = () => new Date(now);
+  const client = (id: string, at: number) => h.store.clients.set(id, { clientId: id, clientName: "c", redirectUris: [], createdAt: new Date(at).toISOString() });
+  client("smc_old_unused", START - 31 * day);
+  client("smc_old_connected", START - 31 * day);
+  client("smc_new", START - 1 * day);
+  await h.store.insertConnection({ id: "k", userId: "u", clientId: "smc_old_connected", clientName: "c", scopes: [], createdAt: "x", lastUsedAt: null, revokedAt: null });
+  await h.store.rateCheck("k", 1, 60);
+  now += 2 * day;
+  assert.strictEqual(await h.store.sweep(), 2); // the idle rate row and the unused old client
+  assert.deepStrictEqual([...h.store.clients.keys()].sort(), ["smc_new", "smc_old_connected"]);
 });

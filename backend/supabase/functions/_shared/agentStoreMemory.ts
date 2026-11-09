@@ -20,6 +20,9 @@ export class MemoryAgentStore implements AgentStore {
   tokens = new Map<string, AgentTokenRow>();
   snapshots = new Map<string, AgentSnapshotRow>();
   clients = new Map<string, AgentClientRow>();
+  rateLimits = new Map<string, { windowStart: number; count: number }>();
+  /** Tests move this to cross a rate-limit window or age rows for `sweep`. */
+  clock: () => Date = () => new Date();
 
   // Dynamically registered clients.
   insertClient(row: AgentClientRow): Promise<void> {
@@ -66,6 +69,13 @@ export class MemoryAgentStore implements AgentStore {
     const row = this.pending.get(id);
     if (!row || row.status !== "approved" || row.authCodeHash !== null) return Promise.resolve(false);
     this.pending.set(id, { ...row, authCodeHash, authCodeExpiresAt });
+    return Promise.resolve(true);
+  }
+
+  claimPending(id: string, userId: string): Promise<boolean> {
+    const row = this.pending.get(id);
+    if (!row || row.status !== "pending") return Promise.resolve(false);
+    this.pending.set(id, { ...row, claimedBy: userId });
     return Promise.resolve(true);
   }
 
@@ -178,6 +188,52 @@ export class MemoryAgentStore implements AgentStore {
     for (const [hash, row] of this.tokens) {
       if (Date.parse(row.expiresAt) <= cutoff) {
         this.tokens.delete(hash);
+        n++;
+      }
+    }
+    return Promise.resolve(n);
+  }
+
+  // Abuse limits and housekeeping. Same rules as the SQL functions.
+  rateCheck(key: string, limit: number, windowSeconds: number): Promise<boolean> {
+    const now = this.clock().getTime();
+    const entry = this.rateLimits.get(key);
+    if (!entry || entry.windowStart <= now - windowSeconds * 1000) {
+      this.rateLimits.set(key, { windowStart: now, count: 1 });
+      return Promise.resolve(1 <= limit);
+    }
+    entry.count++;
+    return Promise.resolve(entry.count <= limit);
+  }
+
+  sweep(): Promise<number> {
+    const now = this.clock().getTime();
+    const day = 24 * 60 * 60 * 1000;
+    let n = 0;
+    for (const [id, row] of this.pending) {
+      if (Date.parse(row.expiresAt) <= now) {
+        this.pending.delete(id);
+        n++;
+      }
+    }
+    for (const [hash, row] of this.tokens) {
+      if (Date.parse(row.expiresAt) <= now - day) {
+        this.tokens.delete(hash);
+        n++;
+      }
+    }
+    for (const [key, entry] of this.rateLimits) {
+      if (entry.windowStart <= now - day) {
+        this.rateLimits.delete(key);
+        n++;
+      }
+    }
+    for (const [id, c] of this.clients) {
+      if (Date.parse(c.createdAt) > now - 30 * day) continue;
+      const used = [...this.connections.values()].some((k) => k.clientId === id) ||
+        [...this.pending.values()].some((p) => p.params.clientId === id);
+      if (!used) {
+        this.clients.delete(id);
         n++;
       }
     }

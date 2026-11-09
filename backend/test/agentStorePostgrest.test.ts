@@ -88,6 +88,7 @@ const pending: PendingAuthRow = {
   status: "approved",
   createdAt: "2026-11-08T10:00:00.000Z",
   expiresAt: "2026-11-08T10:10:00.000Z",
+  claimedBy: null,
 };
 const connection: AgentConnectionRow = {
   id: "c1",
@@ -337,5 +338,35 @@ Deno.test("clients: insert is one POST, select filters by client_id and maps the
     assertEq(seen[1].path, "agent_clients");
     assertEq(seen[1].query, `select=*&client_id=eq.${client.clientId}`);
     assertEq(await store.selectClient("smc_none"), null);
+  });
+});
+
+Deno.test("claimPending: conditional PATCH on pending; rateCheck and sweep call the RPCs", async () => {
+  await withStub([{ body: [{ id: "p1" }] }, { body: [] }], async (store, seen) => {
+    assertEq(await store.claimPending("p1", "u1"), true);
+    assertEq(await store.claimPending("p1", "u1"), false);
+    assertEq(seen[0].method, "PATCH");
+    assertEq(seen[0].path, "agent_pending_auth");
+    assertEq(seen[0].query.includes("status=eq.pending"), true);
+    assertEq(seen[0].body, { claimed_by: "u1" });
+  });
+  await withStub([{ body: true }, { body: false }], async (store, seen) => {
+    assertEq(await store.rateCheck("k", 5, 3600), true);
+    assertEq(await store.rateCheck("k", 5, 3600), false);
+    assertEq(seen[0].path, "rpc/agent_rate_check");
+    assertEq(seen[0].body, { p_key: "k", p_limit: 5, p_window_seconds: 3600 });
+  });
+  await withStub([{ body: 7 }], async (store, seen) => {
+    assertEq(await store.sweep(), 7);
+    assertEq(seen[0].path, "rpc/agent_sweep_expired");
+  });
+  await withStub([{ status: 400, body: { message: "no such function" } }], async (store) => {
+    let threw = false;
+    try {
+      await store.rateCheck("k", 5, 3600);
+    } catch {
+      threw = true;
+    }
+    assertEq(threw, true);
   });
 });

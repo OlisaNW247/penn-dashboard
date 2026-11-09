@@ -56,6 +56,8 @@ import { firstSqlLine, makeContext, scanIdempotency, StepFailure } from "./deplo
 const __filename = fileURLToPath(import.meta.url);
 const MIGRATIONS_DIR = path.resolve(path.dirname(__filename), "..", "supabase", "migrations");
 export const AGENT_MIGRATION = "20261108090000_agent_connection.sql";
+/** Every agent migration step 1 applies, in order; a new one goes at the END. */
+export const AGENT_MIGRATIONS = [AGENT_MIGRATION, "20261109090000_agent_hardening.sql"];
 /** Deploy order matters only for readability of the log, but it is pinned. */
 export const AGENT_FUNCTIONS = ["agent-auth", "mcp", "agent-snapshot"];
 export const PUBLIC_BASE_SECRET = "LHF_AGENT_PUBLIC_BASE";
@@ -162,17 +164,21 @@ export async function stepSecrets(ctx) {
 
 export async function stepMigrateAndDeploy(
   ctx,
-  { deploy = deployFunction, sqlPath = path.join(MIGRATIONS_DIR, AGENT_MIGRATION) } = {},
+  { deploy = deployFunction, sqlPaths = AGENT_MIGRATIONS.map((f) => path.join(MIGRATIONS_DIR, f)) } = {},
 ) {
-  ctx.log("== step 1: migration, then agent-auth, mcp, agent-snapshot ==");
-  const sql = fs.readFileSync(sqlPath, "utf8");
-  const problems = scanIdempotency(sql);
-  if (problems.length > 0) {
-    throw new StepFailure(`migration ${path.basename(sqlPath)} is not idempotent:\n${problems.map(([n, l]) => `  line ${n}: ${l}`).join("\n")}`);
+  ctx.log("== step 1: migrations, then agent-auth, mcp, agent-snapshot ==");
+  const loaded = sqlPaths.map((p) => ({ name: path.basename(p), sql: fs.readFileSync(p, "utf8") }));
+  for (const { name, sql } of loaded) {
+    const problems = scanIdempotency(sql);
+    if (problems.length > 0) {
+      throw new StepFailure(`migration ${name} is not idempotent:\n${problems.map(([n, l]) => `  line ${n}: ${l}`).join("\n")}`);
+    }
+    ctx.log(`migration scan: ${name} idempotent (${sql.split("\n").length} lines)`);
   }
-  ctx.log(`migration scan: ${path.basename(sqlPath)} idempotent (${sql.split("\n").length} lines)`);
-  await ctx.sql(sql);
-  if (!ctx.dryRun) ctx.log(`migration applied: ${path.basename(sqlPath)}`);
+  for (const { name, sql } of loaded) {
+    await ctx.sql(sql);
+    if (!ctx.dryRun) ctx.log(`migration applied: ${name}`);
+  }
   for (const slug of AGENT_FUNCTIONS) {
     try {
       await deploy(slug, { dryRun: ctx.dryRun, fetchImpl: ctx.fetchImpl, log: ctx.log, env: ctx.env });

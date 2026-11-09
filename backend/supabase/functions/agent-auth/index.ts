@@ -88,6 +88,23 @@ const PAGE_HEADERS = {
   "X-Frame-Options": "DENY",
 };
 const MAX_FORM_BYTES = 16 * 1024;
+const HOUR = 3600;
+// Per-hour limits (20261109090000_agent_hardening.sql counts them in
+// Postgres, because an Edge Function runs in many isolates and a counter in
+// each would multiply the limit by the number of warm ones). The phone's
+// `lookup` limit is the one that matters: a typed code is 8 letters of a
+// 20-letter alphabet (2.6e10 codes) live for five minutes, so 20 tries an
+// hour is nothing against that, and a student typing by hand never needs
+// more than a few.
+const LIMITS = {
+  authorize: 60,
+  register: 10,
+  token: 60,
+  lookup: 20,
+  approve: 10,
+} as const;
+/** One `/authorize` in about fifty (5 of 256 byte values) sweeps. */
+const SWEEP_BELOW = 5;
 const USER_CODE_ATTEMPTS = 5;
 
 export async function handleAgentAuth(req: Request, deps: AgentAuthDeps): Promise<Response> {
@@ -160,6 +177,58 @@ interface Ctx {
   mcpURL: string;
 }
 
+/** The caller's address for rate limiting. Behind the connector front
+ *  (backend/connector-front/main.ts) the connecting address is the front's,
+ *  so the original one is read from `x-forwarded-for`, which the front copies
+ *  through (its HOP_BY_HOP set does not list it) and which Vercel sets to the
+ *  real client first. Straight to Supabase, the gateway sets it too, or
+ *  `cf-connecting-ip`. Anything else is one shared bucket "unknown", which
+ *  is stricter, not looser. Never logged. */
+function clientIP(req: Request): string {
+  const forwarded = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  if (forwarded) return forwarded;
+  return req.headers.get("cf-connecting-ip")?.trim() || "unknown";
+}
+
+/** True when the hit is within the limit. Fails OPEN on any store error
+ *  (table missing before the migration, database down): the 2026-10-22
+ *  `requireUser` trap in CLAUDE.md is that a lookup failure on a shared path
+ *  must not take every caller down, and a missed rate limit costs far less
+ *  than a dead sign-in. One line, no key. */
+async function withinLimit(ctx: Ctx, key: string, limit: number): Promise<boolean> {
+  try {
+    return await ctx.deps.store.rateCheck(await hashedKey(key), limit, HOUR);
+  } catch {
+    console.error("agent-auth error: rate_check_failed (open)");
+    return true;
+  }
+}
+
+/** Keys hold a hash, so the table never holds a raw address or user id. */
+async function hashedKey(key: string): Promise<string> {
+  const at = key.indexOf(":");
+  return `${key.slice(0, at)}:${await hashToken(key.slice(at + 1))}`;
+}
+
+/** 429. RFC 6749 §5.2 has no rate-limit code; `slow_down` is RFC 8628's
+ *  (device grant) word for "too fast", the nearest standard one. */
+function tooMany(code: string): Response {
+  console.error(`agent-auth error: ${code} (429)`);
+  return json(429, { error: "slow_down" }, { "Retry-After": "60", "Cache-Control": "no-store" });
+}
+
+/** Opportunistic housekeeping; never blocks or fails the request. Logs only
+ *  how many rows went. A cron job would be better (PROTOCOL.md → Limitations). */
+async function maybeSweep(ctx: Ctx): Promise<void> {
+  if (ctx.random(1)[0] >= SWEEP_BELOW) return;
+  try {
+    const removed = await ctx.deps.store.sweep();
+    console.log(`agent-auth: swept ${removed}`);
+  } catch {
+    console.error("agent-auth error: sweep_failed (open)");
+  }
+}
+
 /** Logs the outcome code and status of a refusal and passes it through. */
 function logged(res: Response, code: string): Response {
   if (res.status >= 400) console.error(`agent-auth error: ${code} (${res.status})`);
@@ -190,6 +259,7 @@ function redirectWith(base: string, params: Record<string, string | null>, issue
 // ---------------------------------------------------------------------
 
 async function register(req: Request, ctx: Ctx): Promise<Response> {
+  if (!(await withinLimit(ctx, `register:${clientIP(req)}`, LIMITS.register))) return tooMany("register_rate");
   const refuse = (description: string) => {
     console.error("agent-auth error: register_invalid_client_metadata (400)");
     return json(400, { error: "invalid_client_metadata", error_description: description }, { "Cache-Control": "no-store" });
@@ -248,7 +318,9 @@ async function resolveClient(
 // GET /authorize
 // ---------------------------------------------------------------------
 
-async function authorize(_req: Request, ctx: Ctx): Promise<Response> {
+async function authorize(req: Request, ctx: Ctx): Promise<Response> {
+  if (!(await withinLimit(ctx, `authorize:${clientIP(req)}`, LIMITS.authorize))) return tooMany("authorize_rate");
+  await maybeSweep(ctx);
   const checked = validateAuthorizeRequest(ctx.url.searchParams, ctx.mcpURL);
   if (!checked.ok) {
     if (!checked.redirectable) {
@@ -438,6 +510,7 @@ async function mintTokens(
 }
 
 async function token(req: Request, ctx: Ctx): Promise<Response> {
+  if (!(await withinLimit(ctx, `token:${clientIP(req)}`, LIMITS.token))) return tooMany("token_rate");
   const form = await readForm(req);
   if (!form) return tokenError("invalid_request", "send application/x-www-form-urlencoded");
   const grantType = form.get("grant_type");
@@ -568,6 +641,7 @@ async function phone(req: Request, ctx: Ctx): Promise<Response> {
 
   switch (body.action) {
     case "lookup": {
+      if (!(await withinLimit(ctx, `lookup:${userId}`, LIMITS.lookup))) return tooMany("lookup_rate");
       let row: PendingAuthRow | null = null;
       if (typeof body.c === "string") {
         row = await store.selectPendingById(body.c);
@@ -578,6 +652,10 @@ async function phone(req: Request, ctx: Ctx): Promise<Response> {
         throw new HttpError(400, "bad_request");
       }
       if (!liveForPhone(row, ctx)) return notFound();
+      // Binds the request to the student who has now seen it; `deny` asks
+      // for exactly this. Last lookup wins: first-wins would let a stranger
+      // who guessed a code lock the real student out of denying it.
+      await store.claimPending(row.id, userId);
       return json(200, {
         id: row.id,
         clientName: row.clientName,
@@ -589,6 +667,7 @@ async function phone(req: Request, ctx: Ctx): Promise<Response> {
     }
     case "approve": {
       if (typeof body.c !== "string" || typeof body.picked !== "number") throw new HttpError(400, "bad_request");
+      if (!(await withinLimit(ctx, `approve:${userId}`, LIMITS.approve))) return tooMany("approve_rate");
       const row = await store.selectPendingById(body.c);
       if (!liveForPhone(row, ctx)) return notFound();
       if (body.picked !== row.matchNumber) {
@@ -600,7 +679,14 @@ async function phone(req: Request, ctx: Ctx): Promise<Response> {
     }
     case "deny": {
       if (typeof body.c !== "string") throw new HttpError(400, "bad_request");
-      return json(200, { denied: await store.denyPending(body.c) });
+      // A student can deny only a request they have looked up (by its typed
+      // code or its id), the same knowledge `approve` starts from. Any other
+      // id, unknown or someone else's, is the one 404. The wrong fix is
+      // requiring the user code in the body: the phone opened the request
+      // from a QR id and never saw the code.
+      const row = await store.selectPendingById(body.c);
+      if (!row || row.claimedBy !== userId) return notFound();
+      return json(200, { denied: await store.denyPending(row.id) });
     }
     case "list": {
       const rows = (await store.listConnections(userId)).filter((c) => c.revokedAt === null);

@@ -51,6 +51,7 @@ export function pendingFromDb(r: Record<string, unknown>): PendingAuthRow {
     status: r.status as PendingAuthStatus,
     createdAt: r.created_at as string,
     expiresAt: r.expires_at as string,
+    claimedBy: (r.claimed_by as string | null | undefined) ?? null,
   };
 }
 
@@ -197,6 +198,17 @@ export class PostgrestAgentStore implements AgentStore {
     return ((data ?? []) as Rows).length === 1;
   }
 
+  async claimPending(id: string, userId: string): Promise<boolean> {
+    const { data, error } = await this.client
+      .from("agent_pending_auth")
+      .update({ claimed_by: userId })
+      .eq("id", id)
+      .eq("status", "pending")
+      .select("id");
+    if (error) throw error;
+    return ((data ?? []) as Rows).length === 1;
+  }
+
   async denyPending(id: string): Promise<boolean> {
     const { data, error } = await this.client
       .from("agent_pending_auth")
@@ -334,6 +346,24 @@ export class PostgrestAgentStore implements AgentStore {
     const { data, error } = await this.client.from("agent_tokens").delete().lte("expires_at", now).select("hash");
     if (error) throw error;
     return ((data ?? []) as Rows).length;
+  }
+
+  // Abuse limits and housekeeping: the SQL functions of
+  // 20261109090000_agent_hardening.sql, service role only.
+  async rateCheck(key: string, limit: number, windowSeconds: number): Promise<boolean> {
+    const { data, error } = await this.client.rpc("agent_rate_check", {
+      p_key: key,
+      p_limit: limit,
+      p_window_seconds: windowSeconds,
+    });
+    if (error) throw error;
+    return data === true;
+  }
+
+  async sweep(): Promise<number> {
+    const { data, error } = await this.client.rpc("agent_sweep_expired");
+    if (error) throw error;
+    return typeof data === "number" ? data : 0;
   }
 
   // Snapshots.
