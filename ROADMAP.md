@@ -7,7 +7,7 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
+Last updated 2026-11-09 on the degree-progress research branch (the research entry under Next; no code changed). Before that, 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
 backend half went live 2026-11-05 01:20-01:45 UTC, the evening of 2026-11-04
 US Eastern). Before that, 2026-10-28 on `release/3.4.0` (the 3.4.0 release,
 renamed from 3.3.1 that afternoon when PR #16 was folded in). Before
@@ -401,6 +401,33 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   build is actually downloadable.
 
 ## Next: features
+
+- **Degree progress: pick a degree, see progress, try a what-if** (Olisa's
+  ask, 2026-11-09; research only, nothing built or agreed).
+  `docs/DEGREE_PROGRESS_RESEARCH_2026-11-09.md` is the report, its labelled
+  source notes are in `docs/research/degree-progress/`, and a phone mockup of
+  two concepts was published beside it. The recommendation: build it Penn
+  first with no Path@Penn login. Requirement templates come from the public
+  `courses.upenn.edu` endpoints Penn Labs' Degree Plan already reads (a
+  Degree Works audit XML per program, dummy student, no credentials; read in
+  Penn Labs' MIT-licensed source, live behaviour untested from the container),
+  pooled like `catalog_courses`; the student's record is courses they mark
+  (current classes prefilled from Canvas), kept on-device in its own store
+  file, never the ledger; code decides, a model may only extract and explain;
+  every screen names Path@Penn as the official audit and never says "on
+  track". Phases: 0 settle the unknowns (confirm the endpoints from a Mac,
+  ask Penn Labs and ISC about terms, one phone pass on Path@Penn), 1
+  progress on-device for three programs behind `FeatureFlags.degreeProgress`
+  (about 30 to 40 hours, +80 to +110 Swift tests), 2 pooled templates for
+  every program (a migration and a small function, owner's go), 3 the
+  what-if planner with prerequisites and offerings, 4 the richer record
+  (Canvas past courses, an audit PDF, the tree's `# DEGREE` block with a
+  PRIVACY.md change, and Path@Penn reading only with Penn's written
+  position). The one finding that would change the plan: Penn or Penn Labs
+  saying the public endpoints are not for third-party use. Seven questions
+  for the owners are at the end of the report. Every Penn host was blocked
+  from the research container; a `penn-dashboard` cloud environment with
+  those hosts allowed now exists for the next session.
 
 - **Megaphone: the model sorts posts into todo and prev** (Marco,
   2026-11-07: "prev being either from way before or unapplicable, need
