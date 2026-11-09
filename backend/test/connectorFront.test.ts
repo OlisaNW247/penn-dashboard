@@ -104,3 +104,36 @@ Deno.test("a 7 MB content-length is 413 before forwarding", async () => {
     assertEquals(seen.length, 0);
   });
 });
+
+const CSP = "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'";
+const markedAnswer = () =>
+  new Response("<p>hi</p>", {
+    status: 200,
+    headers: {
+      "Content-Type": "text/plain",
+      "Content-Security-Policy": "default-src 'none'; sandbox",
+      "X-Smooth-Content-Type": "text/html; charset=utf-8",
+      "X-Smooth-CSP": CSP,
+    },
+  });
+
+Deno.test("agent-auth marker headers restore content-type and CSP and are removed", async () => {
+  await withStub(markedAnswer, async () => {
+    const res = await handle(new Request("https://front.example/functions/v1/agent-auth/authorize?x=y"), env);
+    assertEquals(res.headers.get("content-type"), "text/html; charset=utf-8");
+    assertEquals(res.headers.get("content-security-policy"), CSP);
+    assertEquals(res.headers.get("x-smooth-content-type"), null);
+    assertEquals(res.headers.get("x-smooth-csp"), null);
+    assertEquals(await res.text(), "<p>hi</p>");
+  });
+});
+
+Deno.test("mcp responses with marker headers are left alone", async () => {
+  await withStub(markedAnswer, async () => {
+    const res = await handle(new Request("https://front.example/functions/v1/mcp"), env);
+    assertEquals(res.headers.get("content-type"), "text/plain");
+    assertEquals(res.headers.get("content-security-policy"), "default-src 'none'; sandbox");
+    assertEquals(res.headers.get("x-smooth-content-type"), "text/html; charset=utf-8");
+    assertEquals(res.headers.get("x-smooth-csp"), CSP);
+  });
+});

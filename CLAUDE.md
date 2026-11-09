@@ -134,17 +134,26 @@ items, retrieves policy and content answers from synced course materials
 (`CourseKnowledgeCollector` → `CourseKnowledgeStore`), and on iOS 26 /
 macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
 (`OnDeviceLanguageModel`). Fourteen Edge Functions are in
-`backend/supabase/functions/`: eleven deployed (`extract-facts` was the last,
-on 2026-11-05): `ask`,
+`backend/supabase/functions/`, all fourteen deployed: `ask`,
 `ask-canary`, `delete-account`, `device-sync`, `discover-websites`,
-`extract-announcement`, **`extract-facts`**, `extract-profile`,
-`map-categories`, `pair`, `sync`; and three written on 2026-11-08 for the
-v11 agent connection and **not deployed**: `agent-auth` (our own OAuth
+`extract-announcement`, **`extract-facts`** (2026-11-05), `extract-profile`,
+`map-categories`, `pair`, `sync`; and the three of the v11 agent connection,
+**live since 2026-11-08 about 03:00 UTC (the night of 2026-11-08 US
+Eastern), each at version 1, with migration
+`20261108090000_agent_connection.sql` applied, at Olisa's go relayed by
+Marco** (`node backend/scripts/deploy-agent.mjs --public-base
+https://smooth-agent.vercel.app/functions/v1`): `agent-auth` (our own OAuth
 authorization server, the phone approves each connection), `mcp` (the
 remote MCP server Claude connects to) and `agent-snapshot` (the opted-in
-student's work list), on `agent/connection-v11`, `backend/PROTOCOL.md` →
-"The agent connection". The first two need `verify_jwt = false`, which
-`config.toml` and `deploy-function.mjs` now carry. `extract-facts` (written 2026-11-04 on
+student's work list), from `agent/connection-v11`, `backend/PROTOCOL.md` →
+"The agent connection". The first two run with `verify_jwt = false`
+(`config.toml`, `deploy-function.mjs`). Their public face is **the
+connector front, `https://smooth-agent.vercel.app`** (a Vercel Edge
+Function under Marco's account, `backend/connector-front/`), which serves
+the root OAuth discovery documents Claude needs and forwards to the two
+functions; `LHF_AGENT_PUBLIC_BASE` names it, so the issuer and MCP URL are
+`https://smooth-agent.vercel.app/functions/v1/agent-auth` and `.../mcp`. No
+client has signed in against production yet. `extract-facts` (written 2026-11-04 on
 `v10`, **live since 2026-11-05 01:20-01:45 UTC**, the evening of
 2026-11-04 US Eastern; version 1, with the `sync` that serves its facts at
 version 17 and migration `20261104090000_course_facts.sql` applied; the
@@ -2526,6 +2535,20 @@ itself.
 
 ## Traps that have already bitten
 
+- **Supabase's gateway serves an Edge Function's HTML as `text/plain` with
+  a sandbox CSP** (2026-11-08, the first production probe of `agent-auth`).
+  The function sends `Content-Type: text/html; charset=utf-8` and its own
+  CSP; what `<ref>.supabase.co` returns is `content-type: text/plain`,
+  `content-security-policy: default-src 'none'; sandbox` and `nosniff`,
+  so a browser shows the authorize page as source. The dev tunnel never
+  showed it because it never went through that gateway, and the Deno tests
+  cannot see it. It is Supabase's anti-phishing rule for their own domain,
+  not a bug of ours, and custom headers pass through untouched, so
+  `agent-auth` also sends `X-Smooth-Content-Type` and `X-Smooth-CSP` and the
+  connector front restores the real headers on `/agent-auth` responses
+  (never on `/mcp`). The wrong fixes: serving the page from the front
+  itself (two copies of the page to keep equal) or sniffing the body for
+  `<!doctype html>` (the marker is explicit and costs nothing).
 - **"Unextracted" in SQL is not "pending", and the index's cap must look at
   now, not at the oldest date** (2026-11-05). After the round-4 deploy a
   count of PHYS 0151 documents with no `course_fact_extractions` row at
@@ -3570,13 +3593,17 @@ none is a ship line.
 
 ## Known gaps
 
-- **The agent connection's backend is written and tested, not deployed, and
-  cannot be signed in to from `<ref>.supabase.co` as it stands** (2026-11-08,
-  `agent/connection-v11`). Claude Code's sign-in step reads the OAuth
-  discovery documents only at the root `.well-known` paths of the MCP URL's
-  host (research §8 item 3), which an Edge Function cannot serve, so the
-  MCP URL and the issuer need a host of ours in front (plan decision 9,
-  Marco's call). Also open: the submit spike (`-LHFSubmitSpike`) has never
+- **The agent connection is deployed (front and functions, 2026-11-08
+  night) and no client has signed in against production yet**
+  (`agent/connection-v11`). What is proven live: the front's root discovery
+  documents, the metadata the functions emit, the 401 challenge, the
+  authorize page (served with its code and `smooth://link`), `/register`,
+  and that `agent-snapshot` refuses a call without a token. Not yet: a
+  claude.ai or Claude Code sign-in through `smooth-agent.vercel.app`, a
+  phone approving one (the phone side has never run), a token call to
+  `mcp`. Claude Code's sign-in step reads the OAuth discovery documents
+  only at the root `.well-known` paths of the MCP URL's host (research §8
+  item 3), which is why the front exists. Also open: the submit spike (`-LHFSubmitSpike`) has never
   run against Canvas, the iPhone `smooth://link` hand-off is untried, what a
   model sends as `file_base64` and what Claude shows for the write tool are
   unmeasured (both need a signed-in Claude client), and `agent-auth` has no

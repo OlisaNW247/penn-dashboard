@@ -1225,6 +1225,15 @@ the phone, the course material from the tables the phone already fills.
 
 Code: `functions/agent-auth`, `functions/mcp`, `functions/agent-snapshot`,
 and `_shared/agent*.ts`. Migration `20261108090000_agent_connection.sql`.
+**Live since 2026-11-08 night** (each function at version 1, the migration
+applied), behind the connector front `https://smooth-agent.vercel.app`
+(`backend/connector-front/`), which is `LHF_AGENT_PUBLIC_BASE`'s host: the
+issuer is `https://smooth-agent.vercel.app/functions/v1/agent-auth` and the
+MCP URL `.../functions/v1/mcp`. Supabase's gateway serves any HTML an Edge
+Function returns as `text/plain` with a sandbox CSP, so `agent-auth`'s pages
+also carry `X-Smooth-Content-Type` and `X-Smooth-CSP`, which the front turns
+back into the real headers; a direct call to `supabase.co` still gets the
+rewrite, by Supabase's choice.
 Design: `docs/AGENT_CONNECTION_PLAN_V11_2026-11-07.md`; the reasons behind the
 OAuth choices: `docs/AGENT_CONNECTION_RESEARCH_2026-11-08.md` §3 and §7.
 

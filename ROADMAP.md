@@ -437,8 +437,11 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   found closed the same night). **Phase 2 (the phone's opt-in screen,
   approve sheet, snapshot upload, `smooth://link`) is built and compiled
   the same evening (3714 / 358), never on a phone.** Phases 3 to 5 are not
-  started. The one person-step left before the end-to-end test is a Deno
-  Deploy account for the front, then Olisa's deploy go.
+  started. **Deployed 2026-11-08 night**: the connector front at
+  `smooth-agent.vercel.app` (Vercel, Marco's account) and the three
+  functions with the migration, at Olisa's go. The end-to-end test (a
+  claude.ai connector, approved on the phone) is the next step and needs
+  Marco's claude.ai account and his phone on the cable.
 - **Megaphone: the model sorts posts into todo and prev** (Marco,
   2026-11-07: "prev being either from way before or unapplicable, need
   [the model] to sort based on text"). What ships first is the rule half

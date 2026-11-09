@@ -490,3 +490,13 @@ Deno.test("an unknown or mismatched registered client gets a page, never a redir
   assert.strictEqual(new URL(verified.headers.get("location")!).searchParams.get("error"), "invalid_target");
   assert.strictEqual(h.store.pending.size, 0);
 });
+
+Deno.test("authorize page announces its content type and CSP for the connector front", async () => {
+  const h = harness();
+  const { res } = await startFlow(h);
+  const csp = "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'";
+  assert.strictEqual(res.headers.get("content-type"), "text/html; charset=utf-8");
+  assert.strictEqual(res.headers.get("x-smooth-content-type"), "text/html; charset=utf-8");
+  assert.strictEqual(res.headers.get("x-smooth-csp"), csp);
+  assert.strictEqual(res.headers.get("content-security-policy"), csp);
+});

@@ -69,10 +69,21 @@ export interface AgentAuthDeps {
   devApproveURL?: (pendingId: string) => string;
 }
 
+// Measured 2026-11-08: Supabase's gateway rewrites any text/html response from
+// an Edge Function on <ref>.supabase.co to text/plain and replaces our
+// Content-Security-Policy with "default-src 'none'; sandbox", so the pages
+// would show as raw HTML. Custom headers pass through, so the intended values
+// are announced a second time in X-Smooth-Content-Type / X-Smooth-CSP and the
+// connector front (backend/connector-front/main.ts) restores them. Direct
+// callers of supabase.co still get the gateway's rewrite, which is harmless.
+const PAGE_CSP = "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'";
+const PAGE_CONTENT_TYPE = "text/html; charset=utf-8";
 const PAGE_HEADERS = {
-  "Content-Type": "text/html; charset=utf-8",
+  "Content-Type": PAGE_CONTENT_TYPE,
   "Cache-Control": "no-store",
-  "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'",
+  "Content-Security-Policy": PAGE_CSP,
+  "X-Smooth-Content-Type": PAGE_CONTENT_TYPE,
+  "X-Smooth-CSP": PAGE_CSP,
   "Referrer-Policy": "no-referrer",
   "X-Frame-Options": "DENY",
 };

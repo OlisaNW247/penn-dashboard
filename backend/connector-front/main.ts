@@ -78,6 +78,19 @@ async function forward(req: Request, url: URL, target: string, env: FrontEnv): P
   out.delete("content-length");
   out.delete("transfer-encoding");
   out.delete("connection");
+  // Supabase's gateway turns an Edge Function's text/html into text/plain with
+  // a sandbox CSP (measured 2026-11-08); agent-auth announces the intended
+  // values in marker headers and we restore them here. Never for /mcp.
+  if (target.startsWith("/agent-auth")) {
+    const type = out.get("x-smooth-content-type");
+    const csp = out.get("x-smooth-csp");
+    if (type) {
+      out.set("content-type", type);
+      if (csp) out.set("content-security-policy", csp);
+    }
+    out.delete("x-smooth-content-type");
+    out.delete("x-smooth-csp");
+  }
   return new Response([101, 204, 205, 304].includes(up.status) ? null : up.body, { status: up.status, statusText: up.statusText, headers: out });
 }
 

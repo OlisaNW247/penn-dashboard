@@ -202,14 +202,19 @@ followed by a command the session (or anyone) runs:**
    three-line file importing the bundle (otherwise it ran on Node as
    CommonJS and died on `import.meta`). The upstream `apikey` question
    (README) is still open until the functions exist.
-2. **The functions.** Olisa's go. The Management API token in
-   `~/lhf-bench/supabase.token` still answers 200 (checked 2026-11-08
-   evening). Then `node backend/scripts/deploy-agent.mjs --public-base
-   https://smooth-agent.vercel.app/functions/v1`: sets `LHF_AGENT_PUBLIC_BASE`,
-   applies the migration, deploys `agent-auth`, `mcp`, `agent-snapshot`
-   (verify_jwt false, false, true) and smoke-checks the metadata and the 401
-   challenge through the front (`--dry-run` was run; `--step 4` for real
-   reports the secret unset, as expected). The front must be up first.
+2. **The functions: DONE 2026-11-08 night, at Olisa's go relayed by Marco
+   ("Yes, deploy").** `node backend/scripts/deploy-agent.mjs --public-base
+   https://smooth-agent.vercel.app/functions/v1` set `LHF_AGENT_PUBLIC_BASE`,
+   applied the migration, deployed `agent-auth`, `mcp`, `agent-snapshot`
+   (each version 1; verify_jwt false, false, true) and passed every smoke
+   check through the front, so the Supabase gateway does **not** demand an
+   `apikey` header on the public functions (`UPSTREAM_APIKEY` stays unset).
+   Probed by hand afterwards: the authorize page renders its code and the
+   `smooth://link`, `/register` mints an `smc_` id, a bogus code is
+   `invalid_grant`, `/phone` and `agent-snapshot` refuse without a token.
+   One live finding: Supabase's gateway rewrites an Edge Function's HTML to
+   `text/plain` with a sandbox CSP on `supabase.co`, so the pages carry
+   marker headers and the front restores the real ones (Traps).
 3. **claude.ai.** Add the dev tunnel (alive at the time of writing,
    `https://1e28-2607-f470-6-1001-186d-8e5-da38-7223.ngrok-free.app/functions/v1/mcp`,
    dies with the Mac's sleep) or, after 1 and 2, the real host
