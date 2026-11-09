@@ -1,0 +1,15 @@
+# Upload only the edge function, the front, the shared metadata module and vercel.json.
+*
+!api
+!api/**
+!connector-front
+!connector-front/**
+connector-front/deploy.sh
+connector-front/bundle-check.mjs
+connector-front/README.md
+!supabase
+!supabase/functions
+!supabase/functions/_shared
+!supabase/functions/_shared/**
+!vercel.json
+.env*

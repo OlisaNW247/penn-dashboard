@@ -18,7 +18,7 @@
 //
 // ORDER OF OPERATIONS, and why it is the order: the connector front comes
 // FIRST. `LHF_AGENT_PUBLIC_BASE` must point at the deployed front (for
-// example https://smooth-agent.deno.dev/functions/v1) BEFORE the functions
+// example https://smooth-agent.vercel.app/functions/v1) BEFORE the functions
 // deploy, because the metadata they emit names the issuer and the MCP URL
 // from that secret, and every connected client caches what it first reads.
 // A function deployed against the wrong base teaches clients a wrong issuer

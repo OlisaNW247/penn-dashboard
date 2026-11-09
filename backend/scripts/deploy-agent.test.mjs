@@ -21,7 +21,7 @@ import { makeContext } from "./deploy-facts.mjs";
 import { verifyJwtFor } from "./deploy-function.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const BASE = "https://smooth-agent.deno.dev/functions/v1";
+const BASE = "https://smooth-agent.vercel.app/functions/v1";
 
 function recorder(handler) {
   const calls = [];
@@ -47,9 +47,9 @@ test("the agent migration exists and is idempotent", async () => {
 
 test("validatePublicBase", () => {
   assert.deepEqual(validatePublicBase(BASE), []);
-  assert.ok(validatePublicBase("http://smooth-agent.deno.dev/functions/v1").some((p) => /https/.test(p)));
+  assert.ok(validatePublicBase("http://smooth-agent.vercel.app/functions/v1").some((p) => /https/.test(p)));
   assert.ok(validatePublicBase(`${BASE}/`).some((p) => /slash/.test(p)));
-  assert.ok(validatePublicBase("https://smooth-agent.deno.dev").some((p) => /functions\/v1/.test(p)));
+  assert.ok(validatePublicBase("https://smooth-agent.vercel.app").some((p) => /functions\/v1/.test(p)));
   assert.ok(validatePublicBase("nonsense").length > 0);
   const sb = "https://ynetfjixexksxqrrkwsg.supabase.co/functions/v1";
   assert.ok(validatePublicBase(sb).some((p) => /supabase\.co/.test(p)));
@@ -62,7 +62,7 @@ test("metadata checks", () => {
   assert.deepEqual(checkResourceMetadata({ resource: `${BASE}/mcp`, authorization_servers: [`${BASE}/agent-auth`] }, BASE), []);
   assert.equal(checkResourceMetadata({ resource: `${BASE}/mcp/`, authorization_servers: [`${BASE}/agent-auth`] }, BASE).length, 1);
   assert.equal(checkResourceMetadata({ resource: `${BASE}/mcp`, authorization_servers: ["other"] }, BASE).length, 1);
-  assert.equal(originOf(BASE), "https://smooth-agent.deno.dev");
+  assert.equal(originOf(BASE), "https://smooth-agent.vercel.app");
 });
 
 test("challenge check", () => {

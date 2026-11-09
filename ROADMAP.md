@@ -432,8 +432,9 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   connector on his claude.ai account, a Canvas sandbox, his phone, Olisa's
   deploy go. Decisions 7, 8 and 9 were taken by the session that evening at
   Marco's word ("decide based on feasibility and our goal"): polling,
-  our own authorization server, a Deno Deploy front
-  (`backend/connector-front/`). **Phase 2 (the phone's opt-in screen,
+  our own authorization server, a front host of ours
+  (`backend/connector-front/`, on Vercel since Deno Deploy sign-ups were
+  found closed the same night). **Phase 2 (the phone's opt-in screen,
   approve sheet, snapshot upload, `smooth://link`) is built and compiled
   the same evening (3714 / 358), never on a phone.** Phases 3 to 5 are not
   started. The one person-step left before the end-to-end test is a Deno

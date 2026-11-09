@@ -3583,8 +3583,9 @@ none is a ship line.
   rate limits and no sweeper for expired rows (`backend/PROTOCOL.md` →
   Limitations). Phase 2 (the phone side) is built, never on a phone; Phases
   3 and 4 do not exist. The deploy is scripted and waits on two people:
-  `backend/connector-front/deploy.sh` (needs a Deno Deploy token in
-  `~/lhf-bench/deno-deploy.token`) and then `node
+  `backend/connector-front/deploy.sh` (needs `vercel login` once; the front
+  runs as a Vercel Edge Function, Deno Deploy's sign-ups being closed) and
+  then `node
   backend/scripts/deploy-agent.mjs --public-base <front>/functions/v1`
   (needs Olisa's go; the token in `~/lhf-bench/supabase.token` still
   answered 200 on 2026-11-08). The plan's "Open asks for Marco" is the list.

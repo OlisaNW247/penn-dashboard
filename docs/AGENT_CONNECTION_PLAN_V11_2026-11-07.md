@@ -84,16 +84,20 @@ submits.
    as authorization), and the tokens are opaque and only good at the MCP
    endpoint (research §3). It exists as `agent-auth` and completed a
    Claude Code sign-in on a dev tunnel the same day (research §8).
-9. _(decided 2026-11-08 evening, same basis)_ **A host we control in front
-   of the two functions: a Deno Deploy project on its free `*.deno.dev`
-   subdomain** (`backend/connector-front/`), because Smooth has no domain
-   of its own today (the privacy and support pages are static files in
-   `docs/site`), Deno is already the backend's language, the free tier
-   covers a few students' traffic, and a custom domain can be attached
-   later without changing the code. Creating the Deno Deploy account is
-   the one thing that needs a person (Marco or Olisa); the issuer and MCP
-   URL then become `https://<project>.deno.dev/functions/v1/agent-auth`
-   and `.../mcp`, and the functions are deployed with
+9. _(decided 2026-11-08 evening, same basis; host changed later that night)_
+   **A host we control in front of the two functions: a Vercel project on
+   its free `*.vercel.app` subdomain**, running `backend/connector-front/`
+   as one Edge Function (`backend/api/connector-front.ts`, `backend/vercel.json`).
+   The first pick was Deno Deploy, for the language and the free tier, but
+   its sign-ups were closed when Marco tried (2026-11-08 night); Marco
+   already has a Vercel account (the CLI on his Mac holds a stale login),
+   the front is plain fetch code so it ports with a ten-line adapter, and a
+   custom domain can be attached later without changing the code. The
+   production deployment is used on purpose: Hobby preview deployments
+   carry Vercel Authentication, which would block Claude. `vercel login`
+   once is the one thing that needs a person; the issuer and MCP URL then
+   become `https://<project>.vercel.app/functions/v1/agent-auth` and
+   `.../mcp`, and the functions are deployed with
    `LHF_AGENT_PUBLIC_BASE` set to that. Background:** Claude Code's sign-in step only reads the OAuth discovery
    documents at the *root* `.well-known` paths of the MCP URL's host
    (research §8 item 3), which `<ref>.supabase.co` cannot serve. So the
@@ -185,16 +189,16 @@ was: the session cannot create accounts, sign in as him, or deploy to
 production without Olisa's go, so each item below is now one person-step
 followed by a command the session (or anyone) runs:**
 
-1. **The connector front.** A Deno Deploy access token (dash.deno.com →
-   Account → Access tokens; Marco's or Olisa's account, the project lands in
-   its personal org) saved to `~/lhf-bench/deno-deploy.token` (mode 600).
-   Then `backend/connector-front/deploy.sh` creates the project
-   `smooth-agent` and deploys (`deployctl` 1.13.1 is installed on the dev
-   Mac; the script was dry-run to the sign-in wall with a fake token).
+1. **The connector front.** `vercel login` once in a terminal on the Mac
+   (the CLI is installed and its old token has expired; Deno Deploy, the
+   first pick, had sign-ups closed). Then `backend/connector-front/deploy.sh`
+   creates the Vercel project `smooth-agent`, sets the env vars and makes a
+   production deployment. The adapter was bundled and exercised offline
+   (`backend/connector-front/bundle-check.mjs`).
 2. **The functions.** Olisa's go. The Management API token in
    `~/lhf-bench/supabase.token` still answers 200 (checked 2026-11-08
    evening). Then `node backend/scripts/deploy-agent.mjs --public-base
-   https://smooth-agent.deno.dev/functions/v1`: sets `LHF_AGENT_PUBLIC_BASE`,
+   https://smooth-agent.vercel.app/functions/v1`: sets `LHF_AGENT_PUBLIC_BASE`,
    applies the migration, deploys `agent-auth`, `mcp`, `agent-snapshot`
    (verify_jwt false, false, true) and smoke-checks the metadata and the 401
    challenge through the front (`--dry-run` was run; `--step 4` for real
@@ -202,7 +206,7 @@ followed by a command the session (or anyone) runs:**
 3. **claude.ai.** Add the dev tunnel (alive at the time of writing,
    `https://1e28-2607-f470-6-1001-186d-8e5-da38-7223.ngrok-free.app/functions/v1/mcp`,
    dies with the Mac's sleep) or, after 1 and 2, the real host
-   `https://smooth-agent.deno.dev/functions/v1/mcp` as a custom connector
+   `https://smooth-agent.vercel.app/functions/v1/mcp` as a custom connector
    on his claude.ai account, or `claude /login` once in a terminal on the
    Mac. Then the three remaining Phase 0 answers can be taken (claude.ai
    discovery, what a model sends as `file_base64`, what Claude shows under
