@@ -7,7 +7,7 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-11-09 on the degree-progress research branch (the research entry under Next; no code changed). Before that, 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
+Last updated 2026-11-09 on `v12` (degree progress built blind; the Now entry). Before that, 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
 backend half went live 2026-11-05 01:20-01:45 UTC, the evening of 2026-11-04
 US Eastern). Before that, 2026-10-28 on `release/3.4.0` (the 3.4.0 release,
 renamed from 3.3.1 that afternoon when PR #16 was folded in). Before
@@ -48,6 +48,20 @@ These block shipping, or would make shipping risky. The launch-prep
 work of 2026-10-09/10 is summarised, with the order to take these in,
 in `docs/LAUNCH_PREP_HANDOFF.md`.
 
+- **v12 degree progress: compile, capture, then a phone** (Olisa's
+  decision 2026-11-09: use the Path@Penn login; build progress and what-if,
+  no course recommendations; "make this extremely smooth"). Built blind the
+  same day on `v12` (`docs/DEGREE_PROGRESS_V12_BUILD_SPEC.md` is the
+  contract). In order: (1) the `tests` workflow on `v12` goes green (the
+  runner is the compiler); (2) Marco's capture on his Mac and phone, keys
+  and hosts only, never a token: does `/worksheets/` on the Degree Works
+  host reach the dashboard through WebLogin without Duo, what does
+  `/api/students/myself` answer, which audit call the dashboard makes, and
+  the key shape of one audit response (`DebugDegreeLog` on a DEBUG build
+  prints it); fix `DegreeWorksEndpoints` and the decoder from that; (3) a
+  DEBUG build on a phone: the ring and blocks for his own program, one
+  what-if, disconnect clears; (4) the privacy label and `REVIEW_NOTES.md`
+  before any upload. Not for 3.4.1.
 - **Facts deploy: re-run 2026-11-06 18:56 UTC from `bd9d20c` (`finish_fact_extraction` applied, `sync` v22, `extract-facts` v6; `docs/DEPLOY_FACTS_2026-11-04.md` → Run 3); first done 2026-11-05 (01:20-01:45 UTC)**
   (`docs/DEPLOY_FACTS_2026-11-04.md` is the runbook and now ends with the run
   record; `backend/scripts/deploy-facts.mjs` runs it). Done, with Olisa's go
@@ -403,7 +417,9 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
 ## Next: features
 
 - **Degree progress: pick a degree, see progress, try a what-if** (Olisa's
-  ask, 2026-11-09; research only, nothing built or agreed).
+  ask, 2026-11-09; researched that morning, then **decided and built blind the
+  same day on `v12`**: see Now. Olisa chose the Path@Penn-login route the
+  report had parked, so the recommendation below is history).
   `docs/DEGREE_PROGRESS_RESEARCH_2026-11-09.md` is the report, its labelled
   source notes are in `docs/research/degree-progress/`, and a phone mockup of
   two concepts was published beside it. The recommendation: build it Penn

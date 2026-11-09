@@ -16,7 +16,7 @@
 <body>
 <h1>Low Hanging Fruit — Privacy Policy</h1>
 
-<p><em>Last updated: 2026-10-27</em></p>
+<p><em>Last updated: 2026-11-09</em></p>
 <p>Low Hanging Fruit (&quot;LHF&quot;, &quot;the app&quot;) is a personal academic dashboard that shows your Canvas assignments and deadlines in one place. This policy explains what the app does with your information.</p>
 <p><strong>In short:</strong> your grades and your Canvas/Gradescope logins stay on your phone. Your list of work stays there too, with three exceptions described below: a summary of it, including which items are done, goes with each question you ask &quot;the tree&quot;; if you pair the Smooth Chrome extension, it travels end-to-end encrypted between your own phone and your own laptop, where we cannot read it; and if you turn on iCloud sync, it goes to your own iCloud. Course materials — syllabi, course pages, assignment descriptions, announcements — are pooled with classmates in the same Canvas course, so everyone shares one copy instead of each of you re-fetching it. Questions you ask &quot;the tree&quot; are answered by an AI model running on our server. The question and the answer are not stored; a small record of each request (when, which model, how long, how many tokens, never the text) is. Deleting the app does not remove everything it saved on the phone: see &quot;Deleting your data&quot;.</p>
 <h2>What stays on your phone</h2>
@@ -47,6 +47,33 @@
 <li><strong>Use:</strong> to fill Penn&#x27;s own HTTPS login page when Canvas requires a new session. Duo approval may still be required. A rejected stored password stops automatic retries and asks you to reconnect or update the password.</li>
 <li><strong>How to remove it:</strong> disconnect Canvas in Settings. This removes the saved credentials and stops automatic reconnection.</li>
 <li><strong>SSO and other schools:</strong> if a login succeeds without submitting a PennKey password, Smooth can retain the session but cannot manufacture a saved password. Other institutions continue using their existing session handling.</li>
+</ul>
+<h2>Degree progress (Penn, since v12)</h2>
+<p>Smooth can show where you stand in your degree, and where you would stand in
+another degree, major, concentration or minor. It reads this from Penn&#x27;s own
+degree audit (the &quot;Degree planning and audit&quot; part of Path@Penn), signed in
+as you, the same way it reconnects to Canvas: with the PennKey saved on this
+phone, typed only into Penn&#x27;s own sign-in page, and your Duo approval when
+Penn asks for one.</p>
+<ul>
+<li><strong>What is read:</strong> the requirements of your declared programs, which of them
+  are met, in progress or open, the courses that count toward each, and the
+  courses on your record (code, title, credits, term, whether it is in
+  progress). For a &quot;what if&quot;, the same for the program you pick, run by
+  Penn&#x27;s audit against your own courses.</li>
+<li><strong>What is never kept:</strong> your grades, your GPA, your name and your email as
+  the audit reports them. The app&#x27;s reader has no place to put them.</li>
+<li><strong>Where it stays:</strong> on this phone, in a file in the app&#x27;s own storage, and
+  the sign-in tokens in this phone&#x27;s Keychain (this-device-only, never
+  synced). Nothing about your degree goes to our server, to a paired laptop,
+  to iCloud or to &quot;the tree&quot;. The list of programs you can pick from is Penn&#x27;s
+  public catalogue of programs.</li>
+<li><strong>It is Penn&#x27;s reading, shown Smooth&#x27;s way.</strong> Smooth does not decide what
+  counts; Penn&#x27;s audit does. Substitutions and advisor exceptions appear only
+  as the audit reports them, and the screen always links to the official
+  audit on Path@Penn.</li>
+<li><strong>How to remove it:</strong> disconnect Canvas. That deletes the file, the tokens
+  and your what-if choices from this phone.</li>
 </ul>
 <h2>What is sent to our server (and why)</h2>
 <p>LHF now runs a small backend of our own (Supabase: a Postgres database plus a few serverless functions) so that two things work better than they could on-device alone:</p>

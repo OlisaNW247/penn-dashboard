@@ -1,6 +1,6 @@
 # Privacy Policy — Low Hanging Fruit (LHF)
 
-_Last updated: 2026-11-05_
+_Last updated: 2026-11-09_
 
 Low Hanging Fruit ("LHF", "the app") is a personal academic dashboard that shows
 your Canvas assignments and deadlines in one place. This policy explains what
@@ -140,6 +140,34 @@ no separate "stay signed in" choice or second password entry.
 - **SSO and other schools:** if a login succeeds without submitting a PennKey
   password, Smooth can retain the session but cannot manufacture a saved
   password. Other institutions continue using their existing session handling.
+
+## Degree progress (Penn, since v12)
+
+Smooth can show where you stand in your degree, and where you would stand in
+another degree, major, concentration or minor. It reads this from Penn's own
+degree audit (the "Degree planning and audit" part of Path@Penn), signed in
+as you, the same way it reconnects to Canvas: with the PennKey saved on this
+phone, typed only into Penn's own sign-in page, and your Duo approval when
+Penn asks for one.
+
+- **What is read:** the requirements of your declared programs, which of them
+  are met, in progress or open, the courses that count toward each, and the
+  courses on your record (code, title, credits, term, whether it is in
+  progress). For a "what if", the same for the program you pick, run by
+  Penn's audit against your own courses.
+- **What is never kept:** your grades, your GPA, your name and your email as
+  the audit reports them. The app's reader has no place to put them.
+- **Where it stays:** on this phone, in a file in the app's own storage, and
+  the sign-in tokens in this phone's Keychain (this-device-only, never
+  synced). Nothing about your degree goes to our server, to a paired laptop,
+  to iCloud or to "the tree". The list of programs you can pick from is Penn's
+  public catalogue of programs.
+- **It is Penn's reading, shown Smooth's way.** Smooth does not decide what
+  counts; Penn's audit does. Substitutions and advisor exceptions appear only
+  as the audit reports them, and the screen always links to the official
+  audit on Path@Penn.
+- **How to remove it:** disconnect Canvas. That deletes the file, the tokens
+  and your what-if choices from this phone.
 
 ## What is sent to our server (and why)
 

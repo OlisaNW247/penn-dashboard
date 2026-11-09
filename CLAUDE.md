@@ -79,7 +79,13 @@ model on the server for course-level "facts"; they belong to the class,
 carry no user id, and a student's AI-assist switch does not stop them
 (`docs/PRIVACY.md` says so). The phone also reads Canvas's own structured
 endpoints (Planner, module completion, section dates) with the student's
-session and keeps the results on the phone. There is no analytics, tracking,
+session and keeps the results on the phone. Since 2026-11-09 (`v12`, written blind, not compiled, not on a device) a
+Penn install can read the student's own Degree Works audit through
+Path@Penn with the same saved PennKey (`DegreeWorksSessionReader`) and
+keeps the audit on the phone (`degree-audit.json`, tokens in the Keychain);
+no name, email, GPA or grade is ever decoded, and nothing about the degree
+goes to the server, the laptop or the tree (`docs/PRIVACY.md` → "Degree
+progress"). There is no analytics, tracking,
 or third-party SDK. Don't say "everything is on-device" (untrue since
 `assistant-ui`) or "no server" (untrue since the backend). `docs/PRIVACY.md`
 is the student-facing version and must change in the same commit as any
@@ -823,6 +829,32 @@ Keep this current. It is the fastest way for a new session to know what exists.
   working perfectly"). Owner's ask of 2026-10-22: "voice mode for the tree AI";
   dictate-then-send was the agreed first version, hands-free with spoken
   answers set aside (`ROADMAP.md` → Next).
+- **Degree** (`DegreeProgressView`, 2026-11-09, `v12`, behind
+  `FeatureFlags.degreeProgress`; written in the cloud container without a
+  compiler, nothing on a phone). Olisa's ask: "see your degree progress,
+  see what would hypothetically be your course of action if you switched
+  degrees", no course recommendations. Reached from the first row of
+  Profile → classes ("degree", with "31 of 40 cu" or the status line) and
+  `DashRoute.degree`; Penn only; never in preview or demo, which show
+  `SampleData.degreeSnapshot()`. Two tabs on a `SmoothSegmentPicker`,
+  **progress · what if**. Progress: a teal ring (credits applied over the
+  DEGREE block's requirement, else met rules over all), the program title,
+  then one card per audit block (DEGREE last as "everything else") with
+  "n of N" or "x of y cu", a bar in teal / marigold / rule-grey for
+  `met` / `in progress` / `open`, expanding to the rules with applied
+  courses as class-coloured chips ("· now" while in progress) and the
+  audit's advice codes as ghost chips on open rules. Footer: "path@penn's
+  reading · official audit ↗". What if: a stepped picker over Penn's
+  program catalogue (program → degree → major → concentration → minor),
+  "run", and the same list for the target with a grape "what if" tag and
+  one summary line ("N met · M in progress · K open · J of your courses
+  count"); recent what-ifs as chips. The data: Penn's Degree Works behind
+  Path@Penn, read with the student's own session (`docs/DEGREE_PROGRESS_V12_BUILD_SPEC.md`
+  has the endpoints, every one unverified against the live system; Known
+  gaps). Status words: "reading path@penn…", "approve the duo push on this
+  phone", "sign in to canvas", "pick your degree", "couldn't read
+  path@penn · retry", "read today". Code decides nothing here: the audit
+  is Penn's and the screen only draws it.
 - **Profile** (`SettingsPage`; `ProfileView` is only a wrapper), in order:
   1. your name
   2. accounts (Canvas and Gradescope connect/disconnect; "update password"
@@ -3471,7 +3503,8 @@ itself.
 
 ## Branches
 
-`v10` is the line (2026-11-03): `v9` plus `origin/v8` `7e004c5` plus
+`v12` is the line (2026-11-09): `v10` plus the degree-progress feature
+(below). Before it, `v10` (2026-11-03): `v9` plus `origin/v8` `7e004c5` plus
 `phase0/extract-facts-bench`. Start at `docs/HANDOFF_V10_2026-11-04.md`
 (it replaces the 2026-11-03 one). The 2026-11-04 composed-day work
 (Phases 1-3) is committed on `v10`.
@@ -3489,6 +3522,7 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
+| `v12` | **Current line (2026-11-09 onward).** `v10` at `4c136b2` plus the degree-progress research (`docs/DEGREE_PROGRESS_RESEARCH_2026-11-09.md`) and the v12 feature: `Degree/` in the Kit, `DegreeWorksSessionReader`, `DegreeWorksClient`, `AppState+Degree`, `DegreeProgressView`, `DegreeWhatIfSheet`, `FeatureFlags.degreeProgress`. Written blind; the `tests` workflow runs on pushes to it (the compile gate). Nothing on a phone. There is no `v11`. |
 | `v10` | **Current line (2026-11-03 onward).** `v9` (the no-banner sign-in, the onboarding polish, the composed-day research) plus `origin/v8` `7e004c5` (the tree's recency and follow-up work) plus `phase0/extract-facts-bench`. The merge's Swift run is recorded under Test baseline. |
 | `phase0/extract-facts-bench` | 2026-11-03, off `v9`: the extract-facts bench, prompt, schema and parser; the model decision (Haiku 5.5, `docs/EXTRACT_FACTS_BENCH_2026-11-03.md`). In `v10`. |
 | `v9` | 2026-11-01 to 11-03: the no-banner sign-in and keepalive, proven on Marco's phone; the onboarding polish merged; the composed-day research. In `v10`. |
@@ -3528,6 +3562,25 @@ none is a ship line.
 
 ## Known gaps
 
+- **Degree progress (`v12`, 2026-11-09) is written blind against a data
+  source nobody on this project has observed.** Every endpoint in
+  `DegreeWorksEndpoints` (the SSO entry `/worksheets/`, `/api/students/myself`,
+  the GET and POST shapes of `/api/audit`, `/api/goals`, the cookie names
+  `X-AUTH-TOKEN`/`REFRESH_TOKEN`) comes from Penn Labs' MIT-licensed Degree
+  Works client and another school's CLI, not from Penn's live system. The
+  decoder is lenient and `DebugDegreeLog` records JSON key names (never
+  values) so one capture on Marco's phone can correct the constants. What
+  to check first: whether the hidden WebView on `LoginDataStores.canvas`
+  reaches the Degree Works host from `/worksheets/` without Duo (expected:
+  the SSO session and Duo trust carry over), whether `/api/students/myself`
+  exists, and whether the student's own audit needs the GET or the
+  `isKeepCurriculum: true` POST. Marco's brief is in
+  `docs/DEGREE_PROGRESS_V12_BUILD_SPEC.md`. Until then the feature can show
+  "couldn't read path@penn · retry" to every student, which is the designed
+  failure. Also open: Apple 5.2.2 authorisation for reading a second Penn
+  system with the saved PennKey (`docs/research/degree-progress/04-privacy-and-app-store.md`),
+  and whether Penn ISC has a position on it; Olisa chose to proceed on
+  2026-11-09.
 - **A finished item whose completion is Canvas's alone has no swipe back
   in prev** (since 2026-11-06, `AppState.completionIsLockedByCanvas`,
   `DashItem.canMarkActive`). Before that the swipe was offered, did nothing
