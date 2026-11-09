@@ -332,4 +332,102 @@ enum SampleData {
         ]
         return CourseKnowledgeBase(courses: [cis, econ, mgmt], documents: documents, lastSyncedAt: now)
     }
+
+    // MARK: Degree progress
+
+    /// Invented, plainly so: a CIS BSE audit and one what-if (a math minor)
+    /// for preview and demo mode, so the degree page has something to show
+    /// without a Path@Penn login. No name, email, GPA or grade is modelled,
+    /// because the real decoder has no field for them either.
+    static func degreeSnapshot(now: Date = Date()) -> DegreeSnapshot {
+        func course(_ code: String, _ title: String, _ credits: Double,
+                    _ term: String, inProgress: Bool = false) -> AuditCourse {
+            AuditCourse(code: code, title: title, credits: credits, termCode: term,
+                        isInProgress: inProgress, isTransfer: false)
+        }
+        let math1400 = course("MATH 1400", "calculus i", 1, "202530")
+        let math1410 = course("MATH 1410", "calculus ii", 1, "202610")
+        let math2400 = course("MATH 2400", "calculus iii", 1, "202630")
+        let cis1200 = course("CIS 1200", "programming languages", 1, "202530")
+        let cis1210 = course("CIS 1210", "data structures and algorithms", 1, "202630", inProgress: true)
+        let econ1 = course("ECON 1", "intro to microeconomics", 1, "202610")
+        let mgmt1010 = course("MGMT 1010", "intro to management", 1, "202610")
+        let meam1010 = course("MEAM 1010", "intro to mechanical engineering", 1, "202530")
+        let psyc1 = course("PSYC 1", "intro to psychology", 1, "202630", inProgress: true)
+        // One lump of transfer credit so the sample's credit total reads 31 of
+        // 40, the figure the rest of the fixture is drawn around.
+        let transfer = AuditCourse(code: "AP 0000", title: "ap and transfer credit", credits: 22,
+                                   termCode: nil, isInProgress: false, isTransfer: true)
+        let courses = [transfer, meam1010, math1400, cis1200, math1410, econ1, mgmt1010, math2400, cis1210, psyc1]
+
+        func rule(_ id: String, _ label: String, _ status: RuleStatus,
+                  needCourses: Int? = nil, needCredits: Double? = nil,
+                  appliedCount: Int? = nil, appliedCredits: Double? = nil,
+                  applied: [AuditCourse] = [], advice: [AdviceCourse] = []) -> AuditRule {
+            AuditRule(id: id, label: label, ruleType: "Subset", percentComplete: nil, status: status,
+                      needCourses: needCourses, needCredits: needCredits,
+                      appliedCount: appliedCount, appliedCredits: appliedCredits,
+                      applied: applied, advice: advice, adviceText: nil, children: [])
+        }
+
+        let major = AuditBlock(
+            id: "MAJOR:CIS", type: "MAJOR", value: "CIS", title: "Computer Science", percentComplete: 55,
+            rules: [
+                rule("major.0", "Math", .met, needCourses: 4, appliedCount: 4,
+                     applied: [math1400, math1410, math2400, course("MATH 2410", "differential equations", 1, "202630")]),
+                rule("major.1", "CIS Core", .inProgress, needCourses: 7, appliedCount: 5,
+                     applied: [cis1200, cis1210, course("CIS 1600", "math foundations", 1, "202610"),
+                               course("CIS 2400", "computer systems", 1, "202610"),
+                               course("CIS 2620", "automata and computability", 1, "202630")]),
+                rule("major.2", "CIS Electives 3000+", .open, needCourses: 3, appliedCount: 0,
+                     advice: [AdviceCourse(code: "CIS 3200", title: "algorithms", credits: 1),
+                              AdviceCourse(code: "CIS 4500", title: "software engineering", credits: 1)]),
+            ])
+        let writing = AuditBlock(
+            id: "OTHER:WRIT", type: "OTHER", value: "WRIT", title: "Writing Seminar", percentComplete: 100,
+            rules: [rule("writing.0", "Writing Seminar", .met, needCourses: 1, appliedCount: 1,
+                         applied: [course("WRIT 0020", "writing seminar", 1, "202530")])])
+        let social = AuditBlock(
+            id: "OTHER:SSH", type: "OTHER", value: "SSH", title: "Social Science \u{00B7} Humanities", percentComplete: 43,
+            rules: [rule("ssh.0", "Social Science and Humanities", .inProgress, needCourses: 7, appliedCount: 3,
+                         applied: [econ1, mgmt1010, psyc1])])
+        let degree = AuditBlock(
+            id: "DEGREE:BSE", type: "DEGREE", value: "BSE", title: "Bachelor of Science in Engineering",
+            percentComplete: 78,
+            rules: [rule("degree.0", "Total Credits", .inProgress, needCredits: 40, appliedCredits: 31)])
+
+        let goals = DegreeGoals(school: "UG", college: "EU", program: "EU_BSE", degree: "BSE",
+                                majors: ["CIS"], concentrations: [], minors: [], catalogYear: "2024")
+        let current = DegreeAudit(
+            goals: goals, isWhatIf: false, percentComplete: 78,
+            degreeLabel: "computer science, bse", catalogYearLabel: "2024",
+            blocks: [major, writing, social, degree], courses: courses, fetchedAt: now)
+
+        var minorGoals = goals
+        minorGoals.minors = ["MATH"]
+        let minor = AuditBlock(
+            id: "MINOR:MATH", type: "MINOR", value: "MATH", title: "Mathematics", percentComplete: 33,
+            rules: [rule("minor.0", "Math Minor Courses", .inProgress, needCourses: 6, appliedCount: 2,
+                         applied: [math1400, math1410],
+                         advice: [AdviceCourse(code: "MATH 3140", title: "linear algebra", credits: 1)])])
+        let whatIf = DegreeAudit(
+            goals: minorGoals, isWhatIf: true, percentComplete: 80,
+            degreeLabel: "computer science, bse", catalogYearLabel: "2024",
+            blocks: [major, minor, degree], courses: courses, fetchedAt: now)
+
+        func choice(_ key: String, _ description: String) -> GoalChoice {
+            GoalChoice(key: key, description: description)
+        }
+        let catalog = DegreeGoalCatalog(
+            catalogYears: [choice("2024", "2024"), choice("2025", "2025")],
+            programs: [choice("EU_BSE", "engineering, bse"), choice("EU_BAS", "engineering, bas")],
+            schools: [choice("UG", "undergraduate")],
+            colleges: [choice("EU", "engineering")],
+            degrees: [choice("BSE", "bse"), choice("BAS", "bas")],
+            majors: [choice("CIS", "computer science"), choice("DMD", "digital media design")],
+            concentrations: [choice("AI", "artificial intelligence")],
+            minors: [choice("MATH", "mathematics"), choice("ECON", "economics")])
+
+        return DegreeSnapshot(current: current, whatIfs: [whatIf], catalog: catalog, lastShape: [])
+    }
 }

@@ -501,6 +501,20 @@ final class AppState: ObservableObject {
         SharedDefaults.isTestRunner ? nil : AppliedFactStore.makeDefault() {
         didSet { appliedFactsCache = nil; factsLastEffects = nil }
     }
+
+    // Degree progress (`AppState+Degree.swift`); stored here because an
+    // extension cannot hold stored properties. The store is a scratch
+    // directory under the test runner so a test's `clearDegreeData()` can
+    // never delete a developer's real `degree-audit.json`.
+    @Published var degree: DegreeSnapshot = .empty
+    @Published var degreeStatus: DegreeStatus = .idle
+    var degreeStore: DegreeAuditStore = SharedDefaults.isTestRunner
+        ? DegreeAuditStore(directory: FileManager.default.temporaryDirectory
+            .appendingPathComponent("degree-\(UUID().uuidString)", isDirectory: true))
+        : .default()
+    let degreeSessionReader = DegreeWorksSessionReader()
+    var degreeClient = DegreeWorksClient()
+    var degreeRefreshTask: Task<Void, Never>?
     /// Holds the facts cursor (`factsCursorV1`).
     var factsDefaults: UserDefaults? = SharedDefaults.isTestRunner ? nil : .lhf
     /// The stored facts as snapshots, read once and dropped whenever the store
@@ -5035,6 +5049,7 @@ final class AppState: ObservableObject {
         // `.canvas` but is a session-death rehearsal, not a sign-out.
         SessionCookieStore.remove(service: .ed)
         EdDiscussionCoordinator.clearCaches()
+        clearDegreeData()
         edDiscussionCoordinator.resetThrottle()
         edDiscussionStatus = nil
         // Best-effort revoke BEFORE the local clear, not after: the revoke

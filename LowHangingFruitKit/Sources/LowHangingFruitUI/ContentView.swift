@@ -69,6 +69,7 @@ struct ContentView: View {
         case grades
         case report(courseID: String, courseName: String)
         case assistant
+        case degree
     }
 
     /// How often to silently re-sync while the dashboard is open. 5 minutes is a
@@ -203,6 +204,9 @@ struct ContentView: View {
                 case .grades:
                     GradeWatcherView(store: state.gradeWatcher)
                         .environmentObject(state)
+                case .degree:
+                    DegreeProgressView()
+                        .environmentObject(state)
                 case let .report(courseID, courseName):
                     GradeReportView(store: state.gradeWatcher, courseID: courseID, courseName: courseName)
                         .environmentObject(state)
@@ -248,6 +252,7 @@ struct ContentView: View {
                 if args.contains("-LHFShowProfile") { path = [.profile] }
                 if args.contains("-LHFShowGrades") { path = [.grades] }
                 if args.contains("-LHFShowAssistant") { path = [.assistant] }
+                if args.contains("-LHFShowDegree") { path = [.degree] }
                 if args.contains("-LHFShowReport") {
                     // Deepest screenshot target: Grades → the full report for
                     // the richest fixture course.
