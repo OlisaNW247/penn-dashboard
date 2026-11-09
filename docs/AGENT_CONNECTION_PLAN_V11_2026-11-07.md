@@ -180,28 +180,39 @@ Detailed, with files and acceptance tests, in the session brief.
 
 **Open asks for Marco (2026-11-08 evening; decisions 7, 8 and 9 were taken
 by the session at his word, "decide based on feasibility and our goal", and
-are recorded above). What remains needs his hands, not a decision:**
+are recorded above). Later the same evening everything that can be scripted
+was: the session cannot create accounts, sign in as him, or deploy to
+production without Olisa's go, so each item below is now one person-step
+followed by a command the session (or anyone) runs:**
 
-1. A Deno Deploy account (free) for the connector front, or Olisa's, with
-   the project name `smooth-agent` (any name works; the name becomes the
-   host). Five minutes in a browser; `backend/connector-front/README.md`.
-2. (kept as the earlier item 2 for numbering) nothing: decision 9 is taken.
-3. Add the dev tunnel (or, once it exists, the real host) as a custom
-   connector on his claude.ai account, so three Phase 0 answers can be
-   taken: whether claude.ai's flow also needs the root paths, what a model
-   actually sends as `file_base64`, and what Claude shows for
-   `propose_submission` under each `destructiveHint`. Or run `claude
-   /login` once in a terminal on his Mac so the CLI can do the same.
-4. A Canvas sandbox for the submit spike: a Free-for-Teacher course with a
-   student test user, signed in through the Mac build of Smooth (the
-   school picker takes any Canvas address), or a Penn assignment he
-   controls that allows resubmission. **Never a graded one.** Then
-   `-LHFSubmitSpike <courseID> <assignmentID>`.
-5. His phone, for the `smooth://link` hand-off from the Claude iPhone app
-   (Phase 2 builds the `link` branch first).
-6. Olisa's go and a Management API token for the first deploy (the
-   migration, then `agent-auth`, `mcp`, `agent-snapshot`; the deploy
-   script already sends `verify_jwt: false` for the first two).
+1. **The connector front.** A Deno Deploy access token (dash.deno.com →
+   Account → Access tokens; Marco's or Olisa's account, the project lands in
+   its personal org) saved to `~/lhf-bench/deno-deploy.token` (mode 600).
+   Then `backend/connector-front/deploy.sh` creates the project
+   `smooth-agent` and deploys (`deployctl` 1.13.1 is installed on the dev
+   Mac; the script was dry-run to the sign-in wall with a fake token).
+2. **The functions.** Olisa's go. The Management API token in
+   `~/lhf-bench/supabase.token` still answers 200 (checked 2026-11-08
+   evening). Then `node backend/scripts/deploy-agent.mjs --public-base
+   https://smooth-agent.deno.dev/functions/v1`: sets `LHF_AGENT_PUBLIC_BASE`,
+   applies the migration, deploys `agent-auth`, `mcp`, `agent-snapshot`
+   (verify_jwt false, false, true) and smoke-checks the metadata and the 401
+   challenge through the front (`--dry-run` was run; `--step 4` for real
+   reports the secret unset, as expected). The front must be up first.
+3. **claude.ai.** Add the dev tunnel (alive at the time of writing,
+   `https://1e28-2607-f470-6-1001-186d-8e5-da38-7223.ngrok-free.app/functions/v1/mcp`,
+   dies with the Mac's sleep) or, after 1 and 2, the real host
+   `https://smooth-agent.deno.dev/functions/v1/mcp` as a custom connector
+   on his claude.ai account, or `claude /login` once in a terminal on the
+   Mac. Then the three remaining Phase 0 answers can be taken (claude.ai
+   discovery, what a model sends as `file_base64`, what Claude shows under
+   each `destructiveHint`).
+4. **A Canvas sandbox** for the submit spike (a Free-for-Teacher course with
+   a student test user, signed in through the Mac build; **never a graded
+   one**), then `-LHFSubmitSpike <courseID> <assignmentID>`; and **his
+   phone on the cable** for the Debug install and the `smooth://link` tap
+   (the phone was unreachable on 2026-11-08 evening). The link test also
+   needs 2, since the phone looks the code up on the production backend.
 
 - **Instructure 3(i)** names MCP servers that connect to its APIs. Ours
   serves Smooth's own data; the submission is the student's act in their

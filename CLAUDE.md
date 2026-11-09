@@ -3581,7 +3581,13 @@ none is a ship line.
   model sends as `file_base64` and what Claude shows for the write tool are
   unmeasured (both need a signed-in Claude client), and `agent-auth` has no
   rate limits and no sweeper for expired rows (`backend/PROTOCOL.md` →
-  Limitations). The phone side (Phases 2 to 4) does not exist.
+  Limitations). Phase 2 (the phone side) is built, never on a phone; Phases
+  3 and 4 do not exist. The deploy is scripted and waits on two people:
+  `backend/connector-front/deploy.sh` (needs a Deno Deploy token in
+  `~/lhf-bench/deno-deploy.token`) and then `node
+  backend/scripts/deploy-agent.mjs --public-base <front>/functions/v1`
+  (needs Olisa's go; the token in `~/lhf-bench/supabase.token` still
+  answered 200 on 2026-11-08). The plan's "Open asks for Marco" is the list.
 - **A finished item whose completion is Canvas's alone has no swipe back
   in prev** (since 2026-11-06, `AppState.completionIsLockedByCanvas`,
   `DashItem.canMarkActive`). Before that the swipe was offered, did nothing

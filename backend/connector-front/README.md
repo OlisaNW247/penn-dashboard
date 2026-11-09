@@ -17,7 +17,7 @@ It logs one line per request (method, path, status) and nothing else. Bodies are
 
 ## Deploy (Deno Deploy)
 
-Dashboard: new project, entrypoint `backend/connector-front/main.ts`, set the env vars. Or `deployctl deploy --project=<name> --entrypoint=connector-front/main.ts` from `backend/` (the entrypoint imports `../supabase/functions/_shared/agentMetadata.ts`, so deploy from `backend/`). A custom domain can replace the `*.deno.dev` host later; update `PUBLIC_BASE` and `LHF_AGENT_PUBLIC_BASE` together.
+`deploy.sh` does it: it needs a Deno Deploy access token (dash.deno.com → Account → Access tokens, any Deno Deploy account; the project lands in that account's personal org) in `~/lhf-bench/deno-deploy.token`, mode 600, and creates the project `smooth-agent` on the first run (`LHF_CONNECTOR_PROJECT` to pick another name; `PUBLIC_BASE` follows it). `deploy.sh --dry-run` uploads nothing. `deployctl` is installed with `deno install -gArf jsr:@deno/deployctl` (1.13.1 on the dev Mac since 2026-11-08). The dashboard route still works: new project, entrypoint `backend/connector-front/main.ts`, the two env vars. A custom domain can replace the `*.deno.dev` host later; update `PUBLIC_BASE` and `LHF_AGENT_PUBLIC_BASE` together.
 
 ## Point the functions at it
 
