@@ -98,6 +98,10 @@ extension AppState {
     /// and grade time, not by the minute).
     nonisolated static let degreeStaleAfter: TimeInterval = 12 * 3600
     private static let maxWhatIfs = 5
+    /// The degree the student picked when Degree Works would not say, as
+    /// JSON-encoded `DegreeGoals` in `UserDefaults.lhf`. Kept so the question
+    /// is asked once, not at every stale read; cleared with the rest.
+    private static let degreePickedGoalsKey = "degreePickedGoalsV1"
 
     // MARK: Rules
 
@@ -159,6 +163,9 @@ extension AppState {
     /// in-memory snapshot, the status and the read throttle. Called on a
     /// Canvas disconnect, because the audit was read through that login.
     func clearDegreeData() {
+        // A read in flight cannot be stopped mid-await, only told its work no
+        // longer counts: every write below the awaits checks this number.
+        degreeGeneration += 1
         degreeRefreshTask?.cancel()
         degreeRefreshTask = nil
         DegreeWorksTokenStore.remove()
@@ -167,6 +174,7 @@ extension AppState {
         degreeStatus = .idle
         degreeSessionReader.resetThrottle()
         UserDefaults.lhf.removeObject(forKey: "degreeRecentWhatIfsV1")
+        UserDefaults.lhf.removeObject(forKey: Self.degreePickedGoalsKey)
         #if DEBUG
         DebugDegreeLog.clear()
         #endif
@@ -199,20 +207,41 @@ extension AppState {
             await running.value
             return
         }
-        let task = Task { await self.performDegreeRefresh() }
+        let task = Task { await self.performDegreeRefresh(force: force) }
         degreeRefreshTask = task
         await task.value
         degreeRefreshTask = nil
     }
 
-    private func performDegreeRefresh() async {
+    private func performDegreeRefresh(force: Bool) async {
+        let generation = degreeGeneration
         let now = Date()
         degreeStatus = .reading
         let collector = DegreeShapeCollector()
         let client = degreeClient
-        let result = await degreeCall(now: now) { tokens in
-            try await client.fetchCurrentAudit(tokens: tokens, now: now, shape: { collector.set($0) })
+        // A degree the student already picked is audited again as picked, so
+        // Degree Works is not asked to guess it (and the student is not asked
+        // again) every twelve hours; only when that fails does the ordinary
+        // read run. A rejected token is the one failure that must reach
+        // `degreeCall`, which owns the single re-read.
+        let picked: DegreeGoals? = UserDefaults.lhf.data(forKey: Self.degreePickedGoalsKey)
+            .flatMap { try? JSONDecoder().decode(DegreeGoals.self, from: $0) }
+        let result = await degreeCall(now: now, force: force) { tokens -> DegreeAudit in
+            if let picked {
+                do {
+                    return try await client.fetchAudit(
+                        tokens: tokens, goals: picked, keepCurriculum: true, isWhatIf: false,
+                        now: now, shape: { collector.set($0) }
+                    )
+                } catch DegreeWorksClient.Failure.tokensRejected {
+                    throw DegreeWorksClient.Failure.tokensRejected
+                } catch {
+                    // Fall through to the ordinary read below.
+                }
+            }
+            return try await client.fetchCurrentAudit(tokens: tokens, now: now, shape: { collector.set($0) })
         }
+        guard generation == degreeGeneration else { return }
         switch result {
         case let .value(audit):
             adoptDegreeShape(collector.lines)
@@ -229,7 +258,13 @@ extension AppState {
     /// The student picked their own degree (Degree Works would not say):
     /// audit that, keeping their curriculum, and keep it as the current audit.
     func pickCurrentGoals(_ goals: DegreeGoals) async {
-        guard !isUsingFixtureData, degreeFeatureAvailable else { return }
+        guard degreeFeatureAvailable else { return }
+        if isUsingFixtureData {
+            // The demo has no network; the sample is already the answer.
+            degreeStatus = .read(Date())
+            return
+        }
+        let generation = degreeGeneration
         let now = Date()
         degreeStatus = .reading
         let collector = DegreeShapeCollector()
@@ -240,9 +275,13 @@ extension AppState {
                 now: now, shape: { collector.set($0) }
             )
         }
+        guard generation == degreeGeneration else { return }
         switch result {
         case let .value(audit):
             adoptDegreeShape(collector.lines)
+            if let data = try? JSONEncoder().encode(goals) {
+                UserDefaults.lhf.set(data, forKey: Self.degreePickedGoalsKey)
+            }
             degree.current = audit
             persistDegree()
             degreeStatus = .read(now)
@@ -258,7 +297,12 @@ extension AppState {
     /// most five. A failure leaves the current audit and the status line
     /// alone except for the failure words.
     func runWhatIf(_ goals: DegreeGoals) async {
-        guard !isUsingFixtureData, degreeFeatureAvailable else { return }
+        guard degreeFeatureAvailable else { return }
+        if isUsingFixtureData {
+            runFixtureWhatIf(goals)
+            return
+        }
+        let generation = degreeGeneration
         let now = Date()
         let previous = degreeStatus
         degreeStatus = .reading
@@ -270,6 +314,7 @@ extension AppState {
                 now: now, shape: { collector.set($0) }
             )
         }
+        guard generation == degreeGeneration else { return }
         switch result {
         case let .value(audit):
             adoptDegreeShape(collector.lines)
@@ -287,14 +332,40 @@ extension AppState {
         }
     }
 
+    /// The demo's "run": no network, so a what-if the sample already holds for
+    /// these goals moves to the front, and otherwise a copy of the first
+    /// sample what-if is filed under the picked goals, so the button visibly
+    /// does something.
+    private func runFixtureWhatIf(_ goals: DegreeGoals) {
+        guard FeatureFlags.degreeProgress else { return }
+        var snapshot = degree.current == nil ? SampleData.degreeSnapshot() : degree
+        if let index = snapshot.whatIfs.firstIndex(where: { $0.goals == goals }) {
+            let match = snapshot.whatIfs.remove(at: index)
+            snapshot.whatIfs.insert(match, at: 0)
+        } else if let template = snapshot.whatIfs.first ?? snapshot.current {
+            let copy = DegreeAudit(
+                goals: goals, isWhatIf: true, percentComplete: template.percentComplete,
+                degreeLabel: template.degreeLabel, catalogYearLabel: template.catalogYearLabel,
+                blocks: template.blocks, courses: template.courses, fetchedAt: Date()
+            )
+            snapshot.whatIfs.insert(copy, at: 0)
+            if snapshot.whatIfs.count > Self.maxWhatIfs {
+                snapshot.whatIfs.removeLast(snapshot.whatIfs.count - Self.maxWhatIfs)
+            }
+        }
+        degree = snapshot
+    }
+
     /// The picker's choices, narrowed by what is already `selected`. Nil when
     /// they could not be read; the sheet then says so in the status words.
     func loadDegreeCatalog(selected: DegreeGoals) async -> DegreeGoalCatalog? {
         guard !isUsingFixtureData, degreeFeatureAvailable else { return degree.catalog }
+        let generation = degreeGeneration
         let client = degreeClient
         let result = await degreeCall(now: Date()) { tokens in
             try await client.fetchCatalog(tokens: tokens, selected: selected)
         }
+        guard generation == degreeGeneration else { return nil }
         guard case let .value(catalog) = result else { return degree.catalog }
         degree.catalog = catalog
         persistDegree()
@@ -323,14 +394,21 @@ extension AppState {
     /// is the thing to avoid).
     private func degreeCall<Value>(
         now: Date,
+        force: Bool = false,
         _ operation: (DegreeWorksTokens) async throws -> Value
     ) async -> DegreeCall<Value> {
+        let generation = degreeGeneration
         for attempt in 0..<2 {
             let tokens: DegreeWorksTokens
             if attempt == 0, let stored = DegreeWorksTokenStore.load(), stored.isUsable(now: now) {
                 tokens = stored
             } else {
-                switch await degreeSessionReader.read(force: attempt > 0) {
+                // `force` is the student's own retry; without it a failed read
+                // left the reader's throttle standing and the retry did nothing.
+                let outcome = await degreeSessionReader.read(force: force || attempt > 0)
+                // A disconnect during the read: nothing from it may be kept.
+                guard generation == degreeGeneration else { return .stop(.idle) }
+                switch outcome {
                 case let .landed(read, finalPage):
                     #if DEBUG
                     DebugDegreeLog.record("session landed: \(finalPage)")
@@ -351,8 +429,11 @@ extension AppState {
                 }
             }
             do {
-                return .value(try await operation(tokens))
+                let value = try await operation(tokens)
+                guard generation == degreeGeneration else { return .stop(.idle) }
+                return .value(value)
             } catch DegreeWorksClient.Failure.tokensRejected {
+                guard generation == degreeGeneration else { return .stop(.idle) }
                 DegreeWorksTokenStore.remove()
                 continue
             } catch DegreeWorksClient.Failure.needsGoals {

@@ -107,10 +107,11 @@ struct ProfileClassesSection: View {
     }
 
     private var showsDegreeRow: Bool {
-        guard state.degreeFeatureAvailable else { return false }
-        if state.degree.current != nil || state.isUsingFixtureData { return true }
-        if case .idle = state.degreeStatus { return false }
-        return true
+        // Shown whenever the feature exists on this install. It used to wait
+        // for a snapshot or a status, but nothing starts a read until the
+        // student opens the page, so on a real install it never appeared; with
+        // nothing read yet the right-hand text is simply empty.
+        state.degreeFeatureAvailable
     }
 
     /// The right-hand words: credits or met rules when an audit is on the

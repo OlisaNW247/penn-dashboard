@@ -306,6 +306,18 @@ struct DegreeAppStateTests {
         #expect(calls.lines.isEmpty)
     }
 
+    @Test("in fixture mode a what-if run files a copy under the picked goals")
+    func fixtureWhatIfRuns() async throws {
+        let state = try makeState()
+        state.forceFixtureDataForTesting(true)
+        await state.refreshDegreeAudit(force: true)
+        let goals = DegreeGoals(school: "UG", college: "EU", program: "EU_BSE", degree: "BSE", minors: ["MATH"])
+        await state.runWhatIf(goals)
+        #expect(state.degree.whatIfs.first?.goals == goals)
+        #expect(state.degree.whatIfs.first?.isWhatIf == true)
+        #expect(state.degree.whatIfs.count <= 5)
+    }
+
     @Test("the feature is available on Penn, and with fixtures, when the flag is on")
     func availability() throws {
         let state = try makeState()

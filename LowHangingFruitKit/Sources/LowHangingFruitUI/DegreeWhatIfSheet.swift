@@ -82,6 +82,7 @@ struct DegreeWhatIfSheet: View {
         .environmentObject(state)
         .lhfSheetTheme()
         .task(id: reloadToken) { await reload() }
+        .onAppear { seedDraft() }
     }
 
     // MARK: Chrome
@@ -233,7 +234,13 @@ struct DegreeWhatIfSheet: View {
 
     private func pick(_ choice: GoalChoice) {
         switch step {
-        case .program: draft.program = choice.key
+        case .program:
+            draft.program = choice.key
+            // The college is the program key's prefix ("EU_BSE" -> "EU"); the
+            // goals endpoint narrows by it and the audit request needs it.
+            if let prefix = choice.key.split(separator: "_").first, choice.key.contains("_") {
+                draft.college = String(prefix)
+            }
         case .degree: draft.degree = choice.key
         case .major: draft.majors = [choice.key]
         case .concentration: draft.concentrations = [choice.key]
@@ -285,12 +292,29 @@ struct DegreeWhatIfSheet: View {
         dismiss()
     }
 
+    /// Starts the draft from the student's own current goals so a what-if or
+    /// a pick carries their school, college and catalog year (a request
+    /// without them is refused or answered for the wrong catalog); the
+    /// program, degree and the rest are what the steps choose. Absent current
+    /// goals, school defaults to undergraduate and the rest is derived as the
+    /// steps run.
+    private func seedDraft() {
+        guard draft.school == nil, draft.college == nil, draft.catalogYear == nil else { return }
+        let current = state.degree.current?.goals
+        draft.school = current?.school ?? "UG"
+        draft.college = current?.college
+        draft.catalogYear = current?.catalogYear
+    }
+
     private func reload() async {
         isLoading = true
         loadFailed = false
         let result = await state.loadDegreeCatalog(selected: draft)
         if let result {
             catalog = result
+            // The catalog year is not a step of the picker; the newest year
+            // the first list offers is the one the audit request carries.
+            if draft.catalogYear == nil { draft.catalogYear = result.catalogYears.first?.key }
         } else {
             loadFailed = true
         }

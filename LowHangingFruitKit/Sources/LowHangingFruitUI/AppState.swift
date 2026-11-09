@@ -515,6 +515,10 @@ final class AppState: ObservableObject {
     let degreeSessionReader = DegreeWorksSessionReader()
     var degreeClient = DegreeWorksClient()
     var degreeRefreshTask: Task<Void, Never>?
+    /// Bumped by `clearDegreeData()`. A read in flight captured the number it
+    /// started under and stops writing (tokens, file, snapshot, status) once it
+    /// changes, so a disconnect cannot be undone by a read that finishes after.
+    var degreeGeneration: Int = 0
     /// Holds the facts cursor (`factsCursorV1`).
     var factsDefaults: UserDefaults? = SharedDefaults.isTestRunner ? nil : .lhf
     /// The stored facts as snapshots, read once and dropped whenever the store
@@ -1234,6 +1238,12 @@ final class AppState: ObservableObject {
         // stored property already has a value by this point, so the instance
         // call is legal.
         normalizeStoredCourseNames()
+
+        // The saved degree audit, read back so the Profile row and the degree
+        // page have the last read from the first frame instead of `.empty`
+        // until a network read lands. Network-free; every stored property has
+        // a value here, so the instance call is legal.
+        if FeatureFlags.degreeProgress { loadDegreeSnapshotAtLaunch() }
 
         // The sign-up backlog: classify an existing install now, while the
         // ledger is exactly as the previous launch left it. Before the

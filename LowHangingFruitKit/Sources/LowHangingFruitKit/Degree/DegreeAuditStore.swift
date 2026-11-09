@@ -77,6 +77,12 @@ public struct DegreeAuditStore: Sendable {
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(trimmed)
         try data.write(to: fileURL, options: .atomic)
+        // The record is re-fetchable from Degree Works and belongs to this one
+        // phone, so it stays out of iCloud and device backups.
+        var excluded = fileURL
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? excluded.setResourceValues(values)
         #if os(iOS)
         try? FileManager.default.setAttributes(
             [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],

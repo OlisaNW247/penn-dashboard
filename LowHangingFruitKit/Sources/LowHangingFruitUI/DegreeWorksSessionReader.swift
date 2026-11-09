@@ -82,10 +82,19 @@ final class DegreeWorksSessionReader {
         }
         // Checked before the throttle clock starts: a read that loaded
         // nothing must not cost the next real attempt 10 minutes.
-        let canvasCookies = SessionCookieStore.load(service: .canvas)
-        guard !canvasCookies.isEmpty else { return .noCanvasSession }
+        // The clock-stale set is used on purpose: `load` applies the 24-hour
+        // rule and returns nothing for a day-old session, but Penn's SSO may
+        // still honour it, and when it does not the saved PennKey fill below
+        // is the silent renewal. Only a phone with neither cookies nor a saved
+        // PennKey has nothing to start from.
+        let canvasCookies = SessionCookieStore.loadIncludingClockStale(service: .canvas)
+        guard !canvasCookies.isEmpty || PennKeyCredentialStore.hasCredentials else {
+            return .noCanvasSession
+        }
         isReading = true
-        lastReadAt = Date()
+        // The throttle clock is stamped only when a read lands (just before `.landed` returns): a
+        // read that found no session, waited on Duo or timed out must not
+        // cost the student's retry ten minutes.
         defer { isReading = false }
 
         let configuration = WKWebViewConfiguration()
@@ -171,6 +180,7 @@ final class DegreeWorksSessionReader {
         guard let tokens = DegreeWorksTokens.from(cookies: allCookies) else {
             return .noSession(finalPage: finalPage)
         }
+        lastReadAt = Date()
         return .landed(tokens, finalPage: finalPage)
     }
 

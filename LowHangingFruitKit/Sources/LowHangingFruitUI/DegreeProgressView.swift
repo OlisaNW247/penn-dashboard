@@ -45,10 +45,18 @@ enum DegreeProgressMath {
         audit.blocks.first { $0.type.uppercased() == "DEGREE" }
     }
 
+    /// The DEGREE block's rule that asks for the most credits: the whole-degree
+    /// total, not a sub-rule that happens to come first in the tree.
+    static func degreeCreditRule(of audit: DegreeAudit) -> AuditRule? {
+        guard let block = degreeBlock(of: audit) else { return nil }
+        return all(block.rules)
+            .filter { ($0.needCredits ?? 0) > 0 }
+            .max { ($0.needCredits ?? 0) < ($1.needCredits ?? 0) }
+    }
+
     /// The credit total the degree block asks for, when any rule in it says one.
     static func degreeNeedCredits(of audit: DegreeAudit) -> Double? {
-        guard let block = degreeBlock(of: audit) else { return nil }
-        return all(block.rules).first(where: { ($0.needCredits ?? 0) > 0 })?.needCredits
+        degreeCreditRule(of: audit)?.needCredits
     }
 
     private static func all(_ rules: [AuditRule]) -> [AuditRule] {
@@ -58,8 +66,11 @@ enum DegreeProgressMath {
     static func ring(for audit: DegreeAudit) -> Ring {
         let counts = audit.ruleCounts
         let total = counts.met + counts.inProgress + counts.open
-        if let need = degreeNeedCredits(of: audit) {
-            let applied = audit.creditsApplied
+        if let rule = degreeCreditRule(of: audit), let need = rule.needCredits {
+            // The numerator is that same rule's own applied credits;
+            // `audit.creditsApplied` sums every course, including ones counted
+            // toward no rule, and would divide a bigger number by this need.
+            let applied = rule.appliedCredits ?? audit.creditsApplied
             return Ring(fraction: min(1, applied / need), extraFraction: 0,
                         centre: credits(applied), caption: "of \(credits(need)) cu")
         }
@@ -553,8 +564,13 @@ struct DegreeRuleRow: View {
     @ViewBuilder
     private var chips: some View {
         if rule.status == .open {
-            if !rule.advice.isEmpty {
+            // Courses already counted toward an open rule come first, then
+            // the suggestions as ghosts; showing only the advice hid progress.
+            if !rule.applied.isEmpty || !rule.advice.isEmpty {
                 DegreeFlowLayout(spacing: 6) {
+                    ForEach(rule.applied) { course in
+                        DegreeCourseChip(course: course)
+                    }
                     ForEach(rule.advice.prefix(6)) { course in
                         DegreeGhostChip(code: course.code)
                     }
