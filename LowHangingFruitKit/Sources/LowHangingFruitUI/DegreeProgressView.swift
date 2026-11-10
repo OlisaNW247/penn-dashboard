@@ -1,14 +1,21 @@
 import SwiftUI
 import LowHangingFruitKit
 
-/// The two halves of the degree screen. `Identifiable` and `CaseIterable` are
+/// The three parts of the degree screen. `Identifiable` and `CaseIterable` are
 /// what `SmoothSegmentPicker` asks of its option type.
 enum DegreeTab: String, CaseIterable, Identifiable {
     case progress
     case whatIf
+    case plan
 
     var id: String { rawValue }
-    var label: String { self == .progress ? "progress" : "what if" }
+    var label: String {
+        switch self {
+        case .progress: return "progress"
+        case .whatIf: return "what if"
+        case .plan: return "plan"
+        }
+    }
 }
 
 /// The arithmetic behind the screen, kept out of the views so a test (and the
@@ -172,6 +179,7 @@ struct DegreeProgressView: View {
                     switch tab {
                     case .progress: progressTab
                     case .whatIf: whatIfTab
+                    case .plan: DegreePlanView()
                     }
                     footer
                 }
@@ -185,7 +193,10 @@ struct DegreeProgressView: View {
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
 #endif
-        .onAppear { Task { await state.refreshDegreeAudit(force: false) } }
+        .onAppear {
+            state.loadDegreePlanIfNeeded()
+            Task { await state.refreshDegreeAudit(force: false) }
+        }
         .onChange(of: state.degree.whatIfs.first?.goals) { _, _ in selectedWhatIf = 0 }
         .sheet(isPresented: $showSheet) {
             DegreeWhatIfSheet()

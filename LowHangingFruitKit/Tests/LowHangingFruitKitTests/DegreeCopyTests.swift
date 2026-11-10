@@ -7,7 +7,7 @@ import Testing
 /// status sentence read from `DegreeStatus.line` rather than written here.
 @Suite("Degree copy")
 struct DegreeCopyTests {
-    private static let files = ["DegreeProgressView.swift", "DegreeWhatIfSheet.swift"]
+    private static let files = ["DegreeProgressView.swift", "DegreeWhatIfSheet.swift", "DegreePlanView.swift"]
 
     private func uiSource(_ filename: String) throws -> String {
         let sources = URL(fileURLWithPath: #filePath)
@@ -77,5 +77,13 @@ struct DegreeCopyTests {
         #expect(source.contains("degreeWhatIfPlans"))
         #expect(source.contains("runWhatIf("))
         #expect(source.contains("degreeStatus.line(now:"))
+    }
+
+    @Test("the plan view carries its four fixed phrases")
+    func planPhrases() throws {
+        let source = try uiSource("DegreePlanView.swift")
+        for phrase in ["+ course", "+ semester", "fits · ", "still open on your audit"] {
+            #expect(source.contains(phrase), "DegreePlanView.swift is missing \(phrase)")
+        }
     }
 }

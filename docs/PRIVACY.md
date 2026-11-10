@@ -172,8 +172,14 @@ audit.
 - **It is Penn's reading, shown Smooth's way.** Smooth does not decide what
   counts; Penn's audit does. Substitutions and advisor exceptions appear only
   as the audit reports them, and the screen always links to Path@Penn.
-- **How to remove it:** disconnect Canvas. That deletes the file and your
-  what-if choices from this phone and closes Penn's page.
+- **Your plan:** the "plan" tab is a table of semesters you fill in yourself,
+  by typing a course code or picking from the options your audit still lists
+  as open. It is kept in its own file on this phone. Smooth sends it nowhere:
+  not to Penn, our server, a paired laptop or "the tree". Because you wrote
+  it and Penn cannot give it back, it is included in this phone's ordinary
+  backup if you back the phone up (the audit itself is not).
+- **How to remove it:** disconnect Canvas. That deletes the audit file, your
+  plan and your what-if choices from this phone and closes Penn's page.
 
 ## What is sent to our server (and why)
 

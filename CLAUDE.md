@@ -842,8 +842,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
   no course recommendations. Reached from the first row of Profile →
   classes ("degree", with "31 of 40 cu", a percent, or the status line) and
   `DashRoute.degree` (`-LHFShowDegree` in a DEBUG build); Penn only; preview
-  and demo show `SampleData.degreeSnapshot()`. Two tabs on a
-  `SmoothSegmentPicker`, **progress · what if**.
+  and demo show `SampleData.degreeSnapshot()`. Three tabs on a
+  `SmoothSegmentPicker`, **progress · what if · plan**.
   - **Progress.** A student in two degrees gets a chip per degree above the
     ring (`AppState.selectDegree`, `degreeSelectedIDV1`); the degrees come
     from the student's record, so nobody is asked to pick one. A teal ring
@@ -861,6 +861,25 @@ Keep this current. It is the fastest way for a new session to know what exists.
     major", "add minor", "add concentration"; the result is the same block
     list under a grape "what if" tag with one summary line. The last four
     are kept as chips.
+  - **Plan** (2026-11-10, Olisa from his phone: "a table feature where you
+    can build a sample course load for the next semester or rest of your
+    time at Penn"; written blind the same hour, see Test baseline for
+    whether it has compiled). `DegreePlanView`: one 168pt column per
+    semester, scrolling sideways, starting at the semester after this one,
+    fall and spring only, "+ semester" up to ten. A column lists what the
+    audit shows as registered for that term (fixed chips), then the
+    student's own courses, each removable, with "fits · <requirement>" under
+    one that Penn lists among the options of a requirement still open
+    (`DegreePlanMath.coverage`, first match, Penn's order). "+ course" opens
+    a sheet: type a code, or pick from "still open on your audit", Penn's
+    list untouched except for what is already planned or taken. The word is
+    "fits", never "satisfies", and nothing is ranked: no recommendations is
+    still the rule. The plan is the student's own work, so it has its own
+    file (`degree-plan.json`, `DegreePlanStore`), is backed up with the
+    phone where the audit is not, and is deleted with the rest on
+    disconnect. It never reaches Penn: Penn's audit request carries the
+    record's own `plan`, which this is not. Not built: course search by
+    title, summer columns, and running Penn's audit with the plan.
   - **How it reads.** `PathPortal` keeps one hidden `WKWebView` on
     `https://courses.upenn.edu/` for the app run, on the Canvas login data
     store so the PennKey session and Duo trust carry over. The page opens

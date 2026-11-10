@@ -67,7 +67,11 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   Intelligence when he says his major is Computer Science (CLAUDE.md →
   Known gaps; waits on a console snippet's output), compare each degree's
   numbers with Path@Penn, run one "switch to" and one "add minor", and
-  reinstall for the catalog-suffix, chip and colour-key changes; (3) capture
+  reinstall for the catalog-suffix, chip and colour-key changes and the
+  new "plan" tab (the semester table he asked for the same day; on the
+  phone, check that registered spring courses appear in the first column
+  and that "fits" shows for a course picked from the open options);
+  (3) capture
   what was not seen: a record with a concentration or minor, and the page's
   own `currentStudentDegrees`; (4) the privacy label and `REVIEW_NOTES.md`,
   and the Apple 5.2.2 / Penn ISC question, before any upload. Not for 3.4.1.

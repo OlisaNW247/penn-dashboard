@@ -383,6 +383,43 @@ struct DegreeAppStateTests {
         #expect(snapshot.lastShape == ["x"])
     }
 
+    @Test("the degree screen's tabs are progress, what if, plan")
+    func tabs() {
+        #expect(DegreeTab.allCases.map(\.label) == ["progress", "what if", "plan"])
+    }
+
+    @Test("in fixture mode the plan loads the sample, and adding then removing a course round-trips in memory")
+    func fixturePlan() throws {
+        let state = try makeState()
+        state.forceFixtureDataForTesting(true)
+        state.loadDegreePlanIfNeeded()
+        #expect(!state.degreePlan.terms.isEmpty)
+        #expect(state.degreePlan.terms.contains { !$0.courses.isEmpty })
+        let before = state.degreePlan
+        let termCode = try #require(before.terms.last?.termCode)
+        state.addPlannedCourse(code: "cis5550", title: nil, credits: 1, to: termCode)
+        #expect(state.degreePlan.terms.last?.courses.contains { $0.code == "CIS 5550" } == true)
+        state.removePlannedCourse(code: "CIS 5550", from: termCode)
+        #expect(state.degreePlan == before)
+        // Fixture mode never writes the sample to disk.
+        #expect(state.degreePlanStore.load() == .empty)
+    }
+
+    @Test("clearing the degree data clears the plan and lets it load again")
+    func clearingPlan() throws {
+        let state = try makeState()
+        state.loadDegreePlanIfNeeded()
+        let termCode = try #require(state.degreePlan.terms.first?.termCode)
+        state.addPlannedCourse(code: "CIS 5550", title: nil, credits: 1, to: termCode)
+        #expect(state.degreePlanStore.load().terms.first?.courses.count == 1)
+        state.clearDegreeData()
+        #expect(state.degreePlan == .empty)
+        #expect(state.degreePlanStore.load() == .empty)
+        state.loadDegreePlanIfNeeded()
+        #expect(state.degreePlan.terms.count == 1)
+        #expect(state.degreePlan.terms.first?.courses.isEmpty == true)
+    }
+
     @Test("the feature is available on Penn, and with fixtures, when the flag is on")
     func availability() throws {
         let state = try makeState()

@@ -442,4 +442,30 @@ enum SampleData {
             current: current, whatIfs: [whatIf], degrees: degrees, selectedDegreeID: degrees[0].id,
             programs: programs, dictionaries: dictionaries, lastShape: [])
     }
+
+    /// Invented, like the audit above: two semesters of a sample course load
+    /// for preview and demo mode. CIS 3200 and CIS 4500 are among the options
+    /// of the sample audit's open "CIS Electives 3000+" rule, so the plan tab's
+    /// "fits" line shows; none of the codes is on the sample audit as taken or
+    /// registered.
+    static func degreePlan(now: Date = Date()) -> DegreePlan {
+        func course(_ code: String, _ title: String) -> PlannedCourse {
+            PlannedCourse(code: code, title: title, credits: 1)
+        }
+        let first = DegreePlanMath.firstPlanTermCode(now: now)
+        let second = DegreePlanMath.nextTermCode(after: first) ?? first
+        return DegreePlan(terms: [
+            PlannedTerm(termCode: first, courses: [
+                course("CIS 3200", "algorithms"),
+                course("STAT 4300", "probability"),
+                course("ENGL 1010", "reading and writing"),
+            ]),
+            PlannedTerm(termCode: second, courses: [
+                course("CIS 4500", "software engineering"),
+                course("CIS 5200", "machine learning"),
+                course("PHIL 1010", "introduction to philosophy"),
+                course("ARTH 1000", "art history"),
+            ]),
+        ])
+    }
 }

@@ -512,6 +512,16 @@ final class AppState: ObservableObject {
         ? DegreeAuditStore(directory: FileManager.default.temporaryDirectory
             .appendingPathComponent("degree-\(UUID().uuidString)", isDirectory: true))
         : .default()
+    /// The student's own sample course load (`DegreePlanView`). Their own work,
+    /// not Penn's, so it has a file and a loaded flag of its own; the scratch
+    /// directory under the test runner is distinct from the audit's for the
+    /// same reason as above.
+    @Published var degreePlan: DegreePlan = .empty
+    var degreePlanStore: DegreePlanStore = SharedDefaults.isTestRunner
+        ? DegreePlanStore(directory: FileManager.default.temporaryDirectory
+            .appendingPathComponent("degree-plan-\(UUID().uuidString)", isDirectory: true))
+        : .default()
+    var degreePlanLoaded = false
     /// The one hidden WebView on Penn's advising page (`PathPortal`).
     let degreePortal = PathPortal()
     var degreeRefreshTask: Task<Void, Never>?

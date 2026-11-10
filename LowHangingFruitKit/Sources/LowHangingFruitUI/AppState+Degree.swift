@@ -216,6 +216,12 @@ extension AppState {
         degreeRefreshTask = nil
         degreePortal.reset()
         degreeStore.clear()
+        // The plan is degree data too: disconnecting Canvas deletes everything
+        // this feature kept, the student's sample course load included, and the
+        // loaded flag resets so the next sign-in starts from an empty plan.
+        degreePlanStore.clear()
+        degreePlan = .empty
+        degreePlanLoaded = false
         degree = .empty
         degreeStatus = .idle
         UserDefaults.lhf.removeObject(forKey: "degreeRecentWhatIfsV1")
@@ -522,6 +528,46 @@ extension AppState {
             }
         }
         degree = snapshot
+    }
+
+    // MARK: Plan
+
+    /// Loads the student's sample course load once per `AppState`: the sample
+    /// plan in fixture mode (in memory, never touching disk), the saved file
+    /// otherwise, then makes sure there is a first semester to add to.
+    func loadDegreePlanIfNeeded(now: Date = Date()) {
+        guard !degreePlanLoaded else { return }
+        degreePlanLoaded = true
+        let loaded = isUsingFixtureData ? SampleData.degreePlan(now: now) : degreePlanStore.load()
+        degreePlan = DegreePlanMath.ensuringFirstTerm(loaded, now: now)
+    }
+
+    func addPlannedCourse(code: String, title: String?, credits: Double, to termCode: String) {
+        let course = PlannedCourse(code: DegreePlanMath.normalizedCode(code), title: title, credits: credits)
+        commitDegreePlan(DegreePlanMath.adding(course, to: termCode, in: degreePlan))
+    }
+
+    func removePlannedCourse(code: String, from termCode: String) {
+        commitDegreePlan(DegreePlanMath.removing(courseCode: code, from: termCode, in: degreePlan))
+    }
+
+    func addPlanTerm(now: Date = Date()) {
+        commitDegreePlan(DegreePlanMath.withTermAdded(degreePlan, now: now))
+    }
+
+    func removeLastPlanTermIfEmpty() {
+        commitDegreePlan(DegreePlanMath.removingLastTermIfEmpty(degreePlan))
+    }
+
+    /// Assigns the new plan and saves it, except for the demo's sample, which
+    /// must never be written to disk. A failed save costs only the next
+    /// launch's copy; the in-memory plan is still right, so it is not an error
+    /// the student sees.
+    private func commitDegreePlan(_ plan: DegreePlan) {
+        guard plan != degreePlan else { return }
+        degreePlan = plan
+        guard !isUsingFixtureData else { return }
+        try? degreePlanStore.save(plan)
     }
 
     // MARK: Plumbing
