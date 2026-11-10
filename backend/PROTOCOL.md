@@ -1219,7 +1219,7 @@ material through `mcp`; it signs in through `agent-auth`, where the student's
 phone approves; the phone uploads what the agent may see through
 `agent-snapshot`. The standing rule: **the agent gets no submit tool.** Its
 only write is `propose_submission`, which makes a draft the student reviews
-and submits from the app (Phase 3; both draft tools refuse today). The
+and submits from the app (see "Drafts" below). The
 server never talks to Canvas (principle 1 stands): the work list comes from
 the phone, the course material from the tables the phone already fills.
 
@@ -1441,7 +1441,10 @@ public (`none`); PKCE `S256` is mandatory; there are no client secrets.
    - `deny { "c": id }`: `200 { "denied": bool }`. Only for a request this
      student has looked up (`lookup` records the caller as `claimed_by`, last
      lookup wins); an unknown id, or one nobody or another student looked up,
-     is the same `404 not_found`. The phone already does lookup first, so its
+     is the same `404 not_found`. Last lookup wins, so a stranger who looks
+     the code up after the student takes the binding and the student's
+     `approve` or `deny` answers `404` until they look it up again, which the
+     phone's flow does anyway. The phone already does lookup first, so its
      wire is unchanged.
    - `list`: `{ "connections": [{ id, clientName, clientHost, scopes,
      createdAt, lastUsedAt }] }`, the caller's live connections.
@@ -1452,8 +1455,14 @@ public (`none`); PKCE `S256` is mandatory; there are no client secrets.
    expired and already-decided ids, so ids cannot be probed.
 
    **Rate limits** (`agent_rate_check`, Postgres, one hour windows, keys hold a
-   sha256 of the address or user id): `/authorize` 60 and `/token` 60 per ip,
-   `/register` 10 per ip, `/phone` `lookup` 20 and `approve` 10 per student.
+   sha256 of the address, user id, connection id or code): `/authorize` 60 per
+   ip (the student's own browser); `/register` 60 per ip; `/token` per
+   subject, because a hosted connector calls it from a few shared egress
+   addresses and a per-ip cap would throttle every student at once: 30 an hour
+   per connection for `refresh_token` grants (counted only once the token is
+   known and live), 5 an hour per authorization code, and a per-ip ceiling of
+   1,200 as a DoS backstop only; `/phone` `lookup` 20 and `approve` 10 per
+   student.
    The ip is the first `x-forwarded-for` entry (the connector front forwards
    it; Vercel sets it), else `cf-connecting-ip`, else one shared "unknown".
    Over the limit: `429 { "error": "slow_down" }` with `Retry-After: 60`
@@ -1461,7 +1470,8 @@ public (`none`); PKCE `S256` is mandatory; there are no client secrets.
    that throws fails open.
 
    **Sweeping** (`agent_sweep_expired`): about one `/authorize` in fifty
-   deletes expired pending rows, tokens a day past expiry, rate rows idle a
+   deletes pending rows two minutes past expiry (a code minted just before
+   expiry lives 60 s longer), tokens a day past expiry, rate rows idle a
    day and registered clients older than 30 days that no connection or pending
    row names. Failure is ignored; the log line carries the count only.
 
@@ -1527,13 +1537,23 @@ RLS): `course_id in (the caller's enrolled ids)`, live documents only
 | `get_facts` | `course?`, `since?` (Unix seconds) | `course_facts` of enrolled courses, by `seq`; `since` compares `posted_at`, and a fact with none is always included; facts of a gone or since-edited document are dropped, as in the manifest | 200 facts |
 | `get_announcements` | `course?`, `days` (1 to 365, default 14), `page?` | `announcement` documents, newest `posted_at` first | 10 per page, 8,000 characters a post |
 | `get_ed_posts` | `course?`, `page?` | `ed` documents, newest first | 10 per page, 8,000 characters a post |
-| `propose_submission` | `assignment_id`, `kind` (`text` \| `url` \| `file`), `body?`, `url?`, `file_base64?`, `file_name?`, `mime_type?`, `note?` | writes a draft (Phase 3) | body 100,000 characters; note 2,000; file name 200 with no path separator; file 1,572,864 bytes (1.5 MB) decoded, judged from the base64 length without decoding; url https only; the SDK's own 4 MiB body limit applies on top |
-| `draft_status` | `id` | a draft's state (Phase 3) | |
+| `propose_submission` | `assignment_id`, `kind` (`text` \| `url` \| `file`), `body?`, `url?`, `file_base64?`, `file_name?`, `mime_type?`, `note?` | writes a draft (see Drafts below) | body 100,000 characters; note 2,000; file name 200 with no path separator; file 1,572,864 bytes (1.5 MB) decoded, judged from the base64 length without decoding; url https only; the SDK's own 4 MiB body limit applies on top |
+| `draft_status` | `id` | a draft's state | |
 
-**`propose_submission` and `draft_status` refuse today**: the store's methods
-reject with "drafts are Phase 3". `propose_submission` also needs scope
+**Drafts** (`_shared/agentDrafts.ts`). `propose_submission` needs scope
 `draft` ("this connection cannot propose drafts"), checks its arguments, and
-checks that the assignment exists before it would write.
+checks that the assignment exists. It then refuses when the student already
+has 20 open drafts (status `proposed` or `seen`: "too many open drafts; the
+student must review them in Smooth first"). The cap is a count then an
+insert, so two simultaneous proposals can overshoot it by one. A `file` draft
+is decoded from base64 and uploaded with the service role to the private
+Storage bucket `agent-drafts` at `<user id>/<draft id>/<sanitized file name>`
+(`upsert: false`; the original name is kept in `file_name`); then one
+`agent_drafts` row is inserted with status `proposed`, `client_name`,
+`connection_id`, the fields, `file_path` and `file_bytes`. If the insert fails
+the object is removed (best effort) and the error surfaces. Draft ids are
+`smd_` + 22 base64url characters. `draft_status` answers the row's status for
+that student, "no such draft" otherwise.
 
 Annotations: every read tool carries `readOnlyHint: true`.
 `propose_submission` carries `readOnlyHint: false`, `idempotentHint: false`,
@@ -1567,8 +1587,25 @@ Logs counts and outcome codes, never ids, titles or bodies. Table
   "items" }` (`items` = work plus manual entries).
 - `status` answers `{ "hasSnapshot": bool, "writtenAt": string | null, "items":
   n }`.
+- `drafts` answers `{ "drafts": [...] }`: the caller's drafts with status
+  `proposed` or `seen`, newest first, at most 50, each with `id`,
+  `assignment_id`, `kind`, `body`, `url`, `file_name`, `mime_type`,
+  `file_bytes`, `note`, `client_name`, `status`, `created_at` and, for a
+  `file` draft, `file_url`: a Storage signed URL good for 120 seconds.
+- `draft { "id", "status": "seen" | "declined" | "submitted" | "failed",
+  "canvas_submission_id"?, "attempt"?, "error_class"? }` moves the caller's
+  own draft and answers `{ "id", "status" }`. Allowed: proposed to seen;
+  proposed or seen to declined, submitted or failed. Nothing leaves a
+  terminal state, and the check is part of the UPDATE (`status in (...)`), so
+  two phones cannot both win: otherwise `409 conflict`. Another student's
+  draft, or an unknown id, is `404 not_found`. `submitted` requires
+  `canvas_submission_id` (at most 64 characters); `failed` requires
+  `error_class` (at most 64 characters); `attempt` is an integer 0 to 1000;
+  otherwise `400 bad_request`. At declined, submitted or failed the file's
+  object is deleted from Storage (best effort) and `file_path` cleared.
 - `delete` removes the snapshot **and revokes every agent connection** of the
-  student, answering `{ "deleted": true, "revoked": n }`. A student with no
+  student, answering `{ "deleted": true, "revoked": n }`. It also deletes the
+  student's drafts and their Storage objects. A student with no
   snapshot has nothing for an agent to read, so opting out leaves no live
   connection behind.
 
@@ -1622,8 +1659,17 @@ row also cascades from `auth.users`).
 - `agent_tokens`: access and refresh tokens as hashes, with `rotated_from` and
   `used_at` for rotation; they die with their connection.
 - `agent_snapshots`: as above.
-- `agent_drafts`: designed now, used from Phase 3; survives a revoked
-  connection (`connection_id` set null), because the student may still want it.
+- `agent_drafts`: the drafts of "Drafts" above and `agent-snapshot`'s `drafts`
+  and `draft` actions; columns `client_name`, `seen_at` and `decided_at` were
+  added by `20261109100000_agent_drafts.sql`, which also creates the private
+  bucket `agent-drafts` (1,572,864-byte limit, no policy for `anon` or
+  `authenticated`: only the service role reads or writes it). Survives a
+  revoked connection (`connection_id` set null), because the student may
+  still want it. Deleted on opt-out, Canvas disconnect and account deletion
+  (`deleteUserData` removes the `agent-drafts/<user id>/` objects first, best
+  effort, never failing the deletion). A file's object is deleted from
+  Storage the moment the student decides; the row stays, so `draft_status`
+  still answers.
 
 ## `pair` — link the Chrome extension to a phone
 

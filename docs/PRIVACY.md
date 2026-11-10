@@ -380,7 +380,9 @@ nothing until you pair it with your phone.
   replaced each time the phone uploads it; the connection records (which
   assistant, when it was made, when it was last used); and the drafts the
   assistant proposed, including a file it attached, until you submit or
-  decline them. This is the one place Smooth keeps a readable copy of your
+  decline them. A draft's file is deleted from our storage as soon as you
+  submit, decline or fail it, and all drafts are deleted when you turn the
+  feature off. This is the one place Smooth keeps a readable copy of your
   work list; everything else in this policy stands.
 - **Who receives it.** The AI assistant provider you chose, under that
   provider's own terms (Anthropic:

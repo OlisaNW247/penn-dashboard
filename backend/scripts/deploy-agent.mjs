@@ -57,7 +57,7 @@ const __filename = fileURLToPath(import.meta.url);
 const MIGRATIONS_DIR = path.resolve(path.dirname(__filename), "..", "supabase", "migrations");
 export const AGENT_MIGRATION = "20261108090000_agent_connection.sql";
 /** Every agent migration step 1 applies, in order; a new one goes at the END. */
-export const AGENT_MIGRATIONS = [AGENT_MIGRATION, "20261109090000_agent_hardening.sql"];
+export const AGENT_MIGRATIONS = [AGENT_MIGRATION, "20261109090000_agent_hardening.sql", "20261109100000_agent_drafts.sql"];
 /** Deploy order matters only for readability of the log, but it is pinned. */
 export const AGENT_FUNCTIONS = ["agent-auth", "mcp", "agent-snapshot"];
 export const PUBLIC_BASE_SECRET = "LHF_AGENT_PUBLIC_BASE";

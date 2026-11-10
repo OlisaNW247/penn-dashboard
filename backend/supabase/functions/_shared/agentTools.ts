@@ -19,6 +19,7 @@
 // from its own call.
 import { McpServer } from "npm:@modelcontextprotocol/server@2.4.0";
 import { z } from "npm:zod@^4.3.6";
+import { DraftLimitError, InvalidBase64Error, MAX_OPEN_DRAFTS } from "./agentDrafts.ts";
 
 // ---------------------------------------------------------------------------
 // Entry types: strings and nulls, dates as ISO strings.
@@ -119,6 +120,17 @@ export function decodedSizeOf(base64: string): number | null {
   if (len === 0 || len % 4 !== 0) return null;
   const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
   return (len / 4) * 3 - padding;
+}
+
+/** `decodeBase64` for a draft's file: a bad input is an `InvalidBase64Error`,
+ *  so the tool can tell "the agent sent junk" from a storage failure (which
+ *  must surface as an error, not as a wrong claim about the agent's input). */
+export function decodeDraftBytes(base64: string): Uint8Array {
+  try {
+    return decodeBase64(base64);
+  } catch {
+    throw new InvalidBase64Error();
+  }
 }
 
 /** Decodes base64 to bytes; `Uint8Array.fromBase64` where the runtime has it
@@ -274,11 +286,13 @@ export class FixtureToolBackend implements ToolBackend {
   }
 
   async proposeSubmission(userId: string, connectionId: string, clientName: string, draft: DraftInput): Promise<ProposedDraft> {
+    const open = [...this.drafts.values()].filter((d) => d.userId === userId && (d.status === "proposed" || d.status === "seen")).length;
+    if (open >= MAX_OPEN_DRAFTS) throw new DraftLimitError();
     let bytes: number | undefined;
     let decodeMs: number | undefined;
     if (draft.fileBase64 !== undefined) {
       const started = performance.now();
-      bytes = decodeBase64(draft.fileBase64).byteLength;
+      bytes = decodeDraftBytes(draft.fileBase64).byteLength;
       decodeMs = Math.round((performance.now() - started) * 100) / 100;
     }
     const { fileBase64: _dropped, ...input } = draft;
@@ -539,7 +553,8 @@ export function registerTools(server: McpServer, backend: ToolBackend, options: 
     try {
       made = await backend.proposeSubmission(who.userId, who.connectionId, who.clientName, draft);
     } catch (err) {
-      if (draft.kind === "file" && err instanceof Error && err.name !== "HttpError") return failure("file_base64 is not valid base64");
+      if (err instanceof DraftLimitError) return failure(err.message);
+      if (err instanceof InvalidBase64Error) return failure("file_base64 is not valid base64");
       throw err;
     }
     if (made.bytes !== undefined) return text(`draft ${made.id} proposed (${made.bytes} bytes decoded in ${made.decodeMs ?? 0} ms)`);

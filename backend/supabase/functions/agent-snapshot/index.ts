@@ -13,10 +13,18 @@ import { enforceMinimumVersion } from "../_shared/version.ts";
 import { requireUser } from "../_shared/auth.ts";
 import type { AgentStore } from "../_shared/agentStore.ts";
 import { PostgrestAgentStore } from "../_shared/agentStorePostgrest.ts";
+import {
+  type DraftStore,
+  isDraftDecision,
+  MAX_ERROR_CLASS_CHARS,
+  MAX_PHONE_DRAFTS,
+  PostgrestDraftStore,
+} from "../_shared/agentDrafts.ts";
 import { MAX_SNAPSHOT_BYTES, validateSnapshot } from "../_shared/agentSnapshot.ts";
 
 export interface AgentSnapshotDeps {
   store: AgentStore;
+  drafts: DraftStore;
   now?: () => Date;
 }
 
@@ -64,8 +72,11 @@ export async function handleAgentSnapshot(req: Request, deps: AgentSnapshotDeps)
 
     if (action === "delete") {
       await deps.store.deleteSnapshot(userId);
+      // Opting out takes the drafts and their files too: they are the
+      // student's writing, held only for review.
+      const draftsDeleted = await deps.drafts.deleteAll(userId);
       const revoked = await deps.store.revokeAllConnections(userId, now.toISOString());
-      console.log(`agent-snapshot: delete revoked=${revoked}`);
+      console.log(`agent-snapshot: delete revoked=${revoked} drafts=${draftsDeleted}`);
       return json(200, { deleted: true, revoked });
     }
 
@@ -74,7 +85,43 @@ export async function handleAgentSnapshot(req: Request, deps: AgentSnapshotDeps)
       return json(200, row ? { hasSnapshot: true, writtenAt: row.writtenAt, items: countOf(row) } : { hasSnapshot: false, writtenAt: null, items: 0 });
     }
 
-    throw new HttpError(400, "bad_request", `"action" must be put, delete or status`);
+    if (action === "drafts") {
+      const drafts = await deps.drafts.listOpen(userId, MAX_PHONE_DRAFTS);
+      console.log(`agent-snapshot: drafts n=${drafts.length}`);
+      return json(200, { drafts });
+    }
+
+    if (action === "draft") {
+      const b = body as Record<string, unknown>;
+      if (typeof b.id !== "string" || b.id === "" || b.id.length > 64) throw new HttpError(400, "bad_request", `"id" must be a draft id`);
+      if (!isDraftDecision(b.status)) throw new HttpError(400, "bad_request", `"status" must be seen, declined, submitted or failed`);
+      const extra: { canvasSubmissionId?: string; attempt?: number; errorClass?: string } = {};
+      if (b.attempt !== undefined) {
+        if (!Number.isInteger(b.attempt) || (b.attempt as number) < 0 || (b.attempt as number) > 1000) {
+          throw new HttpError(400, "bad_request", `"attempt" must be a small non-negative integer`);
+        }
+        extra.attempt = b.attempt as number;
+      }
+      if (b.status === "submitted") {
+        if (typeof b.canvas_submission_id !== "string" || b.canvas_submission_id === "" || b.canvas_submission_id.length > 64) {
+          throw new HttpError(400, "bad_request", `"canvas_submission_id" is required for submitted`);
+        }
+        extra.canvasSubmissionId = b.canvas_submission_id;
+      }
+      if (b.status === "failed") {
+        if (typeof b.error_class !== "string" || b.error_class === "" || b.error_class.length > MAX_ERROR_CLASS_CHARS) {
+          throw new HttpError(400, "bad_request", `"error_class" is required for failed (at most ${MAX_ERROR_CLASS_CHARS} characters)`);
+        }
+        extra.errorClass = b.error_class;
+      }
+      const result = await deps.drafts.transition(userId, b.id, b.status, extra, now);
+      console.log(`agent-snapshot: draft ${b.status} ${result}`);
+      if (result === "not_found") throw new HttpError(404, "not_found", "no such draft");
+      if (result === "conflict") throw new HttpError(409, "conflict", "the draft cannot move to that state");
+      return json(200, { id: b.id, status: b.status });
+    }
+
+    throw new HttpError(400, "bad_request", `"action" must be put, delete, status, drafts or draft`);
   } catch (err) {
     if (err instanceof HttpError) {
       console.error(`agent-snapshot error: ${err.code} (${err.status})`);
@@ -89,7 +136,7 @@ function productionDeps(): AgentSnapshotDeps {
   const client = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  return { store: new PostgrestAgentStore(client) };
+  return { store: new PostgrestAgentStore(client), drafts: new PostgrestDraftStore(client) };
 }
 
 if (import.meta.main) Deno.serve((req) => handleAgentSnapshot(req, productionDeps()));

@@ -13,6 +13,7 @@
 // - Text is cut per item; the tool layer cuts the whole result.
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.115.0";
 import type { AgentStore } from "./agentStore.ts";
+import { decodeDraftBytes } from "./agentTools.ts";
 import type {
   AssignmentDetail,
   CourseEntry,
@@ -25,6 +26,7 @@ import type {
   WorkEntry,
   WorkView,
 } from "./agentTools.ts";
+import { type DraftStore, DraftLimitError, MAX_OPEN_DRAFTS, PostgrestDraftStore } from "./agentDrafts.ts";
 import { sameCourse, type WorkItem, workView } from "./agentSnapshot.ts";
 import { selectEnrolledCourseIDs } from "./db.ts";
 import { factsResponse, type FactRowWithDocument, isWindowKind, windowAgeOutFilter } from "./manifest.ts";
@@ -62,10 +64,12 @@ export class PostgrestToolBackend implements ToolBackend {
   private readonly client: SupabaseClient;
   private readonly store: AgentStore;
   private readonly now: () => Date;
+  private readonly drafts: DraftStore;
 
-  constructor(options: { client: SupabaseClient; store: AgentStore; now?: () => Date }) {
+  constructor(options: { client: SupabaseClient; store: AgentStore; now?: () => Date; drafts?: DraftStore }) {
     this.client = options.client;
     this.store = options.store;
+    this.drafts = options.drafts ?? new PostgrestDraftStore(options.client);
     this.now = options.now ?? (() => new Date());
   }
 
@@ -172,12 +176,38 @@ export class PostgrestToolBackend implements ToolBackend {
     return this.documentPage(userId, "ed", course, page);
   }
 
-  proposeSubmission(_userId: string, _connectionId: string, _clientName: string, _draft: DraftInput): Promise<ProposedDraft> {
-    return Promise.reject(new Error("drafts are Phase 3"));
+  /** Writes a draft for the student to review in Smooth. The open-draft cap
+   *  is a count then an insert, so two simultaneous proposals can overshoot
+   *  it by one; the cap is about a runaway agent, not an exact quota. The
+   *  assignment-exists check is the tool's, before this. A file is decoded
+   *  here (its size was already judged from the base64 length), uploaded to
+   *  private Storage, and only then is the row inserted; a failed insert
+   *  removes the object. */
+  async proposeSubmission(userId: string, connectionId: string, clientName: string, draft: DraftInput): Promise<ProposedDraft> {
+    if (await this.drafts.countOpen(userId) >= MAX_OPEN_DRAFTS) throw new DraftLimitError();
+    let file: { bytes: Uint8Array; name: string; mimeType?: string } | undefined;
+    let decodeMs: number | undefined;
+    if (draft.kind === "file" && draft.fileBase64 !== undefined) {
+      const started = performance.now();
+      const bytes = decodeDraftBytes(draft.fileBase64);
+      decodeMs = Math.round((performance.now() - started) * 100) / 100;
+      file = { bytes, name: draft.fileName ?? "file", mimeType: draft.mimeType };
+    }
+    const id = await this.drafts.create(userId, {
+      assignmentId: draft.assignmentId,
+      connectionId,
+      clientName,
+      kind: draft.kind,
+      body: draft.body,
+      url: draft.url,
+      note: draft.note,
+      file,
+    });
+    return { id, bytes: file?.bytes.byteLength, decodeMs };
   }
 
-  draftStatus(_userId: string, _id: string): Promise<{ id: string; status: string } | null> {
-    return Promise.reject(new Error("drafts are Phase 3"));
+  draftStatus(userId: string, id: string): Promise<{ id: string; status: string } | null> {
+    return this.drafts.status(userId, id);
   }
 
   // -------------------------------------------------------------------------

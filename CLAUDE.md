@@ -3595,13 +3595,20 @@ none is a ship line.
 
 - **The agent connection is deployed (front and functions, 2026-11-08
   night) and no client has signed in against production yet**
-  (`agent/connection-v11`). What is proven live: the front's root discovery
-  documents, the metadata the functions emit, the 401 challenge, the
-  authorize page (served with its code and `smooth://link`), `/register`,
-  and that `agent-snapshot` refuses a call without a token. Not yet: a
+  (`agent/connection-v11`). What is proven live (2026-11-09,
+  `backend/scripts/agent-e2e.mjs`, a scripted OAuth client plus a
+  throwaway anonymous user playing the phone): discovery through the
+  front, RFC 7591 registration, the authorize page, lookup and approve,
+  the code redirect, token exchange and refresh rotation with reuse
+  detection, `initialize` / `tools/list` / `list_work` on the live `mcp`,
+  revoke cutting the token off, `delete-account` cleanup. Not yet: a
   claude.ai or Claude Code sign-in through `smooth-agent.vercel.app`, a
-  phone approving one (the phone side has never run), a token call to
-  `mcp`. Claude Code's sign-in step reads the OAuth discovery documents
+  real phone approving one (the phone side has never run). Undeployed on
+  the branch: the hardening (rate limits, sweeper, approve/deny bound to
+  lookup; migration `20261109090000`) and the Phase 3 drafts backend
+  (migration `20261109100000`, the `agent-drafts` bucket); production
+  runs `agent-auth` v2 and `mcp` v1 without them, and `agent-auth` must
+  never ship ahead of its migration. Claude Code's sign-in step reads the OAuth discovery documents
   only at the root `.well-known` paths of the MCP URL's host (research §8
   item 3), which is why the front exists. Also open: the submit spike (`-LHFSubmitSpike`) has never
   run against Canvas, the iPhone `smooth://link` hand-off is untried, what a

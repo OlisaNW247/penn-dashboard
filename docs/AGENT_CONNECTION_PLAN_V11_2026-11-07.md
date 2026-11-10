@@ -173,7 +173,21 @@ Detailed, with files and acceptance tests, in the session brief.
    snapshot upload, revoke, `PRIVACY.md`. Done when the iPhone-app flow
    works end to end on Marco's phone.
 3. **Drafts**: `propose_submission`, polling, the chip, the sheet. Done when
-   a draft from claude.ai shows on the card within one refresh.
+   a draft from claude.ai shows on the card within one refresh. **Status
+   2026-11-09:** the backend half is built and tested (Deno 858, the SQL
+   check green): `propose_submission` writes a row and, for a file, an
+   object in the private `agent-drafts` bucket (20 open drafts per
+   student); `agent-snapshot` gained `drafts` (the student's open drafts,
+   file as a 120-second signed URL) and `draft` (seen / declined /
+   submitted / failed, one-way, the file deleted at the decision);
+   opt-out and account deletion remove everything. Migration
+   `20261109100000_agent_drafts.sql`, not applied in production; the phone
+   half (polling, chip, review sheet) is not built. The same day the
+   hardening closed `agent-auth`'s three Limitations (rate limits in
+   Postgres, a sweeper, approve and deny bound to the student's own
+   lookup), also undeployed, and a scripted client
+   (`backend/scripts/agent-e2e.mjs`) proved the live production path end
+   to end.
 4. **Submit**: `CanvasSubmissionClient`, the attempt store, text and file
    submissions on a sandbox, then one low-stakes Penn assignment Marco
    picks. Done when the verify GET agrees and a repeat is refused.

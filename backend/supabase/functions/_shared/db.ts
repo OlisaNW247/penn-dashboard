@@ -17,6 +17,7 @@ import type {
 } from "./manifest.ts";
 import { factsResponse, WINDOW_KINDS, windowAgeOutFilter } from "./manifest.ts";
 import { isAuthUserGone } from "./devices.ts";
+import { removeUserDraftObjects } from "./agentDrafts.ts";
 import {
   catalogEntryWire,
   academicSemester,
@@ -1248,6 +1249,9 @@ export async function deleteUserData(client: SupabaseClient, userId: string): Pr
   // The agent connection (20261108090000_agent_connection.sql). Drafts and
   // the snapshot first (they hold the student's own work), then connections
   // (their tokens cascade), then any authorization still waiting.
+  // The files first, best effort: the rows (which name the objects) go next,
+  // and a storage hiccup must never fail the deletion.
+  await removeUserDraftObjects(client, userId);
   const { error: draftsError } = await client.from("agent_drafts").delete().eq("user_id", userId);
   if (draftsError) throw draftsError;
 

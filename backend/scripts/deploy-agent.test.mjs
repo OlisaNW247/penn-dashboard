@@ -42,7 +42,7 @@ function ctxFor(opts = {}, extra = {}) {
 
 test("the agent migration exists and is idempotent", async () => {
   const { scanIdempotency } = await import("./deploy-facts.mjs");
-  assert.deepEqual(AGENT_MIGRATIONS, [AGENT_MIGRATION, "20261109090000_agent_hardening.sql"]);
+  assert.deepEqual(AGENT_MIGRATIONS, [AGENT_MIGRATION, "20261109090000_agent_hardening.sql", "20261109100000_agent_drafts.sql"]);
   for (const f of AGENT_MIGRATIONS) {
     const sql = fs.readFileSync(path.join(here, "..", "supabase", "migrations", f), "utf8");
     assert.deepEqual(scanIdempotency(sql), [], f);

@@ -293,9 +293,174 @@ Deno.test("canvasAssignmentID: link first, then canvas: prefix, leniently", () =
   assert.strictEqual(canvasAssignmentID({ id: "manual-abc", url: null }), null);
 });
 
-Deno.test("proposeSubmission and draftStatus reject until Phase 3", async () => {
-  await withBackend({}, async (backend) => {
-    await assert.rejects(backend.proposeSubmission(USER, "c", "n", { assignmentId: "a", kind: "text", body: "b" }), /Phase 3/);
-    await assert.rejects(backend.draftStatus(USER, "d"), /Phase 3/);
+// ---------------------------------------------------------------------------
+// Drafts: PostgREST and Storage both stubbed at `fetch`.
+
+interface Call {
+  method: string;
+  path: string;
+  q: URLSearchParams;
+  body: string;
+}
+
+async function withDrafts<T>(
+  opts: { openCount?: number; insertFails?: boolean; uploadFails?: boolean; rows?: unknown[] },
+  run: (backend: PostgrestToolBackend, calls: Call[]) => Promise<T>,
+): Promise<T> {
+  const original = globalThis.fetch;
+  const calls: Call[] = [];
+  globalThis.fetch = (async (input: Request | URL | string, init?: RequestInit) => {
+    const request = input instanceof Request ? input : new Request(String(input), init);
+    const url = new URL(request.url);
+    const body = request.method === "GET" || request.method === "HEAD" ? "" : await request.text();
+    calls.push({ method: request.method, path: url.pathname, q: url.searchParams, body });
+    const jsonHeaders = { "content-type": "application/json" };
+    if (url.pathname.startsWith("/storage/v1/object/sign/")) {
+      return new Response(JSON.stringify({ signedURL: `/object/sign/agent-drafts/x?token=t` }), { status: 200, headers: jsonHeaders });
+    }
+    if (url.pathname.startsWith("/storage/v1/object/agent-drafts/") && request.method === "POST") {
+      return opts.uploadFails
+        ? new Response(JSON.stringify({ message: "boom", error: "boom", statusCode: "500" }), { status: 500, headers: jsonHeaders })
+        : new Response(JSON.stringify({ Key: "agent-drafts/x" }), { status: 200, headers: jsonHeaders });
+    }
+    if (url.pathname.startsWith("/storage/v1/object/agent-drafts") && request.method === "DELETE") {
+      return new Response("[]", { status: 200, headers: jsonHeaders });
+    }
+    if (url.pathname === "/rest/v1/agent_drafts") {
+      if (request.method === "HEAD") {
+        return new Response(null, { status: 200, headers: { "content-range": `*/${opts.openCount ?? 0}` } });
+      }
+      if (request.method === "POST") {
+        return opts.insertFails
+          ? new Response(JSON.stringify({ message: "insert failed" }), { status: 500, headers: jsonHeaders })
+          : new Response(null, { status: 201 });
+      }
+      return new Response(JSON.stringify(opts.rows ?? []), { status: 200, headers: jsonHeaders });
+    }
+    return new Response("[]", { status: 200, headers: jsonHeaders });
+  }) as typeof fetch;
+  try {
+    const client = createClient("http://supabase.test", "service-key", { auth: { persistSession: false, autoRefreshToken: false } });
+    return await run(new PostgrestToolBackend({ client, store: new MemoryAgentStore(), now: () => NOW }), calls);
+  } finally {
+    globalThis.fetch = original;
+  }
+}
+
+const inserted = (calls: Call[]) => JSON.parse(calls.find((c) => c.method === "POST" && c.path === "/rest/v1/agent_drafts")!.body);
+
+Deno.test("proposeSubmission: a text draft is one row, status proposed, with the client's name", async () => {
+  await withDrafts({}, async (backend, calls) => {
+    const made = await backend.proposeSubmission(USER, "conn1", "Claude", { assignmentId: "canvas:1", kind: "text", body: "answer", note: "n" });
+    assert.match(made.id, /^smd_[A-Za-z0-9_-]{22}$/);
+    assert.strictEqual(made.bytes, undefined);
+    const row = inserted(calls);
+    assert.deepStrictEqual(
+      { ...row, id: "-" },
+      {
+        id: "-", user_id: USER, connection_id: "conn1", client_name: "Claude", assignment_id: "canvas:1", kind: "text",
+        status: "proposed", body: "answer", url: null, note: "n", file_path: null, file_name: null, mime_type: null, file_bytes: null,
+      },
+    );
+    assert.ok(!calls.some((c) => c.path.startsWith("/storage/")), "no storage call for text");
+  });
+});
+
+Deno.test("proposeSubmission: a url draft", async () => {
+  await withDrafts({}, async (backend, calls) => {
+    await backend.proposeSubmission(USER, "c", "Claude", { assignmentId: "canvas:1", kind: "url", url: "https://example.com/x" });
+    assert.strictEqual(inserted(calls).url, "https://example.com/x");
+  });
+});
+
+Deno.test("proposeSubmission: a file is decoded, uploaded to <user>/<draft>/<clean name>, then inserted", async () => {
+  await withDrafts({}, async (backend, calls) => {
+    const made = await backend.proposeSubmission(USER, "c", "Claude", {
+      assignmentId: "canvas:1", kind: "file", fileBase64: btoa("hello"), fileName: "My Essay (final).pdf", mimeType: "application/pdf",
+    });
+    assert.strictEqual(made.bytes, 5);
+    const upload = calls.find((c) => c.method === "POST" && c.path.startsWith("/storage/v1/object/agent-drafts/"))!;
+    assert.strictEqual(decodeURIComponent(upload.path), `/storage/v1/object/agent-drafts/${USER}/${made.id}/My_Essay_final_.pdf`);
+    const order = calls.map((c) => (c.path.startsWith("/storage/") ? "storage" : "rest")).filter((_, i, a) => a[i] !== a[i - 1]);
+    assert.deepStrictEqual(order, ["rest", "storage", "rest"], "count, upload, insert");
+    const row = inserted(calls);
+    assert.strictEqual(row.file_path, `${USER}/${made.id}/My_Essay_final_.pdf`);
+    assert.strictEqual(row.file_name, "My Essay (final).pdf");
+    assert.strictEqual(row.mime_type, "application/pdf");
+    assert.strictEqual(row.file_bytes, 5);
+  });
+});
+
+Deno.test("proposeSubmission: 20 open drafts refuses before any write", async () => {
+  await withDrafts({ openCount: 20 }, async (backend, calls) => {
+    let name = "";
+    try {
+      await backend.proposeSubmission(USER, "c", "Claude", { assignmentId: "canvas:1", kind: "text", body: "x" });
+    } catch (e) {
+      name = (e as Error).name;
+    }
+    assert.strictEqual(name, "DraftLimitError");
+    assert.ok(!calls.some((c) => c.method === "POST" || c.method === "DELETE"));
+  });
+  await withDrafts({ openCount: 19 }, async (backend) => {
+    await backend.proposeSubmission(USER, "c", "Claude", { assignmentId: "canvas:1", kind: "text", body: "x" });
+  });
+});
+
+Deno.test("proposeSubmission: the open count looks at proposed and seen of this user only", async () => {
+  await withDrafts({}, async (backend, calls) => {
+    await backend.proposeSubmission(USER, "c", "Claude", { assignmentId: "canvas:1", kind: "text", body: "x" });
+    const head = calls.find((c) => c.method === "HEAD")!;
+    assert.strictEqual(head.q.get("user_id"), "eq.u1");
+    assert.strictEqual(head.q.get("status"), "in.(proposed,seen)");
+  });
+});
+
+Deno.test("proposeSubmission: a failed insert removes the uploaded object and rethrows", async () => {
+  await withDrafts({ insertFails: true }, async (backend, calls) => {
+    let threw = false;
+    try {
+      await backend.proposeSubmission(USER, "c", "Claude", { assignmentId: "canvas:1", kind: "file", fileBase64: btoa("hi"), fileName: "a.txt", mimeType: "text/plain" });
+    } catch {
+      threw = true;
+    }
+    assert.ok(threw);
+    const removal = calls.find((c) => c.method === "DELETE" && c.path.startsWith("/storage/"))!;
+    assert.match(removal.body, new RegExp(`${USER}/smd_`));
+  });
+});
+
+Deno.test("proposeSubmission: a failed upload writes no row; bad base64 is an InvalidBase64Error", async () => {
+  await withDrafts({ uploadFails: true }, async (backend, calls) => {
+    let threw = false;
+    try {
+      await backend.proposeSubmission(USER, "c", "Claude", { assignmentId: "canvas:1", kind: "file", fileBase64: btoa("hi"), fileName: "a.txt", mimeType: "text/plain" });
+    } catch {
+      threw = true;
+    }
+    assert.ok(threw);
+    assert.ok(!calls.some((c) => c.method === "POST" && c.path === "/rest/v1/agent_drafts"));
+  });
+  await withDrafts({}, async (backend, calls) => {
+    let name = "";
+    try {
+      await backend.proposeSubmission(USER, "c", "Claude", { assignmentId: "canvas:1", kind: "file", fileBase64: "!!!!", fileName: "a.txt", mimeType: "text/plain" });
+    } catch (e) {
+      name = (e as Error).name;
+    }
+    assert.strictEqual(name, "InvalidBase64Error");
+    assert.ok(!calls.some((c) => c.path.startsWith("/storage/")));
+  });
+});
+
+Deno.test("draftStatus: the row's status for this user, null otherwise", async () => {
+  await withDrafts({ rows: [{ id: "smd_a", status: "seen" }] }, async (backend, calls) => {
+    assert.deepStrictEqual(await backend.draftStatus(USER, "smd_a"), { id: "smd_a", status: "seen" });
+    const q = calls.find((c) => c.method === "GET")!.q;
+    assert.strictEqual(q.get("user_id"), "eq.u1");
+    assert.strictEqual(q.get("id"), "eq.smd_a");
+  });
+  await withDrafts({ rows: [] }, async (backend) => {
+    assert.strictEqual(await backend.draftStatus(USER, "smd_a"), null);
   });
 });

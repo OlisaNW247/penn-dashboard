@@ -441,7 +441,10 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   `smooth-agent.vercel.app` (Vercel, Marco's account) and the three
   functions with the migration, at Olisa's go. The end-to-end test (a
   claude.ai connector, approved on the phone) is the next step and needs
-  Marco's claude.ai account and his phone on the cable.
+  Marco's claude.ai account and his phone on the cable. 2026-11-09: a
+  scripted client proved the live path end to end; the hardening and the
+  Phase 3 drafts backend are built on the branch, undeployed; the Phase 3
+  phone half (polling, chip, review sheet) and Phase 4 are next.
 - **Megaphone: the model sorts posts into todo and prev** (Marco,
   2026-11-07: "prev being either from way before or unapplicable, need
   [the model] to sort based on text"). What ships first is the rule half

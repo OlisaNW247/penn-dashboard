@@ -74,3 +74,21 @@ Deno.test("fixture proposeSubmission decodes, measures and reads back", async ()
   assertEquals(await b.draftStatus("u", made.id), { id: made.id, status: "proposed" });
   assertEquals(await b.draftStatus("someone-else", made.id), null);
 });
+
+Deno.test("fixture proposeSubmission: at most 20 open drafts per student, a decided one frees a slot", async () => {
+  const b = backend();
+  const text = { assignmentId: "asg-phys-hw4", kind: "text" as const, body: "x" };
+  const first = await b.proposeSubmission("u", "c", "Claude", text);
+  for (let i = 1; i < 20; i++) await b.proposeSubmission("u", "c", "Claude", text);
+  let refused = "";
+  try {
+    await b.proposeSubmission("u", "c", "Claude", text);
+  } catch (e) {
+    refused = (e as Error).name;
+  }
+  assertEquals(refused, "DraftLimitError");
+  // Another student is unaffected.
+  await b.proposeSubmission("other", "c", "Claude", text);
+  b.drafts.get(first.id)!.status = "declined";
+  await b.proposeSubmission("u", "c", "Claude", text);
+});
