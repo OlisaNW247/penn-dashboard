@@ -83,6 +83,7 @@ public enum AgentDraftSubmitter {
         loadFile: @Sendable () async -> Data?,
         submit: Submit,
         report: @Sendable (AgentDraftDecision) async -> Bool,
+        pdf: RenderedDraftPDF? = nil,
         now: Date = Date()
     ) async -> AgentSubmitResult {
         if store.record(for: draft.id) != nil { return .checkCanvas }
@@ -96,7 +97,15 @@ public enum AgentDraftSubmitter {
             fileData = await loadFile()
             if fileData == nil { return .fileUnavailable }
         }
-        guard let payload = payload(for: draft, fileData: fileData) else { return .refused(.unsupportedType) }
+        // A text draft the student chose to send as a PDF goes through the
+        // same file path, attempt record and never-twice rule as any file.
+        let built: CanvasSubmissionClient.Payload?
+        if draft.kind == .text, let pdf {
+            built = pdf.data.isEmpty ? nil : .file(name: pdf.name, mimeType: DraftDocumentRenderer.pdfMimeType, data: pdf.data)
+        } else {
+            built = payload(for: draft, fileData: fileData)
+        }
+        guard let payload = built else { return .refused(.unsupportedType) }
 
         let outcome = await submit(courseID, assignmentID, payload) {
             try store.begin(draftID: draft.id, assignmentID: draft.assignmentID, now: now)

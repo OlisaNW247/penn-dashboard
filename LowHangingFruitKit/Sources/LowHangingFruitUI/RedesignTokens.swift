@@ -233,6 +233,12 @@ private enum SmoothFontRegistry {
     static func ensureRegistered() { _ = registration }
 }
 
+/// Lets other files in this target register the bundled faces before the Kit
+/// renders a document with them.
+enum SmoothFonts {
+    static func ensureRegistered() { SmoothFontRegistry.ensureRegistered() }
+}
+
 private func fontIsAvailable(_ name: String) -> Bool {
 #if canImport(UIKit)
     return UIFont(name: name, size: 12) != nil

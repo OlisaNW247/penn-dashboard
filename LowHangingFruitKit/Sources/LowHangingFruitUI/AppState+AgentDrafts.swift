@@ -129,7 +129,7 @@ extension AppState {
 
     /// Sends one draft to Canvas. See `AgentDraftSubmitter` for the order and
     /// the never-twice rule; this supplies the pieces from the live app.
-    func submitAgentDraft(_ draftID: String) async -> AgentSubmitResult {
+    func submitAgentDraft(_ draftID: String, pdf: RenderedDraftPDF? = nil) async -> AgentSubmitResult {
         guard !isUsingFixtureData, let draft = agentDrafts.first(where: { $0.id == draftID }) else {
             return .refused(.missingIDs)
         }
@@ -146,7 +146,8 @@ extension AppState {
             report: { decision in
                 guard let api else { return false }
                 return await self.reportAgentDraft(draft.id, decision, api: api)
-            })
+            },
+            pdf: pdf)
         switch result {
         case .submitted, .failed: dropAgentDraft(draft.id)
         case .checkCanvas: agentDrafts = agentDrafts  // republish: the card now says "check canvas"

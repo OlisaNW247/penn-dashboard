@@ -59,6 +59,9 @@ enum AgentConnectionCopy {
     static func noteFrom(_ name: String) -> String { "\(name.lowercased())'s note" }
     static let integrity = "this goes in under your name; read it"
     static let submit = "submit"
+    static let submitAsText = "submit as text"
+    static let submitAsPDF = "submit as pdf"
+    static let pdfFailed = "couldn't make a pdf"
     static let decline = "decline"
     static let confirmSubmitTitle = "submit to canvas?"
     static let sending = "sending to canvas"

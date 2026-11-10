@@ -56,15 +56,19 @@ public struct AgentDraft: Codable, Equatable, Sendable, Identifiable {
     /// A 120-second Storage signed URL, for `file` drafts only. A bearer
     /// link while it lives: never logged, never cached.
     public var fileURL: String?
+    /// "markdown" or "text" when the server ever says what `body` is; absent
+    /// today. Decoded leniently: any other shape is nil and detection decides
+    /// (`DraftDocumentRenderer`).
+    public var format: String?
 
     public init(id: String, assignmentID: String, kind: Kind, body: String? = nil, url: String? = nil,
                 fileName: String? = nil, mimeType: String? = nil, fileBytes: Int? = nil,
                 note: String? = nil, clientName: String? = nil, status: Status = .proposed,
-                createdAt: String? = nil, fileURL: String? = nil) {
+                createdAt: String? = nil, fileURL: String? = nil, format: String? = nil) {
         self.id = id; self.assignmentID = assignmentID; self.kind = kind; self.body = body
         self.url = url; self.fileName = fileName; self.mimeType = mimeType; self.fileBytes = fileBytes
         self.note = note; self.clientName = clientName; self.status = status
-        self.createdAt = createdAt; self.fileURL = fileURL
+        self.createdAt = createdAt; self.fileURL = fileURL; self.format = format
     }
 
     enum CodingKeys: String, CodingKey {
@@ -79,6 +83,7 @@ public struct AgentDraft: Codable, Equatable, Sendable, Identifiable {
         case status
         case createdAt = "created_at"
         case fileURL = "file_url"
+        case format
     }
 
     public init(from decoder: Decoder) throws {
@@ -96,6 +101,7 @@ public struct AgentDraft: Codable, Equatable, Sendable, Identifiable {
         status = (try? c.decode(Status.self, forKey: .status)) ?? .unknown
         createdAt = try? c.decodeIfPresent(String.self, forKey: .createdAt)
         fileURL = try? c.decodeIfPresent(String.self, forKey: .fileURL)
+        format = try? c.decodeIfPresent(String.self, forKey: .format)
     }
 
     /// The name the card and the sheet print. The server stores the client's

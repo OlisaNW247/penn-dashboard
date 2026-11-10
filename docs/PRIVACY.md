@@ -392,6 +392,8 @@ nothing until you pair it with your phone.
 - **Submitting.** When you tap submit and confirm, this phone sends the
   draft to Canvas itself, with your own Canvas session, exactly as Canvas's
   website would; our server is not involved and never sees your session.
+  A text draft written in markdown can be submitted as a PDF; that PDF is
+  made on this phone and never passes through our server.
   Before anything is sent, the phone writes down that it is about to submit
   this draft, so the same draft can never be submitted twice, even if the
   phone loses its connection or the app is closed mid-way; if Canvas's

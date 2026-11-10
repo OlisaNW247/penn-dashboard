@@ -36,6 +36,14 @@ struct AgentDraftReviewSheet: View {
     /// must not run on every render (CLAUDE.md, the freeze trap).
     @State private var snapshotItem: AgentSnapshot.WorkItem?
     @State private var resolved = false
+    /// Text drafts that read as markdown: the rendered PDF, and which of the
+    /// two the student sends. `choiceMade` keeps a late render from
+    /// overriding a tap.
+    @State private var choice: AgentDraftSubmitChoice = .text
+    @State private var pdf: RenderedDraftPDF?
+    @State private var pdfFailed = false
+    @State private var choiceMade = false
+    @State private var renderedBody: String?
 
     private enum Outcome: Equatable {
         case result(AgentSubmitResult)
@@ -122,9 +130,13 @@ struct AgentDraftReviewSheet: View {
             if let d = draft, d.preview() == nil || (d.kind == .file && d.fileURL == nil) {
                 if let fresh = await state.refetchAgentDraft(d.id) { shown = fresh }
             }
+            await prepareDocument()
         }
         .onChange(of: state.agentDrafts) { _, drafts in
             if let fresh = drafts.first(where: { $0.id == draftID }) { shown = fresh }
+        }
+        .onChange(of: draft?.body) { _, _ in
+            Task { await prepareDocument() }
         }
         .onDisappear { removePreviewFile() }
 #if os(macOS)
@@ -139,9 +151,28 @@ struct AgentDraftReviewSheet: View {
         switch draft?.kind {
         case .text?:
             if let body = draft?.body {
-                Text(body)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+                if pdfChoiceOffered {
+                    Picker("", selection: $choice) {
+                        Text(AgentConnectionCopy.submitAsText).tag(AgentDraftSubmitChoice.text)
+                        Text(AgentConnectionCopy.submitAsPDF).tag(AgentDraftSubmitChoice.pdf)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .disabled(isWorking || isFinished)
+                    .onChange(of: choice) { _, _ in choiceMade = true }
+                }
+                if choice == .pdf, let pdf {
+                    DraftPDFView(data: pdf.data)
+                        .frame(height: 420)
+                } else {
+                    Text(body)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if pdfFailed {
+                    Text(AgentConnectionCopy.pdfFailed)
+                        .font(.lhfSecondary(12)).foregroundStyle(Color.smoothTomatoInk)
+                }
             } else {
                 Text(AgentConnectionCopy.loading).foregroundStyle(Color.smoothMuted)
             }
@@ -178,6 +209,33 @@ struct AgentDraftReviewSheet: View {
             }
         case .unknown?, nil:
             Text(AgentConnectionCopy.unsupported).foregroundStyle(Color.smoothMuted)
+        }
+    }
+
+    // MARK: Markdown as a PDF
+
+    private var pdfChoiceOffered: Bool { pdf != nil }
+
+    /// Renders the body once per distinct body. A failure drops back to the
+    /// text choice and says so in one line.
+    private func prepareDocument() async {
+        guard let d = draft, d.kind == .text, let body = d.body, body != renderedBody else { return }
+        renderedBody = body
+        pdf = nil
+        pdfFailed = false
+        guard AgentDraftSubmitChoice.defaultChoice(for: d) == .pdf else {
+            if !choiceMade { choice = .text }
+            return
+        }
+        SmoothFonts.ensureRegistered()
+        let name = DraftDocumentRenderer.fileName(forTitle: item?.title ?? "draft")
+        let data = await Task.detached { DraftDocumentRenderer.pdfData(from: body) }.value
+        if let data {
+            pdf = RenderedDraftPDF(name: name, data: data)
+            if !choiceMade { choice = .pdf }
+        } else {
+            pdfFailed = true
+            choice = .text
         }
     }
 
@@ -264,7 +322,7 @@ struct AgentDraftReviewSheet: View {
         guard !isWorking else { return }
         isWorking = true
         Task {
-            let result = await state.submitAgentDraft(draftID)
+            let result = await state.submitAgentDraft(draftID, pdf: choice == .pdf ? pdf : nil)
             isWorking = false
             outcome = .result(result)
             lhfHapticLight()
