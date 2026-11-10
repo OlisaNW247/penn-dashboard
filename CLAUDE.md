@@ -1296,7 +1296,16 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v12` (2026-11-10, the degree-progress feature): 3738 tests /
+**Current on `v12` (2026-11-10, later, the Path@Penn audit decoder): 3752
+tests / 365 suites, all green, `swift test --no-parallel` on the GitHub macOS
+runner in 109 s (run 42837454207 at `6e42641`). +14 tests / +1 suite:
+`PathAuditDecoderTests`, the decoder for the audit shape Olisa captured from
+his own Path@Penn session that day (`docs/DEGREE_PROGRESS_V12_BUILD_SPEC.md`
+→ "Observed on 2026-11-10"). The old Degree Works reader and client are
+still the ones wired in, and they target a host the student never reaches,
+so the feature cannot work on a phone until they are replaced.**
+
+Before it: **on `v12` (2026-11-10, the degree-progress feature): 3738 tests /
 364 suites, all green, `swift test --no-parallel` on the GitHub macOS runner
 in 103 s (the `tests` workflow, run 42826422108 at `d5d5a79`; no Mac, no
 phone). Before it, run 42644725170 at `7f01843` (the first push, 3737 / 364)
@@ -3577,8 +3586,20 @@ none is a ship line.
 
 ## Known gaps
 
-- **Degree progress (`v12`, 2026-11-09) is written blind against a data
-  source nobody on this project has observed.** Every endpoint in
+- **Degree progress (`v12`): the audit's real shape is known and decoded
+  since 2026-11-10, and the sign-in half is still the wrong design.** Olisa's
+  capture showed that `courses.upenn.edu` serves the audit itself
+  (`page=dgw-server`), signed in by a 32-character `authtoken` in each POST
+  body, with no Degree Works host and no JWT cookies anywhere in the
+  student's path. `PathAuditDecoder` handles the response;
+  `DegreeWorksSessionReader`, `DegreeWorksClient`, `DegreeWorksEndpoints`,
+  `DegreeWorksTokens` and the what-if request builder are still wired and
+  still wrong, so every student would see "couldn't read path@penn · retry".
+  Open: where the page gets the token, the sign-in URL, the what-if
+  parameters and the program catalogue's source (the spec lists them). The
+  rest of this entry is the 2026-11-09 text, kept for the policy questions.
+  **Written blind against a data source nobody on this project had
+  observed.** Every endpoint in
   `DegreeWorksEndpoints` (the SSO entry `/worksheets/`, `/api/students/myself`,
   the GET and POST shapes of `/api/audit`, `/api/goals`, the cookie names
   `X-AUTH-TOKEN`/`REFRESH_TOKEN`) comes from Penn Labs' MIT-licensed Degree
