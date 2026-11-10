@@ -5,6 +5,21 @@ import Testing
 
 @Suite("Completion gestures")
 struct CompletionSwipeTests {
+    @Test("A drag that starts more vertical than sideways belongs to the scroll")
+    func verticalStartIsScroll() {
+        #expect(CompletionSwipe.axis(width: 4, height: 18) == .vertical)
+        #expect(CompletionSwipe.axis(width: -12, height: -19) == .vertical)
+        // A tie is a scroll: a lost scroll is the bug, a lost swipe is a retry.
+        #expect(CompletionSwipe.axis(width: 18, height: 18) == .vertical)
+        #expect(CompletionSwipe.axis(width: 0, height: 0) == .vertical)
+    }
+
+    @Test("A drag that starts clearly sideways is a swipe, either way")
+    func horizontalStartIsSwipe() {
+        #expect(CompletionSwipe.axis(width: 19, height: 4) == .horizontal)
+        #expect(CompletionSwipe.axis(width: -19, height: 6) == .horizontal)
+    }
+
     @Test("Left drags and deliberate left flicks undo")
     func leftSwipe() {
         #expect(CompletionSwipe.accepts(horizontal: -68, vertical: 3, predicted: -68, undo: true))
