@@ -1345,7 +1345,14 @@ public (`none`); PKCE `S256` is mandatory; there are no client secrets.
    `BCDFGHJKLMNPQRSTVWXZ` (RFC 8628's consonants: no words, nothing to misread),
    a two-digit match number, an "Open Smooth" button to
    `smooth://link?c=<id>` (`<id>` is 128 random bits, base64url, 22
-   characters), and a script that polls `/status` every 2 s. The response sets
+   characters), and a script that polls `/status` every 2 s (and at once when
+   the tab becomes visible again). When the poll reads `approved` the page
+   replaces itself with "Connected to Smooth / Returning to <client>…" and a
+   tick, waits 1.5 s, then navigates to `status?go=1`; a hidden tab navigates
+   at once, because browsers throttle timers there and nobody is watching.
+   `denied` and `expired` (or a 4xx from the poll) show "Not connected" and
+   "This request expired" with a sentence naming the client (since
+   2026-11-10, not deployed). The response sets
    the browser nonce: `Set-Cookie: sa_<id>=<nonce>; HttpOnly; Secure;
    SameSite=Lax; Max-Age=600; Path=<agent-auth root>`. A unique code is drawn
    up to 5 times against the live-code index, then `503 code_unavailable`.
@@ -1563,7 +1570,10 @@ the object is removed (best effort) and the error surfaces. Draft ids are
 `smd_` + 22 base64url characters. `draft_status` answers the row's status for
 that student, "no such draft" otherwise.
 
-Annotations: every read tool carries `readOnlyHint: true`.
+Annotations: every read tool carries `readOnlyHint: true`, `destructiveHint:
+false` and `openWorldHint: false`, all explicit (since 2026-11-10, not deployed;
+OpenAI's app submission guidelines require all three on every tool, see
+`docs/CONNECTOR_LISTING_CHECKLIST_2026-11-10.md`).
 `propose_submission` carries `readOnlyHint: false`, `idempotentHint: false`,
 `openWorldHint: false`, and `destructiveHint` set by `LHF_MCP_PROPOSE_HINT`:
 `none` omits it, `true` sets it, anything else (the default) sets `false`. It
@@ -1611,6 +1621,14 @@ Logs counts and outcome codes, never ids, titles or bodies. Table
   `error_class` (at most 64 characters); `attempt` is an integer 0 to 1000;
   otherwise `400 bad_request`. At declined, submitted or failed the file's
   object is deleted from Storage (best effort) and `file_path` cleared.
+  A signed URL already handed out keeps serving the file until it expires,
+  even after the object is gone (measured 2026-11-10: a URL fetched 20 s
+  after the object left `storage.objects` answered 200, and 400 at 135 s).
+  So "deleted" means "unreachable within 120 seconds", not at once.
+  `backend/scripts/agent-e2e.mjs` walks all of this against production with
+  a throwaway user (propose a text and a 20 KB file draft, list, download
+  and compare bytes, seen, declined, `400` without `canvas_submission_id`,
+  submitted, `409` on a second move, then the opt-out's `delete`).
 - `delete` removes the snapshot **and revokes every agent connection** of the
   student, answering `{ "deleted": true, "revoked": n }`. It also deletes the
   student's drafts and their Storage objects. A student with no

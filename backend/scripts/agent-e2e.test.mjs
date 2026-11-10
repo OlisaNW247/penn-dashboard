@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { cookieFrom, makePKCE, mask, parseArgs, parseAuthorizePage, parseChallenge, parseMcpBody, run } from "./agent-e2e.mjs";
+import {
+  cookieFrom, draftIdFrom, makePKCE, mask, parseArgs, parseAuthorizePage, parseChallenge, parseMcpBody, run, RUN_ORDER, STEPS,
+  TEST_ASSIGNMENT_ID, testFileBytes, testSnapshot,
+} from "./agent-e2e.mjs";
 
 // Shaped like authorizePage()'s output (backend/supabase/functions/_shared/agentAuth.ts).
 const PAGE = `<body><main>
@@ -56,4 +59,30 @@ test("--dry-run sends nothing", async () => {
   const code = await run(["--dry-run"], { fetchImpl: () => { throw new Error("network"); }, log: (l) => lines.push(l) });
   assert.equal(code, 0);
   assert.ok(lines.length >= 10);
+});
+
+test("draftIdFrom reads propose_submission's text, and nothing else", () => {
+  assert.equal(draftIdFrom("draft smd_abcDEF_-0123456789abcd proposed"), "smd_abcDEF_-0123456789abcd");
+  assert.equal(draftIdFrom("draft smd_x1 proposed (20480 bytes decoded in 3 ms)"), "smd_x1");
+  assert.equal(draftIdFrom("too many open drafts"), null);
+  assert.equal(draftIdFrom(undefined), null);
+});
+
+test("the test file is deterministic and 20 KB; the snapshot names the test assignment", () => {
+  const a = testFileBytes(), b = testFileBytes();
+  assert.equal(a.length, 20480);
+  assert.ok(a.equals(b));
+  assert.ok(Buffer.from(a.toString("base64"), "base64").equals(a));
+  const snap = testSnapshot(new Date("2026-11-10T00:00:00Z"));
+  assert.equal(snap.workList[0].id, TEST_ASSIGNMENT_ID);
+  assert.equal(snap.workList[0].dueAt, "2026-11-11T00:00:00.000Z");
+  // Nothing the snapshot validator forbids.
+  assert.ok(!JSON.stringify(snap).match(/"(score|grade|points|firstName|email)"/i));
+});
+
+test("RUN_ORDER runs every step once, drafts before the revoke and cleanup last", () => {
+  assert.deepEqual([...RUN_ORDER].sort((x, y) => x - y), STEPS.map((_, i) => i));
+  assert.ok(RUN_ORDER.indexOf(11) < RUN_ORDER.indexOf(8));
+  assert.ok(RUN_ORDER.indexOf(10) < RUN_ORDER.indexOf(7));
+  assert.equal(RUN_ORDER.at(-1), 9);
 });

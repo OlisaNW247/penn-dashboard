@@ -398,7 +398,14 @@ function pagedFooter(page: number, hasMore: boolean): string {
   return hasMore ? `\npage ${page} of more; call again with page=${page + 1}` : "";
 }
 
-const readOnly = { readOnlyHint: true } as const;
+// Every read tool states all three hints as explicit booleans. Claude's
+// directory only asks for `readOnlyHint` on a read tool, but OpenAI's app
+// submission guidelines (read 2026-11-10) require `readOnlyHint`,
+// `destructiveHint` and `openWorldHint` on every tool, and an absent hint
+// is not the same as `false` to a client that defaults to caution.
+// `openWorldHint: false` because these tools read Smooth's own pooled data
+// and the student's snapshot, never the open web or Canvas.
+const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false } as const;
 
 export function registerTools(server: McpServer, backend: ToolBackend, options: ToolOptions): void {
   const noAuth = () => failure("not signed in");

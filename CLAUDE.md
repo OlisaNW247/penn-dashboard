@@ -163,8 +163,10 @@ connector front, `https://smooth-agent.vercel.app`** (a Vercel Edge
 Function under Marco's account, `backend/connector-front/`), which serves
 the root OAuth discovery documents Claude needs and forwards to the two
 functions; `LHF_AGENT_PUBLIC_BASE` names it, so the issuer and MCP URL are
-`https://smooth-agent.vercel.app/functions/v1/agent-auth` and `.../mcp`. No
-client has signed in against production yet. `extract-facts` (written 2026-11-04 on
+`https://smooth-agent.vercel.app/functions/v1/agent-auth` and `.../mcp`. Marco's claude.ai signed in against production on 2026-11-09.
+Written on `claude/v11-backend-645aa0` on 2026-11-10 and **not deployed**:
+the sign-in page's "Connected to Smooth" state and explicit annotation
+hints on the read tools (`agent-auth`, `mcp`; no migration). `extract-facts` (written 2026-11-04 on
 `v10`, **live since 2026-11-05 01:20-01:45 UTC**, the evening of
 2026-11-04 US Eastern; version 1, with the `sync` that serves its facts at
 version 17 and migration `20261104090000_course_facts.sql` applied; the
@@ -203,9 +205,12 @@ mode, the S app mark, and bundled type registered at runtime by
   Olisa holds. There is deliberately no licence file in the repo; the
   agreement is Olisa's to produce if it is ever asked for.
 
-**Release state.** Live on the App Store: **3.4.0 (build 17)**, released
-2026-10-28 at 21:43 UTC per the public iTunes lookup, read 2026-11-06. **3.4.1
-(build 20) was archived from `v10` `c3a4feb` and uploaded at 16:39 EST (21:39
+**Release state.** Live on the App Store: **3.4.1 (build 20) since 2026-11-08
+at 22:29 UTC** (public iTunes
+lookup, read 2026-11-10), and the `update-manifest` floor is 3.4.1 (read the
+same day; `sync` refused a 3.4.0 install with 426 at 03:49 UTC on 2026-11-10,
+as designed). Before it, 3.4.0 (build 17), released 2026-10-28 at 21:43 UTC.
+**3.4.1 (build 20) was archived from `v10` `c3a4feb` and uploaded at 16:39 EST (21:39
 UTC) on 2026-11-07** ("Upload succeeded"; it supersedes build 19 (`5bc1a9f`,
 15:38 EST the same day, before the sheet listed every post) and build 18
 (`bd9d20c`, 2026-11-06, before the megaphone redesign and the final-exam
@@ -219,8 +224,8 @@ client report listing no `file` ids cannot retire a course's file rows,
 which the phone's assignment-PDF pass needs; a throwaway user's manifest
 round trip passed on it. The Debug build of the same
 tree is on Marco's iPhone 17 Pro since 14:06 EST the same day, over the 3.4.0
-(17) store copy, so the App Group container is readable again. Marco creates the 3.4.1 version
-record, attaches build 20, pastes `docs/appstore/LISTING.md` → What's New in
+(17) store copy, so the App Group container is readable again. Marco created the 3.4.1 version
+record (done; live 2026-11-08), attached build 20, pasted `docs/appstore/LISTING.md` → What's New in
 3.4.1 and submits; the floor automation raises `update-manifest` six hours
 after it is live. What 3.4.1 carries beyond 3.4.0 is listed in
 `docs/appstore/CHECKLIST.md` → "3.4.1 (18) submission". Before 3.4.0: **3.3.0
@@ -2590,6 +2595,28 @@ itself.
   (<path>))`. The wrong fix is a retry inside the same cancelled task. Not
   yet seen on a phone; read `lastCourseKnowledgeSyncSummaryV1` after the
   next launch.
+- **"manifest failed" on the phone can be a 200 on the server, and the
+  Management API's logs moved** (2026-11-10). Marco's summary said the
+  manifest failed for days, which reads as a `sync` bug. The function log
+  said 200 both times, and the same request replayed by a throwaway user
+  decoded cleanly, so the phone gave up on its own (most likely a cancelled
+  task; `docs/MANIFEST_FAILURE_2026-11-10.md`). The wrong fix is changing
+  `sync`, or retrying the manifest (a cancelled task cancels the retry). To
+  read the logs: `GET /v1/projects/<ref>/analytics/endpoints/logs` with
+  `select … from logs where source = 'function_edge_logs'` (or
+  `'function_logs'`), fields through `log_attributes['response.status_code']`
+  and the like, never `select *`, with `iso_timestamp_start` and `_end`.
+  `from function_edge_logs` answers "Table does not exist", which cost three
+  queries. `response.headers.content_length` is the compressed size.
+- **A deleted draft file still downloads through a signed URL handed out
+  earlier** (2026-11-10, found by `agent-e2e.mjs`). After a draft moved to
+  submitted, its object was gone from `storage.objects` and `file_path` was
+  cleared, yet the same signed URL (even with an extra query parameter)
+  answered 200 for 20 s more, and 400 only after its 120-second life ended.
+  The deletion is right; Storage's edge serves an issued URL until it
+  expires. The wrong fixes are "the remove failed, retry it" (it did not
+  fail) and asserting the URL dies at once in a probe. The real bound is the
+  URL's life, which is why it is 120 seconds and why PROTOCOL.md says so.
 
 - **Supabase's runtime strips `/functions/v1` from the path it hands a
   function, so a root derived from the request path is wrong for every
@@ -3666,47 +3693,47 @@ none is a ship line.
 
 ## Known gaps
 
-- **The agent connection is deployed (front and functions, 2026-11-08
-  night) and no client has signed in against production yet**
-  (`agent/connection-v11`). What is proven live (2026-11-09,
-  `backend/scripts/agent-e2e.mjs`, a scripted OAuth client plus a
-  throwaway anonymous user playing the phone): discovery through the
-  front, RFC 7591 registration, the authorize page, lookup and approve,
-  the code redirect, token exchange and refresh rotation with reuse
-  detection, `initialize` / `tools/list` / `list_work` on the live `mcp`,
-  revoke cutting the token off, `delete-account` cleanup. **Proven with a
-  real client on 2026-11-09:** Marco's claude.ai connected through
-  `smooth-agent.vercel.app`, his iPhone approved it with the typed code,
-  and a Claude session on his account read his courses and work list.
-  Still untried: the `smooth://link` tap from the Claude iPhone app, a
-  draft round trip (Phase 3's phone half is not built), ChatGPT. Marco's
-  verdict: the moment of connecting needs a clearer "connected" state on
-  the page and in Smooth. Deployed
-  2026-11-10 with their migrations: the hardening (rate limits, sweeper,
-  approve/deny bound to lookup) and the Phase 3 drafts backend (the
-  `agent-drafts` bucket); `get_assignment` then answered Problem Set 7
-  live with its Canvas link, description and two named attachments "not
-  in the course material". The attached PDFs themselves are still not
-  pooled: pooling files linked from open assignments is a product and
-  privacy decision (`docs/PRIVACY.md` lists what is pooled) and touches
-  the course-material sync, which is Olisa's; Marco's answer is pending.
-  Rule kept: `agent-auth` never ships ahead of its migration
-  (`deploy-agent.mjs` applies them first). Claude Code's sign-in step reads the OAuth discovery documents
-  only at the root `.well-known` paths of the MCP URL's host (research §8
-  item 3), which is why the front exists. Also open: the submit spike (`-LHFSubmitSpike`) has never
-  run against Canvas, the iPhone `smooth://link` hand-off is untried, what a
-  model sends as `file_base64` and what Claude shows for the write tool are
-  unmeasured (both need a signed-in Claude client), and `agent-auth` has rate limits, a sweeper
-  and a `deny` bound to a lookup since 2026-11-09 (migration
-  `20261109090000_agent_hardening.sql`, not yet applied in production;
-  `backend/PROTOCOL.md` → Limitations). Phase 2 (the phone side) is built, never on a phone; Phases
-  3 and 4 do not exist. The deploy is scripted and waits on two people:
-  `backend/connector-front/deploy.sh` (needs `vercel login` once; the front
-  runs as a Vercel Edge Function, Deno Deploy's sign-ups being closed) and
-  then `node
-  backend/scripts/deploy-agent.mjs --public-base <front>/functions/v1`
-  (needs Olisa's go; the token in `~/lhf-bench/supabase.token` still
-  answered 200 on 2026-11-08). The plan's "Open asks for Marco" is the list.
+- **The agent connection is live and proven with one real client; the
+  phone half of drafts, the submit itself and ChatGPT are not** (state on
+  2026-11-10; `agent/connection-v11`, plus `claude/v11-backend-645aa0` on
+  top of it, neither pushed). Live: the connector front
+  (`smooth-agent.vercel.app`, 2026-11-08), `agent-auth` v5, `mcp` v3,
+  `agent-snapshot` v3 with the hardening and drafts migrations
+  (2026-11-10). Proven: Marco's claude.ai connected on 2026-11-09, his
+  iPhone approved with the typed code, and Claude read his courses and work
+  list; `backend/scripts/agent-e2e.mjs` walks the whole server path against
+  production with a throwaway user, drafts included since 2026-11-10 (13 of
+  13 steps: propose text and file, list and download, seen, declined,
+  submitted, 409, opt-out). **Written and not deployed** (branch
+  `claude/v11-backend-645aa0`): the sign-in page's "Connected to Smooth"
+  state (Marco's ask) and explicit annotation hints on the read tools; no
+  migration, `deploy-agent.mjs` then `agent-e2e.mjs`. **Untried:** the
+  `smooth://link` tap from a phone, ChatGPT (whose plan rules are
+  unconfirmed; `docs/CONNECTOR_LISTING_CHECKLIST_2026-11-10.md`), the Phase
+  3 phone half (polling, the "drafted by Claude" chip, the review sheet),
+  the submit spike (`-LHFSubmitSpike`, never run against Canvas), and what a
+  model actually sends as `file_base64`. A finished draft's signed URL keeps
+  serving the file for the rest of its 120 seconds (Traps). The assignment
+  PDFs Claude needs to read a problem set are pooled by the phone since
+  2026-11-10, but that pass has never run on Marco's phone because his
+  manifest fails on the phone side (next entry). `agent-auth` never ships
+  ahead of its migration (`deploy-agent.mjs` applies them first). The plan's
+  "Open asks for Marco" (2026-11-10) is the list, and its first item is to
+  tell Olisa about the 2026-11-10 sync changes.
+- **Marco's course-material sync fails at the manifest on the phone,
+  while the server answers 200** (2026-11-05 onward; read 2026-11-10,
+  `docs/MANIFEST_FAILURE_2026-11-10.md`). Both manifest calls of
+  2026-11-10 (03:53 and 05:45 UTC) were 200 in about 4.5 s with
+  byte-identical 6 KB bodies, and the same request from a throwaway user
+  decodes under every strict rule of `SyncManifestResponse`. So
+  `BackendClient.send` throws after the server is done, most likely
+  because the calling task is cancelled (the 11-05 run's "cancel…" error,
+  every later Canvas call failing, `partial 5`). The reason sits only in
+  memory (`trace.manifestError`); the summary line says `manifest failed`.
+  Not fixed: the phone should write the error case into the summary, then
+  hold the sync in an `AppState` task that a view's cancellation cannot
+  reach. Handed to the dashboard-investigation session. Until then nothing
+  uploads from his phone and the assignment-PDF pass never runs there.
 - **A finished item whose completion is Canvas's alone has no swipe back
   in prev** (since 2026-11-06, `AppState.completionIsLockedByCanvas`,
   `DashItem.canMarkActive`). Before that the swipe was offered, did nothing

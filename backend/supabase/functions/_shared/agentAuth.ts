@@ -366,8 +366,29 @@ h1{font-size:20px;font-weight:600;margin:0 0 24px}
 .num{font-size:64px;font-weight:700;line-height:1}
 .btn{display:block;text-align:center;margin:28px 0 12px;padding:14px;border-radius:12px;background:#1c1c1e;color:#fff;text-decoration:none;font-weight:600}
 .small{font-size:14px;color:#6e6e73}
-@media (prefers-color-scheme:dark){body{background:#000;color:#f5f5f7}.btn{background:#f5f5f7;color:#000}}
+.mark{width:56px;height:56px;border-radius:28px;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:700;margin:8px 0 20px;background:#e5e5ea;color:#1c1c1e}
+.ok .mark{background:#34c759;color:#fff}
+@media (prefers-color-scheme:dark){body{background:#000;color:#f5f5f7}.btn{background:#f5f5f7;color:#000}.mark{background:#2c2c2e;color:#f5f5f7}}
 `;
+
+/** What the page says once the phone has answered. Exported so the tests
+ *  pin the words a student actually reads, and kept plain on purpose:
+ *  Marco connected claude.ai on 2026-11-09 and nothing on this page said it
+ *  had worked; it just jumped back to Claude. */
+export function authorizePageWords(clientName: string) {
+  return {
+    connectedTitle: "Connected to Smooth",
+    connectedLine: `Returning to ${clientName}…`,
+    deniedTitle: "Not connected",
+    deniedLine: `Smooth said no to this request. Close this tab and start again from ${clientName} if you meant to connect.`,
+    expiredTitle: "This request expired",
+    expiredLine: `It was not approved in time. Close this tab and start again from ${clientName}.`,
+  };
+}
+
+/** How long the "connected" state stays on screen before the redirect, when
+ *  someone is looking at it. A hidden tab goes at once (below). */
+export const CONNECTED_PAUSE_MS = 1500;
 
 export function authorizePage(view: AuthorizePageView): string {
   const name = escapeHTML(view.clientName);
@@ -380,34 +401,63 @@ export function authorizePage(view: AuthorizePageView): string {
   const dev = typeof view.devApproveURL === "string"
     ? `<p class="small"><a href="${escapeHTML(view.devApproveURL)}">approve (dev)</a></p>`
     : "";
-  const failure = `Not approved. Close this tab and try again from ${view.clientName}.`;
+  const words = authorizePageWords(view.clientName);
+  // The script below is the whole of the page's behaviour. Three rules:
+  // 1. `status?go=1` is still the only thing that mints the code (the
+  //    handler does it on that request), so the pause happens before the
+  //    navigation, never after a code exists.
+  // 2. A tab in the background must still go. Browsers throttle timers in
+  //    hidden tabs (Chrome to about one a minute after five minutes), so a
+  //    hidden tab skips the pause and navigates at once, and coming back to
+  //    the tab polls straight away instead of waiting out a throttled
+  //    interval. The pause is for a person watching; nobody watches a
+  //    hidden tab.
+  // 3. The wrong fix would be redirecting from the server when the phone
+  //    approves: the server has no connection to the browser, only the
+  //    browser's own poll.
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer"><title>Smooth</title><style>${PAGE_STYLE}</style></head>
 <body><main>
+<div id="ask">
 <h1>${name} (${host}) ${wants}</h1>
 <div class="label">code</div><div class="code">${escapeHTML(formatUserCode(view.userCode))}</div>
 <div class="label">Smooth will ask you to pick this number</div><div class="num">${view.matchNumber}</div>
 <a class="btn" role="button" href="${escapeHTML(deepLink)}">Open Smooth</a>
 <p class="small">On another device: open Smooth → Profile → connect an agent and type the code</p>
 ${dev}
-<p class="small" id="status" aria-live="polite">waiting for approval</p>
+<p class="small" id="status">waiting for approval</p>
+</div>
+<div id="result" hidden aria-live="polite">
+<div class="mark" id="mark" aria-hidden="true"></div>
+<h1 id="result-title"></h1>
+<p class="small" id="result-line"></p>
+</div>
 </main>
 <script>
 (function(){
 var url=${jsString(view.statusURL)};
-var failure=${jsString(failure)};
-var el=document.getElementById("status");
-var timer=null;
-function stop(text){if(timer)clearInterval(timer);timer=null;el.textContent=text}
-function poll(){
+var w=JSON.parse(${jsString(JSON.stringify(words))});
+var pause=${CONNECTED_PAUSE_MS};
+var ask=document.getElementById("ask"),box=document.getElementById("result");
+var timer=null,done=false;
+function show(kind,title,line){done=true;if(timer)clearInterval(timer);timer=null;
+ask.hidden=true;box.hidden=false;box.className=kind;
+document.getElementById("mark").textContent=kind==="ok"?"\u2713":"\u00d7";
+document.getElementById("result-title").textContent=title;
+document.getElementById("result-line").textContent=line}
+function go(){location.href=url+"&go=1"}
+function poll(){if(done)return;
 fetch(url,{credentials:"same-origin",cache:"no-store"}).then(function(r){
-if(r.status>=400&&r.status<500){stop(failure);return null}
+if(r.status>=400&&r.status<500){show("no",w.expiredTitle,w.expiredLine);return null}
 return r.json()}).then(function(b){
-if(!b)return;
-if(b.state==="approved"){stop("approved. going back to the app…");location.href=url+"&go=1"}
-else if(b.state==="denied"||b.state==="expired"){stop(failure)}
+if(!b||done)return;
+if(b.state==="approved"){show("ok",w.connectedTitle,w.connectedLine);
+if(document.hidden){go()}else{setTimeout(go,pause)}}
+else if(b.state==="denied"){show("no",w.deniedTitle,w.deniedLine)}
+else if(b.state==="expired"){show("no",w.expiredTitle,w.expiredLine)}
 }).catch(function(){})}
+document.addEventListener("visibilitychange",function(){if(!document.hidden)poll()});
 timer=setInterval(poll,2000);poll();
 })();
 </script></body></html>`;
