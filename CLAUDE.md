@@ -139,9 +139,12 @@ macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
 `extract-announcement`, **`extract-facts`** (2026-11-05), `extract-profile`,
 `map-categories`, `pair`, `sync`; and the three of the v11 agent connection,
 **live since 2026-11-08 about 03:00 UTC (the night of 2026-11-08 US
-Eastern), each at version 1, with migration
-`20261108090000_agent_connection.sql` applied, at Olisa's go relayed by
-Marco** (`node backend/scripts/deploy-agent.mjs --public-base
+Eastern), at Olisa's go relayed by Marco; redeployed 2026-11-10 about
+06:30 UTC at Marco's "Yes, deploy" as `agent-auth` v5, `mcp` v3,
+`agent-snapshot` v3 with migrations `20261109090000_agent_hardening.sql`
+and `20261109100000_agent_drafts.sql` applied (rate limits, sweeper,
+approve and deny bound to lookup, the drafts backend, the assignment
+context)** (`node backend/scripts/deploy-agent.mjs --public-base
 https://smooth-agent.vercel.app/functions/v1`): `agent-auth` (our own OAuth
 authorization server, the phone approves each connection), `mcp` (the
 remote MCP server Claude connects to) and `agent-snapshot` (the opted-in
@@ -3625,12 +3628,17 @@ none is a ship line.
   Still untried: the `smooth://link` tap from the Claude iPhone app, a
   draft round trip (Phase 3's phone half is not built), ChatGPT. Marco's
   verdict: the moment of connecting needs a clearer "connected" state on
-  the page and in Smooth. Undeployed on
-  the branch: the hardening (rate limits, sweeper, approve/deny bound to
-  lookup; migration `20261109090000`) and the Phase 3 drafts backend
-  (migration `20261109100000`, the `agent-drafts` bucket); production
-  runs `agent-auth` v2 and `mcp` v1 without them, and `agent-auth` must
-  never ship ahead of its migration. Claude Code's sign-in step reads the OAuth discovery documents
+  the page and in Smooth. Deployed
+  2026-11-10 with their migrations: the hardening (rate limits, sweeper,
+  approve/deny bound to lookup) and the Phase 3 drafts backend (the
+  `agent-drafts` bucket); `get_assignment` then answered Problem Set 7
+  live with its Canvas link, description and two named attachments "not
+  in the course material". The attached PDFs themselves are still not
+  pooled: pooling files linked from open assignments is a product and
+  privacy decision (`docs/PRIVACY.md` lists what is pooled) and touches
+  the course-material sync, which is Olisa's; Marco's answer is pending.
+  Rule kept: `agent-auth` never ships ahead of its migration
+  (`deploy-agent.mjs` applies them first). Claude Code's sign-in step reads the OAuth discovery documents
   only at the root `.well-known` paths of the MCP URL's host (research §8
   item 3), which is why the front exists. Also open: the submit spike (`-LHFSubmitSpike`) has never
   run against Canvas, the iPhone `smooth://link` hand-off is untried, what a

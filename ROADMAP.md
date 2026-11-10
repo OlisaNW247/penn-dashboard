@@ -448,6 +448,9 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   that night the real thing worked**: Marco's claude.ai connected, his
   phone approved, Claude read his work list. His ask: a clear "connected"
   state on the sign-in page and in Smooth at the moment it happens.
+  2026-11-10: hardening, drafts backend and the assignment-context fix
+  deployed; open decision: pool the PDFs linked from open assignments so
+  Claude can read a problem set (privacy text and Olisa's sync).
 - **Megaphone: the model sorts posts into todo and prev** (Marco,
   2026-11-07: "prev being either from way before or unapplicable, need
   [the model] to sort based on text"). What ships first is the rule half

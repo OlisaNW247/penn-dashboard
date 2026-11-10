@@ -175,7 +175,15 @@ Detailed, with files and acceptance tests, in the session brief.
    session on his account then listed his four courses and his real work
    list through `list_courses` and `list_work`. His one note: nothing
    makes it clear at the moment of connecting that it worked, on the
-   page or in Smooth (an item for Phase 3's UI).
+   page or in Smooth (an item for Phase 3's UI). **2026-11-10:** his first
+   real task ("complete problem set 7 ... upload it via smooth") showed
+   `get_assignment` returning only a title: the snapshot carried no Canvas
+   ids and the pooled text no links. Fixed (`948947d`, deployed): ids and
+   the assignment's Canvas link on every item, attachments listed and
+   joined to pooled files across a course's sites. Still open, a product
+   decision: pooling the PDFs linked from open assignments, which the
+   phone never ingests (the extension pooled only the lab site's). Without
+   it Claude knows the problem set exists and where, and cannot read it.
 2. **Phone, opt-in**: the connect-an-agent screen, the approve sheet, the
    snapshot upload, revoke, `PRIVACY.md`. Done when the iPhone-app flow
    works end to end on Marco's phone. **Done 2026-11-09:** the typed-code
@@ -239,6 +247,10 @@ followed by a command the session (or anyone) runs:**
    One live finding: Supabase's gateway rewrites an Edge Function's HTML to
    `text/plain` with a sandbox CSP on `supabase.co`, so the pages carry
    marker headers and the front restores the real ones (Traps).
+   **Redeployed 2026-11-10 at Marco's "Yes, deploy"**: migrations
+   `20261109090000_agent_hardening.sql` and `20261109100000_agent_drafts.sql`
+   applied, `agent-auth` v5, `mcp` v3, `agent-snapshot` v3; smoke checks
+   and the e2e probe green; `get_assignment` live for Problem Set 7.
 3. **claude.ai.** Add the dev tunnel (alive at the time of writing,
    `https://1e28-2607-f470-6-1001-186d-8e5-da38-7223.ngrok-free.app/functions/v1/mcp`,
    dies with the Mac's sleep) or, after 1 and 2, the real host
