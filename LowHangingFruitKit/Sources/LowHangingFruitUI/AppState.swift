@@ -689,6 +689,13 @@ final class AppState: ObservableObject {
     /// `AppState+CourseKnowledge.swift`.
     @Published var courseKnowledge: CourseKnowledgeBase
     @Published var isCourseKnowledgeSyncing = false
+    /// The course-material sync in flight, held here so a view's task
+    /// being cancelled cannot cancel it (`refreshCourseKnowledge`). Nil when
+    /// none is running.
+    var pendingCourseKnowledgeSync: Task<Void, Never>?
+    /// Distinguishes one held sync from the next, as
+    /// `silentRenewalGeneration` does for the renewer.
+    var courseKnowledgeSyncGeneration = 0
     @Published var courseKnowledgeNotice: String?
     /// One line for Settings → accounts → "ed discussion": what the last Ed
     /// sync did ("connected: CIS 2400", "no classes use ed discussion", ...).

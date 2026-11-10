@@ -1313,7 +1313,9 @@ Swift pass is blind: never run against real Canvas.**
 **On `claude/quiz-inclass-9d38b8` (2026-11-10): the label fix's filtered runs
 green (`DueValueSecondaryLabelTests` 8, `NoSubmissionCaveatTests` +1, 40 tests
 in 3 suites); full `swift test --no-parallel` alone on Marco's Mac: 3760 / 362, all green
-(55 s), +6 over the 3754 / 362 below. No iOS build (no iOS-only code touched).**
+(55 s), +6 over the 3754 / 362 below. Then the held course-material sync
+(`CourseKnowledgeHeldSyncTests`, +3 / +1): 3763 / 363, all green (85 s). No iOS
+build (no iOS-only code touched).**
 
 **Chrome extension (a separate suite; never add it to the Swift or Deno
 counts): 517 tests, all green, on `v8` (2026-11-04, `cd chrome-extension
@@ -2574,6 +2576,20 @@ itself.
   wait ten minutes between hidden-login tests.
 
 ## Traps that have already bitten
+
+- **A view's `.task` cancelling the course-material sync read as "manifest
+  failed"** (2026-11-10, diagnosed by the backend session, blind fix). The
+  server logged Marco's manifest calls as 200 in 4.4 s; the phone recorded
+  "manifest failed · partial 5 · pages 5". The chain runs from
+  `ContentView`'s `.task`, SwiftUI cancels that task when the scene changes,
+  and a cancelled task cancels the URLSession requests it awaits, which
+  `BackendClient.send` maps to `.transport`. `refreshCourseKnowledge` now
+  runs the work in one task held in `AppState.pendingCourseKnowledgeSync`
+  that later callers join (the `startSilentCanvasRenewal` pattern), and the
+  summary says `manifest failed (cancelled | transport | http N | decoding
+  (<path>))`. The wrong fix is a retry inside the same cancelled task. Not
+  yet seen on a phone; read `lastCourseKnowledgeSyncSummaryV1` after the
+  next launch.
 
 - **Supabase's runtime strips `/functions/v1` from the path it hands a
   function, so a root derived from the request path is wrong for every

@@ -104,6 +104,10 @@ struct CourseKnowledgeSyncTrace: Sendable {
     /// decode failure the client's coding-path detail as well. Defaulted
     /// so the memberwise initializer's existing callers keep compiling.
     var manifestError: String? = nil
+    /// `manifestError` reduced for the persisted summary line
+    /// (`AppState.manifestErrorKindForSummary`): "cancelled", "transport",
+    /// "http 500", "decoding (<path>)". Counts and words only.
+    var manifestErrorKind: String? = nil
     /// `CourseKnowledgeCollector.Report.partialCourseIDs`, sorted: courses
     /// fetched this run where something failed, so nothing they held was
     /// dropped and the server was not told anything of theirs is gone.
@@ -210,7 +214,41 @@ extension AppState {
     /// that type's doc comment for why: `courseKnowledgeNotice` alone can't
     /// tell apart "the guard never let this run start," "the manifest never
     /// came back," and "the collector ran but every endpoint failed."
+    ///
+    /// **The run is held on `AppState`, not on the caller's task.** The chain
+    /// that reaches this (ContentView's launch pass and five-minute loop,
+    /// through `refreshCanvasGrades`) runs in a view-bound `.task`, which
+    /// SwiftUI cancels when the scene changes. A cancelled task cancels the
+    /// URLSession requests it awaits, so on Marco's phone (2026-11-10) the
+    /// manifest call was logged as a 200 on the server and recorded as
+    /// "manifest failed" on the phone, every pages fetch after it failed
+    /// ("partial 5 · pages 5"), and nothing was uploaded. Now the work runs
+    /// in one unstructured task stored in `pendingCourseKnowledgeSync`, a
+    /// caller that arrives while it runs joins it instead of starting over,
+    /// and a caller's cancellation only stops that caller waiting, the
+    /// pattern `startSilentCanvasRenewal` / `awaitPendingSilentRenewal` use
+    /// for the renewer. The wrong fix was a retry: a retry from the same
+    /// cancelled task is cancelled too. This is Olisa's sync area; only the
+    /// holding changed, not what a run does.
     func refreshCourseKnowledge(cookies: [HTTPCookie], force: Bool = false) async {
+        if let pending = pendingCourseKnowledgeSync {
+            await pending.value
+            return
+        }
+        courseKnowledgeSyncGeneration += 1
+        let generation = courseKnowledgeSyncGeneration
+        let task = Task { @MainActor [weak self] in
+            await self?.performCourseKnowledgeRefresh(cookies: cookies, force: force)
+            guard let self, generation == self.courseKnowledgeSyncGeneration else { return }
+            self.pendingCourseKnowledgeSync = nil
+        }
+        pendingCourseKnowledgeSync = task
+        await task.value
+    }
+
+    /// One course-material sync run. Call `refreshCourseKnowledge`, which
+    /// holds it on `AppState`; never call this from a view's task directly.
+    private func performCourseKnowledgeRefresh(cookies: [HTTPCookie], force: Bool) async {
         // Preview/demo mode isn't a real sync attempt — `assistantKnowledge`
         // reads `SampleData.knowledge()` in that mode regardless, so there is
         // nothing here worth tracing and no reason to overwrite whatever
@@ -350,6 +388,10 @@ extension AppState {
                 detail += " — " + decodeDetail
             }
             trace.manifestError = detail
+            trace.manifestErrorKind = Self.manifestErrorKindForSummary(
+                error, cancelled: Task.isCancelled,
+                decodingDetail: BackendDiagnostics.lastDecodingFailure
+            )
         }
         trace.manifestSucceeded = manifestSucceeded
         trace.coursesFresh = manifest.coursesFresh.sorted()
@@ -582,7 +624,9 @@ extension AppState {
         let edNotes = trace.collectorErrors.filter { $0.hasPrefix("ed: ") }.count
         let errors = failure == nil ? trace.collectorErrors.count - edNotes : trace.collectorErrors.count
         let outcome = failure.map { "failed: \($0)" } ?? "ok"
-        let manifest = trace.manifestSucceeded ? "ok" : (trace.manifestError != nil ? "failed" : "none")
+        let manifest = trace.manifestSucceeded
+            ? "ok"
+            : (trace.manifestError != nil ? "failed" + (trace.manifestErrorKind.map { " (\($0))" } ?? "") : "none")
         let ed = edDiscussionStatus.map { Self.scrubbedForSummary($0) } ?? "none"
         let kinds = Self.courseKnowledgeErrorKinds(trace.collectorErrors).map { " \u{00B7} error kinds: \($0)" } ?? ""
         let summary = "\(Self.diagnosticStamp(finished)) \u{00B7} \(outcome)"
@@ -593,6 +637,19 @@ extension AppState {
             + " \u{00B7} errors \(errors)\(kinds) \u{00B7} ed notes \(edNotes) \u{00B7} ed: \(ed)"
         lastCourseKnowledgeSyncSummary = summary
         UserDefaults.lhf.set(summary, forKey: Self.lastCourseKnowledgeSyncSummaryKey)
+    }
+
+    /// Why the manifest call failed, for the summary line. A cancelled
+    /// caller comes first: `BackendClient.send` maps URLSession's
+    /// `URLError.cancelled` to `.transport`, so without asking the task the
+    /// two read alike, and they need opposite fixes. Then the backend case,
+    /// with a decode failure's coding path (`extractorErrorKindForSummary`,
+    /// scrubbed and capped). Pure for tests.
+    nonisolated static func manifestErrorKindForSummary(
+        _ error: Error, cancelled: Bool, decodingDetail: String?
+    ) -> String {
+        if cancelled || error is CancellationError { return "cancelled" }
+        return extractorErrorKindForSummary(error, decodingDetail: decodingDetail)
     }
 
     /// Which fetch the collector's errors came from, as "modules 3 · pages 2".
