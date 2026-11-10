@@ -868,7 +868,8 @@ Kept so nobody rebuilds them blind.
   reminder (or weekdays, or off) at a chosen time, checklist, feedback,
   pause, sign out. Server side in `smooth-ambassadors/` (`plan.json`, JSON
   answers for the app, a 14-entry daily post bank, "open in the smooth
-  app" on the web page). Not compiled locally; CI dispatched. Not deployed.
+  app" on the web page). 3697/357 green on the GitHub runner (2026-11-10);
+  no iOS build yet, never on a phone, server not deployed.
 - **2026-11-07 (16:39 EST).** 3.4.1 (20) archived from `c3a4feb` and
   uploaded, superseding builds 18 and 19. Marco attaches 20 and submits.
 - **2026-11-07 (evening).** The megaphone lists every post the phone keeps

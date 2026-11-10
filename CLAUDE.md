@@ -1044,8 +1044,9 @@ Keep this current. It is the fastest way for a new session to know what exists.
      dashboard, items with nothing to submit, the announcement "ai assist"
      opt-out)
   7. sync (iCloud sync, off by default; on macOS, open at login)
-  8. ambassador (2026-11-09, `claude/new-session-b3ylkg`, for `v11`; not
-     compiled locally, CI run pending): one row, "ambassador mode", with
+  8. ambassador (2026-11-09, `claude/new-session-b3ylkg`, for `v11`;
+     compiled and tested green on the GitHub runner 2026-11-10, Test
+     baseline; no iOS build, never on a phone): one row, "ambassador mode", with
      "sign in" or "maya · uva", that pushes `AmbassadorPage`
      (`DashRoute.ambassador`). The campus ambassador program's closed loop
      inside the app, for the founders' friends at other schools; every
@@ -1309,12 +1310,20 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**`claude/new-session-b3ylkg` (2026-11-09): not run locally; the authoring
-session had no Swift toolchain. The `tests` workflow (`swift test
---no-parallel` on a macOS runner) was dispatched against the branch; its
-run is the gate, and whoever reads this should check it before trusting the
-count. Predicted: 3674 + 27 (`AmbassadorTests.swift`: 5 suites) with no
-loss; `VisualStructureTests` learned the new section marker.**
+**`claude/new-session-b3ylkg` at `85d4234` (2026-11-10): 3697 tests / 357
+suites, all green, `swift test --no-parallel` on the GitHub macOS runner in
+106 s (the `tests` workflow, run 42827059990; Deno and the extension suite
+green in the same run).** +23 tests and +6 suites over `v10`'s 3674 / 351,
+all in `AmbassadorTests.swift` (ambassador mode); nothing lost, and
+`VisualStructureTests` learned the new section marker. It took four runs:
+the first failed on a non-Sendable `UNNotificationRequest` handed to a
+nonisolated protocol method (the seam is `@MainActor` now, like
+`PendingNotificationSink`), the next two on the test target (a
+`UserDefaults` sent to a nonisolated closure; a `String` where `#expect`
+wants a `Comment`). The runner compiles the macOS slice only: the iOS
+`xcodebuild` (widget, `#if os(iOS)` code, including the page's iOS-only
+text-field modifiers) has not been run on this tree, and nothing is on a
+phone.
 
 **Current on `v10` (2026-11-07, evening, every post listed, the 3-day grace):
 3674 tests / 351 suites, all green, `swift test --no-parallel` on Marco's Mac
@@ -3541,7 +3550,7 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
-| `claude/new-session-b3ylkg` | **2026-11-09, `v10` `4c136b2` plus two commits, meant to become `v11`.** (1) `smooth-ambassadors/`: the poster-scan tracker plus the campus ambassador system as a Cloudflare Worker + D1 (private pages per ambassador, tracked links, a founder view with a digest generator, 17 Miniflare tests), drafted here to move to a private repo. (2) **Ambassador mode in the app** (What the app does → Profile → 8): a code-based sign-in in Profile, today's post, a daily local reminder, the planner carve-out. Swift not compiled on the authoring machine (no toolchain in the cloud session); the `tests` workflow was dispatched on the branch, see Test baseline. Olisa or Marco creates `v11` from it. |
+| `claude/new-session-b3ylkg` | **2026-11-09, `v10` `4c136b2` plus two commits, meant to become `v11`.** (1) `smooth-ambassadors/`: the poster-scan tracker plus the campus ambassador system as a Cloudflare Worker + D1 (private pages per ambassador, tracked links, a founder view with a digest generator, 17 Miniflare tests), drafted here to move to a private repo. (2) **Ambassador mode in the app** (What the app does → Profile → 8): a code-based sign-in in Profile, today's post, a daily local reminder, the planner carve-out. 3697/357 green on the GitHub runner at `85d4234` (2026-11-10, Test baseline); no iOS `xcodebuild`, never on a phone, server not deployed. Olisa or Marco creates `v11` from it. |
 | `v10` | **Current line (2026-11-03 onward).** `v9` (the no-banner sign-in, the onboarding polish, the composed-day research) plus `origin/v8` `7e004c5` (the tree's recency and follow-up work) plus `phase0/extract-facts-bench`. The merge's Swift run is recorded under Test baseline. |
 | `phase0/extract-facts-bench` | 2026-11-03, off `v9`: the extract-facts bench, prompt, schema and parser; the model decision (Haiku 5.5, `docs/EXTRACT_FACTS_BENCH_2026-11-03.md`). In `v10`. |
 | `v9` | 2026-11-01 to 11-03: the no-banner sign-in and keepalive, proven on Marco's phone; the onboarding polish merged; the composed-day research. In `v10`. |

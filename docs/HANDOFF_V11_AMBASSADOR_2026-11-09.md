@@ -31,10 +31,10 @@ Profile → 8 has the full description):
 
 ## What to do next, in order
 
-1. **Compile and run the suite.** `cd LowHangingFruitKit && swift test
-   --no-parallel`. The `tests` workflow was dispatched on the branch; read
-   its summary first. Fix what the compiler says; the author could not run
-   it.
+1. **Build for iOS.** The suite is green on the GitHub runner (3697/357 at
+   `85d4234`, 2026-11-10, run 42827059990), which compiles the macOS slice
+   only. Run the iOS `xcodebuild` from CLAUDE.md → Commands on a Mac; the
+   page's `#if os(iOS)` text-field modifiers have never been compiled.
 2. **Deploy the server** (`smooth-ambassadors/docs/deploy.md`): back up
    D1, bring in the live `worker/index.js` as `legacy.js`, apply the
    migration, set `FOUNDER_TOKEN`, deploy, re-test the printed routes.
