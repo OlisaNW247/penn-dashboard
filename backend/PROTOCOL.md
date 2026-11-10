@@ -1570,7 +1570,10 @@ the object is removed (best effort) and the error surfaces. Draft ids are
 `smd_` + 22 base64url characters. `draft_status` answers the row's status for
 that student, "no such draft" otherwise.
 
-Annotations: every read tool carries `readOnlyHint: true`.
+Annotations: every read tool carries `readOnlyHint: true`, `destructiveHint:
+false` and `openWorldHint: false`, all explicit (since 2026-11-10, not deployed;
+OpenAI's app submission guidelines require all three on every tool, see
+`docs/CONNECTOR_LISTING_CHECKLIST_2026-11-10.md`).
 `propose_submission` carries `readOnlyHint: false`, `idempotentHint: false`,
 `openWorldHint: false`, and `destructiveHint` set by `LHF_MCP_PROPOSE_HINT`:
 `none` omits it, `true` sets it, anything else (the default) sets `false`. It

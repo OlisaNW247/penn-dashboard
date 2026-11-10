@@ -159,7 +159,11 @@ Deno.test("initialize, then tools/list with titles and annotations", async () =>
       assertEquals(t.annotations.idempotentHint, false);
       assertEquals(t.annotations.openWorldHint, false);
     } else {
+      // All three as explicit booleans: OpenAI's submission guidelines
+      // require them on every tool.
       assertEquals(t.annotations.readOnlyHint, true, t.name);
+      assertEquals(t.annotations.destructiveHint, false, t.name);
+      assertEquals(t.annotations.openWorldHint, false, t.name);
     }
   }
 });
