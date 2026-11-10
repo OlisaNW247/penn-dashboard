@@ -137,3 +137,14 @@ Deno.test("mcp responses with marker headers are left alone", async () => {
     assertEquals(res.headers.get("x-smooth-csp"), CSP);
   });
 });
+
+Deno.test("connector-front: the root is a one-paragraph page naming the MCP URL", async () => {
+  const env = { upstreamBase: "https://up.example/functions/v1", publicBase: "https://front.example/functions/v1" };
+  const res = await handle(new Request("https://front.example/"), env);
+  assertEquals(res.status, 200);
+  assertEquals(res.headers.get("content-type"), "text/html; charset=utf-8");
+  const text = await res.text();
+  assert(text.includes("https://front.example/functions/v1/mcp"));
+  const miss = await handle(new Request("https://front.example/nothing"), env);
+  assertEquals(miss.status, 404);
+});
