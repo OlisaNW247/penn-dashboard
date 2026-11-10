@@ -103,6 +103,59 @@ struct PathPortalSourceTests {
         #expect(source.contains("PathPage.authHost"))
     }
 
+    @Test("a page call has a deadline and resumes its continuation exactly once")
+    func scriptDeadline() throws {
+        let source = try portalSource()
+        #expect(source.contains("timeout: TimeInterval"))
+        #expect(source.contains("scriptTimeout"))
+        #expect(source.contains("auditTimeout"))
+        #expect(source.contains("PathOneShot"))
+        #expect(source.contains("box.finish(nil)"))
+        // The audit is the one slow script.
+        #expect(source.contains("timeout: Self.auditTimeout"))
+    }
+
+    @Test("no log line carries text the page supplied")
+    func logsAreFixed() throws {
+        let source = try portalSource()
+        for line in source.components(separatedBy: "\n") where line.contains("log(\"") {
+            #expect(!line.contains("\\(message"), "a log line interpolates the page's message: \(line)")
+            #expect(!line.contains("\\(text"), "a log line interpolates page text: \(line)")
+        }
+        for fixed in ["audit: page error", "audit: no blocks", "degrees: empty", "script timed out: "] {
+            #expect(source.contains(fixed), "missing log line \(fixed)")
+        }
+        #expect(!source.contains("audit error:"))
+    }
+
+    @Test("the credential fill consults the renewer's budget and stamps its records")
+    func sharesTheBudget() throws {
+        let source = try portalSource()
+        #expect(source.contains("mayFillCredential"))
+        #expect(source.contains("CanvasSessionRenewer.failedSubmissionSpacing"))
+        #expect(source.contains("CanvasSessionRenewer.foregroundCredentialSpacing"))
+        #expect(source.contains("credentialBudget"))
+        #expect(source.contains("onCredentialSubmitted"))
+        #expect(source.contains("onCredentialFailed"))
+        #expect(source.contains("onCredentialRejected"))
+        // The renewer's own bounce rule, not a private one.
+        #expect(source.contains("PennKeyLoginForm.errorTextIndicatesBadCredential"))
+        // The old per-tap reset of the only limit is gone.
+        #expect(!source.contains("lastAttemptStartedAt"))
+        #expect(source.contains("lastAttemptEndedAt"))
+    }
+
+    @Test("a second caller joins the attempt in flight, and a dead page is reloaded")
+    func joinsAndReloads() throws {
+        let source = try portalSource()
+        #expect(source.contains("Task<SignIn, Never>"))
+        #expect(source.contains("return await running.value"))
+        #expect(!source.contains("isEnsuring"))
+        #expect(source.contains("func invalidateSession"))
+        #expect(source.contains("webViewWebContentProcessDidTerminate"))
+        #expect(source.contains("needsReload"))
+    }
+
     @Test("the token and the student's id never appear in the portal")
     func nothingPersonal() throws {
         let source = try portalSource()
@@ -112,6 +165,89 @@ struct PathPortalSourceTests {
         // Not even named in a comment: the readiness script is the only door.
         #expect(!source.contains("sam.auth.token"))
         #expect(!source.contains("idProof"))
+    }
+}
+
+@Suite("Degree progress: the portal's budget and retry rules")
+struct PathPortalBudgetRuleTests {
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func may(
+        submitted: TimeInterval? = nil, failed: TimeInterval? = nil,
+        rejected: Bool = false, enabled: Bool = true
+    ) -> Bool {
+        PathPortal.mayFillCredential(
+            now: now,
+            lastSubmission: submitted.map { now.addingTimeInterval(-$0) },
+            lastFailedSubmission: failed.map { now.addingTimeInterval(-$0) },
+            passwordRejected: rejected,
+            autoLoginEnabled: enabled
+        )
+    }
+
+    @Test("a fill needs auto-login on and no rejection")
+    func latches() {
+        #expect(may())
+        #expect(!may(rejected: true))
+        #expect(!may(enabled: false))
+        #expect(!may(rejected: true, enabled: false))
+    }
+
+    @Test("a fill waits ten minutes after the last submission, by either spender")
+    func foregroundSpacing() {
+        let spacing = CanvasSessionRenewer.foregroundCredentialSpacing
+        #expect(spacing == 10 * 60)
+        #expect(!may(submitted: 0))
+        #expect(!may(submitted: spacing - 1))
+        #expect(may(submitted: spacing))
+        #expect(may(submitted: spacing + 1))
+    }
+
+    @Test("a fill waits an hour after a submission that did not end signed in")
+    func failedSpacing() {
+        let spacing = CanvasSessionRenewer.failedSubmissionSpacing
+        #expect(spacing == 60 * 60)
+        #expect(!may(submitted: 20 * 60, failed: spacing - 1))
+        #expect(may(submitted: 20 * 60, failed: spacing))
+        // The shorter wait alone still binds when the failure is old.
+        #expect(!may(submitted: 5 * 60, failed: spacing + 600))
+    }
+
+    @MainActor
+    @Test("the portal's rule agrees with the renewer's own foreground rule")
+    func agreesWithRenewer() {
+        let offsets: [TimeInterval?] = [nil, 0, 599, 600, 3599, 3600, 7200]
+        for submitted in offsets {
+            for failed in offsets {
+                let portal = may(submitted: submitted, failed: failed)
+                let renewer = CanvasSessionRenewer.credentialSubmissionAllowed(
+                    lastSubmissionAt: submitted.map { now.addingTimeInterval(-$0) },
+                    now: now,
+                    isBackground: false,
+                    lastFailedSubmissionAt: failed.map { now.addingTimeInterval(-$0) })
+                #expect(portal == renewer)
+            }
+        }
+    }
+
+    @Test("a read that failed after sign-in is retried once, never twice")
+    func retryRule() {
+        #expect(AppState.shouldRetryAfterInvalidate(readFailed: true, alreadyRetried: false))
+        #expect(!AppState.shouldRetryAfterInvalidate(readFailed: true, alreadyRetried: true))
+        #expect(!AppState.shouldRetryAfterInvalidate(readFailed: false, alreadyRetried: false))
+        #expect(!AppState.shouldRetryAfterInvalidate(readFailed: false, alreadyRetried: true))
+    }
+
+    @Test("a what-if restores the old status only while its own reading still stands")
+    func whatIfStatus() {
+        let before = DegreeStatus.read(now)
+        let later = DegreeStatus.read(now.addingTimeInterval(60))
+        #expect(AppState.degreeStatusAfterWhatIf(current: .reading, previous: before) == before)
+        // Another read finished and wrote its own status: leave it.
+        #expect(AppState.degreeStatusAfterWhatIf(current: later, previous: before) == later)
+        #expect(AppState.degreeStatusAfterWhatIf(current: .failed("x"), previous: before) == .failed("x"))
+        // The other read owns "reading"; a what-if must not end it.
+        #expect(AppState.degreeStatusAfterWhatIf(current: .reading, previous: .reading) == .reading)
     }
 }
 

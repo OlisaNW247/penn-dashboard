@@ -141,6 +141,39 @@ extension AppState {
         }
     }
 
+    /// The one retry a read gets when the page still held a token but a call
+    /// failed (the 24-hour session lapsed under it): invalidate, sign in again,
+    /// read again, once. Never a loop.
+    nonisolated static func shouldRetryAfterInvalidate(readFailed: Bool, alreadyRetried: Bool) -> Bool {
+        readFailed && !alreadyRetried
+    }
+
+    /// Where the status goes when a what-if finishes: back to what showed
+    /// before it, but only if the status is still the "reading" this call set
+    /// (anything else was written by a read that has since finished or failed,
+    /// and restoring a `previous` captured before an await would clobber it),
+    /// and never to "reading" itself, which another read owns.
+    nonisolated static func degreeStatusAfterWhatIf(current: DegreeStatus, previous: DegreeStatus) -> DegreeStatus {
+        guard current == .reading, previous != .reading else { return current }
+        return previous
+    }
+
+    /// Binds the portal to the renewer's PennKey budget (`AppState.swift`,
+    /// "the shared PennKey budget") and signs in. Every sign-in in this file
+    /// goes through here, so the portal can never fill without the budget.
+    private func signInToPath(force: Bool) async -> PathPortal.SignIn {
+        let portal = degreePortal
+        portal.credentialBudget = { [weak self] in
+            self?.pathCredentialBudget() ?? PathPortal.CredentialBudget(
+                lastSubmission: nil, lastFailedSubmission: nil,
+                passwordRejected: true, autoLoginEnabled: false)
+        }
+        portal.onCredentialSubmitted = { [weak self] date in self?.notePathCredentialSubmitted(at: date) }
+        portal.onCredentialFailed = { [weak self] date in self?.notePathCredentialFailed(at: date) }
+        portal.onCredentialRejected = { [weak self] in self?.noteAutoLoginRejected() }
+        return await portal.ensureSignedIn(force: force)
+    }
+
     private var degreeIsForeground: Bool {
         #if os(iOS)
         if SharedDefaults.isTestRunner { return true }
@@ -222,7 +255,10 @@ extension AppState {
         let task = Task { await self.performDegreeRefresh(force: force) }
         degreeRefreshTask = task
         await task.value
-        degreeRefreshTask = nil
+        // Only the task this call started, and only if it is still the stored
+        // one: `clearDegreeData` or a newer read may have replaced it, and
+        // clearing theirs would let a second read start beside it.
+        if degreeRefreshTask == task { degreeRefreshTask = nil }
     }
 
     private func performDegreeRefresh(force: Bool) async {
@@ -232,47 +268,64 @@ extension AppState {
         degreeStatus = .reading
         let portal = degreePortal
 
-        let signIn = await portal.ensureSignedIn(force: force)
-        guard generation == degreeGeneration else { return }
-        if let stop = Self.degreeStatus(for: signIn, previous: previous) {
-            degreeStatus = stop
-            return
-        }
+        // At most one retry per refresh (`shouldRetryAfterInvalidate`): a page
+        // can keep an in-memory token for a session Penn has already ended, and
+        // then every read fails forever unless the page is loaded again.
+        var retried = false
+        var readAudit: DegreeAudit?
+        while readAudit == nil {
+            let signIn = await signInToPath(force: force)
+            guard generation == degreeGeneration else { return }
+            if let stop = Self.degreeStatus(for: signIn, previous: previous) {
+                degreeStatus = stop
+                return
+            }
 
-        let found = await portal.degrees()
-        guard generation == degreeGeneration else { return }
-        guard !found.isEmpty else {
-            degreeStatus = .failed(Self.degreeFailedLine)
-            return
-        }
-        degree.degrees = found
-        // A saved choice that the record no longer lists (a graduated or
-        // dropped degree) falls back to the first one rather than auditing
-        // nothing.
-        if let id = degree.selectedDegreeID, !found.contains(where: { $0.id == id }) {
-            degree.selectedDegreeID = nil
-        }
-        if degree.selectedDegreeID == nil {
-            degree.selectedDegreeID = found[0].id
-        }
-        if let id = degree.selectedDegreeID {
-            UserDefaults.lhf.set(id, forKey: Self.degreeSelectedKey)
-        }
-        guard let selected = selectedStudentDegree else {
-            degreeStatus = .failed(Self.degreeFailedLine)
-            return
-        }
+            let found = await portal.degrees()
+            guard generation == degreeGeneration else { return }
+            guard !found.isEmpty else {
+                if Self.shouldRetryAfterInvalidate(readFailed: true, alreadyRetried: retried) {
+                    retried = true
+                    portal.invalidateSession()
+                    continue
+                }
+                degreeStatus = .failed(Self.degreeFailedLine)
+                return
+            }
+            degree.degrees = found
+            // A saved choice that the record no longer lists (a graduated or
+            // dropped degree) falls back to the first one rather than auditing
+            // nothing.
+            if let id = degree.selectedDegreeID, !found.contains(where: { $0.id == id }) {
+                degree.selectedDegreeID = nil
+            }
+            if degree.selectedDegreeID == nil {
+                degree.selectedDegreeID = found[0].id
+            }
+            if let id = degree.selectedDegreeID {
+                UserDefaults.lhf.set(id, forKey: Self.degreeSelectedKey)
+            }
+            guard let selected = selectedStudentDegree else {
+                degreeStatus = .failed(Self.degreeFailedLine)
+                return
+            }
 
-        let result = await portal.auditData(degreeInfo: selected.raw)
-        guard generation == degreeGeneration else { return }
-        guard let data = result.data,
-              let audit = try? PathAuditDecoder.decode(
-                data, fallbackGoals: selected.goals, isWhatIf: false, now: now)
-        else {
-            degreeStatus = .failed(Self.degreeFailedLine)
-            return
+            let result = await portal.auditData(degreeInfo: selected.raw)
+            guard generation == degreeGeneration else { return }
+            if let data = result.data,
+               let decoded = try? PathAuditDecoder.decode(
+                data, fallbackGoals: selected.goals, isWhatIf: false, now: now) {
+                readAudit = decoded
+            } else if Self.shouldRetryAfterInvalidate(readFailed: true, alreadyRetried: retried) {
+                retried = true
+                portal.invalidateSession()
+            } else {
+                degreeStatus = .failed(Self.degreeFailedLine)
+                return
+            }
         }
-        degree.current = audit
+        guard let finished = readAudit else { return }
+        degree.current = finished
         persistDegree()
         degreeStatus = .read(now)
 
@@ -307,12 +360,14 @@ extension AppState {
         degreeGeneration += 1
         degree.selectedDegreeID = id
         degree.current = nil
+        // The old audit is gone, so "read today" would sit over nothing.
+        degreeStatus = .idle
         degree.whatIfs = []
         UserDefaults.lhf.set(id, forKey: Self.degreeSelectedKey)
         persistDegree()
         if let running = degreeRefreshTask {
             await running.value
-            degreeRefreshTask = nil
+            if degreeRefreshTask == running { degreeRefreshTask = nil }
         }
         await refreshDegreeAudit(force: true)
     }
@@ -326,11 +381,14 @@ extension AppState {
         guard degreeFeatureAvailable else { return [] }
         if !degree.programs.isEmpty { return degree.programs }
         let generation = degreeGeneration
-        // A student's own tap, so the attempt spacing does not apply.
-        let signIn = await degreePortal.ensureSignedIn(force: true)
+        // A student's own tap, so the attempt spacing does not apply (the
+        // PennKey budget still does, inside the portal). A throttle is never a
+        // failure and says nothing; the list is simply not there yet.
+        let signIn = await signInToPath(force: true)
         guard generation == degreeGeneration else { return [] }
+        if signIn == .throttled { return [] }
         if let stop = Self.degreeStatus(for: signIn, previous: degreeStatus) {
-            degreeStatus = signIn == .throttled ? .failed(Self.degreeFailedLine) : stop
+            degreeStatus = stop
             return []
         }
         let list = await degreePortal.programs()
@@ -350,7 +408,7 @@ extension AppState {
         if isUsingFixtureData { return Self.fixtureWhatIfPlans(for: programCode) }
         guard degreeFeatureAvailable else { return [] }
         let generation = degreeGeneration
-        let signIn = await degreePortal.ensureSignedIn(force: true)
+        let signIn = await signInToPath(force: true)
         guard generation == degreeGeneration, signIn == .ready else { return [] }
         guard let info = await degreePortal.programInfo(code: programCode) else { return [] }
         guard generation == degreeGeneration else { return [] }
@@ -370,21 +428,36 @@ extension AppState {
         let now = Date()
         let previous = degreeStatus
         degreeStatus = .reading
-        let signIn = await degreePortal.ensureSignedIn(force: true)
-        guard generation == degreeGeneration else { return }
-        if let stop = Self.degreeStatus(for: signIn, previous: previous) {
-            degreeStatus = signIn == .throttled ? .failed(Self.degreeFailedLine) : stop
-            return
+        // One retry after a page reload, like the refresh (see there).
+        var retried = false
+        var whatIfAudit: DegreeAudit?
+        while whatIfAudit == nil {
+            let signIn = await signInToPath(force: true)
+            guard generation == degreeGeneration else { return }
+            if signIn == .throttled {
+                // Never a failure: nothing was asked.
+                degreeStatus = Self.degreeStatusAfterWhatIf(current: degreeStatus, previous: previous)
+                return
+            }
+            if let stop = Self.degreeStatus(for: signIn, previous: previous) {
+                degreeStatus = stop
+                return
+            }
+            let result = await degreePortal.auditData(degreeInfo: plan.degreeInfo)
+            guard generation == degreeGeneration else { return }
+            if let data = result.data,
+               let audit = try? PathAuditDecoder.decode(
+                data, fallbackGoals: plan.goals, isWhatIf: true, now: now) {
+                whatIfAudit = audit
+            } else if Self.shouldRetryAfterInvalidate(readFailed: true, alreadyRetried: retried) {
+                retried = true
+                degreePortal.invalidateSession()
+            } else {
+                degreeStatus = .failed(Self.degreeFailedLine)
+                return
+            }
         }
-        let result = await degreePortal.auditData(degreeInfo: plan.degreeInfo)
-        guard generation == degreeGeneration else { return }
-        guard let data = result.data,
-              let decoded = try? PathAuditDecoder.decode(
-                data, fallbackGoals: plan.goals, isWhatIf: true, now: now)
-        else {
-            degreeStatus = .failed(Self.degreeFailedLine)
-            return
-        }
+        guard let decoded = whatIfAudit else { return }
         // The decoder takes `goals` from the reply's own `degreeInfo`, which
         // may not reflect an added minor, and the screen keys a what-if by the
         // goals the student asked for. So the audit is rebuilt under the
@@ -399,7 +472,7 @@ extension AppState {
             degree.whatIfs.removeLast(degree.whatIfs.count - Self.maxWhatIfs)
         }
         persistDegree()
-        degreeStatus = previous == .reading ? .idle : previous
+        degreeStatus = Self.degreeStatusAfterWhatIf(current: degreeStatus, previous: previous)
     }
 
     // MARK: Fixtures

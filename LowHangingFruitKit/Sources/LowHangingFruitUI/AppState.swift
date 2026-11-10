@@ -9982,3 +9982,40 @@ final class AppState: ObservableObject {
         Assignment.isOrderedByDueDate(a, b)
     }
 }
+
+// MARK: - Degree portal: the shared PennKey budget
+
+/// The degree portal (`PathPortal`) types the same saved PennKey the silent
+/// Canvas renewer does, so it reads and stamps the renewer's own records
+/// instead of keeping a second budget. These live here, not in
+/// `AppState+Degree.swift`, only because the records' keys and the failed
+/// clock's setter are `private` to this file. Nothing here carries a
+/// credential: dates and one latch.
+extension AppState {
+    /// What the renewer's budget says now: the last submission (persisted by
+    /// whoever made it, the renewer or the portal), the failed-submission
+    /// clock (this instance's copy or the persisted one, the later), and the
+    /// two latches.
+    func pathCredentialBudget() -> PathPortal.CredentialBudget {
+        let failed = [failedCredentialSubmissionAt, Self.persistedFailedCredentialSubmissionAt()]
+            .compactMap { $0 }.max()
+        return PathPortal.CredentialBudget(
+            lastSubmission: Self.persistedCredentialSubmissionAt(),
+            lastFailedSubmission: failed,
+            passwordRejected: autoLoginDisabledReason != nil,
+            autoLoginEnabled: stayLoggedInEnabled && PennKeyCredentialStore.hasCredentials
+        )
+    }
+
+    /// The portal filled the form: stamp the renewer's submission record
+    /// (`onCredentialSubmission` writes the same key).
+    func notePathCredentialSubmitted(at date: Date) {
+        UserDefaults.lhf.set(date.timeIntervalSince1970, forKey: Self.lastCredentialSubmissionAtKey)
+    }
+
+    /// A portal attempt that filled the form ended without a token: the
+    /// renewer's failed-submission record, the one its 60-minute wait reads.
+    func notePathCredentialFailed(at date: Date) {
+        setFailedSubmissionClock(date)
+    }
+}

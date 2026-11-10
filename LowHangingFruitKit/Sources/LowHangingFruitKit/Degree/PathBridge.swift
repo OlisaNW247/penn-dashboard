@@ -101,6 +101,17 @@ public enum PathScripts {
 
     /// Runs one audit for the given `degreeInfo` and returns it cut down to the
     /// fields `PathAuditDecoder` reads. Argument: `degreeInfo`, an object of strings.
+    ///
+    /// **No sentence about a GPA or a grade leaves the page** (the privacy text
+    /// promises neither is read). The allowlist passes free text (`label`,
+    /// `details`, `infoText`) for every node, and Penn's audit has comment
+    /// nodes such as "Minimum 2.0 Overall GPA met". A text is grade-related
+    /// when its lowercase letter-runs include gpa, grade, grades or graded:
+    /// a comment node with such a label is dropped whole, any other node's
+    /// label is blanked, and such `details` / `infoText` are omitted. Whole
+    /// words on purpose: "Undergraduate electives" must survive, which a
+    /// substring test on "grad" would kill. The split regex has no backslash
+    /// so the Swift string stays free of escapes.
     public static let audit: String = """
     if (typeof sam === "undefined" || typeof fose === "undefined") { return JSON.stringify({ error: "page not ready" }); }
     try {
@@ -116,17 +127,34 @@ public enum PathScripts {
         return JSON.stringify({ error: String((result && result.error) || "no audit").slice(0, 120) });
       }
       var plainKeys = ["type", "id", "label", "completionPercent", "completionIconName", "courseCode", "title", "titleLong", "titleShort", "hours", "hoursCalculated", "membersNeeded", "coursesNeeded", "hoursNeeded", "details", "infoText", "seeBlockId"];
+      var gradeWords = ["gpa", "grade", "grades", "graded"];
+      var gradeRelated = function (text) {
+        var words = String(text).toLowerCase().split(/[^a-z]+/);
+        for (var g = 0; g < words.length; g++) {
+          if (gradeWords.indexOf(words[g]) !== -1) { return true; }
+        }
+        return false;
+      };
       var keepNode = function (node, depth) {
         var kept = {};
         for (var a = 0; a < plainKeys.length; a++) {
           var value = node[plainKeys[a]];
           if (typeof value === "string" || typeof value === "number") { kept[plainKeys[a]] = value; }
         }
+        if (typeof kept.label === "string" && gradeRelated(kept.label)) {
+          if (kept.type === "comment") { return null; }
+          kept.label = "";
+        }
+        if (typeof kept.details === "string" && gradeRelated(kept.details)) { delete kept.details; }
+        if (typeof kept.infoText === "string" && gradeRelated(kept.infoText)) { delete kept.infoText; }
         if (Array.isArray(node.members) && depth < 8) {
           var inner = [];
           for (var b = 0; b < node.members.length; b++) {
             var child = node.members[b];
-            if (child && typeof child === "object") { inner.push(keepNode(child, depth + 1)); }
+            if (child && typeof child === "object") {
+              var keptChild = keepNode(child, depth + 1);
+              if (keptChild) { inner.push(keptChild); }
+            }
           }
           kept.members = inner;
         }
@@ -148,7 +176,10 @@ public enum PathScripts {
         if (request && Array.isArray(request.members)) {
           for (var e2 = 0; e2 < request.members.length; e2++) {
             var m = request.members[e2];
-            if (m && typeof m === "object") { members.push(keepNode(m, 1)); }
+            if (m && typeof m === "object") {
+              var keptMember = keepNode(m, 1);
+              if (keptMember) { members.push(keptMember); }
+            }
           }
         }
         keptBlock.courseReqCopy = { members: members };

@@ -141,6 +141,23 @@ struct PathBridgeTests {
         }
     }
 
+    @Test("the audit script drops grade and GPA sentences in the page, by whole word")
+    func auditScriptGuardsGradeText() {
+        let script = PathScripts.audit
+        for word in ["\"gpa\"", "\"grade\"", "\"grades\"", "\"graded\""] {
+            #expect(script.contains(word), "the grade guard lacks \(word)")
+        }
+        // Words split on non-letters with a regex literal that has no
+        // backslash, so "undergraduate" is never grade-related.
+        #expect(script.contains("split(/[^a-z]+/)"))
+        #expect(!script.contains("indexOf(\"grad"))
+        // A comment is dropped whole, a label blanked, details and infoText omitted.
+        #expect(script.contains("kept.type === \"comment\""))
+        #expect(script.contains("kept.label = \"\""))
+        #expect(script.contains("delete kept.details"))
+        #expect(script.contains("delete kept.infoText"))
+    }
+
     @Test("Cloudflare's interstitial titles are recognised")
     func challenge() {
         #expect(PathPage.looksLikeChallenge(title: "Just a moment..."))
