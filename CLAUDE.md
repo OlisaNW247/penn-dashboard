@@ -79,7 +79,7 @@ model on the server for course-level "facts"; they belong to the class,
 carry no user id, and a student's AI-assist switch does not stop them
 (`docs/PRIVACY.md` says so). The phone also reads Canvas's own structured
 endpoints (Planner, module completion, section dates) with the student's
-session and keeps the results on the phone. Since 2026-11-09 (`v12`, written blind, not compiled, not on a device) a
+session and keeps the results on the phone. Since 2026-11-09 (`v12`, compiled green on the GitHub runner, not on a Mac, not on a device) a
 Penn install can read the student's own Degree Works audit through
 Path@Penn with the same saved PennKey (`DegreeWorksSessionReader`) and
 keeps the audit on the phone (`degree-audit.json`, tokens in the Keychain);
@@ -830,8 +830,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
   dictate-then-send was the agreed first version, hands-free with spoken
   answers set aside (`ROADMAP.md` → Next).
 - **Degree** (`DegreeProgressView`, 2026-11-09, `v12`, behind
-  `FeatureFlags.degreeProgress`; written in the cloud container without a
-  compiler, nothing on a phone). Olisa's ask: "see your degree progress,
+  `FeatureFlags.degreeProgress`; written in the cloud container and compiled
+  only by the GitHub runner, nothing on a phone). Olisa's ask: "see your degree progress,
   see what would hypothetically be your course of action if you switched
   degrees", no course recommendations. Reached from the first row of
   Profile → classes ("degree", with "31 of 40 cu" or the status line) and
@@ -1296,7 +1296,21 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v10` (2026-11-07, evening, every post listed, the 3-day grace):
+**Current on `v12` (2026-11-09, the degree-progress feature): 3738 tests /
+364 suites, `swift test --no-parallel` on the GitHub macOS runner (the `tests`
+workflow; no Mac, no phone). Run 42644725170 at `7f01843` (the first push,
+3737 / 364) was green; run 42653623893 at `e33a467` (the review's fixes) was
+3738 / 364 with one red, `DegreeCopyTests` "no verdict words", because a doc
+comment in `DegreeWhatIfSheet.swift` said "undergraduate" and the test
+forbids "graduate" as a substring; the comment was reworded, nothing
+loosened. +64 tests / +13 suites over `v10`'s 3674 / 351: the seven Kit
+suites under `Degree/` (decoder, tokens, requests, goal catalog, student
+reader, what-if, store) and `DegreeWiringTests`, `DegreeCopyTests`,
+`DegreeStructureTests` in the UI tests. Deno and the extension's suite green
+on the same runs. The iOS `xcodebuild` is not covered by the runner, so the
+widget and the iOS-only files of this tree are not yet compiled.**
+
+Before it: **on `v10` (2026-11-07, evening, every post listed, the 3-day grace):
 3674 tests / 351 suites, all green, `swift test --no-parallel` on Marco's Mac
 (85 s); the signed iOS Debug device build (3.4.1 (20)) is on his phone and
 launched.** -26 over 3700 / 351 on purpose: 31 tests that pinned the 7-day
@@ -3522,7 +3536,7 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
-| `v12` | **Current line (2026-11-09 onward).** `v10` at `4c136b2` plus the degree-progress research (`docs/DEGREE_PROGRESS_RESEARCH_2026-11-09.md`) and the v12 feature: `Degree/` in the Kit, `DegreeWorksSessionReader`, `DegreeWorksClient`, `AppState+Degree`, `DegreeProgressView`, `DegreeWhatIfSheet`, `FeatureFlags.degreeProgress`. Written blind; the `tests` workflow runs on pushes to it (the compile gate). Nothing on a phone. There is no `v11`. |
+| `v12` | **Current line (2026-11-09 onward).** `v10` at `4c136b2` plus the degree-progress research (`docs/DEGREE_PROGRESS_RESEARCH_2026-11-09.md`) and the v12 feature: `Degree/` in the Kit, `DegreeWorksSessionReader`, `DegreeWorksClient`, `AppState+Degree`, `DegreeProgressView`, `DegreeWhatIfSheet`, `FeatureFlags.degreeProgress`. Compiled green by the `tests` workflow, which runs on pushes to it (3738/364, Test baseline); never built with `xcodebuild`, nothing on a phone. There is no `v11`. |
 | `v10` | **Current line (2026-11-03 onward).** `v9` (the no-banner sign-in, the onboarding polish, the composed-day research) plus `origin/v8` `7e004c5` (the tree's recency and follow-up work) plus `phase0/extract-facts-bench`. The merge's Swift run is recorded under Test baseline. |
 | `phase0/extract-facts-bench` | 2026-11-03, off `v9`: the extract-facts bench, prompt, schema and parser; the model decision (Haiku 5.5, `docs/EXTRACT_FACTS_BENCH_2026-11-03.md`). In `v10`. |
 | `v9` | 2026-11-01 to 11-03: the no-banner sign-in and keepalive, proven on Marco's phone; the onboarding polish merged; the composed-day research. In `v10`. |

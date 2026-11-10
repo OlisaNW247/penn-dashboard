@@ -296,7 +296,7 @@ struct DegreeWhatIfSheet: View {
     /// a pick carries their school, college and catalog year (a request
     /// without them is refused or answered for the wrong catalog); the
     /// program, degree and the rest are what the steps choose. Absent current
-    /// goals, school defaults to undergraduate and the rest is derived as the
+    /// goals, school defaults to the UG school and the rest is derived as the
     /// steps run.
     private func seedDraft() {
         guard draft.school == nil, draft.college == nil, draft.catalogYear == nil else { return }

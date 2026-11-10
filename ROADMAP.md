@@ -7,7 +7,7 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-11-09 on `v12` (degree progress built blind; the Now entry). Before that, 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
+Last updated 2026-11-09 on `v12` (degree progress built and compiled on the runner; the Now entry). Before that, 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
 backend half went live 2026-11-05 01:20-01:45 UTC, the evening of 2026-11-04
 US Eastern). Before that, 2026-10-28 on `release/3.4.0` (the 3.4.0 release,
 renamed from 3.3.1 that afternoon when PR #16 was folded in). Before
@@ -50,10 +50,11 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
 
 - **v12 degree progress: compile, capture, then a phone** (Olisa's
   decision 2026-11-09: use the Path@Penn login; build progress and what-if,
-  no course recommendations; "make this extremely smooth"). Built blind the
+  no course recommendations; "make this extremely smooth"). Built the
   same day on `v12` (`docs/DEGREE_PROGRESS_V12_BUILD_SPEC.md` is the
-  contract). In order: (1) the `tests` workflow on `v12` goes green (the
-  runner is the compiler); (2) Marco's capture on his Mac and phone, keys
+  contract). In order: (1) ~~the `tests` workflow on `v12` goes green~~ done
+  the same day, 3738/364 (the runner is the compiler; the iOS `xcodebuild`
+  still needs a Mac); (2) Marco's capture on his Mac and phone, keys
   and hosts only, never a token: does `/worksheets/` on the Degree Works
   host reach the dashboard through WebLogin without Duo, what does
   `/api/students/myself` answer, which audit call the dashboard makes, and
