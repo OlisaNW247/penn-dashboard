@@ -36,10 +36,13 @@ Profile → 8 has the full description):
    `xcodebuild` (`674b89b`, run 42842540993, the workflow's manual
    `ios-build` job), both 2026-11-10. What is left needs a Mac: the signed
    device build from CLAUDE.md → Commands, installed.
-2. **Deploy the server** (`smooth-ambassadors/docs/deploy.md`): back up
-   D1, bring in the live `worker/index.js` as `legacy.js`, apply the
-   migration, set `FOUNDER_TOKEN`, deploy, re-test the printed routes.
-   Until then the app's sign-in says "couldn't reach smooth".
+2. **Deploy the server** (`smooth-ambassadors/docs/deploy.md`, rewritten
+   2026-11-10 when the Sites source arrived): the deployable file is the
+   real single-file Worker with the ambassador system folded in by
+   `scripts/build-sites.mjs`. Olisa has the zip; the ChatGPT session that
+   owns the Sites project backs up `scans`, sets `FOUNDER_TOKEN`, deploys
+   and re-tests. Until then the app's sign-in says "that code didn't
+   work" for every code (the live Worker answers 404).
 3. **Add one ambassador in the founder view** and put their code in the
    review notes (`docs/appstore/REVIEW_NOTES.md`, the new paragraph).
 4. **On a phone:** sign in with the code; set the reminder to a minute

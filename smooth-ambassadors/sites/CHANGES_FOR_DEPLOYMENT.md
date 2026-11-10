@@ -84,8 +84,16 @@ side:
 - 15 requests on the existing routes answer with the same status, the same
   body bytes and the same `content-type`, `cache-control`, `location` and
   `allow` headers from both. Counters end equal in both databases.
-- The full app contract above, the founder flow, the public `/r/{ref}` poster and
-  share links, a left ambassador's code ending, bad request bodies, the scan log, and a start from an empty database.
+- Near-miss paths (`/api/leaderboard/`, `/api//leaderboard`, `/r`) still get
+  the tracker's own 404.
+- The full app contract above, the founder flow, the public `/r/{ref}`
+  poster and share links, a left ambassador's code ending, bad request
+  bodies, the scan log, and a start from an empty database.
+- The private code appears in no post text and on no sticker page.
+- A separate review of the first build ran about 40 more requests through
+  both Workers (trailing slashes, HEAD, DELETE, percent-encoding) and 20
+  concurrent scans: identical answers, 20 counted. That build is the same
+  as this one on the existing routes.
 - `node --check`, `scripts/build.sh` and `scripts/validate-artifact.mjs` pass.
 
 Not verified, because it needs the real deployment:

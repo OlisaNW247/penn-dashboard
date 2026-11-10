@@ -42,7 +42,7 @@ struct AmbassadorPlanTests {
     {"name":"Maya Example","school":"uva","schoolName":"UVA","title":"founding ambassador","status":"active",
      "pausedUntil":null,"page":"https://example.test/a/7yqyg4ter97n4w",
      "numbers":{"linkOpens":13,"linkOpensRecent":13,"schoolScans":16,"schoolScansRecent":4,"drops":3,"posts":1,"days":14},
-     "today":{"dayIndex":20766,"kind":"anon","channel":"sidechat","platform":"sidechat","text":"psa … https://example.test/a/7yqyg4ter97n4w/s/sidechat"},
+     "today":{"dayIndex":20766,"kind":"anon","channel":"sidechat","platform":"sidechat","text":"psa … https://example.test/r/k3m9x2p7qa/s/sidechat"},
      "messages":[{"key":"gc","label":"group chat","channel":"gc","text":"hi {x}"}],
      "checklist":[{"key":"download","label":"download smooth","hint":"2 min","done":true}],
      "tips":["post once"],"unknownFutureField":{"a":1},"generatedAt":"2026-11-09T20:00:00.000Z"}
@@ -227,7 +227,7 @@ struct AmbassadorModelTests {
             name: "Maya Example", school: "uva", schoolName: "UVA", title: "founding ambassador",
             page: "https://example.test/a/\(code)",
             numbers: .init(linkOpens: 13, linkOpensRecent: 13, schoolScans: 16, schoolScansRecent: 4, drops: 3, posts: 1),
-            today: .init(dayIndex: dayIndex, kind: "anon", channel: "fizz", platform: "fizz", text: "psa … https://example.test/a/\(code)/s/fizz"),
+            today: .init(dayIndex: dayIndex, kind: "anon", channel: "fizz", platform: "fizz", text: "psa … https://example.test/r/k3m9x2p7qa/s/fizz"),
             messages: [.init(key: "gc", label: "group chat", channel: "gc", text: "hi")],
             checklist: [.init(key: "download", label: "download smooth", done: false)]
         )

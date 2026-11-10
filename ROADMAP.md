@@ -871,7 +871,13 @@ Kept so nobody rebuilds them blind.
   app" on the web page). 3697/357 green on the GitHub runner and the
   unsigned iOS build green (2026-11-10, the workflow's new manual
   `ios-build` job); never on a phone, server not deployed. The Worker's
-  legacy routes now mirror the live tracker (read 2026-11-10).
+  legacy routes now mirror the live tracker (read 2026-11-10). Later that
+  day the Sites source arrived: `scripts/build-sites.mjs` builds the one
+  file Sites deploys (the real tracker plus the ambassador system, old
+  routes compared byte for byte against the original, 14 of 14), the
+  share and sticker links moved to a public id so the private code is
+  never posted (CLAUDE.md → Traps), and the zip went to Olisa for the
+  ChatGPT session that deploys.
 - **2026-11-07 (16:39 EST).** 3.4.1 (20) archived from `c3a4feb` and
   uploaded, superseding builds 18 and 19. Marco attaches 20 and submits.
 - **2026-11-07 (evening).** The megaphone lists every post the phone keeps

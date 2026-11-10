@@ -34,8 +34,8 @@ const A_OLD = "  async fetch(request, env) {\n    const url = new URL(request.ur
 const A_NEW = `  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     // Ambassador system: the generated section at the end of this file. It answers only
-    // /a/..., /f/... and /api/leaderboard, and returns null for every other path before
-    // touching the database, so the routes below behave exactly as before.
+    // /a/..., /r/..., /f/... and /api/leaderboard, and returns null for every other path
+    // before touching the database, so the routes below behave exactly as before.
     const ambassadorResponse = await smoothAmbassadors.handle(request, env, ctx);
     if (ambassadorResponse) return ambassadorResponse;
 `;
@@ -131,7 +131,7 @@ const readmePath = join(repo, "README.md");
 const README_NOTE = `
 ## Ambassador system
 
-\`worker/index.js\` also serves the campus ambassador system that the Smooth iOS app signs in to: \`/a/{code}/...\`, \`/f/{FOUNDER_TOKEN}/...\` and \`/api/leaderboard\`. It is the generated section at the end of the file, and it still needs no dependencies and no install. Routes, runtime variables, schema and the checks to run after a deploy are in \`AMBASSADORS.md\`.
+\`worker/index.js\` also serves the campus ambassador system that the Smooth iOS app signs in to: \`/a/{code}/...\` (private), \`/r/{ref}/...\` (the public share and sticker links), \`/f/{FOUNDER_TOKEN}/...\` and \`/api/leaderboard\`. It is the generated section at the end of the file, and it still needs no dependencies and no install. Routes, runtime variables, schema and the checks to run after a deploy are in \`AMBASSADORS.md\`.
 `;
 const readme = readFileSync(readmePath, "utf8");
 if (!readme.includes("## Ambassador system")) {

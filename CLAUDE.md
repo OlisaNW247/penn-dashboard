@@ -1061,7 +1061,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
      page shows **today's post** (written by the server from a bank of
      daily variants, filled with the ambassador's own tracked link and
      their chosen anonymous app: fizz, sidechat or yik yak; "rest day"
-     once a fortnight), **copy** and **"i posted it"** (logs the post on
+     once a fortnight; since 2026-11-10 that link is `/r/{ref}/s/...`,
+     a public id that is not the code, see Traps), **copy** and **"i posted it"** (logs the post on
      the server in that channel; remembered per server day), their
      numbers (link opens, their school's poster scans, posts logged), the
      **daily reminder** (every day / weekdays / off, a time picker, default
@@ -2551,6 +2552,26 @@ itself.
 
 ## Traps that have already bitten
 
+- **A private page link reused as the base of public links is not
+  private.** The ambassador system (2026-11-09) gave each ambassador one
+  unguessable token: `/a/{token}` was the private page and the app's
+  sign-in code, and the share links (`/a/{token}/s/{channel}`, pasted into
+  fizz, sidechat and group chats) and the sticker QR codes
+  (`/a/{token}/p/{design}`) were built on the same token. Anyone who saw a
+  post or scanned a sticker could cut the path back to `/a/{token}` and
+  read the page, pull `plan.json`, send feedback as that person, pause
+  their reminders, or sign in to the app as them. Found on 2026-11-10 by
+  the verifier agent reading the built Sites artifact, before anything was
+  deployed or printed; my own tests had only ever asked whether an
+  unknown token was refused. Fixed with a second, public id: `ref` in the
+  `ambassadors` table, `/r/{ref}/s/...` and `/r/{ref}/p/...`, the two
+  `/a/{token}` link routes removed, and a test that the token appears in
+  no post text and on no sticker page. The wrong fixes: hashing the token
+  into the link (the page would then accept the hash or need a lookup,
+  which is a second id done badly), and a note telling ambassadors not to
+  share the link, when sharing it is the job. The rule: before a
+  credential goes into a URL, list every place that URL is shown, and if
+  one of them is public, it needs its own id.
 - **"Unextracted" in SQL is not "pending", and the index's cap must look at
   now, not at the oldest date** (2026-11-05). After the round-4 deploy a
   count of PHYS 0151 documents with no `course_fact_extractions` row at
@@ -3554,7 +3575,7 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
-| `claude/new-session-b3ylkg` | **2026-11-09, `v10` `4c136b2` plus two commits, meant to become `v11`.** (1) `smooth-ambassadors/`: the poster-scan tracker plus the campus ambassador system as a Cloudflare Worker + D1 (private pages per ambassador, tracked links, a founder view with a digest generator, 17 Miniflare tests), drafted here to move to a private repo. (2) **Ambassador mode in the app** (What the app does → Profile → 8): a code-based sign-in in Profile, today's post, a daily local reminder, the planner carve-out. 3697/357 green on the GitHub runner at `85d4234` and the unsigned iOS `xcodebuild` green at `674b89b` (2026-11-10, Test baseline); never on a phone, server not deployed. The Worker's legacy routes were matched to the live site the same day (dashboard byte-identical, `/api/stats` rows identical). Olisa or Marco creates `v11` from it. |
+| `claude/new-session-b3ylkg` | **2026-11-09, `v10` `4c136b2` plus two commits, meant to become `v11`.** (1) `smooth-ambassadors/`: the poster-scan tracker plus the campus ambassador system as a Cloudflare Worker + D1 (private pages per ambassador, tracked links, a founder view with a digest generator, 17 Miniflare tests), drafted here to move to a private repo. (2) **Ambassador mode in the app** (What the app does → Profile → 8): a code-based sign-in in Profile, today's post, a daily local reminder, the planner carve-out. 3697/357 green on the GitHub runner at `85d4234` and the unsigned iOS `xcodebuild` green at `674b89b` (2026-11-10, Test baseline); never on a phone, server not deployed. The Worker's legacy routes were matched to the live site the same day (dashboard byte-identical, `/api/stats` rows identical). Olisa or Marco creates `v11` from it. **2026-11-10, later:** the Sites source arrived as an archive; `scripts/build-sites.mjs` folds the ambassador system into the real single-file Worker (two edits to its `fetch`, a generated section, images byte-identical), `test/sites.test.mjs` runs the original and the edited artifact side by side (14 of 14; `npm test` 28 pass), and the public `/r/{ref}` links replaced the token-bearing ones (Traps). A zip went to Olisa for the ChatGPT session that deploys Sites. |
 | `v10` | **Current line (2026-11-03 onward).** `v9` (the no-banner sign-in, the onboarding polish, the composed-day research) plus `origin/v8` `7e004c5` (the tree's recency and follow-up work) plus `phase0/extract-facts-bench`. The merge's Swift run is recorded under Test baseline. |
 | `phase0/extract-facts-bench` | 2026-11-03, off `v9`: the extract-facts bench, prompt, schema and parser; the model decision (Haiku 5.5, `docs/EXTRACT_FACTS_BENCH_2026-11-03.md`). In `v10`. |
 | `v9` | 2026-11-01 to 11-03: the no-banner sign-in and keepalive, proven on Marco's phone; the onboarding polish merged; the composed-day research. In `v10`. |
@@ -3598,11 +3619,18 @@ none is a ship line.
   daily notification firing and surviving the next reschedule pass (the
   carve-out is unit-tested, the center is not), a cold launch from its
   tap landing on Profile → ambassador, the `smooth://ambassador` link
-  from Safari, and the page in dark mode. The server half is on
-  `claude/new-session-b3ylkg` under `smooth-ambassadors/` and is **not
-  deployed**: until it is, sign-in answers "couldn't reach smooth"
-  (`/a/{code}/plan.json` does not exist on the live Worker yet). The
-  review notes need a test code once a roster exists.
+  from Safari, and the page in dark mode. The server half is **not deployed**: until it is, sign-in
+  answers "that code didn't work" for every code, because the live Worker
+  gives `GET /a/{code}/plan.json` its plain 404 and the app reads a 404 as
+  an unknown code ("couldn't reach smooth" is only a network failure or
+  another status; this file said otherwise until 2026-11-10). The Sites
+  source arrived that day and the deployable file was built from it
+  (`smooth-ambassadors/scripts/build-sites.mjs`, `docs/deploy.md`): a zip
+  went to Olisa to hand to the ChatGPT session that owns the Sites
+  project, the only place a deploy can happen. Unverified until then:
+  that Sites puts `FOUNDER_TOKEN` on the Worker's `env`, and that its
+  runtime passes a `ctx` with `waitUntil` (without it only the scan log is
+  skipped). The review notes need a test code once a roster exists.
 - **A finished item whose completion is Canvas's alone has no swipe back
   in prev** (since 2026-11-06, `AppState.completionIsLockedByCanvas`,
   `DashItem.canMarkActive`). Before that the swipe was offered, did nothing
