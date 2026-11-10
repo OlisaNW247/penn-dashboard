@@ -3630,7 +3630,14 @@ none is a ship line.
   project, the only place a deploy can happen. Unverified until then:
   that Sites puts `FOUNDER_TOKEN` on the Worker's `env`, and that its
   runtime passes a `ctx` with `waitUntil` (without it only the scan log is
-  skipped). The review notes need a test code once a roster exists.
+  skipped). Olisa's export of the live `scans` table (62 rows, 70 link
+  opens, taken 2026-11-10 before any deploy) was run through the original
+  and the edited Worker the same day
+  (`smooth-ambassadors/scripts/rehearse-backup.mjs`, 24 checks): the same
+  dashboard numbers from both, every row untouched by the whole
+  ambassador flow, a scan adds exactly 1, and the live totals equalled
+  the backup. That is a local rehearsal, not the deploy. The backup stays
+  out of git. The review notes need a test code once a roster exists.
 - **A finished item whose completion is Canvas's alone has no swipe back
   in prev** (since 2026-11-06, `AppState.completionIsLockedByCanvas`,
   `DashItem.canMarkActive`). Before that the swipe was offered, did nothing

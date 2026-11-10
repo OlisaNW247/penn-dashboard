@@ -48,16 +48,25 @@ folded in beside it.
    for byte, then walks the app's whole contract. `bash
    scripts/verify-sites-bytes.sh <original> <edited>` shows the diff with
    the image line left out.
-4. **Pack it.** `node scripts/package-sites.mjs <untouched> <copy> <zip>`.
+4. **Rehearse on the real numbers.** Ask the ChatGPT session for an export
+   of `scans` (it produced `scans.json` and `scans.sql` on 2026-11-10) and
+   run `node scripts/rehearse-backup.mjs <backup-dir> <untouched index.js>
+   <copy>/repository/dist/server/index.js`, with `LIVE=1` to also compare
+   the backup with the live `/api/stats`. It loads the real rows into both
+   Workers and checks that the dashboard numbers match the backup, that
+   the whole ambassador flow leaves every row alone, and that a scan adds
+   exactly 1. The 2026-11-10 run: 62 rows, 70 link opens, 24 checks
+   passed, live totals equal to the backup.
+5. **Pack it.** `node scripts/package-sites.mjs <untouched> <copy> <zip>`.
    Hand the zip to the ChatGPT session with
    `sites/CHANGES_FOR_DEPLOYMENT.md` (it is inside the zip).
-5. **There, before deploying:** export the `scans` table; set
+6. **There, before deploying:** export the `scans` table; set
    `FOUNDER_TOKEN` (32 random characters, never in git or chat). No
    migration has to be run: the tables are created lazily with `CREATE ...
    IF NOT EXISTS`, the way the tracker has always created `scans`.
    `migrations/0001_ambassadors.sql` is the same statements for a platform
    that wants an explicit migration.
-6. **Re-test live** with the list in `sites/AMBASSADORS.md` (it is copied
+7. **Re-test live** with the list in `sites/AMBASSADORS.md` (it is copied
    into the Sites repository). Compare `/api/stats` totals to the backup:
    identical, plus the one deliberate test scan.
 
@@ -66,7 +75,7 @@ folded in beside it.
 Today he cannot, and the mirror job in `.github/workflows/deploy.yml` does
 not change that. The Sites handoff says a git push alone does not publish:
 a version has to be saved and deployed from the ChatGPT account that owns
-the project. So a change ships by building the zip (steps 1 to 4) and
+the project. So a change ships by building the zip (steps 1 to 5) and
 giving it to whoever can open that ChatGPT session, which is Olisa.
 
 The way out is the "later decision" above: move the Worker and its D1
