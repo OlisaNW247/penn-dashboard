@@ -169,9 +169,19 @@ Detailed, with files and acceptance tests, in the session brief.
    real work" is still open; it also needs the Phase 2 snapshot upload
    from the phone, since the server has no work list until a phone sends
    one. `backend/PROTOCOL.md` → "The agent connection" is the contract.
+   **Done 2026-11-09, about 05:00 UTC (the night of 2026-11-08 US
+   Eastern):** Marco added the connector on claude.ai, approved it on his
+   iPhone (after the stripped-path fix, `agent-auth` v3), and a Claude
+   session on his account then listed his four courses and his real work
+   list through `list_courses` and `list_work`. His one note: nothing
+   makes it clear at the moment of connecting that it worked, on the
+   page or in Smooth (an item for Phase 3's UI).
 2. **Phone, opt-in**: the connect-an-agent screen, the approve sheet, the
    snapshot upload, revoke, `PRIVACY.md`. Done when the iPhone-app flow
-   works end to end on Marco's phone.
+   works end to end on Marco's phone. **Done 2026-11-09:** the typed-code
+   path (opt-in, lookup, match number, approve, snapshot upload) worked
+   on his iPhone with claude.ai in a desktop browser. The `smooth://link`
+   tap from the Claude iPhone app is still untried.
 3. **Drafts**: `propose_submission`, polling, the chip, the sheet. Done when
    a draft from claude.ai shows on the card within one refresh. **Status
    2026-11-09:** the backend half is built and tested (Deno 858, the SQL

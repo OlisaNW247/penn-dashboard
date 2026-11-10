@@ -444,7 +444,10 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   Marco's claude.ai account and his phone on the cable. 2026-11-09: a
   scripted client proved the live path end to end; the hardening and the
   Phase 3 drafts backend are built on the branch, undeployed; the Phase 3
-  phone half (polling, chip, review sheet) and Phase 4 are next.
+  phone half (polling, chip, review sheet) and Phase 4 are next. **Later
+  that night the real thing worked**: Marco's claude.ai connected, his
+  phone approved, Claude read his work list. His ask: a clear "connected"
+  state on the sign-in page and in Smooth at the moment it happens.
 - **Megaphone: the model sorts posts into todo and prev** (Marco,
   2026-11-07: "prev being either from way before or unapplicable, need
   [the model] to sort based on text"). What ships first is the rule half

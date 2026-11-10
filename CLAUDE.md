@@ -3618,9 +3618,14 @@ none is a ship line.
   front, RFC 7591 registration, the authorize page, lookup and approve,
   the code redirect, token exchange and refresh rotation with reuse
   detection, `initialize` / `tools/list` / `list_work` on the live `mcp`,
-  revoke cutting the token off, `delete-account` cleanup. Not yet: a
-  claude.ai or Claude Code sign-in through `smooth-agent.vercel.app`, a
-  real phone approving one (the phone side has never run). Undeployed on
+  revoke cutting the token off, `delete-account` cleanup. **Proven with a
+  real client on 2026-11-09:** Marco's claude.ai connected through
+  `smooth-agent.vercel.app`, his iPhone approved it with the typed code,
+  and a Claude session on his account read his courses and work list.
+  Still untried: the `smooth://link` tap from the Claude iPhone app, a
+  draft round trip (Phase 3's phone half is not built), ChatGPT. Marco's
+  verdict: the moment of connecting needs a clearer "connected" state on
+  the page and in Smooth. Undeployed on
   the branch: the hardening (rate limits, sweeper, approve/deny bound to
   lookup; migration `20261109090000`) and the Phase 3 drafts backend
   (migration `20261109100000`, the `agent-drafts` bucket); production
