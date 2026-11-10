@@ -863,8 +863,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
     are kept as chips.
   - **Plan** (2026-11-10, Olisa from his phone: "a table feature where you
     can build a sample course load for the next semester or rest of your
-    time at Penn"; written blind the same hour, see Test baseline for
-    whether it has compiled). `DegreePlanView`: one 168pt column per
+    time at Penn"; written the same hour, green on the runner at `78c4a77`,
+    not yet through `xcodebuild` or on a phone). `DegreePlanView`: one 168pt column per
     semester, scrolling sideways, starting at the semester after this one,
     fall and spring only, "+ semester" up to ten. A column lists what the
     audit shows as registered for that term (fixed chips), then the
@@ -1337,7 +1337,24 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v12` (2026-11-10, the Path@Penn rewrite after its review): 3764
+**Current on `v12` (2026-11-10, afternoon, after the first phone run): 3791
+tests / 366 suites, all green, `swift test --no-parallel` on the GitHub macOS
+runner in 122 s (the `tests` workflow, run 42865218965 at `3a4822c`, second
+attempt: the first sat in the queue for 15 minutes without a Mac and was
+cancelled before any step ran, which is the runner pool and not the code);
+Deno and the extension's suite green on the same run. +27 tests / +2 suites
+over the run below, in four pushes that each compiled at the first attempt:
+`00ceaf6` (the catalog pin, `DegreeGoals.chipTitles`, the colour key),
+`255df7b` (a degree named by its code), `78c4a77` (the plan tab: 3790 / 366,
+with the suites "Degree plan" and "Degree plan store" and the tab, fixture
+and clearing tests in `DegreeAppStateTests`) and `3a4822c` (the history rule
+for `cur`: the `end_term` pins in `PathBridgeTests` and
+`AppState.degreeSelection`'s table). The `degrees` page script was also run
+in Node against a record of the observed shape with synthetic codes. None
+of the four has been through `xcodebuild` or onto a phone yet; the build on
+Olisa's phone is still `d2f37a0`.**
+
+Before it: **on `v12` (2026-11-10, the Path@Penn rewrite after its review): 3764
 tests / 364 suites, all green, `swift test --no-parallel` on the GitHub macOS
 runner in 115 s (the `tests` workflow, run 42847761794 at `736c96b`); Deno
 and the extension's suite green on the same run. **The iOS Debug build of
@@ -3714,8 +3731,8 @@ none is a ship line.
   push was needed is not recorded. What that run did **not** check: the
   numbers against Path@Penn's own page, the second degree's audit, any
   what-if, and a second read after the 24-hour token lapses.
-  **Found from that run, and fixed blind the same afternoon** (see Test
-  baseline for whether it has compiled; not yet back on the phone): the
+  **Found from that run, and fixed the same afternoon** (green on the
+  runner at `3a4822c`; not yet back on the phone): the
   screen opened on Artificial Intelligence, then showed a "no major, non
   degree" chip whose audit failed, a second Artificial Intelligence chip and
   a Wharton one; Olisa's major is Computer Science. `cur` is a history (the
