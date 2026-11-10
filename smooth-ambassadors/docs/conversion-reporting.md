@@ -22,8 +22,8 @@ set:
 |---|---|
 | `/scan/ib` | `ib` |
 | `/scan/uva/soccer` | `uva-soccer` |
-| `/a/{token}/p/soccer` (ambassador sticker) | `uva-soccer-a<id>` |
-| `/a/{token}/s/gc` (share link) | `uva-<id>-gc` |
+| `/r/{ref}/p/soccer` (ambassador sticker) | `uva-soccer-a<id>` |
+| `/r/{ref}/s/gc` (share link) | `uva-<id>-gc` |
 
 Tokens stay under Apple's 30-character limit and use only allowed
 characters.

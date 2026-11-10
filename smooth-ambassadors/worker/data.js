@@ -34,6 +34,15 @@ export async function ambassadorByToken(env, token) {
     .first();
 }
 
+// The public id from a share link or sticker. Never the secret token, and a
+// token passed here matches nothing because the two are generated apart.
+export async function ambassadorByRef(env, ref) {
+  if (typeof ref !== "string" || ref.length !== 10) return null;
+  return env.DB.prepare("SELECT * FROM ambassadors WHERE ref = ?1")
+    .bind(ref)
+    .first();
+}
+
 export async function listAmbassadors(env) {
   const { results } = await env.DB.prepare(
     "SELECT * FROM ambassadors ORDER BY school, name",
@@ -42,14 +51,15 @@ export async function listAmbassadors(env) {
 }
 
 export async function createAmbassador(env, { name, school, contact, notes }) {
-  if (!SCHOOLS[school]) throw new Error("unknown school");
+  if (typeof school !== "string" || !Object.hasOwn(SCHOOLS, school)) throw new Error("unknown school");
   name = (name || "").trim().slice(0, 80);
   if (!name) throw new Error("name required");
   const token = newToken();
+  const ref = newToken(10); // independent of the token: see the migration
   await env.DB.prepare(
-    "INSERT INTO ambassadors (token, name, school, contact, notes) VALUES (?1, ?2, ?3, ?4, ?5)",
+    "INSERT INTO ambassadors (token, ref, name, school, contact, notes) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
   )
-    .bind(token, name, school, (contact || "").trim().slice(0, 120), (notes || "").trim().slice(0, 500))
+    .bind(token, ref, name, school, (contact || "").trim().slice(0, 120), (notes || "").trim().slice(0, 500))
     .run();
   return ambassadorByToken(env, token);
 }
@@ -60,7 +70,7 @@ export async function updateAmbassador(env, id, fields) {
   const vals = [];
   for (const k of allowed) {
     if (fields[k] !== undefined) {
-      if (k === "school" && !SCHOOLS[fields[k]]) continue;
+      if (k === "school" && !Object.hasOwn(SCHOOLS, fields[k])) continue;
       if (k === "status" && !["invited", "active", "paused", "left"].includes(fields[k])) continue;
       sets.push(`${k} = ?${vals.length + 1}`);
       vals.push(fields[k] === "" && k === "paused_until" ? null : String(fields[k]).slice(0, 500));
@@ -303,8 +313,8 @@ export async function markFeedbackSeen(env, id) {
 export function dailyPost({ daily, dayIndex, anonApp = "fizz" }) {
   if (!daily?.length) return null;
   const entry = daily[((dayIndex % daily.length) + daily.length) % daily.length];
-  const channel = entry.kind === "anon" ? (CHANNELS[anonApp] ? anonApp : "fizz") : entry.kind === "rest" ? null : entry.kind;
-  return { kind: entry.kind, channel, platform: channel ? CHANNELS[channel] : "rest", text: entry.text };
+  const channel = entry.kind === "anon" ? (Object.hasOwn(CHANNELS, anonApp) ? anonApp : "fizz") : entry.kind === "rest" ? null : entry.kind;
+  return { kind: entry.kind, channel, platform: channel ? (Object.hasOwn(CHANNELS, channel) ? CHANNELS[channel] : channel) : "rest", text: entry.text };
 }
 
 export function dayIndex(date = new Date(), tzOffsetMinutes = 300) {

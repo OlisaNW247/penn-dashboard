@@ -8,9 +8,17 @@ CREATE TABLE IF NOT EXISTS scans (
 );
 
 -- Private roster. Contact details live here and nowhere else.
+-- Two ids on purpose. `token` is the credential: it opens the private page,
+-- the app's plan and the write routes, and it is shown only to the ambassador
+-- and the founders. `ref` is public: it is printed in share links, posted in
+-- group chats and encoded in sticker QR codes, so anyone can see it. It only
+-- identifies the ambassador for counting a link open and opens nothing
+-- private. They are generated independently, so seeing one says nothing
+-- about the other.
 CREATE TABLE IF NOT EXISTS ambassadors (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  token TEXT NOT NULL UNIQUE,          -- unguessable, in the private link
+  token TEXT NOT NULL UNIQUE,          -- secret, in the private link /a/{token}
+  ref TEXT NOT NULL UNIQUE,            -- public, in /r/{ref}/s/... and /r/{ref}/p/...
   name TEXT NOT NULL,
   school TEXT NOT NULL,                -- key from worker/catalog.js
   contact TEXT NOT NULL DEFAULT '',    -- phone, ig handle, whatever they use
@@ -22,7 +30,7 @@ CREATE TABLE IF NOT EXISTS ambassadors (
 );
 
 -- One row per ambassador link open (poster scan or share link).
--- Poster scans via /a/{token}/{poster} ALSO increment `scans` so the public
+-- Poster scans via /r/{ref}/p/{design} ALSO increment `scans` so the public
 -- dashboard stays complete.
 CREATE TABLE IF NOT EXISTS amb_hits (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

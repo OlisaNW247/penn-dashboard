@@ -134,6 +134,7 @@ test("founder view needs the secret", async () => {
 });
 
 let token;
+let ref;
 test("founder adds an ambassador and gets a private link", async () => {
   const r = await post(`/f/${FOUNDER}/add`, { name: "Test Friend", school: "uva", contact: "(555) 010-2020", notes: "" });
   assert.equal(r.status, 303);
@@ -143,6 +144,10 @@ test("founder adds an ambassador and gets a private link", async () => {
   assert.match(page, new RegExp(`/a/${token}`));
   assert.match(page, /sms:\+15550102020&body=/);
   assert.match(page, /Test Friend/);
+  const ex = await (await get(`/f/${FOUNDER}/export.json`)).json();
+  ref = ex.ambassadors[0].ref;
+  assert.match(ref, /^[a-z2-9]{10}$/);
+  assert.notEqual(ref, token.slice(0, 10));
 });
 
 test("ambassador page shows own data only, never contacts of others", async () => {
@@ -157,7 +162,7 @@ test("ambassador page shows own data only, never contacts of others", async () =
 });
 
 test("share link counts for the ambassador and redirects", async () => {
-  const r = await get(`/a/${token}/s/gc`);
+  const r = await get(`/r/${ref}/s/gc`);
   assert.equal(r.status, 302);
   assert.match(r.headers.get("location"), /apps\.apple\.com/);
   const me = await (await get(`/a/${token}/me.json`)).json();
@@ -167,12 +172,12 @@ test("share link counts for the ambassador and redirects", async () => {
 
 test("ambassador poster code counts for school AND ambassador", async () => {
   const before = await total("uva/ib");
-  const r = await get(`/a/${token}/p/ib`);
+  const r = await get(`/r/${ref}/p/ib`);
   assert.equal(r.status, 302);
   assert.equal(await total("uva/ib"), before + 1);
   const me = await (await get(`/a/${token}/me.json`)).json();
   assert.equal(me.posterOpens, 1);
-  assert.equal((await get(`/a/${token}/p/jester`)).status, 404);
+  assert.equal((await get(`/r/${ref}/p/jester`)).status, 404);
 });
 
 test("two-tap drop log, post log, checklist, feedback, pause", async () => {
@@ -193,7 +198,7 @@ test("two-tap drop log, post log, checklist, feedback, pause", async () => {
 test("stickers page renders a QR per design", async () => {
   const t = await (await get(`/a/${token}/stickers`)).text();
   assert.equal((t.match(/<svg /g) || []).length, 12);
-  assert.match(t, new RegExp(`/a/${token}/p/`) ? /qr/ : /x/);
+  assert.doesNotMatch(t, new RegExp(token));
 });
 
 test("founder view reflects everything and digest skips paused", async () => {
@@ -233,9 +238,9 @@ test("plan.json: today's post carries the ambassador's link and their anon app",
   assert.ok(p.today && typeof p.today.text === "string");
   if (p.today.kind === "anon") {
     assert.equal(p.today.channel, "sidechat");
-    assert.match(p.today.text, new RegExp(`https://example.test/a/${token}/s/sidechat`));
+    assert.match(p.today.text, new RegExp(`https://example.test/r/${ref}/s/sidechat`));
   }
-  if (p.today.channel) assert.match(p.today.text, /example\.test\/a\//);
+  if (p.today.channel) assert.match(p.today.text, /example\.test\/r\//);
   assert.equal(p.checklist.find((c) => c.key === "download").done, true);
   assert.equal(p.messages.length, 6);
   assert.ok(p.numbers.linkOpens >= 1);
@@ -262,4 +267,139 @@ test("every daily entry has a kind the plan understands", async () => {
   assert.ok(m.daily.length >= 10);
   for (const d of m.daily) assert.ok(["anon", "gc", "ig", "dm", "rest"].includes(d.kind), d.kind);
   assert.ok(m.daily.filter((d) => d.kind === "anon").length >= 7);
+});
+
+// ---- the private code never appears in anything posted or printed
+
+const count = async (table, where = "1=1") =>
+  (await (await mf.getD1Database("DB")).prepare(`SELECT COUNT(*) n FROM ${table} WHERE ${where}`).first()).n;
+const scanTotals = async () =>
+  JSON.stringify((await (await mf.getD1Database("DB")).prepare("SELECT * FROM scans ORDER BY poster").all()).results);
+const hits = () => count("amb_hits");
+
+test("the token is nowhere in posts, messages or stickers; only the ref is", async () => {
+  const plan = await (await get(`/a/${token}/plan.json?anon=fizz&tz=300`)).json();
+  const texts = [plan.today.text, ...plan.messages.map((m) => m.text)];
+  for (const t of texts) assert.ok(!t.includes(token), t);
+  for (const t of texts)
+    for (const m of t.match(/https?:\/\/\S*\/(?:a|r)\/\S+/g) || []) assert.match(m, new RegExp(`/r/${ref}/`), m);
+  assert.ok(plan.messages.some((m) => m.text.includes(`/r/${ref}/s/`)));
+  assert.match(plan.page, new RegExp(`/a/${token}$`));
+  const stickers = await (await get(`/a/${token}/stickers`)).text();
+  assert.ok(!stickers.includes(token), "stickers page");
+  const page = await (await get(`/a/${token}`)).text();
+  assert.doesNotMatch(page, new RegExp(`/a/${token}/(s|p)/`));
+  assert.match(page, new RegExp(`/r/${ref}/s/`));
+});
+
+test("the old token share and poster routes are gone and count nothing", async () => {
+  const [scansBefore, hitsBefore] = [await scanTotals(), await hits()];
+  for (const p of [`/a/${token}/s/fizz`, `/a/${token}/p/ib`]) {
+    assert.equal((await get(p)).status, 404, p);
+    assert.equal((await post(p, { x: "1" })).status, 404, p);
+  }
+  assert.equal(await scanTotals(), scansBefore);
+  assert.equal(await hits(), hitsBefore);
+});
+
+test("the public ref opens nothing private", async () => {
+  assert.equal((await get(`/a/${ref}`)).status, 404);
+  assert.equal((await get(`/a/${ref}/plan.json`)).status, 404);
+  assert.equal((await post(`/a/${ref}/post`, { channel: "fizz" })).status, 404);
+  assert.equal((await get(`/r/${ref}`)).status, 404);
+  assert.equal((await get(`/r/${ref}/plan.json`)).status, 404);
+  assert.equal((await get(`/r/${token}/s/fizz`)).status, 404); // the token is not a ref
+  assert.equal((await get(`/r/aaaaaaaaaa/s/fizz`)).status, 404);
+  assert.equal((await post(`/r/${ref}/s/fizz`, { a: "1" })).status, 405);
+  assert.equal((await get(`/r/${ref}/s/fizz`)).status, 302);
+});
+
+test("a school poster scan counts for the school; a share link leaves scans alone", async () => {
+  const before = await total("uva/soccer");
+  assert.equal((await get(`/r/${ref}/p/soccer`)).status, 302);
+  assert.equal(await total("uva/soccer"), before + 1);
+  const snap = await scanTotals();
+  assert.equal((await get(`/r/${ref}/s/fizz`)).status, 302);
+  assert.equal(await scanTotals(), snap);
+});
+
+test("/r/{ref}/s/{weird channel} is recorded as other", async () => {
+  const db = await mf.getD1Database("DB");
+  const n = async (k) => (await db.prepare("SELECT COUNT(*) n FROM amb_hits WHERE kind='link' AND key=?1").bind(k).first()).n;
+  const [o, c] = [await n("other"), await n("constructor")];
+  assert.equal((await get(`/r/${ref}/s/constructor`)).status, 302);
+  assert.equal(await n("other"), o + 1);
+  assert.equal(await n("constructor"), c);
+});
+
+test("bad bodies are a clean 4xx and write nothing", async () => {
+  const tables = ["activity", "checklist", "feedback"];
+  const counts = async () => Promise.all(tables.map((t) => count(t)));
+  const before = await counts();
+  const send = (path, body, ct = "application/json", extra = {}) =>
+    mf.dispatchFetch(`https://example.test${path}`, { method: "POST", redirect: "manual", headers: { "content-type": ct, accept: "application/json", ...extra }, body });
+  const cases = [
+    ["post", "{not json", 400],
+    ["post", "", 400],
+    ["post", "null", 400],
+    ["post", "[1,2]", 400],
+    ["post", "channel=fizz", 400, "text/plain"],
+    ["feedback", JSON.stringify({ body: { a: 1 } }), 400],
+    ["feedback", JSON.stringify({ body: "   " }), 400],
+    ["feedback", JSON.stringify({ body: "x".repeat(20000) }), 413],
+    ["post", JSON.stringify({ channel: "constructor" }), 400],
+    ["post", JSON.stringify({ channel: "__proto__" }), 400],
+    ["post", JSON.stringify({ channel: ["fizz"] }), 400],
+    ["check", JSON.stringify({ step: "nope" }), 400],
+    ["drop", JSON.stringify({ design: "toString" }), 400],
+  ];
+  for (const [action, body, want, ct] of cases) {
+    const r = await send(`/a/${token}/${action}`, body, ct);
+    assert.equal(r.status, want, `${action} ${body.slice(0, 30)}`);
+    assert.ok(r.status < 500);
+  }
+  assert.deepEqual(await counts(), before);
+  // Too large by header alone.
+  const r = await send(`/a/${token}/feedback`, JSON.stringify({ body: "hi" }), "application/json", { "content-length": "99999" }).catch(() => null);
+  if (r) assert.ok(r.status === 413 || r.status === 400);
+  assert.deepEqual(await counts(), before);
+});
+
+test("pause clamps and plan.json shrugs off odd query values", async () => {
+  const r = await mf.dispatchFetch(`https://example.test/a/${token}/pause`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ weeks: "99999999999999" }),
+  });
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).message, "paused for 12 weeks.");
+  const p = await (await get(`/a/${token}/plan.json?anon=constructor&tz=abc`)).json();
+  assert.equal(typeof p.today.platform, "string");
+  assert.equal((await get(`/a/${token}/plan.json?tz=99999999999`)).status, 200);
+});
+
+test("a name with </script> cannot break the founder page", async () => {
+  const r = await post(`/f/${FOUNDER}/add`, { name: "</script><b>x", school: "uva", contact: "", notes: "" });
+  assert.equal(r.status, 303);
+  const t = await (await get(`/f/${FOUNDER}`)).text();
+  const scripts = t.split("<script>")[1].split("</script>")[0];
+  assert.ok(scripts.includes("MOMENTS"));
+  assert.ok(!scripts.includes("</script"));
+});
+
+test("a left ambassador's code stops working, their stickers still count the school", async () => {
+  const ex = await (await get(`/f/${FOUNDER}/export.json`)).json();
+  const id = ex.ambassadors.find((a) => a.token === token).id;
+  assert.equal((await post(`/f/${FOUNDER}/update`, { id, status: "left" })).status, 303);
+  assert.equal((await get(`/a/${token}/plan.json`)).status, 404);
+  assert.equal((await get(`/a/${token}`)).status, 404);
+  assert.equal((await post(`/a/${token}/post`, { channel: "fizz" })).status, 404);
+  const [school, h] = [await total("uva/ib"), await hits()];
+  const r = await get(`/r/${ref}/p/ib`);
+  assert.equal(r.status, 302);
+  assert.equal(await total("uva/ib"), school + 1);
+  assert.equal((await get(`/r/${ref}/s/fizz`)).status, 302);
+  assert.equal(await hits(), h); // no ambassador credit
+  const after = (await (await get(`/f/${FOUNDER}/export.json`)).json()).ambassadors.find((a) => a.token === token);
+  assert.equal(after.status, "left");
 });

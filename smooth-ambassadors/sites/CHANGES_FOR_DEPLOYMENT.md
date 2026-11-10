@@ -8,7 +8,9 @@ For the ChatGPT session that deploys project
 
 The app is not sending a sign-in request to an auth endpoint, because the
 design has no accounts. An ambassador's unguessable code is the credential
-and it travels in the path. What the iOS app (`AmbassadorClient.swift`)
+and it travels in the path of their private page. Share links and sticker
+QR codes carry a separate public id (`/r/{ref}/...`), so posting a link
+never reveals the code. What the iOS app (`AmbassadorClient.swift`)
 sends to this origin:
 
 - `GET /a/{code}/plan.json?anon={fizz|sidechat|yikyak}&tz={minutes west of UTC}`
@@ -64,7 +66,7 @@ section, source `worker/ambassadors.js`) is the only place to adapt.
 
 ## Schema
 
-Additive only: `ambassadors`, `amb_hits`, `scan_events`, `activity`,
+Additive only: `ambassadors` (a secret `token` and a public `ref`), `amb_hits`, `scan_events`, `activity`,
 `checklist`, `feedback`, `reminders`, plus three indexes, all
 `CREATE ... IF NOT EXISTS`. The Worker creates them by itself on the first
 ambassador request or first scan, the way it has always created `scans`.
@@ -82,8 +84,8 @@ side:
 - 15 requests on the existing routes answer with the same status, the same
   body bytes and the same `content-type`, `cache-control`, `location` and
   `allow` headers from both. Counters end equal in both databases.
-- The full app contract above, the founder flow, the ambassador poster and
-  share links, the scan log, and a start from an empty database.
+- The full app contract above, the founder flow, the public `/r/{ref}` poster and
+  share links, a left ambassador's code ending, bad request bodies, the scan log, and a start from an empty database.
 - `node --check`, `scripts/build.sh` and `scripts/validate-artifact.mjs` pass.
 
 Not verified, because it needs the real deployment:

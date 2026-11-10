@@ -18,18 +18,21 @@ export function firstName(name) {
   return (name || "").trim().split(/\s+/)[0] || "hey";
 }
 
-export function ambassadorLinks(origin, token) {
+// The page link carries the secret token; everything that gets posted, texted
+// to friends or printed carries only the public ref, so seeing a post never
+// reveals the private page.
+export function ambassadorLinks(origin, amb) {
   return {
-    page: `${origin}/a/${token}`,
-    gc: `${origin}/a/${token}/s/gc`,
-    share: (ch) => `${origin}/a/${token}/s/${ch}`,
-    poster: (design) => `${origin}/a/${token}/p/${design}`,
+    page: `${origin}/a/${amb.token}`,
+    gc: `${origin}/r/${amb.ref}/s/gc`,
+    share: (ch) => `${origin}/r/${amb.ref}/s/${ch}`,
+    poster: (design) => `${origin}/r/${amb.ref}/p/${design}`,
   };
 }
 
 // Two-week digest for one ambassador, built from real numbers.
 export function digestText({ amb, origin, leaderboard, week = 0, newPoster = null }) {
-  const links = ambassadorLinks(origin, amb.token);
+  const links = ambassadorLinks(origin, amb);
   const school = SCHOOLS[amb.school]?.name ?? amb.school;
   const me = leaderboard.schools.find((s) => s.school === amb.school);
   const ahead = leaderboard.schools.find((s) => s.rank === (me?.rank ?? 1) - 1);
@@ -54,7 +57,7 @@ export function digestText({ amb, origin, leaderboard, week = 0, newPoster = nul
 }
 
 export function welcomeText({ amb, origin }) {
-  const links = ambassadorLinks(origin, amb.token);
+  const links = ambassadorLinks(origin, amb);
   return [
     `hey ${firstName(amb.name)}! thanks for helping with smooth at ${(SCHOOLS[amb.school]?.name ?? amb.school).toLowerCase()}.`,
     `here's your page, it's private to you, no login: ${links.page}`,
@@ -66,7 +69,7 @@ export function welcomeText({ amb, origin }) {
 export function momentTexts({ amb, origin, key }) {
   const m = moments.moments.find((x) => x.key === key);
   if (!m) return null;
-  const links = ambassadorLinks(origin, amb.token);
+  const links = ambassadorLinks(origin, amb);
   const vars = {
     name: firstName(amb.name),
     school: (SCHOOLS[amb.school]?.name ?? amb.school).toLowerCase(),

@@ -19,7 +19,7 @@ database, no accounts, no passwords, runs on a phone.
 | `worker/dashboard.js` | the public dashboard page, byte for byte as the live site serves it |
 | `scripts/fetch-posters.mjs` | `npm run posters`: downloads the 62 poster previews from the live site into `public/posters/` (git-ignored; several posters carry photos of real people, so they stay out of git) |
 | `test/fixtures/live-stats-shape.json` | the live `/api/stats` rows (totals removed); a test fails if the Worker lists anything else |
-| `worker/ambassadors.js` | new routes: `/a/{token}...`, `/f/{secret}...`, `/api/leaderboard` |
+| `worker/ambassadors.js` | new routes: `/a/{token}...`, `/r/{ref}...`, `/f/{secret}...`, `/api/leaderboard` |
 | `worker/data.js` | every D1 query. the roster is only touched here |
 | `worker/pages.js` | the ambassador page and the founder view |
 | `worker/digest.js` | the two-week digest, welcome text and campus-moment texts |
@@ -46,9 +46,9 @@ New:
 
 | Route | Who | Behaviour |
 |---|---|---|
-| `/a/{token}` | ambassador | their private page: numbers, messages with their own links, drop log, posters, feedback, checklist, pause |
-| `/a/{token}/s/{channel}` | public (in their messages) | share link, counts for them, redirects to the App Store |
-| `/a/{token}/p/{design}` | public (their QR stickers) | poster code, counts for **the school and them**, redirects |
+| `/a/{token}` | ambassador (404 once marked `left`) | their private page: numbers, messages with their own links, drop log, posters, feedback, checklist, pause |
+| `/r/{ref}/s/{channel}` | public (in their messages) | share link, counts for them, redirects to the App Store. The ref is public and opens nothing private |
+| `/r/{ref}/p/{design}` | public (their QR stickers) | poster code, counts for **the school and them**, redirects. Keeps working after an ambassador is marked `left` (school only) |
 | `/a/{token}/stickers` | ambassador | printable QR sheet, one per design |
 | `/a/{token}/me.json` | ambassador | their numbers only |
 | `/a/{token}/plan.json?anon=fizz&tz=300` | the Smooth app (ambassador mode) | today's post, numbers, checklist, messages. `anon` picks their anonymous app, `tz` is the phone's UTC offset in minutes |

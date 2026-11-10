@@ -10,6 +10,16 @@ function fillMsg(text, vars) {
   return text.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? `{${k}}`);
 }
 
+function channelName(k) {
+  return Object.hasOwn(CHANNELS, k) ? CHANNELS[k] : k;
+}
+
+// JSON inlined in a <script>: "<" is escaped so a name holding </script> (or
+// <!--) cannot end the block early.
+function scriptJSON(v) {
+  return JSON.stringify(v).replace(/</g, "\\u003c");
+}
+
 function ago(ts) {
   if (!ts) return "never";
   const d = (Date.now() - new Date(ts).getTime()) / 86400000;
@@ -33,7 +43,7 @@ function sendButton(contact, body, label = "text it") {
 
 export function ambassadorPage({ amb, stats, origin, flash }) {
   const school = SCHOOLS[amb.school];
-  const links = ambassadorLinks(origin, amb.token);
+  const links = ambassadorLinks(origin, amb);
   const base = `/a/${amb.token}`;
   const vars = { school: school.name.toLowerCase(), name: firstName(amb.name) };
   const designs = designsFor(amb.school);
@@ -89,7 +99,7 @@ export function ambassadorPage({ amb, stats, origin, flash }) {
         .slice(0, 12)
         .map(
           (a) =>
-            `<tr><td>${esc(a.kind === "drop" ? `${a.copies} × ${a.design}` : `posted in ${CHANNELS[a.channel] ?? a.channel}`)}${a.place ? ` <span class="muted">· ${esc(a.place)}</span>` : ""}</td><td class="num muted small">${esc(ago(a.ts))}</td></tr>`,
+            `<tr><td>${esc(a.kind === "drop" ? `${a.copies} × ${a.design}` : `posted in ${channelName(a.channel)}`)}${a.place ? ` <span class="muted">· ${esc(a.place)}</span>` : ""}</td><td class="num muted small">${esc(ago(a.ts))}</td></tr>`,
         )
         .join("")}</table>`
     : `<p class="muted">nothing logged yet. that's fine.</p>`;
@@ -174,7 +184,7 @@ export function ambassadorPage({ amb, stats, origin, flash }) {
 }
 
 export function stickersPage({ amb, origin, qrSvg }) {
-  const links = ambassadorLinks(origin, amb.token);
+  const links = ambassadorLinks(origin, amb);
   const designs = designsFor(amb.school);
   const cards = designs
     .map(
@@ -186,7 +196,7 @@ export function stickersPage({ amb, origin, qrSvg }) {
     )
     .join("");
   const body = `
-    <p class="noprint"><a href="/a/${attr(amb.token)}">← back</a></p>
+    <p class="noprint"><a href=".">← back</a></p>
     <h1>your qr stickers</h1>
     <p class="muted small noprint">print this page, cut them out, stick one over the code on a poster (or next to it). scans count for ${esc(SCHOOLS[amb.school].name.toLowerCase())} <em>and</em> for you. <button class="small" onclick="print()">print</button></p>
     <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(110px,1fr))">${cards}</div>`;
@@ -202,7 +212,7 @@ export function founderPage({ stats, origin, secret, flash, created }) {
   const createdHtml = created
     ? `<div class="card">
         <h3>added ${esc(created.name)} <span class="muted">(${esc(SCHOOLS[created.school].name)})</span></h3>
-        <p class="small">their private page: <a href="${attr(ambassadorLinks(origin, created.token).page)}">${esc(ambassadorLinks(origin, created.token).page)}</a></p>
+        <p class="small">their private page: <a href="${attr(ambassadorLinks(origin, created).page)}">${esc(ambassadorLinks(origin, created).page)}</a></p>
         <p class="msg">${esc(welcomeText({ amb: created, origin }))}</p>
         <p>${sendButton(created.contact, welcomeText({ amb: created, origin }), "text the welcome")}
         <form method="post" action="${base}/reminder" style="display:inline"><input type="hidden" name="id" value="${created.id}"><input type="hidden" name="kind" value="welcome"><button class="small ghost">mark sent</button></form></p>
@@ -216,7 +226,7 @@ export function founderPage({ stats, origin, secret, flash, created }) {
           <span class="small muted" style="float:right">${a.linkOpensRecent + a.posterOpensRecent} opens/${stats.days}d</span></summary>
         <table class="small">
           <tr><td>contact</td><td>${esc(a.contact || "—")}</td></tr>
-          <tr><td>page</td><td><a href="${attr(ambassadorLinks(origin, a.token).page)}">open</a> · <button class="small ghost" data-copy="${attr(ambassadorLinks(origin, a.token).page)}">copy link</button></td></tr>
+          <tr><td>page</td><td><a href="${attr(ambassadorLinks(origin, a).page)}">open</a> · <button class="small ghost" data-copy="${attr(ambassadorLinks(origin, a).page)}">copy link</button></td></tr>
           <tr><td>opens</td><td>${a.linkOpens} links · ${a.posterOpens} stickers (${a.linkOpensRecent + a.posterOpensRecent} in ${stats.days}d)</td></tr>
           <tr><td>did</td><td>${a.drops} posters · ${a.posts} posts · checklist ${a.checklistDone}/${checklist.steps.length} · last ${esc(ago(a.lastActivity))}</td></tr>
           <tr><td>last reminder</td><td>${a.lastReminder ? `${esc(a.lastReminder.kind)} ${esc(ago(a.lastReminder.ts))}${a.lastReminder.replied ? " · replied" : ""}` : "none"}</td></tr>
@@ -283,7 +293,7 @@ export function founderPage({ stats, origin, secret, flash, created }) {
         .slice(0, 40)
         .map(
           (a) =>
-            `<tr><td>${esc(a.name)} <span class="muted">${esc(SCHOOLS[a.school]?.name ?? "")}</span></td><td>${esc(a.kind === "drop" ? `${a.copies} × ${a.design}` : `post · ${CHANNELS[a.channel] ?? a.channel}`)}${a.place ? ` <span class="muted">· ${esc(a.place)}</span>` : ""}</td><td class="num muted">${esc(ago(a.ts))}</td></tr>`,
+            `<tr><td>${esc(a.name)} <span class="muted">${esc(SCHOOLS[a.school]?.name ?? "")}</span></td><td>${esc(a.kind === "drop" ? `${a.copies} × ${a.design}` : `post · ${channelName(a.channel)}`)}${a.place ? ` <span class="muted">· ${esc(a.place)}</span>` : ""}</td><td class="num muted">${esc(ago(a.ts))}</td></tr>`,
         )
         .join("")}</table>`
     : `<p class="muted">nothing logged yet.</p>`;
@@ -340,7 +350,7 @@ export function founderPage({ stats, origin, secret, flash, created }) {
     ${activityHtml}`;
 
   const script = `
-    var MOMENTS=${JSON.stringify(momentData)};
+    var MOMENTS=${scriptJSON(momentData)};
     function applyMoment(){var k=document.getElementById('moment').value;document.querySelectorAll('[data-moment-card]').forEach(function(c){var id=c.getAttribute('data-id');var m=MOMENTS[id]&&MOMENTS[id][k];if(!m)return;c.querySelector('.msg').textContent=m.text;var s=c.querySelector('[data-send]');s.innerHTML='';if(m.sms){var a=document.createElement('a');a.className='btn small';a.href=m.sms;a.textContent='text it';s.appendChild(a);s.appendChild(document.createTextNode(' '))}var b=document.createElement('button');b.className='small ghost';b.setAttribute('data-copy',m.text);b.textContent='copy';s.appendChild(b);c.querySelector('[data-kind]').value='moment:'+k})}
     applyMoment();`;
 

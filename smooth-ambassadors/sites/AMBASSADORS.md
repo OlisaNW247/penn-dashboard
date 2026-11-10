@@ -9,7 +9,8 @@ Both live in `worker/index.js`, because the Sites build ships that one file.
 Three things, and nothing else:
 
 1. `fetch` takes `ctx` and first asks `smoothAmbassadors.handle(...)`. It
-   answers only `/a/...`, `/f/...` and `/api/leaderboard`. For every other
+   answers only `/a/...`, `/f/...`, `/r/...` and exactly `/api/leaderboard`
+   (so `/api/leaderboard/` stays the host's 404). For every other
    path it returns `null` before touching the database, so `/`,
    `/api/stats`, `/scan/...`, `/posters/...`, the 404s and the 405s run the
    original code.
@@ -33,16 +34,29 @@ UPenn-only poster also needs adding to `SMOOTH_HOST.upennOnly`.
 
 ## Sign-in: there are no accounts
 
-An ambassador is a row in D1 with an unguessable code (14 characters from a
-31-letter alphabet, about 69 bits, generated with `crypto.getRandomValues`). The code is
-the whole credential. It travels in the path, like the private page link
-the founders text to each ambassador:
+An ambassador is a row in D1 with two ids, both generated with
+`crypto.getRandomValues` and independent of each other:
 
-    https://<this site>/a/{code}
+- the **code** (14 characters from a 31-letter alphabet, about 69 bits) is
+  the whole credential. It travels in the path of the private page link the
+  founders text to each ambassador: `https://<this site>/a/{code}`. It is
+  shown only to the ambassador and the founders, never in anything posted
+  or printed.
+- the **ref** (10 characters, same alphabet) is public. It is in the share
+  links an ambassador pastes into chats and in their sticker QR codes:
+  `/r/{ref}/s/{channel}` and `/r/{ref}/p/{design}`. It opens nothing
+  private, and seeing it says nothing about the code.
 
 The app stores the code in the iOS Keychain. No password, no email, no
 session, no cookie, and no CORS need (the app is native, not a browser).
-An unknown code answers a plain 404 on every route.
+An unknown code answers a plain 404 on every route. So does the code of an
+ambassador the founders have marked `left`: that is how access is ended.
+The public `/r/...` links keep redirecting after that (a printed sticker
+must still count for the school), but credit no ambassador.
+
+Bodies of POSTs are limited to 16 KB (413 above that). Invalid JSON, an
+empty body, JSON that is not an object, or an unknown content type is a 400.
+Fields are read as short strings and anything else is treated as missing.
 
 ## Routes
 
@@ -64,10 +78,15 @@ The ambassador's own web page and links:
 | Request | Answer |
 |---|---|
 | `GET /a/{code}` | their private page |
-| `GET /a/{code}/s/{channel}` | tracked share link: counts a link open for the ambassador, redirects to the App Store. Does not touch `scans`. |
-| `GET /a/{code}/p/{design}` | their poster code: `scans.total` for their school and design goes up by one, exactly as `/scan/{school}/{design}` would, and it also counts for the ambassador. |
 | `GET /a/{code}/stickers`, `GET /a/{code}/me.json` | sticker sheet, their numbers |
 | `POST /a/{code}/drop` | log a poster drop |
+
+The public links (the ref, never the code; GET only, 405 otherwise):
+
+| Request | Answer |
+|---|---|
+| `GET /r/{ref}/s/{channel}` | tracked share link: counts a link open for the ambassador, redirects to the App Store. Does not touch `scans`. An unknown channel counts as `other`. |
+| `GET /r/{ref}/p/{design}` | their poster code: `scans.total` for their school and design goes up by one, exactly as `/scan/{school}/{design}` would, and it also counts for the ambassador. For a `left` ambassador it counts for the school only. |
 
 The founders:
 
@@ -94,7 +113,7 @@ The code reads them as `env.FOUNDER_TOKEN` and so on, next to `env.DB`.
 
 `migrations/0001_ambassadors.sql`, a reference copy of what the Worker
 creates by itself. Every statement is `CREATE TABLE IF NOT EXISTS` or
-`CREATE INDEX IF NOT EXISTS`: `ambassadors`, `amb_hits`, `scan_events`,
+`CREATE INDEX IF NOT EXISTS`: `ambassadors` (with `token` and `ref`), `amb_hits`, `scan_events`,
 `activity`, `checklist`, `feedback`, `reminders`. The Worker runs them once
 per isolate on the first ambassador request or the first scan, the same way
 the tracker has always created `scans`. Nothing alters, drops or rewrites

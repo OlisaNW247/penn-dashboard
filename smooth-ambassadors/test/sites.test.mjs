@@ -93,6 +93,16 @@ test("parity: counters and stats after the scans", { skip }, async () => {
   assert.deepEqual(await snapshot(edited, "/api/stats"), await snapshot(orig, "/api/stats"));
 });
 
+test("parity: near-miss paths stay the host's plain 404", { skip }, async () => {
+  for (const path of ["/api/leaderboard/", "/api//leaderboard", "/r", "/r/x"]) {
+    const a = await req(orig, path);
+    const b = await req(edited, path);
+    assert.equal(b.status, a.status, path);
+    assert.equal(a.status, 404, path);
+    assert.equal(await b.text(), await a.text(), path);
+  }
+});
+
 test("the original has no ambassador routes", { skip }, async () => {
   assert.equal((await req(orig, "/a/whatever/plan.json")).status, 404);
   assert.equal((await req(orig, "/a/whatever/plan.json", { method: "POST" })).status, 405);
@@ -105,6 +115,7 @@ const json = (mf, path, method, data) =>
     body: data === undefined ? undefined : JSON.stringify(data),
   });
 let token;
+let ref;
 
 test("unknown code and founder secret", { skip }, async () => {
   assert.equal((await req(edited, "/a/aaaaaaaaaaaaaa/plan.json")).status, 404);
@@ -118,6 +129,9 @@ test("unknown code and founder secret", { skip }, async () => {
   assert.equal(r.status, 303);
   token = new URL(r.headers.get("location"), "https://x").searchParams.get("created");
   assert.ok(token && token.length >= 14);
+  const ex = await (await req(edited, `/f/${FOUNDER}/export.json`)).json();
+  ref = ex.ambassadors.find((a) => a.token === token).ref;
+  assert.match(ref, /^[a-z2-9]{10}$/);
 });
 
 test("the app's contract: plan.json and the five POSTs", { skip }, async () => {
@@ -155,21 +169,21 @@ test("the app's contract: plan.json and the five POSTs", { skip }, async () => {
 test("ambassador poster link counts once and matches /scan", { skip }, async () => {
   const plain = await req(edited, "/scan/uva/ib");
   const before = await total(edited, "uva/ib");
-  const r = await req(edited, `/a/${token}/p/ib`);
+  const r = await req(edited, `/r/${ref}/p/ib`);
   assert.equal(r.status, 302);
   assert.equal(r.headers.get("location"), plain.headers.get("location"));
   assert.equal(r.headers.get("cache-control"), plain.headers.get("cache-control"));
   assert.equal(await total(edited, "uva/ib"), before + 1);
   const all = async () => JSON.stringify((await (await edited.getD1Database("DB")).prepare("SELECT * FROM scans ORDER BY poster").all()).results);
   const snap = await all();
-  assert.equal((await req(edited, `/a/${token}/p/jester`)).status, 404);
+  assert.equal((await req(edited, `/r/${ref}/p/jester`)).status, 404);
   assert.equal(await all(), snap);
 });
 
 test("share link redirects to the App Store and leaves scans alone", { skip }, async () => {
   const db = await edited.getD1Database("DB");
   const snap = JSON.stringify((await db.prepare("SELECT * FROM scans ORDER BY poster").all()).results);
-  const r = await req(edited, `/a/${token}/s/sidechat`);
+  const r = await req(edited, `/r/${ref}/s/sidechat`);
   assert.equal(r.status, 302);
   assert.match(r.headers.get("location"), /^https:\/\/apps\.apple\.com\/us\/app\/smooth-for-students\/id6783911002/);
   assert.equal(JSON.stringify((await db.prepare("SELECT * FROM scans ORDER BY poster").all()).results), snap);
@@ -194,4 +208,90 @@ test("an empty database: tables are created lazily", { skip }, async () => {
   assert.equal(stats.status, 200);
   assert.equal((await stats.json()).rows.length, 62);
   assert.equal((await req(fresh, "/a/aaaaaaaaaaaaaa/plan.json")).status, 404);
+});
+
+// ---- the private code never appears in anything posted or printed
+
+const dbCount = async (table) => (await (await edited.getD1Database("DB")).prepare(`SELECT COUNT(*) n FROM ${table}`).first()).n;
+const scansSnap = async () => JSON.stringify((await (await edited.getD1Database("DB")).prepare("SELECT * FROM scans ORDER BY poster").all()).results);
+
+test("the token is nowhere in posts or stickers, and the old routes are gone", { skip }, async () => {
+  const plan = await (await req(edited, `/a/${token}/plan.json?anon=fizz&tz=300`)).json();
+  const texts = [plan.today.text, ...plan.messages.map((m) => m.text)];
+  for (const t of texts) assert.ok(!t.includes(token), t);
+  for (const t of texts)
+    for (const m of t.match(/https?:\/\/\S*\/(?:a|r)\/\S+/g) || []) assert.match(m, new RegExp(`/r/${ref}/`), m);
+  assert.ok(plan.messages.some((m) => m.text.includes(`/r/${ref}/s/`)));
+  assert.match(plan.page, new RegExp(`/a/${token}$`));
+  assert.ok(!(await (await req(edited, `/a/${token}/stickers`)).text()).includes(token));
+  const page = await (await req(edited, `/a/${token}`)).text();
+  assert.doesNotMatch(page, new RegExp(`/a/${token}/(s|p)/`));
+  assert.match(page, new RegExp(`/r/${ref}/s/`));
+
+  const [scans, hits] = [await scansSnap(), await dbCount("amb_hits")];
+  for (const p of [`/a/${token}/s/fizz`, `/a/${token}/p/ib`]) assert.equal((await req(edited, p)).status, 404, p);
+  assert.equal(await scansSnap(), scans);
+  assert.equal(await dbCount("amb_hits"), hits);
+
+  assert.equal((await req(edited, `/a/${ref}`)).status, 404);
+  assert.equal((await req(edited, `/a/${ref}/plan.json`)).status, 404);
+  assert.equal((await req(edited, `/r/${ref}/s/fizz`, { method: "POST" })).status, 405);
+  assert.equal((await req(edited, `/r/aaaaaaaaaa/s/fizz`)).status, 404);
+});
+
+test("school scan through the ref counts once; a share link does not touch scans", { skip }, async () => {
+  const before = await total(edited, "uva/soccer");
+  assert.equal((await req(edited, `/r/${ref}/p/soccer`)).status, 302);
+  assert.equal(await total(edited, "uva/soccer"), (before ?? 0) + 1);
+  const snap = await scansSnap();
+  assert.equal((await req(edited, `/r/${ref}/s/fizz`)).status, 302);
+  assert.equal(await scansSnap(), snap);
+  const db = await edited.getD1Database("DB");
+  const n = async () => (await db.prepare("SELECT COUNT(*) n FROM amb_hits WHERE key = 'other'").first()).n;
+  const o = await n();
+  assert.equal((await req(edited, `/r/${ref}/s/constructor`)).status, 302);
+  assert.equal(await n(), o + 1);
+});
+
+test("bad bodies are a clean 4xx and write nothing", { skip }, async () => {
+  const tables = ["activity", "checklist", "feedback"];
+  const counts = () => Promise.all(tables.map(dbCount));
+  const before = await counts();
+  const send = (action, body, ct = "application/json") =>
+    req(edited, `/a/${token}/${action}`, { method: "POST", headers: { "content-type": ct, accept: "application/json" }, body });
+  const cases = [
+    ["post", "{not json", 400],
+    ["post", "", 400],
+    ["post", "null", 400],
+    ["post", "channel=fizz", 400, "text/plain"],
+    ["feedback", JSON.stringify({ body: { a: 1 } }), 400],
+    ["feedback", JSON.stringify({ body: "x".repeat(20000) }), 413],
+    ["post", JSON.stringify({ channel: "constructor" }), 400],
+    ["check", JSON.stringify({ step: "nope" }), 400],
+  ];
+  for (const [action, body, want, ct] of cases) {
+    const r = await send(action, body, ct);
+    assert.equal(r.status, want, `${action} ${body.slice(0, 30)}`);
+  }
+  assert.deepEqual(await counts(), before);
+  const p = await send("pause", JSON.stringify({ weeks: "99999999999999" }));
+  assert.equal(p.status, 200);
+  const plan = await (await req(edited, `/a/${token}/plan.json?anon=constructor&tz=abc`)).json();
+  assert.equal(typeof plan.today.platform, "string");
+});
+
+test("a left ambassador's code stops working, their stickers still count the school", { skip }, async () => {
+  const ex = await (await req(edited, `/f/${FOUNDER}/export.json`)).json();
+  const id = ex.ambassadors.find((a) => a.token === token).id;
+  const r = await req(edited, `/f/${FOUNDER}/update`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ id, status: "left" }).toString(),
+  });
+  assert.equal(r.status, 303);
+  assert.equal((await req(edited, `/a/${token}/plan.json`)).status, 404);
+  const [school, hits] = [await total(edited, "uva/ib"), await dbCount("amb_hits")];
+  assert.equal((await req(edited, `/r/${ref}/p/ib`)).status, 302);
+  assert.equal(await total(edited, "uva/ib"), school + 1);
+  assert.equal(await dbCount("amb_hits"), hits);
 });

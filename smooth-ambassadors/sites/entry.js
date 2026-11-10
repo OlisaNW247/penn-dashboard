@@ -28,8 +28,12 @@ function ensureSchema(db) {
 }
 
 export async function handle(request, env, ctx) {
-  const parts = new URL(request.url).pathname.split("/").filter(Boolean);
-  const mine = parts[0] === "a" || parts[0] === "f" || (parts.length === 2 && parts[0] === "api" && parts[1] === "leaderboard");
+  const { pathname } = new URL(request.url);
+  const parts = pathname.split("/").filter(Boolean);
+  // /a (private), /f (founders) and /r (public share and sticker links) are
+  // ours; the leaderboard only at exactly /api/leaderboard, so near-misses
+  // such as /api/leaderboard/ stay the host's 404.
+  const mine = parts[0] === "a" || parts[0] === "f" || parts[0] === "r" || pathname === "/api/leaderboard";
   if (!mine) return null; // before touching env.DB: every other route is the host's
   await ensureSchema(env.DB);
   return handleAmbassadors(request, env, ctx);
