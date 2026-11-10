@@ -92,6 +92,14 @@ password, no name. Two things go through it:
 - **Course materials.** Syllabus, course pages, modules, assignment
   descriptions and announcements are fetched from Canvas with the student's
   own login, then pooled per Canvas course so classmates share one copy.
+  Since 2026-11-10 (blind) the PDFs an instructor links from an assignment's
+  description are pooled too: at the end of a successful
+  `refreshCourseKnowledge`, `attachmentPass` (`AppState+AssignmentAttachments.swift`;
+  planning in `AssignmentAttachmentPlanner.swift`, fetching in
+  `CanvasFilesClient.swift`, the document in `AssignmentAttachmentRunner.swift`)
+  reads each linked file id from open or just-past assignments, fetches PDFs
+  under 10 MB and uploads them as `file` documents, the shape the Chrome
+  extension makes. The student's own uploads and submissions are never read.
   Sync is automatic: after Canvas connects, then on the refresh loop with
   hourly staleness. There is no manual sync. Since 2026-10-02 (`v8`, not
   yet verified on a device) the same sync also reads **Ed Discussion** for
@@ -1277,6 +1285,16 @@ account signed into Xcode. Submitting for review is a separate, manual
 step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
+
+**Current on `agent/connection-v11` (2026-11-10, early morning US Eastern):
+3754 tests / 362 suites, all green, `swift test --no-parallel` alone on
+Marco's Mac (88 s), +40 / +4 over the branch's 3714 / 358 of 2026-11-08:
+the snapshot's Canvas ids and the assignment link lines (+7 / +1), and the
+assignment-PDF pass (`AssignmentAttachmentPlannerTests`,
+`CanvasFilesClientTests`, `AssignmentAttachmentWiringTests`, +33 / +3).
+Deno 870 (was 824: the hardening, the drafts backend, the assignment
+context, the file-retirement rule), `deno task check` clean, Node 46. The
+Swift pass is blind: never run against real Canvas.**
 
 **Chrome extension (a separate suite; never add it to the Swift or Deno
 counts): 517 tests, all green, on `v8` (2026-11-04, `cd chrome-extension
@@ -4308,13 +4326,14 @@ none is a ship line.
   for the CIS courses; if candidates stay candidates, the next suspects
   are the verification rule (code and term in the first 3,000 characters)
   and the convention guesser (no `github.io`), plan item 2's server half.
-- **ask cannot read Canvas Files.** Slides, readings and any PDF not
-  named like a syllabus are never ingested; only the 40 most recently
-  updated pages get their bodies; module items contribute titles only.
-  This is probably the largest remaining reason "it's in the class
-  files but ask can't find it". Ingesting Files changes what is pooled
-  on the server (instructors' files) and `docs/PRIVACY.md`, so it needs
-  a decision, not just code.
+- **ask reads only the PDFs linked from assignment descriptions, not
+  Canvas Files at large.** Assignment-linked PDFs are pooled by the phone
+  since 2026-11-10 (blind, never run against real Canvas; open question:
+  PDFKit text, first 20 pages, against the extension's pdf.js text for the
+  same file, so the two collectors' hashes can differ). Module files, the
+  Files tab and non-PDF types (slides, docs) still are not ingested by the
+  phone; only the 40 most recently updated pages get their bodies; module
+  items contribute titles only. The extension fills some of the rest in.
 - **A half-failed course-material sync no longer erases documents, and
   a 403 is one course's problem** (2026-10-23, `course-sync-salvage`,
   blind, ported from Marco's `parked/ask-course-sync-fixes` without its

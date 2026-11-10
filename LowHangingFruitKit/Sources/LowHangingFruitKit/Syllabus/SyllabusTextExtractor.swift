@@ -38,13 +38,13 @@ public enum SyllabusTextExtractor {
     /// Extracts text from a PDF's pages. Returns nil for image-only scans —
     /// nothing to read, and the caller should say so rather than show an empty
     /// "no weights found" result.
-    public static func text(fromPDF data: Data) -> String? {
+    public static func text(fromPDF data: Data, maxPages: Int = 20) -> String? {
 #if canImport(PDFKit)
         guard let document = PDFDocument(data: data) else { return nil }
         var pages: [String] = []
         // A syllabus's grading section is always near the front; this also
         // keeps a 200-page course packet from being walked in full.
-        for index in 0..<min(document.pageCount, 20) {
+        for index in 0..<min(document.pageCount, maxPages) {
             guard let page = document.page(at: index), let text = page.string else { continue }
             pages.append(text)
         }

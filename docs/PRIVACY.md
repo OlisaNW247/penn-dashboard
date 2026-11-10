@@ -15,7 +15,7 @@ where we cannot read it; and if you turn on iCloud sync, it goes to your own
 iCloud. If you turn on "connect an agent", your list of work (never grades,
 never your name) is kept readable on our server so an AI assistant you
 connect, such as Claude, can read it; it is off by default. Course materials — syllabi, course pages, assignment descriptions,
-announcements — are pooled with classmates in the same Canvas course, so
+files the instructor attached to assignments (PDFs only), announcements — are pooled with classmates in the same Canvas course, so
 everyone shares one copy instead of each of you re-fetching it. Questions you
 ask "the tree" are answered by an AI model running on our server. The
 question and the answer are not stored by the server. Chat history is saved
@@ -152,9 +152,12 @@ on-device alone:
 
 - **Course materials, pooled per class.** After you connect Canvas, the app
   fetches your class's syllabus, course pages, module listings, assignment
-  descriptions, and announcements using your own logged-in session — exactly
-  as it always has — and uploads the extracted text to our server, keyed by
-  Canvas's own course id. Every student in the same Canvas course site shares
+  descriptions, the PDFs an instructor linked from an assignment's description
+  (PDFs only, up to 10 MB each), and announcements using your own logged-in
+  session, and uploads the extracted text to our server, keyed by
+  Canvas's own course id. Those attached files are the instructor's documents,
+  pooled per course like the rest; files you upload yourself and your
+  submissions are never read. Every student in the same Canvas course site shares
   one copy: if a classmate already synced it, you get it instantly instead of
   waiting on your own fetch, and a new student gets the whole course's material
   on day one. We record which Canvas section you're in for possible future use,

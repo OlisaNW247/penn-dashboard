@@ -488,6 +488,10 @@ extension AppState {
                     courseKnowledgeNotice = "synced from canvas; couldn't share updates with lhf's server."
                     trace.uploadError = error.localizedDescription
                 }
+
+                // Assignment-linked PDFs, after the collector's own upload so
+                // a slow or failed file never delays it.
+                await attachmentPass(cookies: cookies)
             }
         } catch {
             courseKnowledgeNotice = error.localizedDescription
