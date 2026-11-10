@@ -53,7 +53,7 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   no course recommendations; "make this extremely smooth"). Built the
   same day on `v12` (`docs/DEGREE_PROGRESS_V12_BUILD_SPEC.md` is the
   contract). In order: (1) ~~the `tests` workflow on `v12` goes green~~ done
-  the same day, 3738/364 (the runner is the compiler; the iOS `xcodebuild`
+  2026-11-10, 3738/364 green at `d5d5a79` (the runner is the compiler; the iOS `xcodebuild`
   still needs a Mac); (2) Marco's capture on his Mac and phone, keys
   and hosts only, never a token: does `/worksheets/` on the Degree Works
   host reach the dashboard through WebLogin without Duo, what does

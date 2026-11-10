@@ -1296,14 +1296,15 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v12` (2026-11-09, the degree-progress feature): 3738 tests /
-364 suites, `swift test --no-parallel` on the GitHub macOS runner (the `tests`
-workflow; no Mac, no phone). Run 42644725170 at `7f01843` (the first push,
-3737 / 364) was green; run 42653623893 at `e33a467` (the review's fixes) was
+**Current on `v12` (2026-11-10, the degree-progress feature): 3738 tests /
+364 suites, all green, `swift test --no-parallel` on the GitHub macOS runner
+in 103 s (the `tests` workflow, run 42826422108 at `d5d5a79`; no Mac, no
+phone). Before it, run 42644725170 at `7f01843` (the first push, 3737 / 364)
+was green and run 42653623893 at `e33a467` (the review's fixes) was
 3738 / 364 with one red, `DegreeCopyTests` "no verdict words", because a doc
 comment in `DegreeWhatIfSheet.swift` said "undergraduate" and the test
-forbids "graduate" as a substring; the comment was reworded, nothing
-loosened. +64 tests / +13 suites over `v10`'s 3674 / 351: the seven Kit
+forbids "graduate" as a substring; the comment was reworded in `d5d5a79`,
+nothing loosened. +64 tests / +13 suites over `v10`'s 3674 / 351: the seven Kit
 suites under `Degree/` (decoder, tokens, requests, goal catalog, student
 reader, what-if, store) and `DegreeWiringTests`, `DegreeCopyTests`,
 `DegreeStructureTests` in the UI tests. Deno and the extension's suite green
