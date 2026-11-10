@@ -238,7 +238,7 @@ struct AmbassadorModelTests {
     /// so every test here restores it.
     private func withModel(
         storedCode: String? = nil,
-        _ body: (AmbassadorModel, FakeAmbassadorService, FakeAmbassadorCenter, UserDefaults) async throws -> Void
+        _ body: @MainActor (AmbassadorModel, FakeAmbassadorService, FakeAmbassadorCenter, UserDefaults) async throws -> Void
     ) async rethrows {
         let before = NotificationScheduler.reservedForeignSlots
         defer { NotificationScheduler.reservedForeignSlots = before }
@@ -433,7 +433,7 @@ struct AmbassadorWiringTests {
     func noReviews() throws {
         for file in ["AmbassadorPage.swift", "AmbassadorModel.swift", "AmbassadorReminders.swift"] {
             let source = try uiSource(file).lowercased()
-            #expect(!source.contains("5 star") && !source.contains("five star") && !source.contains("rate the app"), file)
+            #expect(!source.contains("5 star") && !source.contains("five star") && !source.contains("rate the app"), "\(file)")
         }
     }
 }
