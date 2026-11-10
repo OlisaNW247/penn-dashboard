@@ -28,6 +28,10 @@ export interface WorkItem {
   noSubmission: boolean;
   url: string | null;
   source: string;
+  /** The Canvas assignment and course ids the phone knows for the item
+   *  (digits). Absent from old phones and from items that are not Canvas's. */
+  canvasAssignmentID?: string;
+  canvasCourseID?: string;
 }
 
 export interface ManualItem {
@@ -116,6 +120,15 @@ function link(item: Record<string, unknown>, where: string): string | null {
   return value as string;
 }
 
+/** An optional Canvas id: 1 to 20 digits, or null/absent. Anything else
+ *  refuses the snapshot. Returns undefined for null/absent. */
+function canvasID(item: Record<string, unknown>, key: string, where: string): string | undefined {
+  const value = item[key];
+  if (value === null || value === undefined) return undefined;
+  if (typeof value !== "string" || !/^\d{1,20}$/.test(value)) refuse(`${where}.${key} must be 1 to 20 digits or null`);
+  return value as string;
+}
+
 function list(body: Record<string, unknown>, key: string, max: number, required: boolean): unknown[] {
   const value = body[key];
   if (value === undefined && !required) return [];
@@ -146,7 +159,7 @@ export function validateSnapshot(body: unknown): SnapshotValidation {
       checkForbidden(item, FORBIDDEN_ON_ITEMS);
       const kind = item.kind;
       if (typeof kind !== "string" || !(WORK_KINDS as readonly string[]).includes(kind)) refuse(`${where}.kind is not a known kind`);
-      return {
+      const built: WorkItem = {
         id: str(item, "id", where, 200),
         course: str(item, "course", where, 40),
         title: str(item, "title", where, 300),
@@ -157,6 +170,11 @@ export function validateSnapshot(body: unknown): SnapshotValidation {
         url: link(item, where),
         source: str(item, "source", where, 40),
       };
+      const assignmentID = canvasID(item, "canvasAssignmentID", where);
+      const courseID = canvasID(item, "canvasCourseID", where);
+      if (assignmentID !== undefined) built.canvasAssignmentID = assignmentID;
+      if (courseID !== undefined) built.canvasCourseID = courseID;
+      return built;
     });
     const manual = list(body, "manual", MAX_SNAPSHOT_MANUAL, false).map((raw, i): ManualItem => {
       const where = `manual[${i}]`;

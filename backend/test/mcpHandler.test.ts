@@ -201,6 +201,29 @@ Deno.test("read tools answer from the fixture", async () => {
   assertEquals(missing.result.isError, true);
 });
 
+Deno.test("get_assignment renders attachments, their text, and the not-readable line", async () => {
+  const { store, deps } = makeDeps();
+  const { token } = await seed(store);
+  const out = toolText(await call(deps, token, "get_assignment", { id: "asg-phys-hw4" }));
+  assertStringIncludes(out, "attachments:\n- HW4 handout.pdf — https://canvas.example/courses/1001/files/501; in the course material, 51 chars");
+  assertStringIncludes(out, "- HW4 solutions.pdf — no link; not in the course material");
+  assertStringIncludes(out, "--- HW4 handout.pdf ---\nProblem 2: a block slides down a frictionless ramp.");
+  assert(!out.includes("--- HW4 solutions.pdf ---"));
+  assert(out.indexOf("attachments:") < out.indexOf("facts:"));
+  assert(out.trimEnd().endsWith("Files that are not in the course material cannot be read through this connection; the student can open them in Canvas."));
+  // No attachments, no note.
+  const plain = toolText(await call(deps, token, "get_assignment", { id: "asg-phys-lab5" }));
+  assert(!plain.includes("attachments:") && !plain.includes("cannot be read"));
+});
+
+Deno.test("search_course_material describes every kind", async () => {
+  const { store, deps } = makeDeps();
+  const { token } = await seed(store);
+  const list = await rpc(await post(deps, token, { jsonrpc: "2.0", id: 1, method: "tools/list" }));
+  const search = list.result.tools.find((t: any) => t.name === "search_course_material");
+  assertStringIncludes(search.description, "kind is one of home, syllabus, assignment, module, page, announcement, ed, website, file");
+});
+
 Deno.test("propose_submission: file, oversize, status, scope", async () => {
   const { store, deps } = makeDeps();
   const { token } = await seed(store);

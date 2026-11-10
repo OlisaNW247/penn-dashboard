@@ -53,9 +53,19 @@ export interface FactEntry {
   createdAt: number;
 }
 
+/** A file or page the assignment's description names. `text` is the pooled
+ *  document's text when the course material holds it, else null. */
+export interface AssignmentAttachment {
+  name: string;
+  url: string | null;
+  documentId: string | null;
+  text: string | null;
+}
+
 export interface AssignmentDetail {
   entry: WorkEntry;
   description: string;
+  attachments: AssignmentAttachment[];
   facts: FactEntry[];
 }
 
@@ -106,6 +116,8 @@ export interface ToolBackend {
 // ---------------------------------------------------------------------------
 // Limits.
 
+export const MISSING_FILES_NOTE =
+  "Files that are not in the course material cannot be read through this connection; the student can open them in Canvas.";
 export const MAX_RESULT_CHARS = 120_000;
 export const MAX_BODY_CHARS = 100_000;
 export const MAX_NOTE_CHARS = 2_000;
@@ -235,9 +247,16 @@ export class FixtureToolBackend implements ToolBackend {
   getAssignment(_userId: string, id: string): Promise<AssignmentDetail | null> {
     const entry = this.work.find((w) => w.id === id);
     if (!entry) return Promise.resolve(null);
+    const attachments: AssignmentAttachment[] = entry.id === "asg-phys-hw4"
+      ? [
+        { name: "HW4 handout.pdf", url: "https://canvas.example/courses/1001/files/501", documentId: "doc-phys-hw4-handout", text: "Problem 2: a block slides down a frictionless ramp." },
+        { name: "HW4 solutions.pdf", url: null, documentId: null, text: null },
+      ]
+      : [];
     return Promise.resolve({
       entry: { ...entry },
       description: `${entry.title} for ${entry.course}.`,
+      attachments,
       facts: this.facts.filter((f) => f.assignmentId === id).map((f) => ({ ...f })),
     });
   }
@@ -427,15 +446,25 @@ export function registerTools(server: McpServer, backend: ToolBackend, options: 
     if (!found) return failure("no such assignment");
     const lines = [workLine(found.entry), `link: ${found.entry.url ?? "none"}`, `source: ${found.entry.source}`];
     if (found.description) lines.push("", found.description);
+    const attachments = found.attachments ?? [];
+    if (attachments.length > 0) {
+      lines.push("", "attachments:");
+      for (const a of attachments) {
+        const where = a.text !== null ? `in the course material, ${a.text.length} chars` : "not in the course material";
+        lines.push(`- ${a.name} — ${a.url ?? "no link"}; ${where}`);
+      }
+      for (const a of attachments) if (a.text !== null) lines.push("", `--- ${a.name} ---`, a.text);
+    }
     if (found.facts.length > 0) lines.push("", "facts:", ...found.facts.map((f) => `- (${f.kind}) ${f.text}`));
+    if (attachments.some((a) => a.text === null)) lines.push("", MISSING_FILES_NOTE);
     return text(lines.join("\n"));
   });
 
   server.registerTool("search_course_material", {
     title: "Search course material",
     description:
-      "Returns excerpts from the student's pooled course material (syllabi, announcements, Ed posts) that contain every word of the query, " +
-      "with document id, course, kind, title and posting date. Course is a course code; kind is syllabus, announcement or ed.",
+      "Returns excerpts from the student's pooled course material (syllabi, pages, assignments, modules, announcements, Ed posts, files) that contain every word of the query, " +
+      "with document id, course, kind, title and posting date. Course is a course code; kind is one of home, syllabus, assignment, module, page, announcement, ed, website, file.",
     inputSchema: z.object({
       query: z.string(),
       course: z.string().optional(),

@@ -362,7 +362,8 @@ nothing until you pair it with your phone.
 - **What the assistant can read.**
   - For each item of work: an id, the class code, the title, the kind, the
     due date (with your own edits applied), whether it is done, whether there
-    is anything to submit, the Canvas assignment link, and where it came
+    is anything to submit, the Canvas assignment and course ids, the
+    assignment's own Canvas page address (no token), and where it came
     from.
   - The list of your classes: code, name and Canvas course id.
   - Your own tasks: title, class, due date and whether it repeats weekly.

@@ -4,7 +4,7 @@
 import { strict as assert } from "node:assert";
 import { createClient } from "npm:@supabase/supabase-js@2.115.0";
 import { MemoryAgentStore } from "../supabase/functions/_shared/agentStoreMemory.ts";
-import { canvasAssignmentID, excerptAround, PostgrestToolBackend } from "../supabase/functions/_shared/agentToolsPostgrest.ts";
+import { attachmentRefs, canvasAssignmentID, excerptAround, PostgrestToolBackend } from "../supabase/functions/_shared/agentToolsPostgrest.ts";
 
 const NOW = new Date("2026-11-10T12:00:00.000Z");
 const USER = "u1";
@@ -15,7 +15,7 @@ interface Seen {
   q: URLSearchParams;
 }
 
-type Tables = Record<string, unknown[]>;
+type Tables = Record<string, unknown[] | ((q: URLSearchParams) => unknown[])>;
 
 async function withBackend<T>(
   tables: Tables,
@@ -28,8 +28,9 @@ async function withBackend<T>(
     const url = new URL(request.url);
     const table = url.pathname.replace("/rest/v1/", "");
     seen.push({ method: request.method, table, q: url.searchParams });
+    const t = tables[table];
     return Promise.resolve(
-      new Response(JSON.stringify(tables[table] ?? []), { status: 200, headers: { "content-type": "application/json" } }),
+      new Response(JSON.stringify(typeof t === "function" ? t(url.searchParams) : t ?? []), { status: 200, headers: { "content-type": "application/json" } }),
     );
   }) as typeof fetch;
   try {
@@ -265,7 +266,7 @@ Deno.test("getAssignment: snapshot item, pooled description and facts by Canvas 
     const found = await backend.getAssignment(USER, "canvas:555");
     assert.ok(found);
     assert.strictEqual(found.entry.title, "HW4");
-    assert.strictEqual(found.description.length, 20_000);
+    assert.strictEqual(found.description.length, 12_000);
     assert.strictEqual(found.facts.length, 1);
     assert.strictEqual(found.facts[0].text, "reschedule: Exam moved to Thursday");
     const d = only(seen, "course_documents")[0].q;
@@ -291,6 +292,113 @@ Deno.test("canvasAssignmentID: link first, then canvas: prefix, leniently", () =
   assert.strictEqual(canvasAssignmentID({ id: "canvas:77", url: null }), "77");
   assert.strictEqual(canvasAssignmentID({ id: "canvas-ics:88", url: null }), "88");
   assert.strictEqual(canvasAssignmentID({ id: "manual-abc", url: null }), null);
+});
+
+Deno.test("canvasAssignmentID: calendar rows, override ids, the explicit field", () => {
+  assert.strictEqual(canvasAssignmentID({ id: "canvas:event-assignment-15044550", url: null }), "15044550");
+  assert.strictEqual(canvasAssignmentID({ id: "canvas:event-assignment-override-1236169", url: null }), null);
+  assert.strictEqual(canvasAssignmentID({ id: "canvas:event-assignment-override-1236169", url: null, canvasAssignmentID: "99" }), "99");
+  assert.strictEqual(canvasAssignmentID({ id: "canvas:5", url: "https://c/courses/1/assignments/42", canvasAssignmentID: "99" }), "99");
+  assert.strictEqual(canvasAssignmentID({ id: "canvas:5", url: null, canvasAssignmentID: null }), "5");
+});
+
+Deno.test("attachmentRefs: links, page links, bare file lines, deduped and capped at four", () => {
+  const refs = attachmentRefs([
+    "Due: Wed",
+    "Problem Set 7.pdf",
+    "- HW7 numerical solutions.pdf",
+    "see https://canvas.upenn.edu/courses/1946718/files/164695272/download?x=1 and /courses/5/pages/lab-guide-2",
+    "again /files/164695272",
+    "notes.pptx",
+    "extra.zip",
+    "In prob. 10, the time should be 7.41 ns.",
+  ].join("\n"));
+  assert.deepStrictEqual(refs.map((r) => r.name), ["Problem Set 7.pdf", "HW7 numerical solutions.pdf", "file 164695272", "lab-guide-2"]);
+  assert.strictEqual(refs[2].fileID, "164695272");
+  assert.strictEqual(refs[2].url, "https://canvas.upenn.edu/courses/1946718/files/164695272/download?x=1");
+  assert.strictEqual(refs[3].pageSlug, "lab-guide-2");
+  assert.strictEqual(refs[3].url, null);
+});
+
+const PS7_TEXT = "Due: Wed, Nov 11 at 11:59 PM\nPoints: 10\nProblem Set 7.pdf\nHW7 numerical solutions.pdf\nIn prob. 10, the time should be 7.41 ns.";
+const twoSites = [{ course_id: "1949400" }, { course_id: "1946718" }, { course_id: "2002" }];
+const twoSiteCourses = [
+  { course_id: "1949400", code: "PHYS 0151", name: "Mechanics" },
+  { course_id: "1946718", code: "PHYS 0151", name: "Mechanics lab" },
+  { course_id: "2002", code: "CIS 2400", name: "Machine Programming" },
+];
+const ps7 = (over: Record<string, unknown> = {}) => ({
+  id: "canvas:event-assignment-15044550", course: "PHYS 0151", title: "Problem Set 7", kind: "assignment",
+  dueAt: null, done: false, noSubmission: false, url: null, source: "canvas", ...over,
+});
+
+Deno.test("getAssignment: PS7 calendar id, bare-name attachments, one pooled under the other site", async () => {
+  const tables: Tables = {
+    enrollments: twoSites,
+    courses: twoSiteCourses,
+    course_facts: [],
+    course_documents: (q) => {
+      if (q.get("kind") === "eq.assignment") return [{ text: PS7_TEXT }];
+      if (q.get("title") === "ilike.Problem Set 7.pdf") return [{ id: "file:1946718:9", title: "Problem Set 7.pdf", url: "https://canvas.upenn.edu/courses/1946718/files/9", text: "P".repeat(15_000) }];
+      return [];
+    },
+  };
+  await withBackend(tables, async (backend, seen, store) => {
+    await store.upsertSnapshot({ userId: USER, courses: [], workList: [ps7()], manual: [], writtenAt: NOW.toISOString() });
+    const found = await backend.getAssignment(USER, "canvas:event-assignment-15044550");
+    assert.ok(found);
+    assert.strictEqual(found.description, PS7_TEXT);
+    assert.deepStrictEqual(found.attachments, [
+      { name: "Problem Set 7.pdf", url: "https://canvas.upenn.edu/courses/1946718/files/9", documentId: "file:1946718:9", text: "P".repeat(12_000) },
+      { name: "HW7 numerical solutions.pdf", url: null, documentId: null, text: null },
+    ]);
+    const docs = only(seen, "course_documents");
+    assert.strictEqual(docs[0].q.get("course_id"), "in.(1946718,1949400)");
+    assert.strictEqual(docs[0].q.get("source_id"), "eq.15044550");
+    assert.strictEqual(docs[1].q.get("course_id"), "in.(1946718,1949400)");
+    assert.strictEqual(docs[1].q.get("kind"), "eq.file");
+    assert.ok(!Object.keys(found.entry).includes("canvasAssignmentID"));
+  });
+});
+
+Deno.test("getAssignment: explicit ids win; a link names the file and the page", async () => {
+  const text = "See https://canvas.upenn.edu/courses/1946718/files/164695272 and /courses/1946718/pages/lens-lab";
+  const tables: Tables = {
+    enrollments: twoSites,
+    courses: twoSiteCourses,
+    course_facts: [],
+    course_documents: (q) => {
+      if (q.get("kind") === "eq.assignment") return [{ text }];
+      if (q.get("url") === "ilike.%/files/164695272%") return [{ id: "f1", title: "Lenses PL.pdf", url: "https://canvas.upenn.edu/courses/1946718/files/164695272", text: "lens text" }];
+      return [];
+    },
+  };
+  await withBackend(tables, async (backend, seen, store) => {
+    await store.upsertSnapshot({
+      userId: USER, courses: [],
+      workList: [{ ...ps7({ id: "canvas:event-assignment-override-1" }), canvasAssignmentID: "777", canvasCourseID: "1949400" }],
+      manual: [], writtenAt: NOW.toISOString(),
+    });
+    const found = await backend.getAssignment(USER, "canvas:event-assignment-override-1");
+    assert.ok(found);
+    const docs = only(seen, "course_documents");
+    assert.strictEqual(docs[0].q.get("course_id"), "in.(1949400)");
+    assert.strictEqual(docs[0].q.get("source_id"), "eq.777");
+    assert.deepStrictEqual(found.attachments, [
+      { name: "Lenses PL.pdf", url: "https://canvas.upenn.edu/courses/1946718/files/164695272", documentId: "f1", text: "lens text" },
+      { name: "lens-lab", url: null, documentId: null, text: null },
+    ]);
+    assert.strictEqual(docs[2].q.get("url"), "ilike.%/pages/lens-lab%");
+  });
+});
+
+Deno.test("getAssignment: an override id with no explicit id finds nothing", async () => {
+  await withBackend({ enrollments: twoSites, courses: twoSiteCourses }, async (backend, seen, store) => {
+    await store.upsertSnapshot({ userId: USER, courses: [], workList: [ps7({ id: "canvas:event-assignment-override-1236169" })], manual: [], writtenAt: NOW.toISOString() });
+    const found = await backend.getAssignment(USER, "canvas:event-assignment-override-1236169");
+    assert.deepStrictEqual([found?.description, found?.attachments], ["", []]);
+    assert.strictEqual(only(seen, "course_documents").length, 0);
+  });
 });
 
 // ---------------------------------------------------------------------------

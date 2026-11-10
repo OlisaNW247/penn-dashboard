@@ -1532,8 +1532,8 @@ RLS): `course_id in (the caller's enrolled ids)`, live documents only
 |---|---|---|---|
 | `list_courses` | none | the snapshot's `courses`; with no snapshot, the caller's enrolled courses from `courses` | |
 | `list_work` | `view` (`todo` \| `all` \| `prev`, default `todo`), `course?` | the snapshot's `workList` plus `manual` tasks (shown as kind `other`, source `manual`); with no snapshot, nothing | |
-| `get_assignment` | `id` (a work item's id) | the snapshot item; the `assignment` document whose `source_id` is the item's Canvas assignment id (from `/assignments/<n>` in its link, else an id `canvas:<n>` or ending `:<n>`), and the facts targeting it | description 20,000 characters |
-| `search_course_material` | `query`, `course?`, `kind?`, `page?` | `course_documents.text` by PostgREST websearch with the `english` config, newest `updated_at` first | 10 per page, 600-character excerpt starting a third before the first hit |
+| `get_assignment` | `id` (a work item's id) | the snapshot item; the `assignment` document whose `source_id` is the item's Canvas assignment id (the item's `canvasAssignmentID`, else `/assignments/<n>` in its link, else an id `canvas:<n>`, `...event-assignment-<n>` or ending `:<n>`; never `event-assignment-override-<n>`, which is an override id), in the item's course site (`canvasCourseID`, else the link's, else every enrolled site with the same course code; a code can have two sites, e.g. PHYS 0151 lecture and lab), the attachments its text names, and the facts targeting it | description 12,000 characters; at most 4 attachments, 12,000 characters each. Output: work line, `link:`, `source:`, description, `attachments:` (`- <name> — <url or no link>; in the course material, N chars / not in the course material`), each pooled attachment's text under `--- <name> ---`, `facts:`, and when any attachment is not pooled the line "Files that are not in the course material cannot be read through this connection; the student can open them in Canvas." |
+| `search_course_material` | `query`, `course?`, `kind?`, `page?` | `course_documents.text` by PostgREST websearch with the `english` config, newest `updated_at` first; `kind` is one of home, syllabus, assignment, module, page, announcement, ed, website, file | 10 per page, 600-character excerpt starting a third before the first hit |
 | `get_facts` | `course?`, `since?` (Unix seconds) | `course_facts` of enrolled courses, by `seq`; `since` compares `posted_at`, and a fact with none is always included; facts of a gone or since-edited document are dropped, as in the manifest | 200 facts |
 | `get_announcements` | `course?`, `days` (1 to 365, default 14), `page?` | `announcement` documents, newest `posted_at` first | 10 per page, 8,000 characters a post |
 | `get_ed_posts` | `course?`, `page?` | `ed` documents, newest first | 10 per page, 8,000 characters a post |
@@ -1616,7 +1616,9 @@ courses  ≤ 60   { courseID (digits, ≤ 40), code (1-40), name (1-200) }
 workList ≤ 2000 { id (1-200), course (1-40), title (1-300),
                   kind: "assignment" | "quiz" | "discussion" | "event" | "other",
                   dueAt: ISO 8601 with offset | null, done: bool,
-                  noSubmission: bool, url: Canvas link | null, source (1-40) }
+                  noSubmission: bool, url: Canvas link | null, source (1-40),
+                  canvasAssignmentID?: 1-20 digits | null,   -- optional; old phones send none
+                  canvasCourseID?: 1-20 digits | null }      -- anything else refuses the snapshot
 manual   ≤ 500  { id (1-200), course (0-40), title (1-300),
                   dueAt: ISO 8601 | null, repeatsWeekly: bool }   -- optional array
 ```

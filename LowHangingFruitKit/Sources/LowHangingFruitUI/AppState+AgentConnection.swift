@@ -147,6 +147,7 @@ extension AppState {
         return AgentSnapshotBuilder.build(
             courses: courses, work: syncWorkList(),
             noSubmission: { id in byID[id].map { self.requiresNoSubmission($0) } ?? false },
-            manual: manual)
+            manual: manual,
+            courseIDByCode: { [codes = canvasCourseIDsByCode] in codes[$0] })
     }
 }

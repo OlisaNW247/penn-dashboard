@@ -173,3 +173,19 @@ Deno.test("workView: course filter ignores case, spaces and dashes", () => {
   assert.deepStrictEqual(ids(workView(items, "todo", NOW, "MATH 1")), []);
   assert.ok(sameCourse("phys 0151", "PHYS-0151"));
 });
+
+Deno.test("validateSnapshot: canvasAssignmentID and canvasCourseID are optional digit strings", () => {
+  const r = validateSnapshot(good({ workList: [item({ canvasAssignmentID: "15044550", canvasCourseID: "1949400" }), item({ canvasAssignmentID: null }), item()] }));
+  assert.ok(r.ok);
+  if (r.ok) {
+    assert.strictEqual(r.snapshot.workList[0].canvasAssignmentID, "15044550");
+    assert.strictEqual(r.snapshot.workList[0].canvasCourseID, "1949400");
+    assert.ok(!("canvasAssignmentID" in r.snapshot.workList[1]));
+    assert.ok(!("canvasCourseID" in r.snapshot.workList[2]));
+  }
+  for (const bad of ["", "12a", "1".repeat(21), 5, "-1"]) {
+    assert.match(reason(good({ workList: [item({ canvasAssignmentID: bad })] })), /workList\[0\]\.canvasAssignmentID/);
+    assert.match(reason(good({ workList: [item({ canvasCourseID: bad })] })), /workList\[0\]\.canvasCourseID/);
+  }
+  assert.ok(validateSnapshot(good({ workList: [item({ canvasAssignmentID: "1".repeat(20) })] })).ok);
+});

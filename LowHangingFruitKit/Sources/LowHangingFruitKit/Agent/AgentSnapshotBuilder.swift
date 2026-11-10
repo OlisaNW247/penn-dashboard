@@ -30,15 +30,22 @@ public struct AgentSnapshot: Codable, Equatable, Sendable {
         public var noSubmission: Bool
         public var url: String?
         public var source: String
+        /// Canvas's own ids, so the server can fetch the assignment's
+        /// description. Digits only; nil for Gradescope and manual work.
+        public var canvasAssignmentID: String?
+        public var canvasCourseID: String?
         public init(id: String, course: String, title: String, kind: Assignment.Kind,
-                    dueAt: Date?, done: Bool, noSubmission: Bool, url: String?, source: String) {
+                    dueAt: Date?, done: Bool, noSubmission: Bool, url: String?, source: String,
+                    canvasAssignmentID: String? = nil, canvasCourseID: String? = nil) {
             self.id = id; self.course = course; self.title = title; self.kind = kind
             self.dueAt = dueAt; self.done = done; self.noSubmission = noSubmission
             self.url = url; self.source = source
+            self.canvasAssignmentID = canvasAssignmentID; self.canvasCourseID = canvasCourseID
         }
 
         enum CodingKeys: String, CodingKey {
             case id, course, title, kind, dueAt, done, noSubmission, url, source
+            case canvasAssignmentID, canvasCourseID
         }
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -51,6 +58,8 @@ public struct AgentSnapshot: Codable, Equatable, Sendable {
             noSubmission = try c.decode(Bool.self, forKey: .noSubmission)
             url = try c.decodeIfPresent(String.self, forKey: .url)
             source = try c.decode(String.self, forKey: .source)
+            canvasAssignmentID = try? c.decodeIfPresent(String.self, forKey: .canvasAssignmentID)
+            canvasCourseID = try? c.decodeIfPresent(String.self, forKey: .canvasCourseID)
         }
         public func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: CodingKeys.self)
@@ -63,6 +72,8 @@ public struct AgentSnapshot: Codable, Equatable, Sendable {
             try c.encode(noSubmission, forKey: .noSubmission)
             try c.encode(url, forKey: .url)
             try c.encode(source, forKey: .source)
+            try c.encode(canvasAssignmentID, forKey: .canvasAssignmentID)
+            try c.encode(canvasCourseID, forKey: .canvasCourseID)
         }
     }
 
@@ -129,7 +140,8 @@ public enum AgentSnapshotBuilder {
         courses: [AgentSnapshot.Course],
         work: [SyncSnapshot.WorkItem],
         noSubmission: (String) -> Bool,
-        manual: [AgentSnapshot.ManualItem]
+        manual: [AgentSnapshot.ManualItem],
+        courseIDByCode: (String) -> String? = { _ in nil }
     ) -> AgentSnapshot {
         let outCourses = courses.compactMap { course -> AgentSnapshot.Course? in
             let id = String(course.courseID.prefix(40))
@@ -146,10 +158,30 @@ public enum AgentSnapshotBuilder {
             let source = clip(item.source, maxCode)
             guard !item.id.isEmpty, item.id.utf16.count <= 200,
                   !title.isEmpty, !course.isEmpty, !source.isEmpty else { return nil }
+            var assignmentID: String?
+            var courseID: String?
+            var link = item.url.flatMap { acceptableLink($0) ? $0 : nil }
+            // Only Canvas rows: a Gradescope URL has its own /courses/ and
+            // /assignments/ ids, a different id space.
+            if item.source == Assignment.Source.canvas.rawValue
+                || item.source == Assignment.Source.canvasModules.rawValue {
+                if let raw = item.url {
+                    assignmentID = digits(Assignment.canvasAssignmentID(inURL: raw))
+                    courseID = digits(courseIDFromURL(raw))
+                }
+                if courseID == nil { courseID = digits(courseIDByCode(item.course)) }
+                if let raw = item.url, let a = assignmentID, let c = courseID,
+                   let host = URL(string: raw).flatMap({ $0.scheme == "https" ? $0.host : nil }),
+                   !raw.lowercased().contains("/feeds/calendars/") {
+                    let canonical = "https://\(host)/courses/\(c)/assignments/\(a)"
+                    if acceptableLink(canonical) { link = canonical }
+                }
+            }
             return .init(
                 id: item.id, course: course, title: title, kind: item.kind, dueAt: item.dueAt,
                 done: item.done, noSubmission: noSubmission(item.id),
-                url: item.url.flatMap { acceptableLink($0) ? $0 : nil }, source: source)
+                url: link, source: source,
+                canvasAssignmentID: assignmentID, canvasCourseID: courseID)
         }
         // Open items first, soonest due first, undated last; then done items
         // the same way. The cap keeps what an agent is most likely asked about.
@@ -194,6 +226,23 @@ public enum AgentSnapshotBuilder {
         if lowered.range(of: "user_[a-z0-9]{8,}", options: .regularExpression) != nil { return false }
         guard let parts = URLComponents(string: raw), parts.user == nil, parts.password == nil else { return false }
         return parts.path.contains("/courses/")
+    }
+
+    /// `include_contexts=course_<id>` in the query, else `/courses/<id>`.
+    static func courseIDFromURL(_ raw: String) -> String? {
+        for pattern in [#"include_contexts=course_(\d+)"#, #"/courses/(\d+)"#] {
+            if let r = raw.range(of: pattern, options: .regularExpression) {
+                return raw[r].split(whereSeparator: { !$0.isNumber }).last.map(String.init)
+            }
+        }
+        return nil
+    }
+
+    /// Digits only, at most 20 characters, else nil.
+    static func digits(_ text: String?) -> String? {
+        guard let text, !text.isEmpty, text.count <= 20,
+              text.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+        return text
     }
 
     /// The server counts UTF-16 code units; clip on a character boundary

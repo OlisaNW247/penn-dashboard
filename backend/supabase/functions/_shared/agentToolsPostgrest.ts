@@ -15,6 +15,7 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2.115.0";
 import type { AgentStore } from "./agentStore.ts";
 import { decodeDraftBytes } from "./agentTools.ts";
 import type {
+  AssignmentAttachment,
   AssignmentDetail,
   CourseEntry,
   DocumentPage,
@@ -33,7 +34,9 @@ import { factsResponse, type FactRowWithDocument, isWindowKind, windowAgeOutFilt
 
 export const PAGE_SIZE = 10;
 export const EXCERPT_CHARS = 600;
-export const ASSIGNMENT_TEXT_CHARS = 20_000;
+export const ASSIGNMENT_TEXT_CHARS = 12_000;
+export const ATTACHMENT_TEXT_CHARS = 12_000;
+export const MAX_ATTACHMENTS = 4;
 export const POST_TEXT_CHARS = 8_000;
 export const MAX_FACTS = 200;
 
@@ -97,17 +100,30 @@ export class PostgrestToolBackend implements ToolBackend {
     if (!snapshot) return null;
     const item = allItems(snapshot.workList, snapshot.manual).find((i) => i.id === id);
     if (!item) return null;
-    const entry: WorkEntry = { ...item };
+    const entry: WorkEntry = {
+      id: item.id,
+      course: item.course,
+      title: item.title,
+      kind: item.kind,
+      dueAt: item.dueAt,
+      done: item.done,
+      noSubmission: item.noSubmission,
+      url: item.url,
+      source: item.source,
+    };
+    const bare = { entry, description: "", attachments: [] as AssignmentAttachment[], facts: [] as FactEntry[] };
 
     const canvasID = canvasAssignmentID(item);
-    if (canvasID === null) return { entry, description: "", facts: [] };
+    if (canvasID === null) return bare;
 
-    // The course: the link names it; otherwise the item's course code.
-    const urlCourse = item.url ? /\/courses\/(\d+)/.exec(item.url)?.[1] : undefined;
+    // The course: the item's own course id, else the link's, else every
+    // enrolled site with the item's course code (a code can have two sites,
+    // lecture and lab).
     const scope = await this.scope(userId, {});
     const rows = await this.courseRows(scope.ids);
-    const ids = scope.ids.filter((c) => (urlCourse ? c === urlCourse : sameCourse(rows.get(c)?.code ?? "", item.course)));
-    if (ids.length === 0) return { entry, description: "", facts: [] };
+    const named = item.canvasCourseID ?? (item.url ? /\/courses\/(\d+)/.exec(item.url)?.[1] : undefined);
+    const ids = scope.ids.filter((c) => (named ? c === named : sameCourse(rows.get(c)?.code ?? "", item.course)));
+    if (ids.length === 0) return bare;
 
     const doc = await this.client
       .from("course_documents")
@@ -118,10 +134,41 @@ export class PostgrestToolBackend implements ToolBackend {
       .is("gone_at", null)
       .limit(1);
     if (doc.error) throw doc.error;
-    const description = String((doc.data?.[0] as { text?: string } | undefined)?.text ?? "").slice(0, ASSIGNMENT_TEXT_CHARS);
+    const full = String((doc.data?.[0] as { text?: string } | undefined)?.text ?? "");
+    const description = full.slice(0, ASSIGNMENT_TEXT_CHARS);
+
+    // Attachments are looked up in every enrolled site of the same course
+    // code, since a file is often pooled under the other site.
+    const siblings = scope.ids.filter((c) => sameCourse(rows.get(c)?.code ?? "", item.course));
+    const lookIn = siblings.length > 0 ? siblings : ids;
+    const attachments: AssignmentAttachment[] = [];
+    for (const ref of attachmentRefs(full)) {
+      attachments.push(await this.findAttachment(lookIn, ref));
+    }
 
     const facts = await this.factRows(ids, { target: canvasID });
-    return { entry, description, facts: facts.map((f) => factEntry(f, rows)) };
+    return { entry, description, attachments, facts: facts.map((f) => factEntry(f, rows)) };
+  }
+
+  private async findAttachment(ids: string[], ref: AttachmentRef): Promise<AssignmentAttachment> {
+    let q = this.client
+      .from("course_documents")
+      .select("id, title, url, text")
+      .in("course_id", ids)
+      .is("gone_at", null);
+    if (ref.fileID) q = q.ilike("url", `%/files/${ref.fileID}%`);
+    else if (ref.pageSlug) q = q.ilike("url", `%/pages/${likeEscape(ref.pageSlug)}%`);
+    else q = q.eq("kind", "file").ilike("title", likeEscape(ref.name));
+    const { data, error } = await q.limit(1);
+    if (error) throw error;
+    const hit = (data?.[0] ?? null) as { id: string; title: string; url: string | null; text: string } | null;
+    if (!hit) return { name: ref.name, url: ref.url, documentId: null, text: null };
+    return {
+      name: ref.fileID || ref.pageSlug ? (hit.title || ref.name) : ref.name,
+      url: hit.url ?? ref.url,
+      documentId: hit.id,
+      text: String(hit.text ?? "").slice(0, ATTACHMENT_TEXT_CHARS),
+    };
   }
 
   async searchCourseMaterial(userId: string, query: string, course?: string, kind?: string, page = 1): Promise<SearchPage> {
@@ -331,13 +378,61 @@ function allItems(workList: unknown, manual: unknown): WorkItem[] {
   return [...work, ...mine];
 }
 
-/** The Canvas assignment id of a work item: from its link
- *  (`/assignments/123`), else from an id shaped `canvas:123` (Swift's
- *  `"\(source):\(sourceID)"`), else a trailing digits run after a colon. */
-export function canvasAssignmentID(item: { id: string; url: string | null }): string | null {
+interface AttachmentRef {
+  name: string;
+  url: string | null;
+  fileID?: string;
+  pageSlug?: string;
+}
+
+function likeEscape(value: string): string {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+const FILE_URL = /(?:https?:\/\/[^\s)\]<>"']*)?\/(?:courses\/\d+\/)?files\/(\d+)[^\s)\]<>"']*/g;
+const PAGE_URL = /(?:https?:\/\/[^\s)\]<>"']*)?\/courses\/\d+\/pages\/([A-Za-z0-9%._-]+)[^\s)\]<>"']*/g;
+const FILE_NAME = /\.(?:pdf|docx|pptx|xlsx|zip)$/i;
+
+/** The files and pages an assignment description names, in order, at most
+ *  `MAX_ATTACHMENTS`: Canvas file and page links in the text, and bare lines
+ *  that end in a document extension (the phone's older text form). */
+export function attachmentRefs(text: string): AttachmentRef[] {
+  const out: AttachmentRef[] = [];
+  const seen = new Set<string>();
+  const add = (key: string, ref: AttachmentRef) => {
+    if (out.length >= MAX_ATTACHMENTS || seen.has(key)) return;
+    seen.add(key);
+    out.push(ref);
+  };
+  for (const line of text.split(/\r?\n/)) {
+    let linked = false;
+    for (const m of line.matchAll(FILE_URL)) {
+      linked = true;
+      add(`f:${m[1]}`, { name: `file ${m[1]}`, url: m[0].startsWith("http") ? m[0] : null, fileID: m[1] });
+    }
+    for (const m of line.matchAll(PAGE_URL)) {
+      linked = true;
+      add(`p:${m[1]}`, { name: m[1], url: m[0].startsWith("http") ? m[0] : null, pageSlug: m[1] });
+    }
+    if (linked) continue;
+    const bare = line.trim().replace(/^[-*\u2022]\s+/, "");
+    if (bare.length > 0 && bare.length <= 200 && FILE_NAME.test(bare)) add(`n:${bare.toLowerCase()}`, { name: bare, url: null });
+  }
+  return out;
+}
+
+/** The Canvas assignment id of a work item: the phone's own field, else the
+ *  link (`/assignments/123`), else an id `canvas:123` or
+ *  `canvas:event-assignment-123` (the calendar row, whose number is the
+ *  assignment's), else a trailing digits run after a colon. An
+ *  `event-assignment-override-<n>` id is an override id, a different id
+ *  space, and never matches. */
+export function canvasAssignmentID(item: { id: string; url: string | null; canvasAssignmentID?: string | null }): string | null {
+  if (item.canvasAssignmentID && /^\d{1,20}$/.test(item.canvasAssignmentID)) return item.canvasAssignmentID;
   const fromURL = item.url ? /\/assignments\/(\d+)/.exec(item.url)?.[1] : undefined;
   if (fromURL) return fromURL;
-  const fromID = /^(?:canvas:)(\d+)$/.exec(item.id) ?? /:(\d+)$/.exec(item.id);
+  if (/event-assignment-override-/.test(item.id)) return null;
+  const fromID = /^(?:canvas:)(\d+)$/.exec(item.id) ?? /event-assignment-(\d+)$/.exec(item.id) ?? /:(\d+)$/.exec(item.id);
   return fromID ? fromID[1] : null;
 }
 

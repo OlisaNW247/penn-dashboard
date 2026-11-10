@@ -30,7 +30,7 @@ import Testing
         let course = try #require((root["courses"] as? [[String: Any]])?.first)
         #expect(Set(course.keys) == ["courseID", "code", "name"])
         let item = try #require((root["workList"] as? [[String: Any]])?.first)
-        #expect(Set(item.keys) == ["id", "course", "title", "kind", "dueAt", "done", "noSubmission", "url", "source"])
+        #expect(Set(item.keys) == ["id", "course", "title", "kind", "dueAt", "done", "noSubmission", "url", "source", "canvasAssignmentID", "canvasCourseID"])
         let manual = try #require((root["manual"] as? [[String: Any]])?.first)
         #expect(Set(manual.keys) == ["id", "course", "title", "dueAt", "repeatsWeekly"])
         // Absent values are explicit nulls.
@@ -120,5 +120,76 @@ import Testing
     @Test func byteSizeIsTheEncodedLength() throws {
         let snap = build([work("a")])
         #expect(AgentSnapshotBuilder.byteSize(snap) == (try AgentSnapshot.encoder().encode(snap)).count)
+    }
+
+    // MARK: Canvas ids
+
+    private func canvasItem(_ id: String, url: String?, source: String = "canvas",
+                            course: String = "PHYS 0151") -> SyncSnapshot.WorkItem {
+        .init(id: id, course: course, title: "Problem Set 7", dueAt: nil, kind: .assignment,
+              source: source, url: url, done: false)
+    }
+
+    @Test func fragmentFormGivesBothIdsAndACanonicalLink() throws {
+        let raw = "https://canvas.upenn.edu/calendar?include_contexts=course_1949400&month=11&year=2026#assignment_15044550"
+        let item = try #require(build([canvasItem("canvas:event-assignment-15044550", url: raw)]).workList.first)
+        #expect(item.canvasAssignmentID == "15044550")
+        #expect(item.canvasCourseID == "1949400")
+        #expect(item.url == "https://canvas.upenn.edu/courses/1949400/assignments/15044550")
+    }
+
+    @Test func overrideUidNumberIsNeverTheAssignmentID() throws {
+        let raw = "https://canvas.upenn.edu/calendar?include_contexts=course_1949400&month=11&year=2026#assignment_15044550"
+        let item = try #require(build([canvasItem("canvas:event-assignment-override-99887", url: raw)]).workList.first)
+        #expect(item.canvasAssignmentID == "15044550")
+        // No URL at all: an override uid alone yields nothing.
+        let bare = try #require(build([canvasItem("canvas:event-assignment-override-99887", url: nil)],
+                                      courses: []).workList.first)
+        #expect(bare.canvasAssignmentID == nil)
+    }
+
+    @Test func pathFormAndClosureFallback() throws {
+        let path = try #require(build([canvasItem("a", url: "https://canvas.upenn.edu/courses/5/assignments/6")]).workList.first)
+        #expect(path.canvasAssignmentID == "6")
+        #expect(path.canvasCourseID == "5")
+        let noCourse = canvasItem("b", url: "https://canvas.upenn.edu/calendar?month=11#assignment_77")
+        let out = AgentSnapshotBuilder.build(courses: [], work: [noCourse], noSubmission: { _ in false },
+                                             manual: [], courseIDByCode: { $0 == "PHYS 0151" ? "1949400" : nil })
+        let item = try #require(out.workList.first)
+        #expect(item.canvasCourseID == "1949400")
+        #expect(item.url == "https://canvas.upenn.edu/courses/1949400/assignments/77")
+        // Without the closure the course is unknown and the link stays refused.
+        let none = try #require(build([noCourse]).workList.first)
+        #expect(none.canvasCourseID == nil)
+        #expect(none.url == nil)
+    }
+
+    @Test func gradescopeAndManualItemsCarryNoCanvasIDs() throws {
+        let g = canvasItem("g", url: "https://www.gradescope.com/courses/123/assignments/456", source: "gradescope")
+        let m = canvasItem("m", url: nil, source: "manual")
+        let out = build([g, m])
+        for item in out.workList {
+            #expect(item.canvasAssignmentID == nil)
+            #expect(item.canvasCourseID == nil)
+        }
+        #expect(out.workList.first { $0.id == "g" }?.url == "https://www.gradescope.com/courses/123/assignments/456")
+    }
+
+    @Test func idsAreEncodedAsExplicitNullsAndDecodeLeniently() throws {
+        let root = try object(build([canvasItem("m", url: nil, source: "manual")]))
+        let item = try #require((root["workList"] as? [[String: Any]])?.first)
+        #expect(item["canvasAssignmentID"] is NSNull)
+        #expect(item["canvasCourseID"] is NSNull)
+        let old = Data(#"{"id":"x","course":"C","title":"T","kind":"assignment","dueAt":null,"done":false,"noSubmission":false,"url":null,"source":"canvas"}"#.utf8)
+        let decoded = try AgentSnapshot.decoder().decode(AgentSnapshot.WorkItem.self, from: old)
+        #expect(decoded.canvasAssignmentID == nil)
+    }
+
+    @Test func feedURLNeverBecomesALinkEvenWithIDs() throws {
+        let feed = "https://canvas.upenn.edu/feeds/calendars/user_abcdefghijkl.ics#assignment_5"
+        let item = try #require(AgentSnapshotBuilder.build(
+            courses: [], work: [canvasItem("f", url: feed)], noSubmission: { _ in false },
+            manual: [], courseIDByCode: { _ in "9" }).workList.first)
+        #expect(item.url == nil)
     }
 }
