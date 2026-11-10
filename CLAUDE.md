@@ -1328,7 +1328,11 @@ wants a `Comment`). **The iOS slice compiled too, at `674b89b`
 (2026-11-10, run 42842540993): the workflow's new manual job `ios-build`
 (`xcodebuild`, generic iOS device, Debug, `CODE_SIGNING_ALLOWED=NO`, widget
 included) ended BUILD SUCCEEDED.** Unsigned and never installed: nothing
-is on a phone.
+is on a phone. **Re-run at `f914d9e` (2026-11-10, run 42848811958,
+manual): all four jobs green** (Swift tests, Deno, the extension suite,
+the unsigned iOS build), after two fixture strings in
+`AmbassadorTests.swift` moved to the public `/r/{ref}` link shape. The
+count was not read off that run; no test was added or removed.
 
 **Current on `v10` (2026-11-07, evening, every post listed, the 3-day grace):
 3674 tests / 351 suites, all green, `swift test --no-parallel` on Marco's Mac
