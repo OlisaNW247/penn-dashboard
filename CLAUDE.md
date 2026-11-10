@@ -1382,6 +1382,21 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
+**Current on `agent/connection-v11` at the merge of 2026-11-10 (about 06:45
+UTC, 01:45 US Eastern): 3819 tests / 369 suites, all green, `swift test
+--no-parallel` alone on Marco's Mac (55 s). The tree is `agent/connection-v11`
+(the agent connection through the assignment-PDF pass, 3754 / 362) plus three
+session branches merged that night, `claude/quiz-inclass-9d38b8` (+9 / +1:
+`NothingToSubmitLabel`, `CourseKnowledgeHeldSyncTests`),
+`claude/v11-backend-645aa0` (Deno only) and `claude/v11-phone-c7aaf2` (+43 /
++5: drafts, the attempt store, `CanvasSubmissionClient`, the review sheet),
+plus Marco's `origin/v11` (+13 / +1: the Sweeper page and
+`CompletionSwipe.Axis`); every merge was textual in CLAUDE.md and ROADMAP.md
+only and the Swift merged itself, so this run is the first compile of the
+combination. Deno 871, `deno task check` clean, Node 49. The device build of
+this tree is what goes on Marco's phone next; nothing in the Phase 3/4 phone
+halves, the PDF pass or the held sync has run on a device yet.**
+
 **Current on `claude/v11-phone-c7aaf2` (2026-11-10, off `agent/connection-v11`
 `2503a3b`): 3797 tests / 367 suites, all green, `swift test --no-parallel`
 alone on Marco's Mac (98 s), +43 / +5 over the 3754 / 362 below, nothing
