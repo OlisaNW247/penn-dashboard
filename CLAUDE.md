@@ -1316,7 +1316,18 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v12` (2026-11-10, the Path@Penn rewrite): 3753 tests / 363
+**Current on `v12` (2026-11-10, the Path@Penn rewrite after its review): 3764
+tests / 364 suites, all green, `swift test --no-parallel` on the GitHub macOS
+runner in 115 s (the `tests` workflow, run 42847761794 at `736c96b`); Deno
+and the extension's suite green on the same run. No Mac, no `xcodebuild`, no
+phone. +11 tests / +1 suite over the run below: `PathPortalBudgetRuleTests`
+(the credential-fill truth table, its parity with the renewer's rule, the
+retry-once rule, the status a what-if may restore), four source pins on
+`PathPortal.swift` and the grade-text guard pin in `PathBridgeTests`. They
+came from an independent read of the rewrite, which found nine things; the
+commit message of `736c96b` lists them.**
+
+Before it: **on `v12` (2026-11-10, the Path@Penn rewrite): 3753 tests / 363
 suites, all green, `swift test --no-parallel` on the GitHub macOS runner in
 92 s (the `tests` workflow, run 42846226886 at `0dba617`); Deno and the
 extension's suite green on the same run. No Mac, no `xcodebuild`, no phone.
@@ -3665,7 +3676,13 @@ none is a ship line.
   what-if run end to end. Known limits: the token lives 24 hours in the
   page, so the first read after that signs in again; a student whose saved
   PennKey Penn has rejected gets no degree read until the password is
-  updated in Profile; the what-if for "add minor" appends the entry's major
+  updated in Profile, because the portal types the PennKey under the silent
+  Canvas renewer's own budget (`AppState.pathCredentialBudget`: never after
+  a rejection, ten minutes between submissions by either, an hour after a
+  failed one), and a rejection seen during a degree sign-in disables
+  auto-login for Canvas too, as it should for one account; a page call that
+  does not answer in 30 seconds (90 for the audit) is abandoned; the what-if
+  for "add minor" appends the entry's major
   code as the minor, because that is what Penn's script does. Policy, still
   open from 2026-11-09: Apple 5.2.2 authorisation for reading a second Penn
   system with the saved PennKey
