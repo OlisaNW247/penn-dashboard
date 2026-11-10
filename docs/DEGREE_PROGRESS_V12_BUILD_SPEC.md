@@ -15,6 +15,69 @@ Everything here is written without a Swift toolchain; the GitHub runner
 
 ## What is known about the data source, and what is not
 
+### Observed on 2026-11-10, and it replaces most of what follows
+
+Olisa captured his own Path@Penn session in Chrome's developer tools: hosts,
+paths, parameter and field NAMES, value lengths and JSON shapes only. No
+token, id, name, course or grade is recorded here or anywhere in the repo.
+**The guesses below this section were wrong about the host and the sign-in.**
+They stay as history until the code that implements them is replaced.
+
+- **There is no separate Degree Works host in the student's path.** The
+  advising page and the audit are both served by `https://courses.upenn.edu/`
+  (CourseLeaf's "FOSE" front end with a student module it calls "SAM"),
+  behind Cloudflare. The audit arrives through a proxy route on that host.
+- **Sign-in is a 32-character `authtoken`, sent as the form body of each
+  POST**, not a cookie: the request's `Cookie` header held only analytics,
+  consent and Cloudflare cookies. Requests carry `X-Requested-With:
+  XMLHttpRequest` and `Content-Type: application/x-www-form-urlencoded`.
+  The token is not in `localStorage`, `sessionStorage`, `document.cookie` or
+  any global reachable to depth 3, so it is in the page's markup or closed
+  over by its script (open question 1).
+- **Calls the page makes** (all `/api/?…` on that host), in order:
+  `page=fose&route=load-filter-data`, `page=fose&route=promoted` (the public
+  class search), then `page=sisproxy&action=studentdata` (POST, body
+  `authtoken`), `page=fose&route=sam-ext-dictionaries`,
+  `page=sisproxy&term_code=<6 chars>&action=advisingdata`, the audit
+  `page=dgw-server&action=student&method=whatif&name_=<first name>&explain=&id=<24 chars>&levl=<level>&degc=<degree code>`,
+  and a keep-alive `page=sisproxy&role=keepalive&pers_id=<24 chars>&pers_id_proof=<30 chars>&action=cart_read`.
+  The student is identified by that 24-character id, not the Penn ID.
+- **Storage:** `sessionStorage["sam-user-record"]` (shape not yet captured)
+  and `localStorage["lastActivityTime"]`.
+- **The audit response** is CourseLeaf's translation of the Degree Works
+  audit, not the Degree Works dashboard JSON:
+  `{ blocks: [{ id, type, title, completionPercent, actionsMap, courseReqCopy: { members: [node…] }, blockhtml }], legendHtml, degreeInfo: { level, degree, program, term, major, minor, college, conc } }`.
+  Block `type` was `DEGREE`, `MAJOR`, `OTHER`, `CL_SYNTHETIC_BLOCK` and
+  `N/A`; block ids look like two letters and six digits, or a word. A node's
+  `type` is `term`, `header`, `sublist`, `comment` or `course`, nested to
+  depth 4 through `members`; `completionPercent` is 0 to 100;
+  `completionIconName` is `completed`, `registered` or `partial`, and its
+  absence on a `course` node means an option still open. A `course` node
+  carries `courseCode`, `title` / `titleLong` / `titleShort`, `hours` and
+  `hoursCalculated` (strings) and **no grade field**. A `sublist` may carry
+  `membersNeeded`, `coursesNeeded`, `hoursNeeded`, `details`, `infoText`.
+  `conc` is `NCON` for "no concentration". The DEGREE block holds a comment
+  of the form "N CU are required. You currently have N. You still need N
+  more." `explanations`, `actionsMap` and `decisions` are the translator's
+  debug trail; `blockhtml` is Penn's rendering, the one place a grade could
+  sit, and the app never reads it.
+- **In the code:** `Degree/PathAuditDecoder.swift` decodes this shape into
+  the existing `DegreeAudit` model (fixture `path-audit-synthetic.json`,
+  invented data). `DegreeWorksEndpoints`, `DegreeWorksTokens`,
+  `DegreeWorksRequests`, `DegreeWorksSessionReader`, `DegreeWorksClient`,
+  `DegreeWorksTokenStore` and `DegreeWorksAuditDecoder` describe a system
+  the student never touches and are to be replaced, not corrected.
+
+Open questions, all answerable from Penn's public page script (the capture
+of its excerpts is in progress): (1) where the page gets `authtoken` and
+which URL starts the sign-in; (2) the method and body fields of the
+`dgw-server` call; (3) which parameters ask for a different degree, major,
+concentration or minor; (4) the shape of `sam-ext-dictionaries`, the likely
+source of the program catalogue for the what-if picker; (5) where the
+24-character id comes from (`sam-user-record`, probably).
+
+### Before the capture (history)
+
 Read directly from Penn Labs' MIT-licensed source
 (github.com/pennlabs/penn-courses, `backend/degree/utils/degreeworks_client.py`)
 and a student's Degree Works CLI (github.com/Aaryan-Kapoor/degreeworks-cli,
