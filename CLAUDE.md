@@ -1398,8 +1398,10 @@ plus Marco's `origin/v11` (+13 / +1: the Sweeper page and
 `CompletionSwipe.Axis`); every merge was textual in CLAUDE.md and ROADMAP.md
 only and the Swift merged itself, so this run is the first compile of the
 combination. Deno 871, `deno task check` clean, Node 49. The device build of
-this tree is what goes on Marco's phone next; nothing in the Phase 3/4 phone
-halves, the PDF pass or the held sync has run on a device yet.**
+this tree went on Marco's phone that night; at its first open (13:15 US
+Eastern, 2026-11-10) the held sync and the PDF pass both worked for the first
+time (Traps, the `.task` entry). The Phase 3/4 phone halves (drafts, the
+review sheet, the submit) have still not run on a device or against Canvas.**
 
 **Current on `claude/v11-phone-c7aaf2` (2026-11-10, off `agent/connection-v11`
 `2503a3b`): 3797 tests / 367 suites, all green, `swift test --no-parallel`
@@ -2712,9 +2714,14 @@ itself.
   runs the work in one task held in `AppState.pendingCourseKnowledgeSync`
   that later callers join (the `startSilentCanvasRenewal` pattern), and the
   summary says `manifest failed (cancelled | transport | http N | decoding
-  (<path>))`. The wrong fix is a retry inside the same cancelled task. Not
-  yet seen on a phone; read `lastCourseKnowledgeSyncSummaryV1` after the
-  next launch.
+  (<path>))`. The wrong fix is a retry inside the same cancelled task.
+  **Proven on Marco's phone on 2026-11-10 at 13:15 US Eastern**, the first
+  open of the merged build: `manifest ok · uploaded 45` after days of
+  `manifest failed`, and the assignment-PDF pass then ran for the first
+  time: `planned 9 · fetched 9 · pooled 8 · skipped 1` (PHYS 0151: Problem
+  Set 7, HW6 and HW7 with their numerical solutions, two tables, two
+  worksheets); `get_assignment` for Problem Set 7 returned the full problem
+  text through the agent connection a minute later.
 - **"manifest failed" on the phone can be a 200 on the server, and the
   Management API's logs moved** (2026-11-10). Marco's summary said the
   manifest failed for days, which reads as a `sync` bug. The function log
