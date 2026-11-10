@@ -165,7 +165,7 @@ export class PostgrestToolBackend implements ToolBackend {
     if (!hit) return { name: ref.name, url: ref.url, documentId: null, text: null };
     return {
       name: ref.fileID || ref.pageSlug ? (hit.title || ref.name) : ref.name,
-      url: hit.url ?? ref.url,
+      url: (hit.url ?? ref.url)?.replace(/[?#].*$/, "") ?? null,
       documentId: hit.id,
       text: String(hit.text ?? "").slice(0, ATTACHMENT_TEXT_CHARS),
     };
@@ -397,26 +397,39 @@ const FILE_NAME = /\.(?:pdf|docx|pptx|xlsx|zip)$/i;
  *  `MAX_ATTACHMENTS`: Canvas file and page links in the text, and bare lines
  *  that end in a document extension (the phone's older text form). */
 export function attachmentRefs(text: string): AttachmentRef[] {
-  const out: AttachmentRef[] = [];
-  const seen = new Set<string>();
-  const add = (key: string, ref: AttachmentRef) => {
-    if (out.length >= MAX_ATTACHMENTS || seen.has(key)) return;
-    seen.add(key);
-    out.push(ref);
-  };
+  const all: AttachmentRef[] = [];
+  const cleanURL = (m: string) => (m.startsWith("http") ? m.replace(/[?#].*$/, "") : null);
   for (const line of text.split(/\r?\n/)) {
     let linked = false;
     for (const m of line.matchAll(FILE_URL)) {
       linked = true;
-      add(`f:${m[1]}`, { name: `file ${m[1]}`, url: m[0].startsWith("http") ? m[0] : null, fileID: m[1] });
+      // The label before the link ("Problem Set 7.pdf: https://...") is the
+      // file's name; it is what a bare line of the same file is matched on.
+      const label = line.slice(0, m.index).trim().replace(/^[-*\u2022]\s+/, "").replace(/[:\s]+$/, "");
+      const named = label.length > 0 && label.length <= 200 && FILE_NAME.test(label);
+      all.push({ name: named ? label : `file ${m[1]}`, url: cleanURL(m[0]), fileID: m[1] });
     }
     for (const m of line.matchAll(PAGE_URL)) {
       linked = true;
-      add(`p:${m[1]}`, { name: m[1], url: m[0].startsWith("http") ? m[0] : null, pageSlug: m[1] });
+      all.push({ name: m[1], url: cleanURL(m[0]), pageSlug: m[1] });
     }
     if (linked) continue;
     const bare = line.trim().replace(/^[-*\u2022]\s+/, "");
-    if (bare.length > 0 && bare.length <= 200 && FILE_NAME.test(bare)) add(`n:${bare.toLowerCase()}`, { name: bare, url: null });
+    if (bare.length > 0 && bare.length <= 200 && FILE_NAME.test(bare)) all.push({ name: bare, url: null });
+  }
+  // Dedupe before the cap: a file id (or page slug) is one entry; a bare name
+  // is dropped when a linked entry carries the same name, since the link has
+  // the id.
+  const linkedNames = new Set(all.filter((r) => r.fileID || r.pageSlug).map((r) => r.name.toLowerCase()));
+  const out: AttachmentRef[] = [];
+  const seen = new Set<string>();
+  for (const ref of all) {
+    const key = ref.fileID ? `f:${ref.fileID}` : ref.pageSlug ? `p:${ref.pageSlug}` : `n:${ref.name.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    if (!ref.fileID && !ref.pageSlug && linkedNames.has(ref.name.toLowerCase())) continue;
+    seen.add(key);
+    out.push(ref);
+    if (out.length >= MAX_ATTACHMENTS) break;
   }
   return out;
 }

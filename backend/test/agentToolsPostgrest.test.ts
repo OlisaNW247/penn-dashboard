@@ -315,9 +315,30 @@ Deno.test("attachmentRefs: links, page links, bare file lines, deduped and cappe
   ].join("\n"));
   assert.deepStrictEqual(refs.map((r) => r.name), ["Problem Set 7.pdf", "HW7 numerical solutions.pdf", "file 164695272", "lab-guide-2"]);
   assert.strictEqual(refs[2].fileID, "164695272");
-  assert.strictEqual(refs[2].url, "https://canvas.upenn.edu/courses/1946718/files/164695272/download?x=1");
+  assert.strictEqual(refs[2].url, "https://canvas.upenn.edu/courses/1946718/files/164695272/download");
   assert.strictEqual(refs[3].pageSlug, "lab-guide-2");
   assert.strictEqual(refs[3].url, null);
+});
+
+Deno.test("attachmentRefs: bare names plus link lines of the same files are two attachments, clean urls", () => {
+  const refs = attachmentRefs([
+    "Problem Set 7.pdf",
+    "HW7 numerical solutions.pdf",
+    "Problem Set 7.pdf: https://canvas.upenn.edu/courses/1949400/files/165796317?wrap=1",
+    "HW7 numerical solutions.pdf: https://canvas.upenn.edu/courses/1949400/files/165796319?wrap=1",
+  ].join("\n"));
+  assert.strictEqual(refs.length, 2);
+  assert.deepStrictEqual(refs.map((r) => r.fileID), ["165796317", "165796319"]);
+  assert.deepStrictEqual(refs.map((r) => r.url), [
+    "https://canvas.upenn.edu/courses/1949400/files/165796317",
+    "https://canvas.upenn.edu/courses/1949400/files/165796319",
+  ]);
+  assert.deepStrictEqual(refs.map((r) => r.name), ["Problem Set 7.pdf", "HW7 numerical solutions.pdf"]);
+});
+
+Deno.test("attachmentRefs: bare names alone stay name-keyed", () => {
+  const refs = attachmentRefs("a.pdf\nA.PDF\nb.pdf");
+  assert.deepStrictEqual(refs.map((r) => [r.name, r.fileID ?? null]), [["a.pdf", null], ["b.pdf", null]]);
 });
 
 const PS7_TEXT = "Due: Wed, Nov 11 at 11:59 PM\nPoints: 10\nProblem Set 7.pdf\nHW7 numerical solutions.pdf\nIn prob. 10, the time should be 7.41 ns.";
