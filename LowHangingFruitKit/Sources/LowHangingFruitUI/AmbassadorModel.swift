@@ -2,11 +2,16 @@ import Foundation
 import UserNotifications
 import LowHangingFruitKit
 
-/// The notification center as ambassador mode needs it: four calls. A
+/// The notification center as ambassador mode needs it: five calls. A
 /// protocol so the model can be driven in tests, where
 /// `UNUserNotificationCenter.current()` traps (the scheduler's own
-/// `notificationSinkOverride` exists for the same reason).
-protocol AmbassadorNotificationCenter: Sendable {
+/// `notificationSinkOverride` exists for the same reason). Main-actor
+/// isolated like `PendingNotificationSink`, and for the same reason: a
+/// `UNNotificationRequest` is not `Sendable`, so handing one to a
+/// nonisolated `add` is a data race to Swift 6 (the first CI run of this
+/// file said so); on the main actor the hand-off is no hand-off.
+@MainActor
+protocol AmbassadorNotificationCenter: AnyObject {
     func authorizationStatus() async -> UNAuthorizationStatus
     func requestAuthorization() async -> Bool
     func pendingIdentifiers() async -> [String]
@@ -14,9 +19,9 @@ protocol AmbassadorNotificationCenter: Sendable {
     func add(_ request: UNNotificationRequest) async -> Bool
 }
 
-/// The real one. `UNUserNotificationCenter` is thread-safe, so this needs no
-/// actor of its own.
-struct SystemAmbassadorNotificationCenter: AmbassadorNotificationCenter {
+/// The real one, over the thread-safe `UNUserNotificationCenter`.
+@MainActor
+final class SystemAmbassadorNotificationCenter: AmbassadorNotificationCenter {
     private var center: UNUserNotificationCenter { .current() }
 
     func authorizationStatus() async -> UNAuthorizationStatus {

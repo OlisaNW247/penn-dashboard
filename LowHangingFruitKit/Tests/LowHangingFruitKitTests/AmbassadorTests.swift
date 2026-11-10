@@ -192,7 +192,8 @@ final class FakeAmbassadorService: AmbassadorService, @unchecked Sendable {
     }
 }
 
-final class FakeAmbassadorCenter: AmbassadorNotificationCenter, @unchecked Sendable {
+@MainActor
+final class FakeAmbassadorCenter: AmbassadorNotificationCenter {
     var status: UNAuthorizationStatus = .notDetermined
     var grants = true
     var authorizationRequests = 0
