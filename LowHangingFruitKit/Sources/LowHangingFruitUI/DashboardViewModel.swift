@@ -37,6 +37,11 @@ struct DashItem: Identifiable, Equatable {
     /// (`AppState.completionIsLockedByCanvas`), so prev offers no swipe back.
     /// Defaulted so every other construction site is untouched.
     var canMarkActive: Bool = true
+    /// An agent's open draft for this item (`AppState.agentDraftDisplay`):
+    /// the "drafted by claude" chip and the opened card's preview and button.
+    /// Snapshotted at reload like `fact`. Nil for sample data and every card
+    /// with no draft.
+    var agentDraft: AgentDraftDisplay? = nil
 
     /// A fact cancelled it: off todo and reminders, still listed in all.
     var isFactCancelled: Bool { fact?.cancelled == true }
@@ -112,8 +117,16 @@ struct DashItem: Identifiable, Equatable {
     /// opened (moved there 2026-11-06 at the owner's call, to keep collapsed
     /// cards one height). "Nothing to submit" is not here either: the card
     /// shows it as "in class" under the due value (`showsNothingToSubmit`).
+    ///
+    /// An agent's draft adds "drafted by claude" here too, on the collapsed
+    /// card (v11 plan, "The card": a provenance chip). It is provenance, which
+    /// otherwise lives in the opened card, but it is also the one thing the
+    /// student has to act on, and a chip only on the opened card would be
+    /// found by nobody. It is a word on the same line, so the card stays one
+    /// height.
     var caveatText: String? {
-        let parts: [String] = fact?.caveatWords ?? []
+        var parts: [String] = fact?.caveatWords ?? []
+        if let draft = agentDraft { parts.append(AgentConnectionCopy.draftedBy(draft.agentName)) }
         return parts.isEmpty ? nil : parts.joined(separator: " \u{00B7} ")
     }
 
@@ -277,7 +290,8 @@ final class DashboardViewModel: ObservableObject {
                                   completedAt: nil,
                                   requiresNoSubmission: state.requiresNoSubmission(a),
                                   removal: OwnTaskRemoval.offered(for: a, isUsingFixtureData: isFixture),
-                                  fact: state.factDisplay[a.id]))
+                                  fact: state.factDisplay[a.id],
+                                  agentDraft: state.agentDraftDisplay(forItemID: a.id)))
         }
 
         // Completed pool: reconstruct from the source feeds, since the grouped

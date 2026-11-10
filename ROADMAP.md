@@ -451,6 +451,19 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   2026-11-10: hardening, drafts backend and the assignment-context fix
   deployed; open decision: pool the PDFs linked from open assignments so
   Claude can read a problem set (privacy text and Olisa's sync).
+  **2026-11-10 (later): the phone halves of Phases 3 and 4 are built,
+  compiled and tested on `claude/v11-phone-c7aaf2`, never on a phone and
+  never against Canvas**: drafts polled onto the card ("drafted by claude",
+  a preview, "review and submit", one notice per draft), the review sheet
+  (whole text, link or file with a QuickLook preview, submit behind a
+  confirmation, decline), `CanvasSubmissionClient` (preflight, attempt
+  record before any POST, the file upload, one POST never retried, a verify
+  GET, "check canvas" when the answer is unknown), and the "connected to
+  claude" confirmation and dashboard line Marco asked for. Next, in order:
+  install on Marco's phone and have claude.ai propose a text draft to a
+  **Canvas sandbox assignment** (never a graded one) and submit it; then a
+  URL and a file; then one low-stakes Penn assignment Marco picks (Phase 4's
+  "done when the verify GET agrees and a repeat is refused").
 - **Megaphone: the model sorts posts into todo and prev** (Marco,
   2026-11-07: "prev being either from way before or unapplicable, need
   [the model] to sort based on text"). What ships first is the rule half

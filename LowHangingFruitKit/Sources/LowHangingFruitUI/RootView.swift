@@ -197,6 +197,8 @@ struct RootCore: View {
                     // wake), throttled and silent; see `deviceSyncPass`.
                     await state.deviceSyncPass()
                     await state.agentSnapshotPass()
+                    // Drafts an agent proposed while the app was closed.
+                    await state.agentDraftsPass()
                 }
         }
     }

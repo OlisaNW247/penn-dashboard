@@ -40,6 +40,7 @@ extension AppState {
                 _ = try? await AgentConnectionClient(client: backend).deleteSnapshot()
             }
             hasAgentConnections = false
+            clearAgentDraftsLocally()
         }
     }
 
@@ -50,7 +51,7 @@ extension AppState {
         return AgentLinkRequest(url: url)
     }
 
-    private var agentAPI: AgentConnectionClient? {
+    var agentAPI: AgentConnectionClient? {
         guard canUseAgentConnection, let backend = BackendServices.client else { return nil }
         return AgentConnectionClient(client: backend)
     }
@@ -88,6 +89,9 @@ extension AppState {
     func refreshAgentConnections() async -> [AgentConnectionSummary] {
         guard let api = agentAPI, let list = try? await api.listConnections() else { return [] }
         hasAgentConnections = !list.isEmpty
+        // Only a list that answered: a failed call must not read as "every
+        // connection is new" on the next one.
+        noteAgentConnections(list)
         return list
     }
 

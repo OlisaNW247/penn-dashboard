@@ -603,6 +603,29 @@ final class NotificationScheduler: ObservableObject {
         }
     }
 
+    /// "Claude drafted Problem Set 7", one per new agent draft
+    /// (`AgentDraftNotices`). Same rules as the turned-in confirmations: no
+    /// permission prompt, nothing when reminders are off. Identifiers use the
+    /// `agentdraft:` prefix, which no other scheme here shares.
+    func postAgentDraftNotifications(_ notifications: [(title: String, body: String)]) async {
+        guard isEnabled, !notifications.isEmpty else { return }
+        await refreshAuthStatus()
+        guard authStatus == .authorized || authStatus == .provisional else { return }
+        for request in Self.agentDraftRequests(notifications) {
+            try? await center.add(request)
+        }
+    }
+
+    static func agentDraftRequests(_ notifications: [(title: String, body: String)]) -> [UNNotificationRequest] {
+        notifications.map { notification in
+            let content = UNMutableNotificationContent()
+            content.title = notification.title
+            content.body = notification.body
+            content.sound = .default
+            return UNNotificationRequest(identifier: "agentdraft:\(UUID().uuidString)", content: content, trigger: nil)
+        }
+    }
+
     /// Pure request-building for turned-in confirmations, mirroring
     /// `gradeRequests` — unit-testable without `UNUserNotificationCenter`.
     ///

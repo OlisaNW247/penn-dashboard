@@ -556,6 +556,20 @@ final class AppState: ObservableObject {
     @Published var agentConnectionEnabled: Bool = UserDefaults.lhf.bool(forKey: SharedDefaults.agentConnectionEnabledKey)
     var lastAgentSnapshotAt: Date?
     var isAgentSnapshotRunning = false
+    /// The student's open drafts (AppState+AgentDrafts.swift), newest first.
+    /// Seeded from the content-free cache so a relaunch draws the card chips
+    /// before the first poll; the poll replaces it whole.
+    @Published var agentDrafts: [AgentDraft] = AgentDraftCache.load(from: .lhf)
+    var lastAgentDraftsAt: Date?
+    var isAgentDraftsRunning = false
+    /// "Claude drafted …" notices the last drafts pass found, drained by
+    /// `ContentView` the way turned-in notices are.
+    var pendingAgentDraftNotices: [(title: String, body: String)] = []
+    /// The dashboard's one-line "connected to claude", set when a connection
+    /// appears that the phone had not seen. Memory only.
+    @Published var agentConnectionBanner: String?
+    /// Never-twice records for Canvas submissions of drafts.
+    lazy var agentSubmitAttempts: AgentSubmitAttemptStore = AgentSubmitAttemptStore.makeDefault()
 
     /// Grade changes detected by the last refresh and not yet announced. The
     /// view layer drains this (it owns the `NotificationScheduler`), so the
@@ -5108,6 +5122,9 @@ final class AppState: ObservableObject {
         UserDefaults.lhf.removeObject(forKey: SharedDefaults.agentConnectionEnabledKey)
         agentConnectionEnabled = false
         hasAgentConnections = false
+        // The server deletes the drafts with the snapshot; the phone's copies,
+        // its notice memory and its attempt records go with them.
+        clearAgentDraftsLocally()
         CanvasAccessTokenStore.clear()
         forcedCanvasAccessTokenForTesting = nil
         updateCanvasICSURL("")

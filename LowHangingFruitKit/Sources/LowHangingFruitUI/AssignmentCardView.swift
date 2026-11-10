@@ -59,6 +59,12 @@ struct AssignmentCardView: View {
     /// (`AppState.rejectFacts`). Nil, the default, offers no `undo`: the
     /// megaphone's found cards and previews pass none.
     var onUndo: (() -> Void)? = nil
+    /// "review and submit" (or "check canvas") on a card with an agent's
+    /// draft. Nil offers nothing, so the megaphone and previews show none.
+    var onReviewDraft: (() -> Void)? = nil
+    /// Called the first time this card is opened while it carries a draft,
+    /// which is what marks the draft `seen` on the server.
+    var onDraftOpened: (() -> Void)? = nil
     /// The dashboard's own verdict on whether this item is an exam, for when
     /// it knows better than the title does (an exam that arrived from an
     /// announcement or the syllabus under some other name). Nil, the default
@@ -197,6 +203,7 @@ struct AssignmentCardView: View {
                 isExpanded.toggle()
             }
             lhfHapticLight()
+            if isExpanded, let draft = item.agentDraft, draft.isUnseen { onDraftOpened?() }
         }
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isButton)
@@ -364,6 +371,10 @@ struct AssignmentCardView: View {
                     .padding(.top, 4)
             }
 
+            if let draft = item.agentDraft, let onReviewDraft {
+                agentDraftRow(draft, onReview: onReviewDraft)
+            }
+
             // Facts that changed this card: the instructor's own words, one
             // line each, opening the post they came from where it is known.
             // The details are the same `Link` shape as the source links
@@ -433,6 +444,36 @@ struct AssignmentCardView: View {
             // taller.
         }
         .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
+    /// The agent's draft in the opened card: a few lines of it, then the one
+    /// button. A `Button` for the same reason as "edit date": a control of
+    /// its own claims the touch before the card's collapse tap does.
+    private func agentDraftRow(_ draft: AgentDraftDisplay, onReview: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let preview = draft.preview {
+                Text(preview)
+                    .font(.lhfSecondary(12))
+                    .foregroundStyle(secondaryTextColor)
+                    .lineLimit(3)
+                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Button { onReview() } label: {
+                HStack(spacing: 5) {
+                    Text(draft.checkCanvas ? AgentConnectionCopy.checkCanvas : AgentConnectionCopy.reviewAndSubmit)
+                        .font(.lhfAssignmentTitle(12))
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 12, weight: .medium))
+                        .accessibilityHidden(true)
+                }
+                .foregroundStyle(primaryTextColor)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.top, 6)
     }
 
     @ViewBuilder
