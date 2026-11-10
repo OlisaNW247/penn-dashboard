@@ -1,29 +1,67 @@
 import Foundation
 
 // Degree progress, v12 (docs/DEGREE_PROGRESS_V12_BUILD_SPEC.md).
-// What is stored was read from Degree Works endpoints that are UNVERIFIED
-// against Penn's live system.
+// What is stored is what Path@Penn's own page returned through the hidden
+// WebView (shape observed 2026-11-10): the student's degrees, the audit
+// decoded from the page's response, and Penn's public program catalogue.
 
 public struct DegreeSnapshot: Codable, Sendable, Equatable {
     public var current: DegreeAudit?
     /// Most recent first, at most 5 (the store enforces it on save).
     public var whatIfs: [DegreeAudit]
-    public var catalog: DegreeGoalCatalog?
+    /// The student's own curriculum entries, from the page's record.
+    public var degrees: [StudentDegree]
+    /// `StudentDegree.id` of the one being audited; nil means the first.
+    public var selectedDegreeID: String?
+    /// Penn's public program catalogue (code and title), cached because it is
+    /// about a thousand rows and never personal.
+    public var programs: [PathProgramListing]
+    public var dictionaries: PathDictionaries?
     /// DEBUG key shape of the last audit: key names only, never values.
     public var lastShape: [String]
 
-    public init(current: DegreeAudit? = nil, whatIfs: [DegreeAudit] = [], catalog: DegreeGoalCatalog? = nil, lastShape: [String] = []) {
+    public init(
+        current: DegreeAudit? = nil,
+        whatIfs: [DegreeAudit] = [],
+        degrees: [StudentDegree] = [],
+        selectedDegreeID: String? = nil,
+        programs: [PathProgramListing] = [],
+        dictionaries: PathDictionaries? = nil,
+        lastShape: [String] = []
+    ) {
         self.current = current
         self.whatIfs = whatIfs
-        self.catalog = catalog
+        self.degrees = degrees
+        self.selectedDegreeID = selectedDegreeID
+        self.programs = programs
+        self.dictionaries = dictionaries
         self.lastShape = lastShape
     }
 
     public static let empty = DegreeSnapshot()
+
+    private enum CodingKeys: String, CodingKey {
+        case current, whatIfs, degrees, selectedDegreeID, programs, dictionaries, lastShape
+    }
+
+    /// Lenient on purpose: a file written before the Path@Penn rewrite has a
+    /// `catalog` key and none of the new ones. A strict decode would fail, the
+    /// store would quarantine the file, and the student's last audit would
+    /// vanish for nothing. Unknown keys (that `catalog`) are ignored by default.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.current = try container.decodeIfPresent(DegreeAudit.self, forKey: .current)
+        self.whatIfs = try container.decodeIfPresent([DegreeAudit].self, forKey: .whatIfs) ?? []
+        self.degrees = try container.decodeIfPresent([StudentDegree].self, forKey: .degrees) ?? []
+        self.selectedDegreeID = try container.decodeIfPresent(String.self, forKey: .selectedDegreeID)
+        self.programs = try container.decodeIfPresent([PathProgramListing].self, forKey: .programs) ?? []
+        self.dictionaries = try container.decodeIfPresent(PathDictionaries.self, forKey: .dictionaries)
+        self.lastShape = try container.decodeIfPresent([String].self, forKey: .lastShape) ?? []
+    }
 }
 
 /// One JSON file in Application Support, the `CourseKnowledgeStore` pattern:
-/// not the ledger (every byte can be read again from Degree Works), not a
+/// not the ledger (every byte can be read again from Path@Penn), not a
 /// preference, not a credential (those are in the Keychain). It holds the
 /// student's academic record, so on iOS it is protected until first unlock.
 /// It is never put in iCloud, the App Group, the laptop sync or the backend.
@@ -47,7 +85,7 @@ public struct DegreeAuditStore: Sendable {
     /// file that is there but does not decode is moved aside to
     /// `degree-audit.json.corrupt-<unix>` (never overwritten, so a bad write
     /// can be looked at) and `.empty` is returned; the audit is re-read from
-    /// Degree Works on the next refresh.
+    /// Path@Penn on the next refresh.
     public func load(now: Date = Date()) -> DegreeSnapshot {
         guard let data = try? Data(contentsOf: fileURL) else { return .empty }
         let decoder = JSONDecoder()
@@ -77,7 +115,7 @@ public struct DegreeAuditStore: Sendable {
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(trimmed)
         try data.write(to: fileURL, options: .atomic)
-        // The record is re-fetchable from Degree Works and belongs to this one
+        // The record is re-fetchable from Path@Penn and belongs to this one
         // phone, so it stays out of iCloud and device backups.
         var excluded = fileURL
         var values = URLResourceValues()

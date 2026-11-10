@@ -3,69 +3,6 @@ import Testing
 @testable import LowHangingFruitKit
 @testable import LowHangingFruitUI
 
-/// Records what a fake network was asked, in order, and answers from a closure.
-/// A lock instead of an actor because the client's `fetch` is `@Sendable` and
-/// the tests read the log after the awaits have finished.
-private final class FakeNetwork: @unchecked Sendable {
-    struct Seen: Sendable {
-        let method: String
-        let path: String
-        let headers: [String: String]
-    }
-
-    private let lock = NSLock()
-    private var log: [Seen] = []
-    private let answer: @Sendable (Seen) -> (Int, String)
-
-    init(_ answer: @escaping @Sendable (Seen) -> (Int, String)) {
-        self.answer = answer
-    }
-
-    var seen: [Seen] {
-        lock.lock(); defer { lock.unlock() }
-        return log
-    }
-
-    var client: DegreeWorksClient { makeClient() }
-
-    /// Synchronous on purpose: `NSLock` may not be taken directly inside an
-    /// async closure under Swift 6, but may inside a plain method.
-    private func respond(to request: URLRequest) throws -> (Data, URLResponse) {
-        let entry = Seen(
-            method: request.httpMethod ?? "GET",
-            path: request.url?.path ?? "",
-            headers: request.allHTTPHeaderFields ?? [:]
-        )
-        lock.lock(); log.append(entry); lock.unlock()
-        let (status, body) = answer(entry)
-        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
-        return (Data(body.utf8), response)
-    }
-
-    func makeClient(log logLine: @escaping @Sendable (String) -> Void = { _ in }) -> DegreeWorksClient {
-        DegreeWorksClient(fetch: { [self] request in
-            try respond(to: request)
-        }, log: logLine)
-    }
-}
-
-private let auditBody = """
-{"auditHeader":{"percentComplete":50},"blockArray":[{"requirementId":"RA1","requirementType":"MAJOR","requirementValue":"CIS","title":"Computer Science","percentComplete":50,"ruleArray":[]}]}
-"""
-
-/// A structurally valid JWT (unsigned) whose subject and expiry the Kit reads.
-private func fakeTokens(now: Date = Date()) -> DegreeWorksTokens {
-    func b64url(_ text: String) -> String {
-        Data(text.utf8).base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-    }
-    let exp = Int(now.timeIntervalSince1970) + 3600
-    let jwt = "\(b64url("{\"alg\":\"none\"}")).\(b64url("{\"sub\":\"S0000001\",\"exp\":\(exp)}")).sig"
-    return DegreeWorksTokens(authToken: jwt, refreshToken: "refresh-secret-value")
-}
-
 @Suite("Degree progress: when a read runs")
 struct DegreeRefreshRuleTests {
     @Test("the rule needs Penn, the flag, no fixtures, the foreground, and stale or forced")
@@ -114,7 +51,6 @@ struct DegreeStatusLineTests {
         #expect(DegreeStatus.reading.line(now: now) == "reading path@penn…")
         #expect(DegreeStatus.waitingForDuo.line(now: now) == "approve the duo push on this phone")
         #expect(DegreeStatus.needsCanvasSignIn.line(now: now) == "sign in to canvas")
-        #expect(DegreeStatus.needsGoals.line(now: now) == "pick your degree")
         #expect(DegreeStatus.failed("couldn't read path@penn · retry").line(now: now) == "couldn't read path@penn · retry")
         #expect(DegreeStatus.read(earlierToday).line(now: now) == "read today")
         #expect(DegreeStatus.read(yesterday).line(now: now) == "read yesterday")
@@ -127,135 +63,56 @@ struct DegreeStatusLineTests {
     }
 }
 
-@Suite("Degree progress: the client")
-struct DegreeWorksClientTests {
-    private let now = Date()
-
-    @Test("every request carries the cookie, origin, host, accept and requested-with headers, and no log line holds a token")
-    func headersAndLogs() async throws {
-        let tokens = fakeTokens()
-        let net = FakeNetwork { _ in (200, auditBody) }
-        let logLines = LogBox()
-        let client = net.makeClient(log: { logLines.add($0) })
-        let audit = try await client.fetchAudit(
-            tokens: tokens, goals: DegreeGoals(school: "UG", degree: "BSE", majors: ["CIS"]),
-            keepCurriculum: false, isWhatIf: true, now: now
-        )
-        #expect(audit.isWhatIf)
-        let headers = try #require(net.seen.first?.headers)
-        #expect(headers["Cookie"] == tokens.cookieHeader)
-        #expect(headers["Origin"] == DegreeWorksEndpoints.baseURL.absoluteString)
-        #expect(headers["Host"] == "\(DegreeWorksEndpoints.host):\(DegreeWorksEndpoints.port)")
-        #expect(headers["X-Requested-With"] == "XMLHttpRequest")
-        #expect(headers["Accept"] != nil)
-        for line in logLines.lines {
-            #expect(!line.contains(tokens.authToken))
-            #expect(!line.contains("refresh-secret-value"))
-            #expect(!line.contains("S0000001"))
-        }
-    }
-
-    @Test("a 401 or 403 is tokensRejected")
-    func rejected() async {
-        for status in [401, 403] {
-            let net = FakeNetwork { _ in (status, "") }
-            do {
-                _ = try await net.client.fetchCurrentAudit(tokens: fakeTokens(), now: now)
-                Issue.record("expected a throw")
-            } catch {
-                #expect(error as? DegreeWorksClient.Failure == .tokensRejected)
-            }
-        }
-    }
-
-    @Test("when the student record names a degree the audit is a GET")
-    func studentFirst() async throws {
-        let net = FakeNetwork { seen in
-            if seen.path == DegreeWorksEndpoints.studentPath {
-                return (200, #"{"school":"UG","degree":"BSE","catalogYear":"2025"}"#)
-            }
-            return (200, auditBody)
-        }
-        let audit = try await net.client.fetchCurrentAudit(tokens: fakeTokens(), now: now)
-        #expect(!audit.isWhatIf)
-        let order = net.seen.map { "\($0.method) \($0.path)" }
-        #expect(order == [
-            "GET \(DegreeWorksEndpoints.studentPath)",
-            "GET \(DegreeWorksEndpoints.auditPath)",
-        ])
-    }
-
-    @Test("with no usable student record the keep-curriculum POST is next")
-    func postFallback() async throws {
-        let net = FakeNetwork { seen in
-            seen.path == DegreeWorksEndpoints.studentPath ? (404, "") : (200, auditBody)
-        }
-        _ = try await net.client.fetchCurrentAudit(tokens: fakeTokens(), now: now)
-        let order = net.seen.map { "\($0.method) \($0.path)" }
-        #expect(order == [
-            "GET \(DegreeWorksEndpoints.studentPath)",
-            "POST \(DegreeWorksEndpoints.auditPath)",
-        ])
-    }
-
-    @Test("a 400, 404 or 422 on the POST means the student has to pick a degree")
-    func needsGoals() async {
-        for status in [400, 404, 422] {
-            let net = FakeNetwork { seen in
-                seen.path == DegreeWorksEndpoints.studentPath ? (404, "") : (status, "")
-            }
-            do {
-                _ = try await net.client.fetchCurrentAudit(tokens: fakeTokens(), now: now)
-                Issue.record("expected a throw")
-            } catch {
-                #expect(error as? DegreeWorksClient.Failure == .needsGoals)
-            }
-        }
-    }
-
-    @Test("a body that is not an audit is a decode failure, and a server error is http")
-    func otherFailures() async {
-        let bad = FakeNetwork { seen in
-            seen.path == DegreeWorksEndpoints.studentPath ? (404, "") : (200, "<html></html>")
-        }
-        do {
-            _ = try await bad.client.fetchCurrentAudit(tokens: fakeTokens(), now: now)
-            Issue.record("expected a throw")
-        } catch {
-            #expect(error as? DegreeWorksClient.Failure == .decode)
-        }
-        let down = FakeNetwork { seen in
-            seen.path == DegreeWorksEndpoints.studentPath ? (404, "") : (503, "")
-        }
-        do {
-            _ = try await down.client.fetchCurrentAudit(tokens: fakeTokens(), now: now)
-            Issue.record("expected a throw")
-        } catch {
-            #expect(error as? DegreeWorksClient.Failure == .http(503))
-        }
-    }
-
-    @Test("the shape callback gets key names and never a value")
-    func shapeHasNoValues() async throws {
-        let net = FakeNetwork { _ in (200, auditBody) }
-        let box = LogBox()
-        _ = try await net.client.fetchAudit(
-            tokens: fakeTokens(), goals: DegreeGoals(), keepCurriculum: true, isWhatIf: false,
-            now: now, shape: { box.addAll($0) }
-        )
-        #expect(!box.lines.isEmpty)
-        for line in box.lines {
-            #expect(!line.contains("Computer Science"))
-        }
+@Suite("Degree progress: what a sign-in outcome says")
+struct DegreeSignInStatusTests {
+    @Test("each outcome maps to its status, and a throttle keeps what was showing")
+    func mapping() {
+        let kept = DegreeStatus.read(Date(timeIntervalSince1970: 1_800_000_000))
+        #expect(AppState.degreeStatus(for: .ready, previous: kept) == nil)
+        #expect(AppState.degreeStatus(for: .needsDuo, previous: kept) == .waitingForDuo)
+        #expect(AppState.degreeStatus(for: .noCanvasSession, previous: kept) == .needsCanvasSignIn)
+        #expect(AppState.degreeStatus(for: .blocked, previous: kept) == .failed(AppState.degreeFailedLine))
+        #expect(AppState.degreeStatus(for: .timedOut, previous: kept) == .failed(AppState.degreeFailedLine))
+        #expect(AppState.degreeStatus(for: .throttled, previous: kept) == kept)
+        // A throttle must never leave "reading" standing with nothing reading.
+        #expect(AppState.degreeStatus(for: .throttled, previous: .reading) == .idle)
     }
 }
 
-private final class LogBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var stored: [String] = []
-    func add(_ line: String) { lock.lock(); stored.append(line); lock.unlock() }
-    func addAll(_ lines: [String]) { lock.lock(); stored.append(contentsOf: lines); lock.unlock() }
-    var lines: [String] { lock.lock(); defer { lock.unlock() }; return stored }
+@Suite("Degree progress: the portal's source")
+struct PathPortalSourceTests {
+    private func portalSource() throws -> String {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/LowHangingFruitUI/PathPortal.swift")
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    @Test("the popup is allowed, answered with the configuration WebKit passed, and scripts run in the page world")
+    func popupContract() throws {
+        let source = try portalSource()
+        #expect(source.contains("javaScriptCanOpenWindowsAutomatically"))
+        #expect(source.contains("createWebViewWith"))
+        // The child is built from the passed-in configuration, and the only
+        // fresh configuration in the file is the main WebView's.
+        #expect(source.contains("WKWebView(frame: .zero, configuration: configuration)"))
+        #expect(source.components(separatedBy: "WKWebViewConfiguration()").count == 2)
+        #expect(source.contains("in: .page"))
+        #expect(source.contains("PathPage.authHost"))
+    }
+
+    @Test("the token and the student's id never appear in the portal")
+    func nothingPersonal() throws {
+        let source = try portalSource()
+        #expect(!source.contains("\"sam.auth.token\""))
+        #expect(!source.contains("\"idProof\""))
+        #expect(!source.contains("evaluateJavaScript(\"sam"))
+        // Not even named in a comment: the readiness script is the only door.
+        #expect(!source.contains("sam.auth.token"))
+        #expect(!source.contains("idProof"))
+    }
 }
 
 @MainActor
@@ -271,51 +128,119 @@ struct DegreeAppStateTests {
         return state
     }
 
-    @Test("clearing leaves an empty snapshot, an idle status and an empty file")
+    @Test("fixture mode shows the sample audit and never touches the portal")
+    func fixtureMode() async throws {
+        let state = try makeState()
+        state.forceFixtureDataForTesting(true)
+        await state.refreshDegreeAudit(force: true)
+        #expect(state.degree.current != nil)
+        #expect(!state.degree.degrees.isEmpty)
+        if case .read = state.degreeStatus {} else {
+            Issue.record("expected a read status, got \(state.degreeStatus)")
+        }
+        let programs = await state.loadDegreePrograms()
+        #expect(programs.count >= 8)
+        let plans = await state.degreeWhatIfPlans(for: "MATH-MIN")
+        #expect(plans.map(\.change) == [.newProgram, .addMinor])
+        let switchOnly = await state.degreeWhatIfPlans(for: "CMPE-BSE")
+        #expect(switchOnly.map(\.change) == [.newProgram])
+        if let plan = plans.last { await state.runWhatIf(plan) }
+        #expect(state.degreeStatus != .reading)
+    }
+
+    @Test("in fixture mode a what-if run files a copy under the plan's goals")
+    func fixtureWhatIfRuns() async throws {
+        let state = try makeState()
+        state.forceFixtureDataForTesting(true)
+        await state.refreshDegreeAudit(force: true)
+        let goals = DegreeGoals(school: "UG", college: "EU", program: "EU_BSE", degree: "BSE", minors: ["STAT"])
+        let plan = PathWhatIfPlan(
+            change: .addMinor, programCode: "STAT-MIN",
+            degreeInfo: ["degc": "BSE", "minor": "STAT"], goals: goals)
+        await state.runWhatIf(plan)
+        #expect(state.degree.whatIfs.first?.goals == goals)
+        #expect(state.degree.whatIfs.first?.isWhatIf == true)
+        #expect(state.degree.whatIfs.count <= 5)
+    }
+
+    @Test("in fixture mode selecting a degree moves the choice and keeps the sample audit")
+    func fixtureSelectDegree() async throws {
+        let state = try makeState()
+        state.forceFixtureDataForTesting(true)
+        await state.refreshDegreeAudit(force: true)
+        let first = try #require(state.selectedStudentDegree)
+        let second = try #require(state.degree.degrees.first { $0.id != first.id })
+        await state.selectDegree(second.id)
+        #expect(state.selectedStudentDegree?.id == second.id)
+        #expect(state.degree.current != nil)
+        // Unchanged is a no-op, and an unknown id changes nothing.
+        await state.selectDegree(second.id)
+        await state.selectDegree("no such degree")
+        #expect(state.selectedStudentDegree?.id == second.id)
+    }
+
+    @Test("the selected degree falls back to the first, and descriptions come from the dictionaries")
+    func selectionAndDescriptions() throws {
+        let state = try makeState()
+        #expect(state.selectedStudentDegree == nil)
+        #expect(state.degreeDescriptions.isEmpty)
+        let one = StudentDegree(raw: ["degc": "BSE", "coll": "EU", "major": "CSCI"])
+        let two = StudentDegree(raw: ["degc": "BS", "coll": "WU", "major": "UNDL"])
+        state.degree = DegreeSnapshot(
+            degrees: [one, two], selectedDegreeID: nil,
+            dictionaries: PathDictionaries(majors: ["CSCI": "Computer Science"]))
+        #expect(state.selectedStudentDegree == one)
+        #expect(state.degreeDescriptions["CSCI"] == "Computer Science")
+        state.degree.selectedDegreeID = two.id
+        #expect(state.selectedStudentDegree == two)
+        state.degree.selectedDegreeID = "gone"
+        #expect(state.selectedStudentDegree == one)
+    }
+
+    @Test("clearing leaves an empty snapshot, an idle status, an empty file and no saved choice")
     func clearing() throws {
         let state = try makeState()
-        var snapshot = DegreeSnapshot.empty
-        snapshot.lastShape = ["top: a, b"]
+        let key = "degreeSelectedIDV1"
+        let saved = UserDefaults.lhf.object(forKey: key)
+        defer {
+            if let saved { UserDefaults.lhf.set(saved, forKey: key) } else { UserDefaults.lhf.removeObject(forKey: key) }
+        }
+        let snapshot = SampleData.degreeSnapshot()
         state.degree = snapshot
-        state.degreeStatus = .failed("couldn't read path@penn · retry")
+        state.degreeStatus = .failed(AppState.degreeFailedLine)
+        UserDefaults.lhf.set("some|id", forKey: key)
         try state.degreeStore.save(snapshot)
         state.clearDegreeData()
         #expect(state.degree == .empty)
         #expect(state.degreeStatus == .idle)
         #expect(state.degreeStore.load() == .empty)
+        #expect(UserDefaults.lhf.string(forKey: key) == nil)
     }
 
-    @Test("fixture mode never touches the network and shows the sample audit")
-    func fixtureMode() async throws {
+    @Test("a snapshot with the new fields survives a round trip through the store")
+    func snapshotRoundTrip() throws {
         let state = try makeState()
-        state.forceFixtureDataForTesting(true)
-        let calls = LogBox()
-        state.degreeClient = DegreeWorksClient(fetch: { request in
-            calls.add(request.url?.path ?? "")
-            Issue.record("the network must not be called in fixture mode")
-            throw URLError(.notConnectedToInternet)
-        })
-        await state.refreshDegreeAudit(force: true)
-        #expect(calls.lines.isEmpty)
-        #expect(state.degree.current != nil)
-        if case .read = state.degreeStatus {} else {
-            Issue.record("expected a read status, got \(state.degreeStatus)")
-        }
-        await state.runWhatIf(DegreeGoals(minors: ["MATH"]))
-        _ = await state.loadDegreeCatalog(selected: DegreeGoals())
-        #expect(calls.lines.isEmpty)
+        let snapshot = SampleData.degreeSnapshot()
+        try state.degreeStore.save(snapshot)
+        #expect(state.degreeStore.load() == snapshot)
+        #expect(!snapshot.degrees.isEmpty)
+        #expect(snapshot.selectedDegreeID == snapshot.degrees.first?.id)
+        #expect(!snapshot.programs.isEmpty)
+        #expect(snapshot.dictionaries != nil)
     }
 
-    @Test("in fixture mode a what-if run files a copy under the picked goals")
-    func fixtureWhatIfRuns() async throws {
-        let state = try makeState()
-        state.forceFixtureDataForTesting(true)
-        await state.refreshDegreeAudit(force: true)
-        let goals = DegreeGoals(school: "UG", college: "EU", program: "EU_BSE", degree: "BSE", minors: ["MATH"])
-        await state.runWhatIf(goals)
-        #expect(state.degree.whatIfs.first?.goals == goals)
-        #expect(state.degree.whatIfs.first?.isWhatIf == true)
-        #expect(state.degree.whatIfs.count <= 5)
+    @Test("an old-format snapshot with a catalog key and none of the new keys still decodes")
+    func oldFormatDecodes() throws {
+        let old = #"{"whatIfs":[],"catalog":{"majors":[{"key":"CIS","description":"cs"}]},"lastShape":["x"]}"#
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let snapshot = try decoder.decode(DegreeSnapshot.self, from: Data(old.utf8))
+        #expect(snapshot.current == nil)
+        #expect(snapshot.degrees.isEmpty)
+        #expect(snapshot.selectedDegreeID == nil)
+        #expect(snapshot.programs.isEmpty)
+        #expect(snapshot.dictionaries == nil)
+        #expect(snapshot.lastShape == ["x"])
     }
 
     @Test("the feature is available on Penn, and with fixtures, when the flag is on")

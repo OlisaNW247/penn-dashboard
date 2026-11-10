@@ -415,19 +415,31 @@ enum SampleData {
             degreeLabel: "computer science, bse", catalogYearLabel: "2024",
             blocks: [major, minor, degree], courses: courses, fetchedAt: now)
 
-        func choice(_ key: String, _ description: String) -> GoalChoice {
-            GoalChoice(key: key, description: description)
-        }
-        let catalog = DegreeGoalCatalog(
-            catalogYears: [choice("2024", "2024"), choice("2025", "2025")],
-            programs: [choice("EU_BSE", "engineering, bse"), choice("EU_BAS", "engineering, bas")],
-            schools: [choice("UG", "undergraduate")],
-            colleges: [choice("EU", "engineering")],
-            degrees: [choice("BSE", "bse"), choice("BAS", "bas")],
-            majors: [choice("CIS", "computer science"), choice("DMD", "digital media design")],
-            concentrations: [choice("AI", "artificial intelligence")],
-            minors: [choice("MATH", "mathematics"), choice("ECON", "economics")])
+        let degrees = [
+            StudentDegree(raw: ["degc": "BSE", "coll": "EU", "levl": "UG", "program": "EU_BSE", "major": "CSCI", "ctlg": "202430"]),
+            StudentDegree(raw: ["degc": "BS", "coll": "WU", "levl": "UG", "program": "WU_BS", "major": "UNDL", "ctlg": "202430"]),
+        ]
+        let programs = [
+            PathProgramListing(code: "CMPE-BSE", title: "Computer Engineering BSE"),
+            PathProgramListing(code: "CSCI-BSE", title: "Computer Science BSE"),
+            PathProgramListing(code: "DMD-BSE", title: "Digital Media Design BSE"),
+            PathProgramListing(code: "ECON-BA", title: "Economics BA"),
+            PathProgramListing(code: "MATH-BA", title: "Mathematics BA"),
+            PathProgramListing(code: "MATH-MIN", title: "Mathematics Minor"),
+            PathProgramListing(code: "ECON-MIN", title: "Economics Minor"),
+            PathProgramListing(code: "PSYC-MIN", title: "Psychology Minor"),
+            PathProgramListing(code: "STAT-MIN", title: "Statistics Minor"),
+            PathProgramListing(code: "NETS-BAS", title: "Networked and Social Systems Engineering BAS"),
+        ]
+        let dictionaries = PathDictionaries(
+            majors: ["CSCI": "Computer Science", "MATH": "Mathematics", "UNDL": "Undeclared"],
+            degrees: ["BSE": "Bachelor of Science in Engineering", "BS": "Bachelor of Science"],
+            levels: ["UG": "Undergraduate"],
+            colleges: ["EU": "Engineering", "WU": "Wharton"],
+            programs: ["EU_BSE": "Engineering, BSE", "WU_BS": "Wharton, BS"])
 
-        return DegreeSnapshot(current: current, whatIfs: [whatIf], catalog: catalog, lastShape: [])
+        return DegreeSnapshot(
+            current: current, whatIfs: [whatIf], degrees: degrees, selectedDegreeID: degrees[0].id,
+            programs: programs, dictionaries: dictionaries, lastShape: [])
     }
 }

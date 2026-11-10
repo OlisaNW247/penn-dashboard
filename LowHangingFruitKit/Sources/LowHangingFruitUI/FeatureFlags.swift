@@ -139,20 +139,20 @@ enum FeatureFlags {
     /// deletes). Turn it off if a bad fact keeps hiding or moving real work.
     static let appliedFacts = true
 
-    /// **A degree screen, read from Penn's Degree Works with the student's own
-    /// login.** Profile → classes gets a "degree" row that opens the student's
+    /// **A degree screen, read from Path@Penn with the student's own login.**
+    /// Profile → classes gets a "degree" row that opens the student's
     /// audit (what is met, in progress and open, block by block) and a "what
     /// if" view that audits a switched or added major, concentration or minor.
-    /// The phone reads it itself (`DegreeWorksSessionReader`,
-    /// `DegreeWorksClient`), keeps it in a file on the phone, and sends it
+    /// The phone reads it itself, through Penn's own page in a hidden WebView
+    /// (`PathPortal`), keeps it in a file on the phone, and sends it
     /// nowhere. Penn installs only; preview and demo show invented data.
     ///
     /// **This is the kill switch.** False hides the row and the screen and
     /// stops every read; saved data is left alone until a Canvas disconnect
-    /// clears it. **Unverified:** as of 2026-11-09 the data source was read
-    /// from Penn Labs' open source and a third-party CLI, and has not been
-    /// observed against Penn's live Degree Works; every constant is in
-    /// `DegreeWorksEndpoints`. Turn it off if reads misbehave on real phones.
+    /// clears it. **Unverified on a phone:** the page's shape was observed on
+    /// 2026-11-10 from a real session, but the hidden WebView's sign-in
+    /// (Cloudflare, the popup's opener) has not been seen on a device. Turn it
+    /// off if reads misbehave on real phones.
     static let degreeProgress = true
 
     /// Evaluates a token-store read only while the experiment is enabled.

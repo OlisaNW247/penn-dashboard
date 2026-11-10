@@ -6,7 +6,7 @@ import Foundation
 /// Reads the degree-audit JSON that Penn's Path@Penn site returns into
 /// `DegreeAudit`.
 ///
-/// The privacy rule is structural, as with `DegreeWorksAuditDecoder`:
+/// The privacy rule is structural, as it was for the Degree Works decoder this replaced:
 /// `blockhtml` and `legendHtml` (Penn's rendered HTML, which is where a letter
 /// grade or a GPA could sit), `actionsMap`, `decisions`, `explanations` (the
 /// translator's debug trail), `_originalText` and `auditRef` are never looked

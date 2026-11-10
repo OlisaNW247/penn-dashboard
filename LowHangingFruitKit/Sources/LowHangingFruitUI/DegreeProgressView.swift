@@ -45,39 +45,63 @@ enum DegreeProgressMath {
         audit.blocks.first { $0.type.uppercased() == "DEGREE" }
     }
 
-    /// The DEGREE block's rule that asks for the most credits: the whole-degree
-    /// total, not a sub-rule that happens to come first in the tree.
-    static func degreeCreditRule(of audit: DegreeAudit) -> AuditRule? {
-        guard let block = degreeBlock(of: audit) else { return nil }
-        return all(block.rules)
-            .filter { ($0.needCredits ?? 0) > 0 }
-            .max { ($0.needCredits ?? 0) < ($1.needCredits ?? 0) }
+    /// "NN%" from Penn's own percent, rounded and clamped.
+    static func percentText(_ percent: Double) -> String {
+        "\(Int(min(max(percent, 0), 100).rounded()))%"
     }
 
-    /// The credit total the degree block asks for, when any rule in it says one.
-    static func degreeNeedCredits(of audit: DegreeAudit) -> Double? {
-        degreeCreditRule(of: audit)?.needCredits
-    }
-
-    private static func all(_ rules: [AuditRule]) -> [AuditRule] {
-        rules.flatMap { [$0] + all($0.children) }
+    /// "31 of 40 cu" when Penn's own sentence in the DEGREE block says it,
+    /// else "NN%" from the audit's percent, else nil.
+    static func creditLine(for audit: DegreeAudit) -> String? {
+        if let totals = PathAuditDecoder.creditTotals(in: audit) {
+            return "\(credits(totals.have)) of \(credits(totals.need)) cu"
+        }
+        if let percent = audit.percentComplete { return percentText(percent) }
+        return nil
     }
 
     static func ring(for audit: DegreeAudit) -> Ring {
         let counts = audit.ruleCounts
         let total = counts.met + counts.inProgress + counts.open
-        if let rule = degreeCreditRule(of: audit), let need = rule.needCredits {
-            // The numerator is that same rule's own applied credits;
-            // `audit.creditsApplied` sums every course, including ones counted
-            // toward no rule, and would divide a bigger number by this need.
-            let applied = rule.appliedCredits ?? audit.creditsApplied
-            return Ring(fraction: min(1, applied / need), extraFraction: 0,
-                        centre: credits(applied), caption: "of \(credits(need)) cu")
-        }
         let denominator = Double(max(total, 1))
-        return Ring(fraction: Double(counts.met) / denominator,
-                    extraFraction: Double(counts.inProgress) / denominator,
+        let fallbackFraction = Double(counts.met) / denominator
+        let fraction: Double
+        let extra: Double
+        if let percent = audit.percentComplete {
+            fraction = min(max(percent / 100, 0), 1)
+            extra = 0
+        } else {
+            fraction = fallbackFraction
+            extra = Double(counts.inProgress) / denominator
+        }
+        if let totals = PathAuditDecoder.creditTotals(in: audit) {
+            return Ring(fraction: fraction, extraFraction: extra,
+                        centre: credits(totals.have), caption: "of \(credits(totals.need)) cu")
+        }
+        if let percent = audit.percentComplete {
+            return Ring(fraction: fraction, extraFraction: extra, centre: percentText(percent), caption: "")
+        }
+        return Ring(fraction: fraction, extraFraction: extra,
                     centre: "\(counts.met)", caption: "of \(total) met")
+    }
+
+    /// A block Penn left empty: no rules, no percent, and a synthetic or
+    /// not-applicable type ("Elective Coursework", "Exceptions Applied").
+    static func isShown(_ block: AuditBlock) -> Bool {
+        guard block.rules.isEmpty else { return true }
+        let type = block.type.uppercased()
+        guard type == "CL_SYNTHETIC_BLOCK" || type == "N/A" else { return true }
+        return (block.percentComplete ?? 0) > 0
+    }
+
+    /// An `.info` rule with nothing under it is a sentence, drawn as a quiet note.
+    static func isQuietNote(_ rule: AuditRule) -> Bool {
+        rule.status == .info && rule.children.isEmpty && rule.applied.isEmpty && rule.advice.isEmpty
+    }
+
+    /// A block's loose courses: the synthetic "courses" rule has no label row.
+    static func isLooseCourses(_ rule: AuditRule) -> Bool {
+        rule.ruleType == "courses" && rule.label.lowercased() == "courses"
     }
 
     /// The right-hand count of a block row.
@@ -89,6 +113,7 @@ enum DegreeProgressMath {
             return "\(credits(applied)) of \(credits(need)) cu"
         }
         let rules = countable(block.rules)
+        if rules.isEmpty, let percent = block.percentComplete { return percentText(percent) }
         let met = rules.filter { $0.status == .met }.count
         return "\(met) of \(rules.count)"
     }
@@ -111,24 +136,12 @@ enum DegreeProgressMath {
         block.type.uppercased() == "DEGREE" ? "everything else" : block.title.lowercased()
     }
 
-    /// The right side of the Profile row: credits when known, else met rules,
-    /// else nothing (the caller falls back to the status line).
+    /// The right side of the Profile row: the same text the ring carries,
+    /// "31 of 40 cu" or "NN%", else met rules.
     static func profileSummary(_ audit: DegreeAudit) -> String {
+        if let line = creditLine(for: audit) { return line }
         let ring = ring(for: audit)
         return "\(ring.centre) \(ring.caption)"
-    }
-
-    /// Key to description for every list the catalog holds, so a headline can
-    /// say "computer science" and not "CIS". First entry wins on a clash.
-    static func descriptions(_ catalog: DegreeGoalCatalog?) -> [String: String] {
-        guard let catalog else { return [:] }
-        var out: [String: String] = [:]
-        let lists = [catalog.programs, catalog.degrees, catalog.majors, catalog.concentrations,
-                     catalog.minors, catalog.schools, catalog.colleges]
-        for list in lists {
-            for choice in list where out[choice.key] == nil { out[choice.key] = choice.description }
-        }
-        return out
     }
 }
 
@@ -146,9 +159,8 @@ struct DegreeProgressView: View {
     @State private var expanded: Set<String> = []
     @State private var selectedWhatIf = 0
     @State private var showSheet = false
-    @State private var sheetMode: DegreeWhatIfSheet.Mode = .whatIf
 
-    private var descriptions: [String: String] { DegreeProgressMath.descriptions(state.degree.catalog) }
+    private var descriptions: [String: String] { state.degreeDescriptions }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -176,7 +188,7 @@ struct DegreeProgressView: View {
         .onAppear { Task { await state.refreshDegreeAudit(force: false) } }
         .onChange(of: state.degree.whatIfs.first?.goals) { _, _ in selectedWhatIf = 0 }
         .sheet(isPresented: $showSheet) {
-            DegreeWhatIfSheet(mode: sheetMode)
+            DegreeWhatIfSheet()
                 .environmentObject(state)
         }
     }
@@ -195,33 +207,24 @@ struct DegreeProgressView: View {
         .padding(.top, 8)
     }
 
-    private enum StatusAction { case none, retry, pickGoals }
-
-    private var statusAction: StatusAction {
-        switch state.degreeStatus {
-        case .failed: return .retry
-        case .needsGoals: return .pickGoals
-        default: return .none
-        }
+    private var statusRetries: Bool {
+        if case .failed = state.degreeStatus { return true }
+        return false
     }
 
-    /// Tappable only where a tap has an answer: a failure retries, a missing
-    /// degree opens the picker; "sign in to canvas" is just the words.
+    /// Tappable only where a tap has an answer: a failure retries;
+    /// "sign in to canvas" is just the words.
     @ViewBuilder
     private var statusLine: some View {
         if let text = state.degreeStatus.line(now: Date()) {
             let label = Text(text)
                 .font(.lhfSans(13))
                 .foregroundStyle(Color.smoothMuted)
-            switch statusAction {
-            case .none:
-                label
-            case .retry:
+            if statusRetries {
                 Button { Task { await state.refreshDegreeAudit(force: true) } } label: { label }
                     .buttonStyle(.plain)
-            case .pickGoals:
-                Button { sheetMode = .currentGoals; showSheet = true } label: { label }
-                    .buttonStyle(.plain)
+            } else {
+                label
             }
         }
     }
@@ -230,10 +233,43 @@ struct DegreeProgressView: View {
 
     @ViewBuilder
     private var progressTab: some View {
-        if let audit = state.degree.current {
-            auditBody(audit, tag: nil, headline: programTitle(audit), summary: nil, prefix: "c:")
-        } else {
-            emptyProgress
+        VStack(alignment: .leading, spacing: 16) {
+            degreeChips
+            if let audit = state.degree.current {
+                auditBody(audit, tag: nil, headline: programTitle(audit), summary: nil, prefix: "c:")
+            } else {
+                emptyProgress
+            }
+        }
+    }
+
+    /// One chip per degree of a student who has more than one; hidden for one.
+    @ViewBuilder
+    private var degreeChips: some View {
+        let degrees = state.degree.degrees
+        if degrees.count > 1 {
+            let selectedID = state.degree.selectedDegreeID ?? degrees.first?.id
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(degrees) { degree in
+                        let isSelected = degree.id == selectedID
+                        let title = degree.goals.title(descriptions: descriptions)
+                        Button { Task { await state.selectDegree(degree.id) } } label: {
+                            Text(title)
+                                .font(.lhfSans(13, weight: isSelected ? .semibold : .medium))
+                                .foregroundStyle(isSelected ? Color.smoothTealInk : Color.smoothMuted)
+                                .lineLimit(1)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(isSelected ? Color.smoothTeal.opacity(0.22) : Color.clear, in: Capsule())
+                                .overlay { Capsule().stroke(Color.smoothRule, lineWidth: isSelected ? 0 : 1) }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(title)
+                        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+                    }
+                }
+            }
         }
     }
 
@@ -275,9 +311,6 @@ struct DegreeProgressView: View {
         let list = state.degree.whatIfs
         if list.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                Text("see where you'd stand in another degree")
-                    .font(.lhfSans(14))
-                    .foregroundStyle(Color.smoothMuted)
                 switchButton
             }
             .padding(.top, 8)
@@ -296,7 +329,7 @@ struct DegreeProgressView: View {
     }
 
     private var switchButton: some View {
-        Button { sheetMode = .whatIf; showSheet = true } label: {
+        Button { showSheet = true } label: {
             Text("switch or add…")
                 .font(.lhfSans(14, weight: .semibold))
                 .foregroundStyle(Color.smoothGrapeInk)
@@ -369,7 +402,7 @@ struct DegreeProgressView: View {
                 }
                 Spacer(minLength: 0)
             }
-            ForEach(DegreeProgressMath.orderedBlocks(audit.blocks)) { block in
+            ForEach(DegreeProgressMath.orderedBlocks(audit.blocks).filter(DegreeProgressMath.isShown)) { block in
                 DegreeBlockRow(block: block, isExpanded: expanded.contains(prefix + block.id)) {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                         let key = prefix + block.id
@@ -381,7 +414,7 @@ struct DegreeProgressView: View {
     }
 
     private var footer: some View {
-        Link("path@penn's reading · official audit ↗", destination: DegreeWorksEndpoints.officialAuditURL)
+        Link("path@penn's reading · official audit ↗", destination: PathPage.officialAuditURL)
             .font(.lhfSans(13))
             .foregroundStyle(Color.smoothTealInk)
             .frame(maxWidth: .infinity)
@@ -432,7 +465,7 @@ struct DegreeRingView: View {
         .frame(width: 96, height: 96)
         .animation(.spring(response: 0.5, dampingFraction: 0.85), value: fraction)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(centre) \(caption)")
+        .accessibilityLabel(caption.isEmpty ? centre : "\(centre) \(caption)")
     }
 }
 
@@ -534,23 +567,32 @@ struct DegreeRuleRow: View {
     }
 
     var body: some View {
-        // An `.info` rule is a note, not a requirement; it is not drawn.
-        if rule.status != .info {
+        if DegreeProgressMath.isQuietNote(rule) {
+            Text(rule.label.lowercased())
+                .font(.lhfSans(12))
+                .foregroundStyle(Color.smoothMuted)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, depth == 0 ? 0 : 12)
+        } else {
             VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(rule.label.lowercased())
-                        .font(.lhfSans(14, weight: .medium))
-                        .foregroundStyle(Color.smoothInk)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 8)
-                    if let countText {
-                        Text(countText)
-                            .font(.lhfMono(11))
-                            .foregroundStyle(Color.smoothMuted)
+                if !DegreeProgressMath.isLooseCourses(rule) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(rule.label.lowercased())
+                            .font(.lhfSans(14, weight: .medium))
+                            .foregroundStyle(Color.smoothInk)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        if let countText {
+                            Text(countText)
+                                .font(.lhfMono(11))
+                                .foregroundStyle(Color.smoothMuted)
+                        }
+                        if rule.status != .info {
+                            Text(statusWord)
+                                .font(.lhfMono(11, weight: .semibold))
+                                .foregroundStyle(statusColor)
+                        }
                     }
-                    Text(statusWord)
-                        .font(.lhfMono(11, weight: .semibold))
-                        .foregroundStyle(statusColor)
                 }
                 chips
                 ForEach(rule.children) { child in
@@ -563,7 +605,7 @@ struct DegreeRuleRow: View {
 
     @ViewBuilder
     private var chips: some View {
-        if rule.status == .open {
+        if rule.status == .open || rule.status == .info {
             // Courses already counted toward an open rule come first, then
             // the suggestions as ghosts; showing only the advice hid progress.
             if !rule.applied.isEmpty || !rule.advice.isEmpty {

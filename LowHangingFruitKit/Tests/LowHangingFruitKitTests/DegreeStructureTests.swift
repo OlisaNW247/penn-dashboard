@@ -51,12 +51,49 @@ struct DegreeStructureTests {
         }
     }
 
-    @Test("the ring reads credits when the degree block says them")
-    func ringCredits() throws {
+    @Test("the ring and the profile row say the same thing")
+    func ringMatchesSummary() throws {
         let audit = try #require(SampleData.degreeSnapshot().current)
         let ring = DegreeProgressMath.ring(for: audit)
-        #expect(ring.caption == "of 40 cu")
-        #expect(ring.centre == "31")
-        #expect(ring.fraction > 0 && ring.fraction <= 1)
+        #expect(ring.fraction >= 0 && ring.fraction <= 1)
+        let spoken = ring.caption.isEmpty ? ring.centre : "\(ring.centre) \(ring.caption)"
+        #expect(DegreeProgressMath.profileSummary(audit) == spoken)
+    }
+
+    @Test("the ring follows Penn's percent when the audit has one")
+    func ringPercent() {
+        let audit = DegreeAudit(goals: DegreeGoals(), isWhatIf: false, percentComplete: 62.4,
+                                degreeLabel: nil, catalogYearLabel: nil, blocks: [], courses: [],
+                                fetchedAt: Date(timeIntervalSince1970: 0))
+        let ring = DegreeProgressMath.ring(for: audit)
+        #expect(abs(ring.fraction - 0.624) < 0.0001)
+        #expect(ring.centre == "62%")
+        #expect(DegreeProgressMath.profileSummary(audit) == "62%")
+    }
+
+    @Test("an empty synthetic block is skipped, a real one is kept")
+    func emptyBlocks() {
+        let empty = AuditBlock(id: "a", type: "CL_SYNTHETIC_BLOCK", value: "", title: "Exceptions Applied",
+                               percentComplete: nil, rules: [])
+        let major = AuditBlock(id: "b", type: "MAJOR", value: "", title: "Major", percentComplete: 0, rules: [])
+        #expect(!DegreeProgressMath.isShown(empty))
+        #expect(DegreeProgressMath.isShown(major))
+    }
+
+    @Test("the progress view switches degrees and reads Penn's credit sentence")
+    func progressWiring() throws {
+        let source = try uiSource("DegreeProgressView.swift")
+        #expect(source.contains("selectDegree("))
+        #expect(source.contains("PathAuditDecoder.creditTotals"))
+    }
+
+    @Test("neither view mentions the removed Degree Works machinery")
+    func noOldMachinery() throws {
+        for file in ["DegreeProgressView.swift", "DegreeWhatIfSheet.swift"] {
+            let source = try uiSource(file)
+            for name in ["DegreeGoalCatalog", "DegreeWorks", "pickCurrentGoals", "loadDegreeCatalog"] {
+                #expect(!source.contains(name), "\(file) mentions \(name)")
+            }
+        }
     }
 }

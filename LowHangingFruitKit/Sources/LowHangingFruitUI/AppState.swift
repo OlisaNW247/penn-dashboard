@@ -512,8 +512,8 @@ final class AppState: ObservableObject {
         ? DegreeAuditStore(directory: FileManager.default.temporaryDirectory
             .appendingPathComponent("degree-\(UUID().uuidString)", isDirectory: true))
         : .default()
-    let degreeSessionReader = DegreeWorksSessionReader()
-    var degreeClient = DegreeWorksClient()
+    /// The one hidden WebView on Penn's advising page (`PathPortal`).
+    let degreePortal = PathPortal()
     var degreeRefreshTask: Task<Void, Never>?
     /// Bumped by `clearDegreeData()`. A read in flight captured the number it
     /// started under and stops writing (tokens, file, snapshot, status) once it
@@ -4959,6 +4959,10 @@ final class AppState: ObservableObject {
     func selectCanvasInstallation(_ installation: CanvasInstallation) {
         guard installation != canvasInstallation || !hasChosenCanvasInstallation else { return }
         invalidateSessionProbe()
+        // The hidden Path@Penn WebView and the saved audit belong to the old
+        // school's login; a disconnect below clears them too, but a switch from
+        // an unconnected state would otherwise leave the portal standing.
+        if installation != canvasInstallation { clearDegreeData() }
         if installation != canvasInstallation,
            (isCanvasConnected || !SessionCookieStore.load(service: .canvas).isEmpty) {
             disconnectCanvas(keepingStudentWork: false)

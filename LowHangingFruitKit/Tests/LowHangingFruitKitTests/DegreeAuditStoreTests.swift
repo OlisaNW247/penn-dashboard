@@ -29,12 +29,34 @@ struct DegreeAuditStoreTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = DegreeAuditStore(directory: directory)
         #expect(store.load() == .empty)
+        let degree = StudentDegree(raw: ["degc": "BSE", "coll": "EU", "levl": "UG", "major": "CSCI", "program": "EU_BSE"])
         let snapshot = DegreeSnapshot(
             current: audit("CIS"), whatIfs: [audit("MATH")],
-            catalog: DegreeGoalCatalog(majors: [GoalChoice(key: "CIS", description: "cs")]), lastShape: ["audit: a, b"])
+            degrees: [degree], selectedDegreeID: degree.id,
+            programs: [PathProgramListing(code: "MATH-MIN", title: "Mathematics Minor")],
+            dictionaries: PathDictionaries(majors: ["CSCI": "Computer Science"]),
+            lastShape: ["audit: a, b"])
         try store.save(snapshot)
         #expect(store.fileURL.lastPathComponent == "degree-audit.json")
         #expect(store.load() == snapshot)
+    }
+
+    @Test("a file written before the Path@Penn rewrite still decodes")
+    func oldFormat() throws {
+        let directory = scratch()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let store = DegreeAuditStore(directory: directory)
+        let old = #"{"whatIfs":[],"catalog":{"majors":[{"key":"CIS","description":"cs"}]},"lastShape":["a"]}"#
+        try Data(old.utf8).write(to: store.fileURL)
+        let back = store.load()
+        #expect(back.lastShape == ["a"])
+        #expect(back.degrees.isEmpty)
+        #expect(back.selectedDegreeID == nil)
+        #expect(back.programs.isEmpty)
+        #expect(back.dictionaries == nil)
+        // Not quarantined: the file is still where it was.
+        #expect(FileManager.default.fileExists(atPath: store.fileURL.path))
     }
 
     @Test("whatIfs are capped at five on save, most recent first kept")
@@ -43,7 +65,7 @@ struct DegreeAuditStoreTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = DegreeAuditStore(directory: directory)
         let many = (0..<8).map { audit("M\($0)") }
-        try store.save(DegreeSnapshot(current: nil, whatIfs: many, catalog: nil, lastShape: []))
+        try store.save(DegreeSnapshot(current: nil, whatIfs: many, lastShape: []))
         let back = store.load()
         #expect(back.whatIfs.count == 5)
         #expect(back.whatIfs.map { $0.goals.majors[0] } == ["M0", "M1", "M2", "M3", "M4"])

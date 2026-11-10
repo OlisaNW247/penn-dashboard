@@ -32,7 +32,7 @@ struct DegreeCopyTests {
     func footer() throws {
         let source = try uiSource("DegreeProgressView.swift")
         #expect(source.contains("path@penn's reading · official audit ↗"))
-        #expect(source.contains("DegreeWorksEndpoints.officialAuditURL"))
+        #expect(source.contains("PathPage.officialAuditURL"))
     }
 
     @Test("no capitalised literal in a visible string")
@@ -49,8 +49,18 @@ struct DegreeCopyTests {
     func statusFromLine() throws {
         let source = try uiSource("DegreeProgressView.swift")
         #expect(source.contains("degreeStatus.line(now:"))
-        for phrase in ["reading path@penn…", "approve the duo push", "couldn't read path@penn", "pick your degree"] {
+        for phrase in ["reading path@penn…", "approve the duo push", "couldn't read path@penn"] {
             #expect(!source.contains(phrase), "\(phrase) belongs to DegreeStatus")
         }
+    }
+
+    @Test("the what-if sheet is a searchable list wired to the three data calls")
+    func sheetIsASearchableList() throws {
+        let source = try uiSource("DegreeWhatIfSheet.swift")
+        #expect(source.contains("search programs"))
+        #expect(source.contains("loadDegreePrograms"))
+        #expect(source.contains("degreeWhatIfPlans"))
+        #expect(source.contains("runWhatIf("))
+        #expect(source.contains("degreeStatus.line(now:"))
     }
 }

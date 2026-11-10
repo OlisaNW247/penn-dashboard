@@ -6,20 +6,27 @@ import UIKit
 
 // MARK: – Degree progress (Path@Penn's audit, read with the student's own login)
 //
-// The student's degree audit is read from Penn's Degree Works with the same
-// Canvas/PennKey session the rest of the app rides (`DegreeWorksSessionReader`
-// for the tokens, `DegreeWorksClient` for the audit). This file is the only
-// place that reads touch app state. Its bounds:
+// The student's degree audit is read from Path@Penn's advising page
+// (`https://courses.upenn.edu/`) by `PathPortal`: one hidden WebView that lets
+// the page sign in with the same Canvas/PennKey session the rest of the app
+// rides, then asks the page's own scripts for the student's degrees, the audit
+// and Penn's program catalogue (docs/DEGREE_PROGRESS_V12_BUILD_SPEC.md, "The
+// rewrite contract"). This file is the only place those reads touch app state.
+// Its bounds:
 //
 //  - Penn only, behind `FeatureFlags.degreeProgress`, foreground only, never
 //    from a background wake, and never in preview or demo mode (the sample
-//    snapshot is shown instead and no network is touched).
+//    snapshot is shown instead and the portal is never touched).
 //  - Nothing leaves the phone: the audit is kept in `degree-audit.json`
-//    (`DegreeAuditStore`), the tokens in the Keychain. Nothing goes to the
-//    backend, the laptop sync, iCloud or the tree.
+//    (`DegreeAuditStore`). No token is ever in Swift, so nothing is in the
+//    Keychain for this feature. Nothing goes to the backend, the laptop sync,
+//    iCloud or the tree.
 //  - Nothing is written to the ledger and no dashboard card comes from this.
-//  - Disconnecting Canvas clears the tokens, the file and the status
+//  - Disconnecting Canvas clears the file, the status and the WebView
 //    (`clearDegreeData`, called from `disconnectCanvas`).
+//  - Code decides nothing about requirements: the audit is Penn's. The one
+//    thing rebuilt here is a what-if audit's `goals`, because the page's
+//    reply may not echo an added minor (see `runWhatIf`).
 
 /// What the degree screen says about the last read. `line(now:)` is the
 /// exact one-line status the screen shows; nil means say nothing.
@@ -28,7 +35,6 @@ enum DegreeStatus: Equatable, Sendable {
     case reading
     case waitingForDuo
     case needsCanvasSignIn
-    case needsGoals
     case failed(String)
     case read(Date)
 
@@ -43,8 +49,6 @@ enum DegreeStatus: Equatable, Sendable {
             return "approve the duo push on this phone"
         case .needsCanvasSignIn:
             return "sign in to canvas"
-        case .needsGoals:
-            return "pick your degree"
         case let .failed(message):
             return message
         case let .read(date):
@@ -68,40 +72,16 @@ enum DegreeStatus: Equatable, Sendable {
     }
 }
 
-/// Collects the key-shape lines a client call reports. The client's callback
-/// is `@Sendable`, so the lines go through a lock instead of capturing state.
-private final class DegreeShapeCollector: @unchecked Sendable {
-    private let lock = NSLock()
-    private var stored: [String] = []
-
-    func set(_ lines: [String]) {
-        lock.lock(); defer { lock.unlock() }
-        stored = lines
-    }
-
-    var lines: [String] {
-        lock.lock(); defer { lock.unlock() }
-        return stored
-    }
-}
-
-/// How one authorised call ended.
-private enum DegreeCall<Value> {
-    case value(Value)
-    case needsGoals
-    case stop(DegreeStatus)
-}
-
 extension AppState {
     nonisolated static let degreeFailedLine = "couldn't read path@penn · retry"
     /// A read is stale after twelve hours (the audit changes at registration
     /// and grade time, not by the minute).
     nonisolated static let degreeStaleAfter: TimeInterval = 12 * 3600
-    private static let maxWhatIfs = 5
-    /// The degree the student picked when Degree Works would not say, as
-    /// JSON-encoded `DegreeGoals` in `UserDefaults.lhf`. Kept so the question
-    /// is asked once, not at every stale read; cleared with the rest.
-    private static let degreePickedGoalsKey = "degreePickedGoalsV1"
+    private static let maxWhatIfs = 4
+    /// Which of the student's degrees is audited, as `StudentDegree.id`. Kept
+    /// in `UserDefaults.lhf` as well as the snapshot so the choice survives a
+    /// snapshot that is cleared or quarantined.
+    private static let degreeSelectedKey = "degreeSelectedIDV1"
 
     // MARK: Rules
 
@@ -110,6 +90,19 @@ extension AppState {
     var degreeFeatureAvailable: Bool {
         FeatureFlags.degreeProgress
             && (canvasInstallation.id == CanvasInstallation.penn.id || isUsingFixtureData)
+    }
+
+    /// Penn's code-to-name maps flattened for `DegreeGoals.title(descriptions:)`.
+    var degreeDescriptions: [String: String] {
+        degree.dictionaries?.descriptions ?? [:]
+    }
+
+    /// The degree being audited: the chosen one, else the first the record lists.
+    var selectedStudentDegree: StudentDegree? {
+        if let id = degree.selectedDegreeID, let match = degree.degrees.first(where: { $0.id == id }) {
+            return match
+        }
+        return degree.degrees.first
     }
 
     nonisolated static func degreeIsStale(readAt: Date?, now: Date) -> Bool {
@@ -129,6 +122,23 @@ extension AppState {
     ) -> Bool {
         guard flag, isPenn, !fixture, isForeground else { return false }
         return stale || force
+    }
+
+    /// What a sign-in outcome means for the status line; nil for `.ready`.
+    /// `.throttled` keeps whatever was showing before.
+    nonisolated static func degreeStatus(for signIn: PathPortal.SignIn, previous: DegreeStatus) -> DegreeStatus? {
+        switch signIn {
+        case .ready:
+            return nil
+        case .needsDuo:
+            return .waitingForDuo
+        case .noCanvasSession:
+            return .needsCanvasSignIn
+        case .blocked, .timedOut:
+            return .failed(degreeFailedLine)
+        case .throttled:
+            return previous == .reading ? .idle : previous
+        }
     }
 
     private var degreeIsForeground: Bool {
@@ -152,29 +162,31 @@ extension AppState {
             return
         }
         guard canvasInstallation.id == CanvasInstallation.penn.id else { return }
-        let snapshot = degreeStore.load()
+        var snapshot = degreeStore.load()
+        if let saved = UserDefaults.lhf.string(forKey: Self.degreeSelectedKey), !saved.isEmpty {
+            snapshot.selectedDegreeID = saved
+        }
         degree = snapshot
         if let current = snapshot.current {
             degreeStatus = .read(current.fetchedAt)
         }
     }
 
-    /// Everything this feature keeps, gone: the tokens, the file, the
-    /// in-memory snapshot, the status and the read throttle. Called on a
-    /// Canvas disconnect, because the audit was read through that login.
+    /// Everything this feature keeps, gone: the file, the in-memory snapshot,
+    /// the status, the choice of degree and the WebView. Called on a Canvas
+    /// disconnect, because the audit was read through that login.
     func clearDegreeData() {
         // A read in flight cannot be stopped mid-await, only told its work no
         // longer counts: every write below the awaits checks this number.
         degreeGeneration += 1
         degreeRefreshTask?.cancel()
         degreeRefreshTask = nil
-        DegreeWorksTokenStore.remove()
+        degreePortal.reset()
         degreeStore.clear()
         degree = .empty
         degreeStatus = .idle
-        degreeSessionReader.resetThrottle()
         UserDefaults.lhf.removeObject(forKey: "degreeRecentWhatIfsV1")
-        UserDefaults.lhf.removeObject(forKey: Self.degreePickedGoalsKey)
+        UserDefaults.lhf.removeObject(forKey: Self.degreeSelectedKey)
         #if DEBUG
         DebugDegreeLog.clear()
         #endif
@@ -216,128 +228,211 @@ extension AppState {
     private func performDegreeRefresh(force: Bool) async {
         let generation = degreeGeneration
         let now = Date()
+        let previous = degreeStatus
         degreeStatus = .reading
-        let collector = DegreeShapeCollector()
-        let client = degreeClient
-        // A degree the student already picked is audited again as picked, so
-        // Degree Works is not asked to guess it (and the student is not asked
-        // again) every twelve hours; only when that fails does the ordinary
-        // read run. A rejected token is the one failure that must reach
-        // `degreeCall`, which owns the single re-read.
-        let picked: DegreeGoals? = UserDefaults.lhf.data(forKey: Self.degreePickedGoalsKey)
-            .flatMap { try? JSONDecoder().decode(DegreeGoals.self, from: $0) }
-        let result = await degreeCall(now: now, force: force) { tokens -> DegreeAudit in
-            if let picked {
-                do {
-                    return try await client.fetchAudit(
-                        tokens: tokens, goals: picked, keepCurriculum: true, isWhatIf: false,
-                        now: now, shape: { collector.set($0) }
-                    )
-                } catch DegreeWorksClient.Failure.tokensRejected {
-                    throw DegreeWorksClient.Failure.tokensRejected
-                } catch {
-                    // Fall through to the ordinary read below.
-                }
-            }
-            return try await client.fetchCurrentAudit(tokens: tokens, now: now, shape: { collector.set($0) })
-        }
-        guard generation == degreeGeneration else { return }
-        switch result {
-        case let .value(audit):
-            adoptDegreeShape(collector.lines)
-            degree.current = audit
-            persistDegree()
-            degreeStatus = .read(now)
-        case .needsGoals:
-            degreeStatus = .needsGoals
-        case let .stop(status):
-            degreeStatus = status
-        }
-    }
+        let portal = degreePortal
 
-    /// The student picked their own degree (Degree Works would not say):
-    /// audit that, keeping their curriculum, and keep it as the current audit.
-    func pickCurrentGoals(_ goals: DegreeGoals) async {
-        guard degreeFeatureAvailable else { return }
-        if isUsingFixtureData {
-            // The demo has no network; the sample is already the answer.
-            degreeStatus = .read(Date())
+        let signIn = await portal.ensureSignedIn(force: force)
+        guard generation == degreeGeneration else { return }
+        if let stop = Self.degreeStatus(for: signIn, previous: previous) {
+            degreeStatus = stop
             return
         }
-        let generation = degreeGeneration
-        let now = Date()
-        degreeStatus = .reading
-        let collector = DegreeShapeCollector()
-        let client = degreeClient
-        let result = await degreeCall(now: now) { tokens in
-            try await client.fetchAudit(
-                tokens: tokens, goals: goals, keepCurriculum: true, isWhatIf: false,
-                now: now, shape: { collector.set($0) }
-            )
-        }
+
+        let found = await portal.degrees()
         guard generation == degreeGeneration else { return }
-        switch result {
-        case let .value(audit):
-            adoptDegreeShape(collector.lines)
-            if let data = try? JSONEncoder().encode(goals) {
-                UserDefaults.lhf.set(data, forKey: Self.degreePickedGoalsKey)
+        guard !found.isEmpty else {
+            degreeStatus = .failed(Self.degreeFailedLine)
+            return
+        }
+        degree.degrees = found
+        // A saved choice that the record no longer lists (a graduated or
+        // dropped degree) falls back to the first one rather than auditing
+        // nothing.
+        if let id = degree.selectedDegreeID, !found.contains(where: { $0.id == id }) {
+            degree.selectedDegreeID = nil
+        }
+        if degree.selectedDegreeID == nil {
+            degree.selectedDegreeID = found[0].id
+        }
+        if let id = degree.selectedDegreeID {
+            UserDefaults.lhf.set(id, forKey: Self.degreeSelectedKey)
+        }
+        guard let selected = selectedStudentDegree else {
+            degreeStatus = .failed(Self.degreeFailedLine)
+            return
+        }
+
+        let result = await portal.auditData(degreeInfo: selected.raw)
+        guard generation == degreeGeneration else { return }
+        guard let data = result.data,
+              let audit = try? PathAuditDecoder.decode(
+                data, fallbackGoals: selected.goals, isWhatIf: false, now: now)
+        else {
+            degreeStatus = .failed(Self.degreeFailedLine)
+            return
+        }
+        degree.current = audit
+        persistDegree()
+        degreeStatus = .read(now)
+
+        // Penn's code-to-name maps are fetched once; a failure only means
+        // codes show as themselves.
+        if degree.dictionaries == nil {
+            let maps = await portal.dictionaries()
+            guard generation == degreeGeneration else { return }
+            if let maps {
+                degree.dictionaries = maps
+                persistDegree()
             }
-            degree.current = audit
-            persistDegree()
-            degreeStatus = .read(now)
-        case .needsGoals:
-            degreeStatus = .needsGoals
-        case let .stop(status):
-            degreeStatus = status
         }
     }
 
-    /// "What if I switched or added a program": audits `goals` without
-    /// keeping the curriculum and files the result, most recent first, at
-    /// most five. A failure leaves the current audit and the status line
-    /// alone except for the failure words.
-    func runWhatIf(_ goals: DegreeGoals) async {
+    /// The student chose another of their own degrees: audit that one. The old
+    /// audit and the what-ifs belonged to the other degree, so they go.
+    func selectDegree(_ id: String) async {
+        guard id != selectedStudentDegree?.id else { return }
+        if isUsingFixtureData {
+            // The demo has no network and holds one sample audit; only the
+            // chip moves, and nothing is saved.
+            guard degree.degrees.contains(where: { $0.id == id }) else { return }
+            degree.selectedDegreeID = id
+            return
+        }
+        guard degreeFeatureAvailable else { return }
+        // A read already in flight is auditing the old degree: tell it its
+        // work no longer counts, wait for it to wind down, and only then start
+        // the real one. Skipping the wait would make `refreshDegreeAudit`
+        // join the old task and return having audited the wrong degree.
+        degreeGeneration += 1
+        degree.selectedDegreeID = id
+        degree.current = nil
+        degree.whatIfs = []
+        UserDefaults.lhf.set(id, forKey: Self.degreeSelectedKey)
+        persistDegree()
+        if let running = degreeRefreshTask {
+            await running.value
+            degreeRefreshTask = nil
+        }
+        await refreshDegreeAudit(force: true)
+    }
+
+    // MARK: What if
+
+    /// Penn's program catalogue (code and title). Cached in the snapshot: it
+    /// is about a thousand public rows and never personal.
+    func loadDegreePrograms() async -> [PathProgramListing] {
+        if isUsingFixtureData { return SampleData.degreeSnapshot().programs }
+        guard degreeFeatureAvailable else { return [] }
+        if !degree.programs.isEmpty { return degree.programs }
+        let generation = degreeGeneration
+        // A student's own tap, so the attempt spacing does not apply.
+        let signIn = await degreePortal.ensureSignedIn(force: true)
+        guard generation == degreeGeneration else { return [] }
+        if let stop = Self.degreeStatus(for: signIn, previous: degreeStatus) {
+            degreeStatus = signIn == .throttled ? .failed(Self.degreeFailedLine) : stop
+            return []
+        }
+        let list = await degreePortal.programs()
+        guard generation == degreeGeneration else { return [] }
+        guard !list.isEmpty else {
+            degreeStatus = .failed(Self.degreeFailedLine)
+            return []
+        }
+        degree.programs = list
+        persistDegree()
+        return list
+    }
+
+    /// The changes the page would allow for one catalogue entry, as plans the
+    /// screen can offer. Empty when the entry could not be read.
+    func degreeWhatIfPlans(for programCode: String) async -> [PathWhatIfPlan] {
+        if isUsingFixtureData { return Self.fixtureWhatIfPlans(for: programCode) }
+        guard degreeFeatureAvailable else { return [] }
+        let generation = degreeGeneration
+        let signIn = await degreePortal.ensureSignedIn(force: true)
+        guard generation == degreeGeneration, signIn == .ready else { return [] }
+        guard let info = await degreePortal.programInfo(code: programCode) else { return [] }
+        guard generation == degreeGeneration else { return [] }
+        return PathWhatIf.plans(for: info, current: degree.degrees)
+    }
+
+    /// "What if I switched or added a program": audits the plan's description
+    /// and files the result, most recent first, at most four. A failure leaves
+    /// the current audit alone and says the failure words.
+    func runWhatIf(_ plan: PathWhatIfPlan) async {
         guard degreeFeatureAvailable else { return }
         if isUsingFixtureData {
-            runFixtureWhatIf(goals)
+            runFixtureWhatIf(plan)
             return
         }
         let generation = degreeGeneration
         let now = Date()
         let previous = degreeStatus
         degreeStatus = .reading
-        let collector = DegreeShapeCollector()
-        let client = degreeClient
-        let result = await degreeCall(now: now) { tokens in
-            try await client.fetchAudit(
-                tokens: tokens, goals: goals, keepCurriculum: false, isWhatIf: true,
-                now: now, shape: { collector.set($0) }
-            )
-        }
+        let signIn = await degreePortal.ensureSignedIn(force: true)
         guard generation == degreeGeneration else { return }
-        switch result {
-        case let .value(audit):
-            adoptDegreeShape(collector.lines)
-            degree.whatIfs.removeAll { $0.goals == audit.goals }
-            degree.whatIfs.insert(audit, at: 0)
-            if degree.whatIfs.count > Self.maxWhatIfs {
-                degree.whatIfs.removeLast(degree.whatIfs.count - Self.maxWhatIfs)
-            }
-            persistDegree()
-            degreeStatus = previous == .reading ? .idle : previous
-        case .needsGoals:
-            degreeStatus = .failed(Self.degreeFailedLine)
-        case let .stop(status):
-            degreeStatus = status
+        if let stop = Self.degreeStatus(for: signIn, previous: previous) {
+            degreeStatus = signIn == .throttled ? .failed(Self.degreeFailedLine) : stop
+            return
         }
+        let result = await degreePortal.auditData(degreeInfo: plan.degreeInfo)
+        guard generation == degreeGeneration else { return }
+        guard let data = result.data,
+              let decoded = try? PathAuditDecoder.decode(
+                data, fallbackGoals: plan.goals, isWhatIf: true, now: now)
+        else {
+            degreeStatus = .failed(Self.degreeFailedLine)
+            return
+        }
+        // The decoder takes `goals` from the reply's own `degreeInfo`, which
+        // may not reflect an added minor, and the screen keys a what-if by the
+        // goals the student asked for. So the audit is rebuilt under the
+        // plan's goals; every other field is Penn's, copied as decoded.
+        let audit = DegreeAudit(
+            goals: plan.goals, isWhatIf: true, percentComplete: decoded.percentComplete,
+            degreeLabel: decoded.degreeLabel, catalogYearLabel: decoded.catalogYearLabel,
+            blocks: decoded.blocks, courses: decoded.courses, fetchedAt: decoded.fetchedAt)
+        degree.whatIfs.removeAll { $0.goals == audit.goals }
+        degree.whatIfs.insert(audit, at: 0)
+        if degree.whatIfs.count > Self.maxWhatIfs {
+            degree.whatIfs.removeLast(degree.whatIfs.count - Self.maxWhatIfs)
+        }
+        persistDegree()
+        degreeStatus = previous == .reading ? .idle : previous
+    }
+
+    // MARK: Fixtures
+
+    /// The demo's plans: no portal, so one invented switch for any entry and
+    /// one invented minor for a code ending "-MIN".
+    private static func fixtureWhatIfPlans(for programCode: String) -> [PathWhatIfPlan] {
+        let base = SampleData.degreeSnapshot().degrees.first
+        let stem = programCode.split(separator: "-").first.map(String.init) ?? programCode
+        var plans: [PathWhatIfPlan] = []
+        let switchInfo: [String: String] = [
+            "degc": "BSE", "levl": "UG", "coll": "EU", "major": stem, "program": "EU_BSE",
+        ]
+        plans.append(PathWhatIfPlan(
+            change: .newProgram, programCode: programCode, degreeInfo: switchInfo,
+            goals: StudentDegree(raw: switchInfo).goals))
+        if programCode.uppercased().hasSuffix("-MIN") {
+            var minorInfo = base?.raw ?? switchInfo
+            minorInfo["minor"] = stem
+            plans.append(PathWhatIfPlan(
+                change: .addMinor, programCode: programCode, degreeInfo: minorInfo,
+                goals: StudentDegree(raw: minorInfo).goals))
+        }
+        return plans
     }
 
     /// The demo's "run": no network, so a what-if the sample already holds for
     /// these goals moves to the front, and otherwise a copy of the first
-    /// sample what-if is filed under the picked goals, so the button visibly
-    /// does something.
-    private func runFixtureWhatIf(_ goals: DegreeGoals) {
+    /// sample what-if is filed under the plan's goals, so the button visibly
+    /// does something. Never saved: the demo must not write its sample to disk.
+    private func runFixtureWhatIf(_ plan: PathWhatIfPlan) {
         guard FeatureFlags.degreeProgress else { return }
+        let goals = plan.goals
         var snapshot = degree.current == nil ? SampleData.degreeSnapshot() : degree
         if let index = snapshot.whatIfs.firstIndex(where: { $0.goals == goals }) {
             let match = snapshot.whatIfs.remove(at: index)
@@ -356,92 +451,11 @@ extension AppState {
         degree = snapshot
     }
 
-    /// The picker's choices, narrowed by what is already `selected`. Nil when
-    /// they could not be read; the sheet then says so in the status words.
-    func loadDegreeCatalog(selected: DegreeGoals) async -> DegreeGoalCatalog? {
-        guard !isUsingFixtureData, degreeFeatureAvailable else { return degree.catalog }
-        let generation = degreeGeneration
-        let client = degreeClient
-        let result = await degreeCall(now: Date()) { tokens in
-            try await client.fetchCatalog(tokens: tokens, selected: selected)
-        }
-        guard generation == degreeGeneration else { return nil }
-        guard case let .value(catalog) = result else { return degree.catalog }
-        degree.catalog = catalog
-        persistDegree()
-        return catalog
-    }
-
     // MARK: Plumbing
-
-    private func adoptDegreeShape(_ lines: [String]) {
-        guard !lines.isEmpty else { return }
-        degree.lastShape = lines
-        #if DEBUG
-        lines.forEach { DebugDegreeLog.record($0) }
-        #endif
-    }
 
     private func persistDegree() {
         // A failed save costs only the next launch's cache; the in-memory
         // snapshot is still right, so it is not an error the student sees.
         try? degreeStore.save(degree)
-    }
-
-    /// Runs `operation` with usable tokens: the stored pair when it is still
-    /// good, otherwise one read of the session. A rejected pair is dropped and
-    /// the session is read once more, never twice (a loop against Penn's SSO
-    /// is the thing to avoid).
-    private func degreeCall<Value>(
-        now: Date,
-        force: Bool = false,
-        _ operation: (DegreeWorksTokens) async throws -> Value
-    ) async -> DegreeCall<Value> {
-        let generation = degreeGeneration
-        for attempt in 0..<2 {
-            let tokens: DegreeWorksTokens
-            if attempt == 0, let stored = DegreeWorksTokenStore.load(), stored.isUsable(now: now) {
-                tokens = stored
-            } else {
-                // `force` is the student's own retry; without it a failed read
-                // left the reader's throttle standing and the retry did nothing.
-                let outcome = await degreeSessionReader.read(force: force || attempt > 0)
-                // A disconnect during the read: nothing from it may be kept.
-                guard generation == degreeGeneration else { return .stop(.idle) }
-                switch outcome {
-                case let .landed(read, finalPage):
-                    #if DEBUG
-                    DebugDegreeLog.record("session landed: \(finalPage)")
-                    #endif
-                    DegreeWorksTokenStore.save(read)
-                    tokens = read
-                case .needsDuo:
-                    return .stop(.waitingForDuo)
-                case .noCanvasSession:
-                    return .stop(.needsCanvasSignIn)
-                case .noSession:
-                    // With no saved PennKey the chain stopped at Penn's login
-                    // page and only the student can continue it.
-                    return .stop(PennKeyCredentialStore.hasCredentials
-                        ? .failed(Self.degreeFailedLine) : .needsCanvasSignIn)
-                case .timedOut, .throttled:
-                    return .stop(.failed(Self.degreeFailedLine))
-                }
-            }
-            do {
-                let value = try await operation(tokens)
-                guard generation == degreeGeneration else { return .stop(.idle) }
-                return .value(value)
-            } catch DegreeWorksClient.Failure.tokensRejected {
-                guard generation == degreeGeneration else { return .stop(.idle) }
-                DegreeWorksTokenStore.remove()
-                continue
-            } catch DegreeWorksClient.Failure.needsGoals {
-                return .needsGoals
-            } catch {
-                return .stop(.failed(Self.degreeFailedLine))
-            }
-        }
-        return .stop(.failed(Self.degreeFailedLine))
     }
 }

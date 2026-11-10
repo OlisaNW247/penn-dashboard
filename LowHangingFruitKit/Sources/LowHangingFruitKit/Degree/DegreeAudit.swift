@@ -1,9 +1,10 @@
 import Foundation
 
 // Degree progress, v12. Contract: docs/DEGREE_PROGRESS_V12_BUILD_SPEC.md.
-// Every endpoint constant behind this model (see DegreeWorksEndpoints) is
-// UNVERIFIED against Penn's live Degree Works system; nothing here has been
-// observed on a real audit.
+// The shape this model is decoded from (Path@Penn's own audit translation,
+// `PathAuditDecoder`) was observed on 2026-11-10 from a real session: names,
+// types and nesting only, recorded in the spec's "Observed on 2026-11-10".
+// No real audit content is in the repo; the fixtures are invented.
 
 /// The goals a Degree Works audit is run against: which school, program,
 /// degree, majors and so on. These are codes ("EU_BSE", "CIS"), never prose.
@@ -32,7 +33,7 @@ public struct DegreeGoals: Codable, Sendable, Hashable {
     }
 
     /// A lowercase one-liner such as "computer science, bse". Descriptions
-    /// come from the caller (the goal catalog); a code with no description
+    /// come from the caller (Penn's dictionaries, `PathDictionaries`); a code with no description
     /// falls back to itself. The caller owns the lookup so this stays pure.
     public func title(descriptions: [String: String]) -> String {
         func word(_ key: String) -> String {
