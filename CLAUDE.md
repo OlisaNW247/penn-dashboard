@@ -79,7 +79,7 @@ model on the server for course-level "facts"; they belong to the class,
 carry no user id, and a student's AI-assist switch does not stop them
 (`docs/PRIVACY.md` says so). The phone also reads Canvas's own structured
 endpoints (Planner, module completion, section dates) with the student's
-session and keeps the results on the phone. Since 2026-11-10 (`v12`, compiled green on the GitHub runner, never built with `xcodebuild`, never on a device) a
+session and keeps the results on the phone. Since 2026-11-10 (`v12`, green on the GitHub runner and built for iOS with `xcodebuild` on Olisa's Mac, never on a device) a
 Penn install can show the student's degree audit by running Penn's own
 Path@Penn page in a hidden WebView (`PathPortal`), signed in with the same
 saved PennKey, and asking that page for the audit through allowlisted
@@ -834,8 +834,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
   answers set aside (`ROADMAP.md` → Next).
 - **Degree** (`DegreeProgressView`, `v12`, behind
   `FeatureFlags.degreeProgress`; rewritten 2026-11-10 against the real
-  Path@Penn after Olisa's capture; compiled only by the GitHub runner,
-  nothing on a phone). Olisa's ask: "see your degree progress, see what
+  Path@Penn after Olisa's capture; green on the GitHub runner and built for
+  iOS on Olisa's Mac the same day, nothing on a phone). Olisa's ask: "see your degree progress, see what
   would hypothetically be your course of action if you switched degrees",
   no course recommendations. Reached from the first row of Profile →
   classes ("degree", with "31 of 40 cu", a percent, or the status line) and
@@ -1319,8 +1319,13 @@ a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 **Current on `v12` (2026-11-10, the Path@Penn rewrite after its review): 3764
 tests / 364 suites, all green, `swift test --no-parallel` on the GitHub macOS
 runner in 115 s (the `tests` workflow, run 42847761794 at `736c96b`); Deno
-and the extension's suite green on the same run. No Mac, no `xcodebuild`, no
-phone. +11 tests / +1 suite over the run below: `PathPortalBudgetRuleTests`
+and the extension's suite green on the same run. **The iOS Debug build of
+`155c840` (the same tree plus notes; `xcodebuild`, `generic/platform=iOS`,
+`CODE_SIGNING_ALLOWED=NO`, widget and App Intents metadata included)
+succeeded on Olisa's Mac at 11:36 local on 2026-11-10 with Xcode 27.2
+(27B52, the iOS 27.2 SDK), the first build of this project on Xcode 27.**
+`swift test` has not been run on that Mac, and nothing is on a phone.
++11 tests / +1 suite over the run below: `PathPortalBudgetRuleTests`
 (the credential-fill truth table, its parity with the renewer's rule, the
 retry-once rule, the status a what-if may restore), four source pins on
 `PathPortal.swift` and the grade-text guard pin in `PathBridgeTests`. They
@@ -3617,7 +3622,7 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
-| `v12` | **Current line (2026-11-09 onward).** `v10` at `4c136b2` plus the degree-progress research (`docs/DEGREE_PROGRESS_RESEARCH_2026-11-09.md`) and the degree feature. Built on 2026-11-09 against a guessed Degree Works host; rewritten on 2026-11-10 against what Olisa captured from his own Path@Penn session: `Degree/` in the Kit (`PathAuditDecoder`, `PathBridge`, `PathDegree`, `PathWhatIf`), `PathPortal`, `AppState+Degree`, `DegreeProgressView`, `DegreeWhatIfSheet`, `FeatureFlags.degreeProgress`. Compiled green by the `tests` workflow, which runs on pushes to it (Test baseline); never built with `xcodebuild`, nothing on a phone. There is no `v11`. |
+| `v12` | **Current line (2026-11-09 onward).** `v10` at `4c136b2` plus the degree-progress research (`docs/DEGREE_PROGRESS_RESEARCH_2026-11-09.md`) and the degree feature. Built on 2026-11-09 against a guessed Degree Works host; rewritten on 2026-11-10 against what Olisa captured from his own Path@Penn session: `Degree/` in the Kit (`PathAuditDecoder`, `PathBridge`, `PathDegree`, `PathWhatIf`), `PathPortal`, `AppState+Degree`, `DegreeProgressView`, `DegreeWhatIfSheet`, `FeatureFlags.degreeProgress`. Green on the `tests` workflow, which runs on pushes to it, and built for iOS with `xcodebuild` on Olisa's Mac (Xcode 27.2) on 2026-11-10 (Test baseline); nothing on a phone. There is no `v11`. |
 | `v10` | **Current line (2026-11-03 onward).** `v9` (the no-banner sign-in, the onboarding polish, the composed-day research) plus `origin/v8` `7e004c5` (the tree's recency and follow-up work) plus `phase0/extract-facts-bench`. The merge's Swift run is recorded under Test baseline. |
 | `phase0/extract-facts-bench` | 2026-11-03, off `v9`: the extract-facts bench, prompt, schema and parser; the model decision (Haiku 5.5, `docs/EXTRACT_FACTS_BENCH_2026-11-03.md`). In `v10`. |
 | `v9` | 2026-11-01 to 11-03: the no-banner sign-in and keepalive, proven on Marco's phone; the onboarding polish merged; the composed-day research. In `v10`. |
@@ -3657,11 +3662,11 @@ none is a ship line.
 
 ## Known gaps
 
-- **Degree progress (`v12`) has never run outside a test runner.** The
+- **Degree progress (`v12`) has never run on a device.** The
   audit's shape, the sign-in hand-off and the page's functions were captured
   from Olisa's own Path@Penn session in Chrome on 2026-11-10 and the code was
-  rewritten to them, but no build has been on a phone and `xcodebuild` has
-  not compiled the tree. Three things only a device can settle, each of
+  rewritten to them; the tree builds for iOS (`xcodebuild`, Xcode 27.2, on
+  Olisa's Mac, 2026-11-10), but no build has been on a phone. Three things only a device can settle, each of
   which fails as "couldn't read path@penn · retry" with the stopped step in
   `debugDegreeLogV1` (DEBUG; step names and hosts only): (1) whether
   Cloudflare's check on `courses.upenn.edu` passes in a hidden WebView (a

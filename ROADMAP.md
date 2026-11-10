@@ -57,8 +57,9 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   "The rewrite contract"): the app runs Penn's page in a hidden WebView and
   asks the page for the audit. Done: the capture, the decoder, the models
   and what-if rules, the portal, the screens, the privacy text, all green on
-  the runner. In order now: (1) `xcodebuild` on a Mac (the runner compiles
-  the package only, not the widget or the iOS-only files); (2) a DEBUG
+  the runner. In order now: (1) ~~`xcodebuild` on a Mac~~ done 2026-11-10 on
+  Olisa's Mac, Xcode 27.2: BUILD SUCCEEDED for `generic/platform=iOS`,
+  widget included; (2) a DEBUG
   build on Olisa's phone with `-LHFShowDegree`: does the page load past
   Cloudflare, does the sign-in popup hand the token back, does the audit
   for each of his two degrees match Path@Penn, does one "switch to" and one
