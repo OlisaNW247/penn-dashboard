@@ -1552,8 +1552,11 @@ RLS): `course_id in (the caller's enrolled ids)`, live documents only
 | `get_facts` | `course?`, `since?` (Unix seconds) | `course_facts` of enrolled courses, by `seq`; `since` compares `posted_at`, and a fact with none is always included; facts of a gone or since-edited document are dropped, as in the manifest | 200 facts |
 | `get_announcements` | `course?`, `days` (1 to 365, default 14), `page?` | `announcement` documents, newest `posted_at` first | 10 per page, 8,000 characters a post |
 | `get_ed_posts` | `course?`, `page?` | `ed` documents, newest first | 10 per page, 8,000 characters a post |
-| `propose_submission` | `assignment_id`, `kind` (`text` \| `url` \| `file`), `body?`, `url?`, `file_base64?`, `file_name?`, `mime_type?`, `note?` | writes a draft (see Drafts below) | body 100,000 characters; note 2,000; file name 200 with no path separator; file 1,572,864 bytes (1.5 MB) decoded, judged from the base64 length without decoding; url https only; the SDK's own 4 MiB body limit applies on top |
+| `propose_submission` | `assignment_id`, `kind` (`text` \| `url` \| `file`), `body?`, `url?`, `file_base64?`, `file_name?`, `mime_type?`, `note?` | writes a draft (see Drafts below) | body 100,000 characters; note 2,000; file name 200 with no path separator; file 1,572,864 bytes (1.5 MB) decoded, judged from the base64 length without decoding, but the tool description tells the model `file_base64` is for files under about 24 KB (claude.ai will not emit a 144,000-character argument) and that larger files go through the upload tools; url https only; the SDK's own 4 MiB body limit applies on top |
 | `draft_status` | `id` | a draft's state | |
+| `begin_file_upload` | `assignment_id`, `file_name`, `mime_type`, `total_bytes`, `sha256` | `{ upload_id, chunk_bytes: 16384, chunks, upload_url, upload_method: "PUT", upload_headers }` as a JSON first line, then the "fastest: PUT ..." guidance | scope `draft`; same name rules and unknown-assignment refusal as `propose_submission`; `total_bytes` 1 to 1,572,864; `sha256` 64 hex |
+| `append_file_chunk` | `upload_id`, `index`, `data_base64`, `sha256` | `{ received, missing: [...] }` | scope `draft`; a chunk is exactly 16384 bytes except the last; a wrong checksum is "chunk <i> checksum mismatch; resend it"; an index outside `0..chunks-1` is refused; re-sending an index replaces it |
+| `finish_file_upload` | `upload_id`, `note?` | `draft <id> proposed (<n> bytes decoded in <ms> ms)`, as `propose_submission` | scope `draft`; see Chunked uploads below |
 
 **Drafts** (`_shared/agentDrafts.ts`). `propose_submission` needs scope
 `draft` ("this connection cannot propose drafts"), checks its arguments, and
@@ -1569,6 +1572,53 @@ Storage bucket `agent-drafts` at `<user id>/<draft id>/<sanitized file name>`
 the object is removed (best effort) and the error surfaces. Draft ids are
 `smd_` + 22 base64url characters. `draft_status` answers the row's status for
 that student, "no such draft" otherwise.
+
+**Chunked uploads** (`_shared/agentUploads.ts`). `begin_file_upload` ->
+(`append_file_chunk` x N, or one PUT) -> `finish_file_upload`. All three need
+scope `draft` and are annotated like `propose_submission` (not read-only; the
+`destructiveHint` follows the same knob). Caps: 1,572,864 bytes, at most 100
+chunks (the byte cap is 96), one open upload per connection (a new `begin`
+deletes the unfinished one, its chunks and its staged object), 30 minutes from
+`begin` to `finish` (`expires_at`; later calls say "upload expired"). Staging
+is the table `agent_uploads` (`id` `smu_` + 22 base64url characters, `user_id`,
+`connection_id`, `assignment_id`, `file_name`, `mime_type`, `total_bytes`,
+`sha256`, `chunk_bytes`, `chunks`, `created_at`, `expires_at`) and
+`agent_upload_chunks` (`upload_id` cascade, `index`, `data` bytea, `sha256`,
+primary key `(upload_id, index)`), created by
+`20261110090000_agent_uploads.sql`, service role only. PostgREST carries
+bytea as `\x` + hex. `agent_sweep_expired` deletes expired uploads (chunks
+cascade); opt-out (`agent-snapshot` `delete`) and `deleteUserData` delete the
+student's uploads and staged objects.
+
+Path A, chunks: `append_file_chunk` decodes `data_base64`, hashes the decoded
+bytes and refuses a mismatch with `sha256`; the store then checks the upload
+exists and is live, the index range and the chunk's length; it answers how many
+chunks are held and which indexes are missing.
+
+Path B, direct (clients with a shell or HTTP tool): `begin` also returns
+`upload_url`, a Supabase Storage signed upload URL into the private
+`agent-drafts` bucket at `<user id>/uploads/<upload id>/<sanitized file name>`
+(`createSignedUploadUrl`; Supabase fixes its validity, currently 2 hours, so
+the 30-minute upload expiry is what bounds it), `upload_method: "PUT"` and
+`upload_headers` (`content-type` the file's mime type, `x-upsert: false`; the
+token is in the URL's query). The text result then says: "fastest: PUT the raw
+bytes to <url> (e.g. `curl -X PUT --upload-file <path> -H 'Content-Type:
+<mime>' '<url>'`), then call finish_file_upload; otherwise send chunks with
+append_file_chunk". If no URL could be made the text says to send chunks.
+
+`finish_file_upload`: if the staged object exists it is downloaded
+server-side and its size and sha256 are checked against `begin`; a mismatch is
+refused naming it ("uploaded object is N bytes but begin_file_upload said M" or
+"... does not match the sha256 ..."), and the object is deleted so the URL can
+be used again. Otherwise the chunks are assembled in order: missing chunks are
+refused by index, a total that is not `total_bytes` is refused, and a
+whole-file sha256 mismatch is refused; chunks are kept for a resend. The bytes
+then become the draft exactly as `propose_submission(kind: "file")` makes it
+(same row, same object path under `<user id>/<draft id>/`, same 20-open cap
+checked first, same result), and the staging (row, chunks, staged object) is
+deleted. Any refusal or failure, including the cap, keeps the staging. No
+logging of names, bytes or URLs. Retention is that of drafts, so
+`docs/PRIVACY.md` is unchanged.
 
 Annotations: every read tool carries `readOnlyHint: true`, `destructiveHint:
 false` and `openWorldHint: false`, all explicit (since 2026-11-10, not deployed;
@@ -1608,7 +1658,8 @@ Logs counts and outcome codes, never ids, titles or bodies. Table
 - `drafts` answers `{ "drafts": [...] }`: the caller's drafts with status
   `proposed` or `seen`, newest first, at most 50, each with `id`,
   `assignment_id`, `kind`, `body`, `url`, `file_name`, `mime_type`,
-  `file_bytes`, `note`, `client_name`, `status`, `created_at` and, for a
+  `file_bytes`, `note`, `client_name`, `status`, `created_at`, optionally
+  `format` (`markdown` | `text`; the phone detects markdown when absent) and, for a
   `file` draft, `file_url`: a Storage signed URL good for 120 seconds.
 - `draft { "id", "status": "seen" | "declined" | "submitted" | "failed",
   "canvas_submission_id"?, "attempt"?, "error_class"? }` moves the caller's

@@ -20,6 +20,15 @@
 import { McpServer } from "npm:@modelcontextprotocol/server@2.4.0";
 import { z } from "npm:zod@^4.3.6";
 import { DraftLimitError, InvalidBase64Error, MAX_OPEN_DRAFTS } from "./agentDrafts.ts";
+import {
+  type BeganUpload,
+  type BeginInput,
+  MemoryUploadStore,
+  SHA256_PATTERN,
+  sha256Hex,
+  UploadError,
+  UploadService,
+} from "./agentUploads.ts";
 
 // ---------------------------------------------------------------------------
 // Entry types: strings and nulls, dates as ISO strings.
@@ -99,6 +108,11 @@ export interface ProposedDraft {
   decodeMs?: number;
 }
 
+export interface UploadProgress {
+  received: number;
+  missing: number[];
+}
+
 export type WorkView = "todo" | "all" | "prev";
 
 export interface ToolBackend {
@@ -111,6 +125,12 @@ export interface ToolBackend {
   getEdPosts(userId: string, course?: string, page?: number): Promise<DocumentPage>;
   proposeSubmission(userId: string, connectionId: string, clientName: string, draft: DraftInput): Promise<ProposedDraft>;
   draftStatus(userId: string, id: string): Promise<{ id: string; status: string } | null>;
+  /** Chunked upload (agentUploads.ts). Refusals are `UploadError`s. */
+  beginUpload(userId: string, connectionId: string, input: BeginInput): Promise<BeganUpload>;
+  /** `bytes` already match `sha256`; the backend checks index, length and expiry. */
+  appendChunk(userId: string, uploadId: string, index: number, bytes: Uint8Array, sha256: string): Promise<UploadProgress>;
+  /** Assembles (or reads the staged object), verifies, and makes the draft as `proposeSubmission` would. */
+  finishUpload(userId: string, connectionId: string, clientName: string, uploadId: string, note?: string): Promise<ProposedDraft>;
 }
 
 // ---------------------------------------------------------------------------
@@ -211,7 +231,11 @@ export class FixtureToolBackend implements ToolBackend {
 
   /** Dates in the fixture are offsets from `anchor`, so a test that fixes
    *  `now` and passes the same value here sees the same world every run. */
-  constructor(private readonly anchor: Date = new Date(), private readonly pageSize = 10) {
+  readonly uploadStore: MemoryUploadStore = new MemoryUploadStore();
+  private readonly uploads: UploadService;
+
+  constructor(private readonly anchor: Date = new Date(), private readonly pageSize = 10, now: () => Date = () => new Date()) {
+    this.uploads = new UploadService(this.uploadStore, now);
     const at = (days: number) => new Date(anchor.getTime() + days * DAY_MS).toISOString();
     this.work = [
       { id: "asg-phys-hw4", course: "PHYS 0151", title: "Homework 4", kind: "assignment", dueAt: at(1), done: false, noSubmission: false, url: "https://canvas.example/courses/1001/assignments/1", source: "canvas" },
@@ -318,6 +342,32 @@ export class FixtureToolBackend implements ToolBackend {
     const id = crypto.randomUUID();
     this.drafts.set(id, { id, userId, connectionId, clientName, input, bytes: bytes ?? null, status: "proposed" });
     return { id, bytes, decodeMs };
+  }
+
+  beginUpload(userId: string, connectionId: string, input: BeginInput): Promise<BeganUpload> {
+    return this.uploads.begin(userId, connectionId, input);
+  }
+
+  appendChunk(userId: string, uploadId: string, index: number, bytes: Uint8Array, sha256: string): Promise<UploadProgress> {
+    return this.uploads.append(userId, uploadId, index, bytes, sha256);
+  }
+
+  finishUpload(userId: string, connectionId: string, clientName: string, uploadId: string, note?: string): Promise<ProposedDraft> {
+    return this.uploads.finish(userId, uploadId, (row, bytes) => {
+      const open = [...this.drafts.values()].filter((d) => d.userId === userId && (d.status === "proposed" || d.status === "seen")).length;
+      if (open >= MAX_OPEN_DRAFTS) throw new DraftLimitError();
+      const id = crypto.randomUUID();
+      this.drafts.set(id, {
+        id,
+        userId,
+        connectionId,
+        clientName,
+        input: { assignmentId: row.assignmentId, kind: "file", fileName: row.fileName, mimeType: row.mimeType, note },
+        bytes: bytes.byteLength,
+        status: "proposed",
+      });
+      return Promise.resolve({ id, bytes: bytes.byteLength, decodeMs: 0 });
+    });
   }
 
   draftStatus(userId: string, id: string): Promise<{ id: string; status: string } | null> {
@@ -536,7 +586,7 @@ export function registerTools(server: McpServer, backend: ToolBackend, options: 
     title: "Propose a submission",
     description:
       "Creates a draft for the student to review and submit from Smooth. Nothing is submitted to Canvas by this tool. " +
-      "Files: base64, at most 1.5 MB decoded.",
+      "Files: file_base64 is for files under about 24 KB; larger files (up to 1.5 MB) go through begin_file_upload, append_file_chunk and finish_file_upload.",
     inputSchema: z.object({
       assignment_id: z.string(),
       kind: z.enum(["text", "url", "file"]),
@@ -595,6 +645,125 @@ export function registerTools(server: McpServer, backend: ToolBackend, options: 
     }
     if (made.bytes !== undefined) return text(`draft ${made.id} proposed (${made.bytes} bytes decoded in ${made.decodeMs ?? 0} ms)`);
     return text(`draft ${made.id} proposed`);
+  });
+
+  const uploadAnnotations = { readOnlyHint: false, idempotentHint: false, openWorldHint: false, ...hint };
+  const draftScope = (who: Principal) => who.scopes.includes("draft") ? null : failure("this connection cannot propose drafts");
+  const uploadFailure = (err: unknown) => {
+    if (err instanceof UploadError || err instanceof DraftLimitError) return failure(err.message);
+    throw err;
+  };
+
+  server.registerTool("begin_file_upload", {
+    title: "Begin a file upload",
+    description:
+      "Starts a chunked upload of a file for a draft (for files over about 24 KB; at most 1.5 MB). Give the assignment id, file name, mime type, exact size in bytes and the sha256 (hex) of the whole file. " +
+      "Returns an upload id, the chunk size (16384 bytes) and the chunk count, and for clients with a shell a signed URL to PUT the raw bytes to. " +
+      "Then either PUT the file to that URL, or send each chunk with append_file_chunk; then call finish_file_upload. Nothing is submitted to Canvas. An unfinished upload expires after 30 minutes; a new begin replaces it.",
+    inputSchema: z.object({
+      assignment_id: z.string(),
+      file_name: z.string(),
+      mime_type: z.string(),
+      total_bytes: z.number().int(),
+      sha256: z.string(),
+    }),
+    annotations: uploadAnnotations,
+  }, async (args, ctx) => {
+    const who = principalOf(ctx);
+    if (!who) return noAuth();
+    const denied = draftScope(who);
+    if (denied) return denied;
+    const name = args.file_name;
+    if (!name || name.length > MAX_FILE_NAME_CHARS || /[\\/]/.test(name)) {
+      return failure(`file_name must be at most ${MAX_FILE_NAME_CHARS} characters with no path separators`);
+    }
+    if (!args.mime_type) return failure("mime_type is required");
+    if (args.total_bytes < 1) return failure("total_bytes must be at least 1");
+    if (args.total_bytes > MAX_FILE_BYTES) return failure(`file is larger than ${MAX_FILE_BYTES} bytes`);
+    if (!SHA256_PATTERN.test(args.sha256)) return failure("sha256 must be 64 hex characters");
+    if (!await backend.getAssignment(who.userId, args.assignment_id)) return failure("no such assignment");
+    try {
+      const began = await backend.beginUpload(who.userId, who.connectionId, {
+        assignmentId: args.assignment_id,
+        fileName: name,
+        mimeType: args.mime_type,
+        totalBytes: args.total_bytes,
+        sha256: args.sha256,
+      });
+      const result: Record<string, unknown> = { upload_id: began.uploadId, chunk_bytes: began.chunkBytes, chunks: began.chunks };
+      const lines: string[] = [];
+      if (began.uploadUrl) {
+        result.upload_url = began.uploadUrl;
+        result.upload_method = "PUT";
+        result.upload_headers = { "content-type": args.mime_type, "x-upsert": "false" };
+        lines.push(
+          `fastest: PUT the raw bytes to ${began.uploadUrl} (e.g. \`curl -X PUT --upload-file <path> -H 'Content-Type: ${args.mime_type}' '${began.uploadUrl}'\`), then call finish_file_upload; otherwise send chunks with append_file_chunk`,
+        );
+      } else {
+        lines.push("send chunks with append_file_chunk, then call finish_file_upload");
+      }
+      return text([JSON.stringify(result), ...lines].join("\n"));
+    } catch (err) {
+      return uploadFailure(err);
+    }
+  });
+
+  server.registerTool("append_file_chunk", {
+    title: "Append a file chunk",
+    description:
+      "Sends one chunk of an upload started with begin_file_upload: index (from 0), the chunk as base64 (16384 bytes, the last may be shorter) and the sha256 (hex) of the chunk's bytes. " +
+      "A chunk whose checksum does not match is refused; resend it. Sending an index again replaces it. Returns how many chunks are received and which indexes are still missing.",
+    inputSchema: z.object({
+      upload_id: z.string(),
+      index: z.number().int(),
+      data_base64: z.string(),
+      sha256: z.string(),
+    }),
+    annotations: uploadAnnotations,
+  }, async (args, ctx) => {
+    const who = principalOf(ctx);
+    if (!who) return noAuth();
+    const denied = draftScope(who);
+    if (denied) return denied;
+    if (!SHA256_PATTERN.test(args.sha256)) return failure("sha256 must be 64 hex characters");
+    const size = decodedSizeOf(args.data_base64);
+    if (size === null) return failure("data_base64 is not valid base64");
+    if (size > 16_384) return failure("a chunk is at most 16384 bytes");
+    let bytes: Uint8Array;
+    try {
+      bytes = decodeBase64(args.data_base64);
+    } catch {
+      return failure("data_base64 is not valid base64");
+    }
+    if (await sha256Hex(bytes) !== args.sha256.toLowerCase()) return failure(`chunk ${args.index} checksum mismatch; resend it`);
+    try {
+      const progress = await backend.appendChunk(who.userId, args.upload_id, args.index, bytes, args.sha256);
+      return text(JSON.stringify(progress));
+    } catch (err) {
+      return uploadFailure(err);
+    }
+  });
+
+  server.registerTool("finish_file_upload", {
+    title: "Finish a file upload",
+    description:
+      "Completes an upload: uses the file PUT to the signed URL if there is one, else assembles the chunks in order, checks the size and whole-file sha256, and creates the draft for the student to review in Smooth, as propose_submission would. " +
+      "If something is missing or does not match it says what, and the upload is kept so you can fix it and call again. Nothing is submitted to Canvas.",
+    inputSchema: z.object({ upload_id: z.string(), note: z.string().optional() }),
+    annotations: uploadAnnotations,
+  }, async (args, ctx) => {
+    const who = principalOf(ctx);
+    if (!who) return noAuth();
+    const denied = draftScope(who);
+    if (denied) return denied;
+    if (args.note !== undefined && args.note.length > MAX_NOTE_CHARS) return failure(`note is longer than ${MAX_NOTE_CHARS} characters`);
+    try {
+      const made = await backend.finishUpload(who.userId, who.connectionId, who.clientName, args.upload_id, args.note);
+      if (made.bytes !== undefined) return text(`draft ${made.id} proposed (${made.bytes} bytes decoded in ${made.decodeMs ?? 0} ms)`);
+      return text(`draft ${made.id} proposed`);
+    } catch (err) {
+      return uploadFailure(err);
+    }
   });
 
   server.registerTool("draft_status", {

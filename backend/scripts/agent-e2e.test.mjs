@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import {
   cookieFrom, draftIdFrom, makePKCE, mask, parseArgs, parseAuthorizePage, parseChallenge, parseMcpBody, run, RUN_ORDER, STEPS,
-  TEST_ASSIGNMENT_ID, testFileBytes, testSnapshot,
+  TEST_ASSIGNMENT_ID, testFileBytes, testSnapshot, sha256Hex, splitChunks, uploadInfoFrom,
 } from "./agent-e2e.mjs";
 
 // Shaped like authorizePage()'s output (backend/supabase/functions/_shared/agentAuth.ts).
@@ -80,9 +80,31 @@ test("the test file is deterministic and 20 KB; the snapshot names the test assi
   assert.ok(!JSON.stringify(snap).match(/"(score|grade|points|firstName|email)"/i));
 });
 
+test("splitChunks: 16 KB pieces with their own sha256, the last short, and they reassemble", () => {
+  const file = testFileBytes(40_000);
+  const parts = splitChunks(file);
+  assert.deepEqual(parts.map((p) => p.index), [0, 1, 2]);
+  assert.deepEqual(parts.map((p) => Buffer.from(p.base64, "base64").length), [16384, 16384, 7232]);
+  for (const p of parts) assert.equal(p.sha256, sha256Hex(Buffer.from(p.base64, "base64")));
+  assert.ok(Buffer.concat(parts.map((p) => Buffer.from(p.base64, "base64"))).equals(file));
+  assert.equal(splitChunks(Buffer.alloc(16384)).length, 1);
+  assert.equal(splitChunks(Buffer.alloc(0)).length, 0);
+  assert.equal(sha256Hex(Buffer.from("abc")), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+});
+
+test("uploadInfoFrom reads begin_file_upload's first line only", () => {
+  const info = uploadInfoFrom('{"upload_id":"smu_x","chunk_bytes":16384,"chunks":7}\nfastest: PUT the raw bytes');
+  assert.equal(info.upload_id, "smu_x");
+  assert.equal(info.chunks, 7);
+  assert.equal(uploadInfoFrom("no such assignment"), null);
+  assert.equal(uploadInfoFrom('{"x":1}'), null);
+  assert.equal(uploadInfoFrom(undefined), null);
+});
+
 test("RUN_ORDER runs every step once, drafts before the revoke and cleanup last", () => {
   assert.deepEqual([...RUN_ORDER].sort((x, y) => x - y), STEPS.map((_, i) => i));
   assert.ok(RUN_ORDER.indexOf(11) < RUN_ORDER.indexOf(8));
   assert.ok(RUN_ORDER.indexOf(10) < RUN_ORDER.indexOf(7));
+  assert.ok(RUN_ORDER.indexOf(11) < RUN_ORDER.indexOf(13) && RUN_ORDER.indexOf(13) < RUN_ORDER.indexOf(8));
   assert.equal(RUN_ORDER.at(-1), 9);
 });

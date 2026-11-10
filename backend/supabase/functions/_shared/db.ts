@@ -1257,6 +1257,8 @@ export async function deleteUserData(client: SupabaseClient, userId: string): Pr
   // The files first, best effort: the rows (which name the objects) go next,
   // and a storage hiccup must never fail the deletion.
   await removeUserDraftObjects(client, userId);
+  const { error: uploadsError } = await client.from("agent_uploads").delete().eq("user_id", userId);
+  if (uploadsError) throw uploadsError;
   const { error: draftsError } = await client.from("agent_drafts").delete().eq("user_id", userId);
   if (draftsError) throw draftsError;
 

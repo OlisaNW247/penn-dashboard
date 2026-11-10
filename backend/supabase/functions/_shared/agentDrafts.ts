@@ -289,7 +289,16 @@ export async function removeUserDraftObjects(client: SupabaseClient, userId: str
     for (const folder of folders.data ?? []) {
       const files = await bucket.list(`${userId}/${folder.name}`, { limit: 1000 });
       if (files.error) throw files.error;
-      for (const file of files.data ?? []) paths.push(`${userId}/${folder.name}/${file.name}`);
+      for (const file of files.data ?? []) {
+        // `uploads/<upload id>/<file>`: staged objects of the chunked upload, one level deeper.
+        if (folder.name === "uploads" && file.id === null) {
+          const staged = await bucket.list(`${userId}/uploads/${file.name}`, { limit: 1000 });
+          if (staged.error) throw staged.error;
+          for (const f of staged.data ?? []) paths.push(`${userId}/uploads/${file.name}/${f.name}`);
+        } else {
+          paths.push(`${userId}/${folder.name}/${file.name}`);
+        }
+      }
     }
     if (paths.length > 0) {
       const removed = await bucket.remove(paths);

@@ -20,11 +20,14 @@ import {
   MAX_PHONE_DRAFTS,
   PostgrestDraftStore,
 } from "../_shared/agentDrafts.ts";
+import { PostgrestUploadStore, type UploadStore } from "../_shared/agentUploads.ts";
 import { MAX_SNAPSHOT_BYTES, validateSnapshot } from "../_shared/agentSnapshot.ts";
 
 export interface AgentSnapshotDeps {
   store: AgentStore;
   drafts: DraftStore;
+  /** Unfinished chunked uploads, removed at opt-out like drafts. */
+  uploads?: UploadStore;
   now?: () => Date;
 }
 
@@ -75,6 +78,7 @@ export async function handleAgentSnapshot(req: Request, deps: AgentSnapshotDeps)
       // Opting out takes the drafts and their files too: they are the
       // student's writing, held only for review.
       const draftsDeleted = await deps.drafts.deleteAll(userId);
+      await deps.uploads?.deleteAll(userId);
       const revoked = await deps.store.revokeAllConnections(userId, now.toISOString());
       console.log(`agent-snapshot: delete revoked=${revoked} drafts=${draftsDeleted}`);
       return json(200, { deleted: true, revoked });
@@ -136,7 +140,7 @@ function productionDeps(): AgentSnapshotDeps {
   const client = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  return { store: new PostgrestAgentStore(client), drafts: new PostgrestDraftStore(client) };
+  return { store: new PostgrestAgentStore(client), drafts: new PostgrestDraftStore(client), uploads: new PostgrestUploadStore(client) };
 }
 
 if (import.meta.main) Deno.serve((req) => handleAgentSnapshot(req, productionDeps()));

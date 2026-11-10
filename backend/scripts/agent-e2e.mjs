@@ -35,10 +35,11 @@ export const STEPS = [
   "phone: put a snapshot with one test assignment",
   "drafts: propose text and a 20 KB file, list, download, seen, declined, submitted, 409",
   "phone: opt out (delete) removes the snapshot, the drafts and the connection",
+  "uploads: 100 KB in 16 KB checksummed chunks (one sent wrong, resent) and 50 KB by signed-URL PUT; both become drafts with equal bytes",
 ];
-// STEPS[10..12] were added later and sit at the end only so the older indices
+// STEPS[10..13] were added later and sit at the end only so the older indices
 // keep their meaning; RUN_ORDER is the order they actually run in.
-export const RUN_ORDER = [0, 1, 2, 3, 4, 5, 6, 10, 7, 11, 8, 12, 9];
+export const RUN_ORDER = [0, 1, 2, 3, 4, 5, 6, 10, 7, 11, 13, 8, 12, 9];
 
 // ---- pure parts -----------------------------------------------------
 
@@ -105,6 +106,32 @@ export function testFileBytes(n = 20 * 1024) {
   const out = Buffer.alloc(n);
   for (let i = 0; i < n; i++) out[i] = (i * 31 + 7) & 0xff;
   return out;
+}
+
+export function sha256Hex(buf) {
+  return crypto.createHash("sha256").update(buf).digest("hex");
+}
+
+export const UPLOAD_CHUNK_BYTES = 16384;
+
+/** A file as the upload tools want it: one entry per chunk with its own sha256. */
+export function splitChunks(buf, size = UPLOAD_CHUNK_BYTES) {
+  const out = [];
+  for (let i = 0, index = 0; i < buf.length; i += size, index++) {
+    const part = buf.subarray(i, i + size);
+    out.push({ index, base64: part.toString("base64"), sha256: sha256Hex(part) });
+  }
+  return out;
+}
+
+/** `begin_file_upload`'s JSON (its first line) -> object, or null. */
+export function uploadInfoFrom(text) {
+  try {
+    const info = JSON.parse(String(text ?? "").split("\n")[0]);
+    return info && typeof info.upload_id === "string" ? info : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The throwaway's snapshot: one course, one assignment the drafts point at. */
@@ -433,6 +460,69 @@ export async function run(argv, { fetchImpl = fetch, log = console.log } = {}) {
       s.openDraftId = draftIdFrom(openMade);
       must(s.openDraftId, `no draft id in: ${openMade.slice(0, 200)}`);
       return "2 drafts, file bytes equal, 400 without canvas_submission_id, 409 on a second move; 1 left open";
+    });
+
+    await step(STEPS[13], async () => {
+      const downloadOf = async (draftId) => {
+        const list = await snap({ action: "drafts" });
+        const d = (list.json?.drafts ?? []).find((x) => x.id === draftId);
+        must(d && d.kind === "file" && typeof d.file_url === "string", `upload draft ${draftId} is not in drafts`);
+        const dl = await fetchImpl(d.file_url);
+        must(dl.status === 200, `signed URL HTTP ${dl.status}`);
+        return { d, bytes: Buffer.from(await dl.arrayBuffer()) };
+      };
+      const begin = async (id, bytes, name) => {
+        const text = await callTool(id, "begin_file_upload", {
+          assignment_id: TEST_ASSIGNMENT_ID, file_name: name, mime_type: "application/pdf",
+          total_bytes: bytes.length, sha256: sha256Hex(bytes),
+        });
+        const info = uploadInfoFrom(text);
+        must(info, `begin_file_upload said: ${text.slice(0, 200)}`);
+        return info;
+      };
+
+      // Chunks: 100 KB, chunk 2 sent with the wrong bytes first.
+      const big = crypto.randomBytes(100 * 1024);
+      const a = await begin(20, big, "chunked.pdf");
+      must(a.chunk_bytes === UPLOAD_CHUNK_BYTES && a.chunks === Math.ceil(big.length / UPLOAD_CHUNK_BYTES), `begin said ${JSON.stringify(a).slice(0, 200)}`);
+      const parts = splitChunks(big);
+      let rpcId = 21;
+      for (const c of parts) {
+        if (c.index === 2) {
+          const wrong = Buffer.from(big.subarray(2 * UPLOAD_CHUNK_BYTES, 3 * UPLOAD_CHUNK_BYTES));
+          wrong[0] ^= 0xff;
+          const r = await mcp(s.access, {
+            jsonrpc: "2.0", id: rpcId++, method: "tools/call",
+            params: { name: "append_file_chunk", arguments: { upload_id: a.upload_id, index: 2, data_base64: wrong.toString("base64"), sha256: c.sha256 } },
+          });
+          const msg = parseMcpBody(r.text);
+          must(msg.result?.isError === true && /checksum mismatch; resend it/.test(msg.result.content?.[0]?.text ?? ""), `wrong chunk was not refused: ${r.text.slice(0, 200)}`);
+        }
+        await callTool(rpcId++, "append_file_chunk", { upload_id: a.upload_id, index: c.index, data_base64: c.base64, sha256: c.sha256 });
+      }
+      const made = await callTool(rpcId++, "finish_file_upload", { upload_id: a.upload_id, note: "from agent-e2e chunks" });
+      const chunkedId = draftIdFrom(made);
+      must(chunkedId && made.includes(`${big.length} bytes`), `finish said: ${made.slice(0, 200)}`);
+      const got = await downloadOf(chunkedId);
+      must(got.d.file_name === "chunked.pdf" && got.bytes.equals(big), "chunked draft bytes differ from the original");
+
+      // Direct: PUT the raw bytes to the signed URL, then finish.
+      const mid = crypto.randomBytes(50 * 1024);
+      const b = await begin(rpcId++, mid, "direct.pdf");
+      must(b.upload_method === "PUT" && typeof b.upload_url === "string", "begin returned no signed upload URL");
+      const put = await fetchImpl(b.upload_url, { method: "PUT", headers: b.upload_headers, body: mid });
+      must(put.status === 200, `signed PUT HTTP ${put.status} ${(await put.text()).slice(0, 200)}`);
+      const done = await callTool(rpcId++, "finish_file_upload", { upload_id: b.upload_id });
+      const directId = draftIdFrom(done);
+      must(directId, `finish said: ${done.slice(0, 200)}`);
+      const got2 = await downloadOf(directId);
+      must(got2.d.file_name === "direct.pdf" && got2.bytes.equals(mid), "direct draft bytes differ from the original");
+
+      for (const id of [chunkedId, directId]) {
+        const moved = await snap({ action: "draft", id, status: "declined" });
+        must(moved.status === 200, `declining ${id}: HTTP ${moved.status}`);
+      }
+      return "chunked 100 KB (wrong chunk refused and resent) and PUT 50 KB: both drafts, bytes equal";
     });
 
     await step(STEPS[8], async () => {

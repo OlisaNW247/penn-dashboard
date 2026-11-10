@@ -149,12 +149,12 @@ Deno.test("initialize, then tools/list with titles and annotations", async () =>
   const list = await rpc(await post(deps, token, { jsonrpc: "2.0", id: 2, method: "tools/list" }));
   const tools: any[] = list.result.tools;
   assertEquals(tools.map((t) => t.name).sort(), [
-    "draft_status", "get_announcements", "get_assignment", "get_ed_posts", "get_facts",
-    "list_courses", "list_work", "propose_submission", "search_course_material",
+    "append_file_chunk", "begin_file_upload", "draft_status", "finish_file_upload", "get_announcements", "get_assignment",
+    "get_ed_posts", "get_facts", "list_courses", "list_work", "propose_submission", "search_course_material",
   ]);
   for (const t of tools) {
     assert(typeof t.title === "string" && t.title.length > 0, `${t.name} has a title`);
-    if (t.name === "propose_submission") {
+    if (["propose_submission", "begin_file_upload", "append_file_chunk", "finish_file_upload"].includes(t.name)) {
       assertEquals(t.annotations.readOnlyHint, false);
       assertEquals(t.annotations.idempotentHint, false);
       assertEquals(t.annotations.openWorldHint, false);
@@ -173,7 +173,7 @@ Deno.test("tools/list works without an initialize first (stateless)", async () =
   const { token } = await seed(store);
   const res = await post(deps, token, { jsonrpc: "2.0", id: 1, method: "tools/list" });
   assertEquals(res.status, 200);
-  assertEquals((await rpc(res)).result.tools.length, 9);
+  assertEquals((await rpc(res)).result.tools.length, 12);
 });
 
 Deno.test("destructiveHint follows the proposeHint knob", async () => {
@@ -332,4 +332,210 @@ Deno.test("an unexpected throw is a bare 500", async () => {
   const res = await post(deps, token, {});
   assertEquals(res.status, 500);
   assertEquals(await res.json(), { error: "internal_error" });
+});
+
+// ---- chunked upload through the handler -------------------------------------
+
+async function sha256(bytes: Uint8Array): Promise<string> {
+  return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes as BufferSource))).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+const b64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
+
+function randomFile(n: number): Uint8Array {
+  const out = new Uint8Array(n);
+  for (let i = 0; i < n; i += 65536) crypto.getRandomValues(out.subarray(i, Math.min(n, i + 65536)));
+  return out;
+}
+
+async function begin(deps: McpDeps, token: string, file: Uint8Array, over: Record<string, unknown> = {}) {
+  return await call(deps, token, "begin_file_upload", {
+    assignment_id: "asg-phys-hw4",
+    file_name: "hw4.pdf",
+    mime_type: "application/pdf",
+    total_bytes: file.length,
+    sha256: await sha256(file),
+    ...over,
+  });
+}
+
+async function chunk(deps: McpDeps, token: string, id: string, file: Uint8Array, index: number) {
+  const part = file.subarray(index * 16384, (index + 1) * 16384);
+  return await call(deps, token, "append_file_chunk", { upload_id: id, index, data_base64: b64(part), sha256: await sha256(part) });
+}
+
+Deno.test("chunked upload: begin, a wrong chunk refused and resent, finish makes the draft", async () => {
+  const { store, backend, deps } = makeDeps();
+  const { token } = await seed(store);
+  const file = randomFile(40_000); // 3 chunks: 16384, 16384, 7232
+  const began = await begin(deps, token, file);
+  assert(!began.result.isError, toolText(began));
+  const info = JSON.parse(toolText(began).split("\n")[0]);
+  assertEquals(info.chunk_bytes, 16384);
+  assertEquals(info.chunks, 3);
+  assertEquals(info.upload_method, "PUT");
+  assertEquals(info.upload_headers["x-upsert"], "false");
+  assertStringIncludes(toolText(began), "fastest: PUT the raw bytes to ");
+  assertStringIncludes(toolText(began), "otherwise send chunks with append_file_chunk");
+
+  // Chunk 0 with the wrong bytes under its checksum.
+  const bad = await call(deps, token, "append_file_chunk", {
+    upload_id: info.upload_id, index: 0, data_base64: b64(file.subarray(1, 16385)), sha256: await sha256(file.subarray(0, 16384)),
+  });
+  assertEquals(bad.result.isError, true);
+  assertEquals(toolText(bad), "chunk 0 checksum mismatch; resend it");
+
+  assertEquals(JSON.parse(toolText(await chunk(deps, token, info.upload_id, file, 2))), { received: 1, missing: [0, 1] });
+  assertEquals(JSON.parse(toolText(await chunk(deps, token, info.upload_id, file, 0))), { received: 2, missing: [1] });
+  // Finishing early names what is missing and keeps the staging.
+  const early = await call(deps, token, "finish_file_upload", { upload_id: info.upload_id });
+  assertEquals(early.result.isError, true);
+  assertStringIncludes(toolText(early), "chunks missing: 1");
+  assertEquals(JSON.parse(toolText(await chunk(deps, token, info.upload_id, file, 1))), { received: 3, missing: [] });
+  // Re-sending an index replaces it.
+  assertEquals(JSON.parse(toolText(await chunk(deps, token, info.upload_id, file, 1))).received, 3);
+
+  const done = await call(deps, token, "finish_file_upload", { upload_id: info.upload_id, note: "n" });
+  assert(!done.result.isError, toolText(done));
+  assertStringIncludes(toolText(done), "40000 bytes");
+  const id = /draft (\S+) proposed/.exec(toolText(done))![1];
+  assertStringIncludes(toolText(await call(deps, token, "draft_status", { id })), "proposed");
+  assertEquals(backend.drafts.get(id)!.input.fileName, "hw4.pdf");
+  assertEquals(backend.uploadStore.rows.size, 0); // staging deleted
+  assertEquals(backend.uploadStore.chunkRows.size, 0);
+  assertEquals((await call(deps, token, "finish_file_upload", { upload_id: info.upload_id })).result.isError, true);
+});
+
+Deno.test("chunked upload: out of range, wrong length, bad base64, replace by a new begin", async () => {
+  const { store, backend, deps } = makeDeps();
+  const { token } = await seed(store);
+  const file = randomFile(20_000);
+  const a = JSON.parse(toolText(await begin(deps, token, file)).split("\n")[0]);
+  const oob = await call(deps, token, "append_file_chunk", { upload_id: a.upload_id, index: 2, data_base64: "AAAA", sha256: await sha256(new Uint8Array(3)) });
+  assertEquals(oob.result.isError, true);
+  assertStringIncludes(toolText(oob), "out of range");
+  const neg = await call(deps, token, "append_file_chunk", { upload_id: a.upload_id, index: -1, data_base64: "AAAA", sha256: await sha256(new Uint8Array(3)) });
+  assertStringIncludes(toolText(neg), "out of range");
+  // A short non-final chunk is refused by length.
+  const short = file.subarray(0, 100);
+  const wrong = await call(deps, token, "append_file_chunk", { upload_id: a.upload_id, index: 0, data_base64: b64(short), sha256: await sha256(short) });
+  assertStringIncludes(toolText(wrong), "chunk 0 must be 16384 bytes");
+  const junk = await call(deps, token, "append_file_chunk", { upload_id: a.upload_id, index: 0, data_base64: "A", sha256: "0".repeat(64) });
+  assertStringIncludes(toolText(junk), "not valid base64");
+  const unknown = await call(deps, token, "append_file_chunk", { upload_id: "smu_nope", index: 0, data_base64: "AAAA", sha256: await sha256(new Uint8Array(3)) });
+  assertStringIncludes(toolText(unknown), "no such upload");
+
+  // One open upload per connection: a new begin replaces the old.
+  await chunk(deps, token, a.upload_id, file, 0);
+  const b = JSON.parse(toolText(await begin(deps, token, file)).split("\n")[0]);
+  assertEquals(backend.uploadStore.rows.size, 1);
+  assert(backend.uploadStore.rows.has(b.upload_id));
+  assertStringIncludes(toolText(await chunk(deps, token, a.upload_id, file, 1)), "no such upload");
+});
+
+Deno.test("chunked upload: begin refusals", async () => {
+  const { store, deps } = makeDeps();
+  const { token } = await seed(store);
+  const file = randomFile(100);
+  assertStringIncludes(toolText(await begin(deps, token, file, { total_bytes: 1_572_865 })), "larger than");
+  assertStringIncludes(toolText(await begin(deps, token, file, { total_bytes: 0 })), "at least 1");
+  assertStringIncludes(toolText(await begin(deps, token, file, { file_name: "../x.pdf" })), "no path separators");
+  assertStringIncludes(toolText(await begin(deps, token, file, { sha256: "abc" })), "64 hex");
+  assertStringIncludes(toolText(await begin(deps, token, file, { assignment_id: "zzz" })), "no such assignment");
+  // 1.5 MB exactly is 96 chunks, inside the 100-chunk cap.
+  assert(!(await begin(deps, token, file, { total_bytes: 1_572_864 })).result.isError);
+});
+
+Deno.test("chunked upload: whole-file mismatch is refused and the chunks kept for a resend", async () => {
+  const { store, backend, deps } = makeDeps();
+  const { token } = await seed(store);
+  const file = randomFile(20_000);
+  const other = randomFile(20_000);
+  const a = JSON.parse(toolText(await begin(deps, token, file)).split("\n")[0]);
+  await chunk(deps, token, a.upload_id, file, 0);
+  await chunk(deps, token, a.upload_id, other, 1); // checksummed on its own, wrong for the file
+  const refused = await call(deps, token, "finish_file_upload", { upload_id: a.upload_id });
+  assertEquals(refused.result.isError, true);
+  assertStringIncludes(toolText(refused), "file sha256 does not match");
+  assertEquals(backend.uploadStore.rows.size, 1);
+  assertEquals(backend.uploadStore.chunkRows.get(a.upload_id)!.size, 2);
+  await chunk(deps, token, a.upload_id, file, 1);
+  assert(!(await call(deps, token, "finish_file_upload", { upload_id: a.upload_id })).result.isError);
+});
+
+Deno.test("chunked upload: direct PUT path reads the staged object; a mismatch names it and clears it", async () => {
+  const { store, backend, deps } = makeDeps();
+  const { token } = await seed(store);
+  const file = randomFile(30_000);
+  const a = JSON.parse(toolText(await begin(deps, token, file)).split("\n")[0]);
+  assertStringIncludes(a.upload_url, "/uploads/" + a.upload_id + "/hw4.pdf");
+  const path = [...backend.uploadStore.rows.values()].map((r) => `${r.userId}/uploads/${r.id}/hw4.pdf`)[0];
+
+  backend.uploadStore.staged.set(path, file.subarray(0, 29_999));
+  const short = await call(deps, token, "finish_file_upload", { upload_id: a.upload_id });
+  assertEquals(short.result.isError, true);
+  assertStringIncludes(toolText(short), "uploaded object is 29999 bytes but begin_file_upload said 30000");
+  assertEquals(backend.uploadStore.staged.size, 0);
+
+  backend.uploadStore.staged.set(path, randomFile(30_000));
+  const wrong = await call(deps, token, "finish_file_upload", { upload_id: a.upload_id });
+  assertStringIncludes(toolText(wrong), "does not match the sha256");
+  assertEquals(backend.uploadStore.rows.size, 1);
+
+  backend.uploadStore.staged.set(path, file);
+  const done = await call(deps, token, "finish_file_upload", { upload_id: a.upload_id });
+  assert(!done.result.isError, toolText(done));
+  assertStringIncludes(toolText(done), "30000 bytes");
+  assertEquals(backend.uploadStore.staged.size, 0);
+  assertEquals(backend.uploadStore.rows.size, 0);
+});
+
+Deno.test("chunked upload: no signed URL still leaves the chunk path", async () => {
+  const { store, backend, deps } = makeDeps();
+  backend.uploadStore.signing = false;
+  const { token } = await seed(store);
+  const began = toolText(await begin(deps, token, randomFile(10)));
+  assert(!began.includes("upload_url"));
+  assertStringIncludes(began, "send chunks with append_file_chunk");
+});
+
+Deno.test("chunked upload: expiry after 30 minutes, and the 20-open-draft cap keeps the staging", async () => {
+  let clock = new Date(NOW);
+  const store = new MemoryAgentStore();
+  const backend = new FixtureToolBackend(NOW, 10, () => clock);
+  const deps: McpDeps = { store, backend, publicBase: BASE, now: () => NOW, proposeHint: "false" };
+  const { token } = await seed(store);
+  const file = randomFile(100);
+  const a = JSON.parse(toolText(await begin(deps, token, file)).split("\n")[0]);
+  clock = new Date(NOW.getTime() + 29 * 60_000);
+  assertEquals(JSON.parse(toolText(await chunk(deps, token, a.upload_id, file, 0))).received, 1);
+  clock = new Date(NOW.getTime() + 31 * 60_000);
+  const late = await call(deps, token, "finish_file_upload", { upload_id: a.upload_id });
+  assertEquals(late.result.isError, true);
+  assertStringIncludes(toolText(late), "expired");
+  assertEquals(backend.uploadStore.rows.size, 0);
+
+  clock = new Date(NOW);
+  for (let i = 0; i < 20; i++) {
+    assert(!(await call(deps, token, "propose_submission", { assignment_id: "asg-phys-hw4", kind: "text", body: "x" })).result.isError);
+  }
+  const b = JSON.parse(toolText(await begin(deps, token, file)).split("\n")[0]);
+  await chunk(deps, token, b.upload_id, file, 0);
+  const capped = await call(deps, token, "finish_file_upload", { upload_id: b.upload_id });
+  assertEquals(capped.result.isError, true);
+  assertStringIncludes(toolText(capped), "too many open drafts");
+  assertEquals(backend.uploadStore.rows.size, 1);
+});
+
+Deno.test("upload tools need the draft scope", async () => {
+  const { store, deps } = makeDeps();
+  const { token } = await seed(store, { scopes: ["read"] });
+  for (const [name, args] of [
+    ["begin_file_upload", { assignment_id: "asg-phys-hw4", file_name: "a.pdf", mime_type: "application/pdf", total_bytes: 1, sha256: "0".repeat(64) }],
+    ["append_file_chunk", { upload_id: "x", index: 0, data_base64: "AAAA", sha256: "0".repeat(64) }],
+    ["finish_file_upload", { upload_id: "x" }],
+  ] as const) {
+    const r = await call(deps, token, name, args);
+    assertEquals(r.result.isError, true, name);
+    assertEquals(toolText(r), "this connection cannot propose drafts");
+  }
 });

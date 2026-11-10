@@ -28,6 +28,7 @@ import type {
   WorkView,
 } from "./agentTools.ts";
 import { type DraftStore, DraftLimitError, MAX_OPEN_DRAFTS, PostgrestDraftStore } from "./agentDrafts.ts";
+import { type BeganUpload, type BeginInput, PostgrestUploadStore, UploadService, type UploadStore } from "./agentUploads.ts";
 import { sameCourse, type WorkItem, workView } from "./agentSnapshot.ts";
 import { selectEnrolledCourseIDs } from "./db.ts";
 import { factsResponse, type FactRowWithDocument, isWindowKind, windowAgeOutFilter } from "./manifest.ts";
@@ -68,12 +69,14 @@ export class PostgrestToolBackend implements ToolBackend {
   private readonly store: AgentStore;
   private readonly now: () => Date;
   private readonly drafts: DraftStore;
+  private readonly uploads: UploadService;
 
-  constructor(options: { client: SupabaseClient; store: AgentStore; now?: () => Date; drafts?: DraftStore }) {
+  constructor(options: { client: SupabaseClient; store: AgentStore; now?: () => Date; drafts?: DraftStore; uploads?: UploadStore }) {
     this.client = options.client;
     this.store = options.store;
     this.drafts = options.drafts ?? new PostgrestDraftStore(options.client);
     this.now = options.now ?? (() => new Date());
+    this.uploads = new UploadService(options.uploads ?? new PostgrestUploadStore(options.client), this.now);
   }
 
   async listCourses(userId: string): Promise<CourseEntry[]> {
@@ -240,6 +243,17 @@ export class PostgrestToolBackend implements ToolBackend {
       decodeMs = Math.round((performance.now() - started) * 100) / 100;
       file = { bytes, name: draft.fileName ?? "file", mimeType: draft.mimeType };
     }
+    return await this.insertDraft(userId, connectionId, clientName, draft, file, decodeMs);
+  }
+
+  private async insertDraft(
+    userId: string,
+    connectionId: string,
+    clientName: string,
+    draft: Omit<DraftInput, "fileBase64">,
+    file: { bytes: Uint8Array; name: string; mimeType?: string } | undefined,
+    decodeMs: number | undefined,
+  ): Promise<ProposedDraft> {
     const id = await this.drafts.create(userId, {
       assignmentId: draft.assignmentId,
       connectionId,
@@ -251,6 +265,29 @@ export class PostgrestToolBackend implements ToolBackend {
       file,
     });
     return { id, bytes: file?.bytes.byteLength, decodeMs };
+  }
+
+  beginUpload(userId: string, connectionId: string, input: BeginInput): Promise<BeganUpload> {
+    return this.uploads.begin(userId, connectionId, input);
+  }
+
+  appendChunk(userId: string, uploadId: string, index: number, bytes: Uint8Array, sha256: string) {
+    return this.uploads.append(userId, uploadId, index, bytes, sha256);
+  }
+
+  /** The same row, object path, cap and result as `proposeSubmission` for a file. */
+  finishUpload(userId: string, connectionId: string, clientName: string, uploadId: string, note?: string): Promise<ProposedDraft> {
+    return this.uploads.finish(userId, uploadId, async (row, bytes) => {
+      if (await this.drafts.countOpen(userId) >= MAX_OPEN_DRAFTS) throw new DraftLimitError();
+      return await this.insertDraft(
+        userId,
+        connectionId,
+        clientName,
+        { assignmentId: row.assignmentId, kind: "file", note },
+        { bytes, name: row.fileName, mimeType: row.mimeType },
+        0,
+      );
+    });
   }
 
   draftStatus(userId: string, id: string): Promise<{ id: string; status: string } | null> {
