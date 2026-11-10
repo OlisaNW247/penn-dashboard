@@ -141,8 +141,11 @@ struct AmbassadorRemindersTests {
 /// and give up their slots; this is the contract `AmbassadorReminders`'s doc
 /// comment describes, checked against the same fake center the planner's own
 /// tests use.
+/// `.serialized` here and on the model suite: `NotificationScheduler.
+/// reservedForeignSlots` is process-wide, and two async tests interleaving at
+/// an `await` would read each other's value.
 @MainActor
-@Suite("Ambassador reminders and the due-date pass")
+@Suite("Ambassador reminders and the due-date pass", .serialized)
 struct AmbassadorPassTests {
     @Test("applyNotifications removes stale due-date reminders and spares ambassador:*")
     func spared() async {
@@ -215,7 +218,7 @@ final class FakeAmbassadorCenter: AmbassadorNotificationCenter {
 }
 
 @MainActor
-@Suite("Ambassador model")
+@Suite("Ambassador model", .serialized)
 struct AmbassadorModelTests {
     static let code = "7yqyg4ter97n4w"
 
@@ -249,7 +252,9 @@ struct AmbassadorModelTests {
         let box = Box(storedCode)
         let model = AmbassadorModel(defaults: defaults, client: service, center: center,
                                     loadCode: { box.code }, saveCode: { box.code = $0 }, removeCode: { box.code = nil },
-                                    timeZone: TimeZone(identifier: "America/New_York")!)
+                                    // A fixed offset, not New York: the model reads the real clock,
+                                    // and New York is 240 west of UTC for eight months of the year.
+                                    timeZone: TimeZone(secondsFromGMT: -5 * 3600)!)
         try await body(model, service, center, defaults)
     }
 
