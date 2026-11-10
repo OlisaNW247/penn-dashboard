@@ -68,13 +68,71 @@ They stay as history until the code that implements them is replaced.
   `DegreeWorksTokenStore` and `DegreeWorksAuditDecoder` describe a system
   the student never touches and are to be replaced, not corrected.
 
-Open questions, all answerable from Penn's public page script (the capture
-of its excerpts is in progress): (1) where the page gets `authtoken` and
-which URL starts the sign-in; (2) the method and body fields of the
-`dgw-server` call; (3) which parameters ask for a different degree, major,
-concentration or minor; (4) the shape of `sam-ext-dictionaries`, the likely
-source of the program catalogue for the what-if picker; (5) where the
-24-character id comes from (`sam-user-record`, probably).
+### What the page's own script says (read 2026-11-10)
+
+Excerpts of the two public script files, `/sam/core.js` (65 kB) and
+`/fose.js` (1.3 MB), fetched in Olisa's browser. They are the same for every
+visitor and carry nothing personal. They answer four of the five questions.
+
+- **Sign-in.** `sam.config.authURL` is
+  `https://3scale-public-prod-path-authentication-anon.apps.k8s.upenn.edu/api/v1/leepfrogAuthn/login`.
+  `sam.auth.launch()` opens it with `window.open(authURL, 'sam-authenticate',
+  'height=600,width=800,…')`; the popup runs Penn's SSO. When the main window
+  regains focus, `handleWindowFocus` closes the popup and, if
+  `sam.auth.token` is set, calls `sam.user.fetch()`. The mode is `token`
+  (`sam.auth.setMode('token')`), `sam.config.tokenParameter` is `authtoken`,
+  and `sam.config.sessionTimeout` is 86400 seconds. `setToken(token, expires,
+  options)` keeps the token in `sam.auth.token` and, unless
+  `options.skipSave`, in a `samauthtoken` cookie; no such cookie was present
+  in the captured session, so the hand-off saves nothing. **Not seen:** the
+  popup's last page and how it reaches `setToken` (there is no `postMessage`
+  listener in `core.js`, so it is presumably `window.opener.sam.auth…`).
+  `sam` is a top-level lexical binding, not a property of `window`.
+- **The student record.** `sam.user.fetch()` POSTs
+  `api/?page=sisproxy&action=studentdata` with the token as form data
+  (`sam.fetch.jsonCompat`, which also adds `_pers_id`, `_pers_id_proof`,
+  `_pers_real_id`). `sam.user.getProperty('pers')` then holds `id`,
+  `idProof`, `fn`, `levl`, `clas`, `cur` (per term: `major`, `degc`, `conc`,
+  `levl`) and `coll`; the record also holds `reg`, `cart` and `hist`.
+- **The audit.** `foseDgwClient.fetchStudentAudit({ method, degree, explain })`
+  (a global `var`) builds the query `action=student`, `method` (default
+  `whatif`), `name_` = `pers.fn`, `explain`, `id` = `pers.id`, `levl`, `degc`,
+  and POSTs JSON `{ authtoken, degreeInfo: degree, cart, reg, plan,
+  currentSrcdb }` to `api/?page=dgw-server&…`. `cart`, `reg` and `plan` are
+  the student's cart, registered and planned courses, taken from the record,
+  so the audit counts them. `degree` is one of the student's degree
+  descriptions (`d.info` with `degc`, `levl`, `coll`, `major`, `conc`,
+  `program`, `minor`; comma-joined when several) plus a `title`.
+- **What-if.** The same function with a changed `degree`. The page names the
+  changes: `new-program` (`degc`, `levl`, `coll`, `major`, `conc`, `program`
+  from a catalogue entry's `degc_code`, `levl_code`, `coll_code`,
+  `majr_code`, `conc_code`, `sis_prog_code`), `add-major`, `add-minor`
+  (allowed when one of the entry's `minor_sis_prog_codes` is among the
+  degree's programs) and `add-conc`.
+- **The program catalogue.** `fose.serverAPI.call('programs-v2-list', { srcdb,
+  programsType })` and `'programs-v2-info'`; `foseDgwClient.fetchProgramReqs`
+  reads one program's requirements from
+  `api/?page=dgw-server&action=program&program=…&currentSrcdb=…`. These are
+  the public endpoints Penn Labs' importer uses.
+
+**Design consequence.** The app should not imitate these requests. It should
+load `https://courses.upenn.edu/` in the hidden WebView it already uses for
+Canvas renewals (same data store, so the PennKey session and Duo trust carry
+over), let the page run its own sign-in, and then call the page's own
+functions (`sam.user.fetch()`, `foseDgwClient.fetchStudentAudit(…)`,
+`fose.serverAPI.call('programs-v2-list', …)`) with `callAsyncJavaScript`,
+taking back only the JSON `PathAuditDecoder` reads. The token then never
+leaves the WebView and nothing about Penn's request format is hard-coded.
+The popup needs `javaScriptCanOpenWindowsAutomatically` and a
+`WKUIDelegate` that returns a child WebView built from the configuration
+WebKit hands it, or `window.opener` is nil.
+
+**Still open:** (1) the popup's last page (only a device run with
+`DebugDegreeLog` will show it); (2) the exact shape of the degree
+descriptions the advising page passes (`d.info`), and of a
+`programs-v2-list` entry; (3) whether Cloudflare's check on
+`courses.upenn.edu` passes in a hidden WebView (a `cf_clearance` cookie was
+present in the browser).
 
 ### Before the capture (history)
 
