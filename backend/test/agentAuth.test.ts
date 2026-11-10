@@ -3,6 +3,8 @@
 import assert from "node:assert";
 import {
   authorizePage,
+  authorizePageWords,
+  CONNECTED_PAUSE_MS,
   errorPage,
   formatUserCode,
   generateId,
@@ -253,6 +255,44 @@ Deno.test("authorizePage: escapes, deep link, code, number, dev link only when g
   assert.ok(!authorizePage({ ...view, scopes: ["read"] }).includes("propose drafts"));
   assert.ok(authorizePage({ ...view, devApproveURL: "http://localhost:1/dev?p=x" }).includes("approve (dev)"));
   assert.strictEqual((page.match(/<script>/g) ?? []).length, 1 + 0);
+});
+
+Deno.test("authorizePage: a visible connected state, then the redirect through go=1, hidden tabs at once", () => {
+  const page = authorizePage({
+    clientName: "Claude",
+    clientHost: "claude.ai",
+    scopes: ["read"],
+    pendingId: "AbC",
+    userCode: "BCDFGHJK",
+    matchNumber: 12,
+    statusURL: "/functions/v1/agent-auth/status?p=AbC",
+  });
+  const words = authorizePageWords("Claude");
+  // The words reach the page (inside the script's JSON) and name the agent.
+  assert.ok(page.includes("Connected to Smooth"));
+  assert.ok(page.includes("Returning to Claude"));
+  assert.ok(words.deniedLine.includes("Claude") && words.expiredLine.includes("Claude"));
+  assert.ok(page.includes("This request expired") && page.includes("Not connected"));
+  // go=1 is still the only navigation, and it waits CONNECTED_PAUSE_MS
+  // unless the tab is hidden.
+  assert.strictEqual(CONNECTED_PAUSE_MS, 1500);
+  assert.ok(page.includes('location.href=url+"&go=1"'));
+  assert.ok(page.includes(`var pause=${CONNECTED_PAUSE_MS}`));
+  assert.ok(page.includes("if(document.hidden){go()}else{setTimeout(go,pause)}"));
+  assert.ok(page.includes('addEventListener("visibilitychange"'));
+  // The tick is set by the script, never in the markup a stale page shows.
+  assert.ok(page.includes('kind==="ok"?"\u2713"'));
+  // A name with a quote or a closing tag cannot break out of the script.
+  const hostile = authorizePage({
+    clientName: "</script><b>\"x",
+    clientHost: "claude.ai",
+    scopes: ["read"],
+    pendingId: "AbC",
+    userCode: "BCDFGHJK",
+    matchNumber: 12,
+    statusURL: "/s?p=AbC",
+  });
+  assert.strictEqual((hostile.match(/<\/script>/g) ?? []).length, 1);
 });
 
 Deno.test("errorPage escapes", () => {

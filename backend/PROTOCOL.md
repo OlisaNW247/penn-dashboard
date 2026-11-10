@@ -1345,7 +1345,14 @@ public (`none`); PKCE `S256` is mandatory; there are no client secrets.
    `BCDFGHJKLMNPQRSTVWXZ` (RFC 8628's consonants: no words, nothing to misread),
    a two-digit match number, an "Open Smooth" button to
    `smooth://link?c=<id>` (`<id>` is 128 random bits, base64url, 22
-   characters), and a script that polls `/status` every 2 s. The response sets
+   characters), and a script that polls `/status` every 2 s (and at once when
+   the tab becomes visible again). When the poll reads `approved` the page
+   replaces itself with "Connected to Smooth / Returning to <client>…" and a
+   tick, waits 1.5 s, then navigates to `status?go=1`; a hidden tab navigates
+   at once, because browsers throttle timers there and nobody is watching.
+   `denied` and `expired` (or a 4xx from the poll) show "Not connected" and
+   "This request expired" with a sentence naming the client (since
+   2026-11-10, not deployed). The response sets
    the browser nonce: `Set-Cookie: sa_<id>=<nonce>; HttpOnly; Secure;
    SameSite=Lax; Max-Age=600; Path=<agent-auth root>`. A unique code is drawn
    up to 5 times against the live-code index, then `503 code_unavailable`.
