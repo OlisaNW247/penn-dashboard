@@ -35,7 +35,7 @@ import {
   markReplied,
   markFeedbackSeen,
 } from "./data.js";
-import { recordScan, appStoreRedirect } from "./legacy.js";
+import { recordScan, appStoreRedirect, notFound } from "./legacy.js";
 import { ambassadorPage, stickersPage, founderPage } from "./pages.js";
 
 function safeEqual(a, b) {
@@ -143,7 +143,7 @@ export async function handleAmbassadors(request, env, ctx) {
 async function ambassadorRoutes(request, env, parts, url) {
   const [token, action, arg] = parts;
   const amb = await ambassadorByToken(env, token);
-  if (!amb) return new Response("not found", { status: 404 });
+  if (!amb) return notFound();
   const base = `/a/${amb.token}`;
   const pub = origin(request, env);
 
@@ -159,7 +159,7 @@ async function ambassadorRoutes(request, env, parts, url) {
       return appStoreRedirect(env, `${amb.school}-${amb.id}-${channel}`);
     }
     if (action === "p" && arg) {
-      if (!isValidCombo(amb.school, arg)) return new Response("not found", { status: 404 });
+      if (!isValidCombo(amb.school, arg)) return notFound();
       const key = scanKey(amb.school, arg);
       // Counts for the school AND the ambassador.
       await recordScan(env, key, amb.id);
@@ -174,7 +174,7 @@ async function ambassadorRoutes(request, env, parts, url) {
       const s = await ambassadorStats(env, amb);
       return Response.json({ name: amb.name, school: amb.school, ...s, checked: [...s.checked] }, { headers: { "cache-control": "no-store" } });
     }
-    return new Response("not found", { status: 404 });
+    return notFound();
   }
 
   if (request.method === "POST") {
@@ -202,7 +202,7 @@ async function ambassadorRoutes(request, env, parts, url) {
         return redirectBack(base, weeks > 0 ? `paused for ${weeks} weeks.` : "reminders back on.", request);
       }
       default:
-        return new Response("not found", { status: 404 });
+        return notFound();
     }
   }
   return new Response("method not allowed", { status: 405 });
@@ -211,7 +211,7 @@ async function ambassadorRoutes(request, env, parts, url) {
 async function founderRoutes(request, env, parts, url) {
   const [secret, action] = parts;
   if (!env.FOUNDER_TOKEN || env.FOUNDER_TOKEN.length < 16 || !safeEqual(secret, env.FOUNDER_TOKEN)) {
-    return new Response("not found", { status: 404 });
+    return notFound();
   }
   const base = `/f/${secret}`;
   const pub = origin(request, env);
@@ -228,7 +228,7 @@ async function founderRoutes(request, env, parts, url) {
       const stats = await founderStats(env, 365);
       return Response.json(stats, { headers: { "cache-control": "no-store" } });
     }
-    return new Response("not found", { status: 404 });
+    return notFound();
   }
 
   if (request.method === "POST") {
@@ -255,7 +255,7 @@ async function founderRoutes(request, env, parts, url) {
         await markFeedbackSeen(env, parseInt(f.id, 10));
         return redirectBack(base + "#feedback");
       default:
-        return new Response("not found", { status: 404 });
+        return notFound();
     }
   }
   return new Response("method not allowed", { status: 405 });

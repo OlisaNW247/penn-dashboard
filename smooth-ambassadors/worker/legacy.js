@@ -1,11 +1,16 @@
-// The routes the live tracker serves today, re-implemented from the handoff
-// spec so the whole system runs and is testable from this repository.
+// The routes the live tracker serves today, rebuilt to answer exactly as the
+// live site did when it was read on 2026-11-10 (the stats JSON, the dashboard
+// page, poster previews, the plain "Not found"). Checked read-only: no /scan
+// link was opened, so the one thing NOT verified against the live site is
+// the redirect target of a scan, which follows the handoff spec (Smooth's
+// App Store listing).
 //
-// IMPORTANT: when merging into the Sites repository, keep the live
-// `worker/index.js` as the source of truth for these routes and replace this
-// file with it (export default { fetch }). Behaviour that must not change:
-//   /                         dashboard
-//   /api/stats                counts per school and design
+// IMPORTANT: when merging into the Sites repository, the live
+// `worker/index.js` stays the source of truth for these routes. Replace this
+// file with it, exporting `default { fetch }`, `recordScan` and
+// `appStoreRedirect` (see docs/deploy.md). Behaviour that must not change:
+//   /                         dashboard (draws itself from /api/stats)
+//   /api/stats                { rows: [{ school, schoolName, poster, name, total }] }
 //   /scan/{poster}            legacy UPenn tracking (bare keys such as `ib`)
 //   /scan/{school}/{poster}   every other school (`umiami/ib` keys)
 //   /posters/{school}/{poster}.jpg  poster previews
@@ -19,20 +24,19 @@ import {
   designsFor,
   isValidCombo,
   scanKey,
-  parseScanKey,
+  posterName,
 } from "./catalog.js";
-import { layout, esc } from "./html.js";
+import { DASHBOARD_HTML } from "./dashboard.js";
 
-export async function recordScan(env, key, ambassadorId = null, ctx = null) {
-  const stmts = [
+export async function recordScan(env, key, ambassadorId = null) {
+  await env.DB.batch([
     env.DB.prepare(
       "INSERT INTO scans (poster, total) VALUES (?1, 1) ON CONFLICT(poster) DO UPDATE SET total = total + 1",
     ).bind(key),
     env.DB.prepare(
       "INSERT INTO scan_events (poster, ambassador_id) VALUES (?1, ?2)",
     ).bind(key, ambassadorId),
-  ];
-  await env.DB.batch(stmts);
+  ]);
 }
 
 export function appStoreRedirect(env, campaignToken = null) {
@@ -48,99 +52,62 @@ export function appStoreRedirect(env, campaignToken = null) {
   return Response.redirect(url, 302);
 }
 
+// One row per school and design, schools and designs in the live order, a
+// design with no scans yet at 0.
 export async function statsPayload(env) {
-  const { results } = await env.DB.prepare(
-    "SELECT poster, total FROM scans",
-  ).all();
+  const { results } = await env.DB.prepare("SELECT poster, total FROM scans").all();
   const byKey = new Map(results.map((r) => [r.poster, r.total]));
-  const schools = Object.entries(SCHOOLS).map(([key, s]) => {
-    const designs = designsFor(key).map((poster) => ({
-      poster,
-      key: scanKey(key, poster),
-      total: byKey.get(scanKey(key, poster)) ?? 0,
-    }));
-    return {
-      key,
-      name: s.name,
-      total: designs.reduce((a, d) => a + d.total, 0),
-      designs,
-    };
-  });
-  // Keys in D1 that the catalog does not know (should be none).
-  const unknown = results
-    .filter((r) => {
-      const { school, poster } = parseScanKey(r.poster);
-      return !isValidCombo(school, poster);
-    })
-    .map((r) => ({ key: r.poster, total: r.total }));
-  return {
-    updated: new Date().toISOString(),
-    total: schools.reduce((a, s) => a + s.total, 0),
-    schools,
-    unknown,
-  };
-}
-
-function dashboardHtml(stats) {
-  const rows = stats.schools
-    .map(
-      (s) => `
-    <section class="card">
-      <h2>${esc(s.name)} <span class="muted">${s.total}</span></h2>
-      <table>
-        ${s.designs
-          .map(
-            (d) =>
-              `<tr><td><a href="/posters/${esc(s.key)}/${esc(d.poster)}.jpg">${esc(d.poster)}</a></td><td class="num">${d.total}</td></tr>`,
-          )
-          .join("")}
-      </table>
-    </section>`,
-    )
-    .join("");
-  return layout({
-    title: "smooth poster scans",
-    body: `
-      <h1>smooth poster scans <span class="muted">${stats.total}</span></h1>
-      <p class="muted">link opens per poster design, by school. repeats included. updated ${esc(stats.updated.slice(0, 16).replace("T", " "))} utc.</p>
-      ${rows}
-      <p class="muted"><a href="/api/stats">json</a> · <a href="/api/leaderboard">school leaderboard</a></p>`,
-  });
+  const rows = [];
+  for (const [school, s] of Object.entries(SCHOOLS)) {
+    for (const poster of designsFor(school)) {
+      rows.push({
+        school,
+        schoolName: s.name,
+        poster,
+        name: posterName(poster),
+        total: byKey.get(scanKey(school, poster)) ?? 0,
+      });
+    }
+  }
+  return { rows };
 }
 
 async function servePoster(env, school, poster) {
   if (!isValidCombo(school, poster)) return notFound();
-  // Poster images are embedded in the live Worker. Here they come from an
-  // optional static-assets binding so this repo can run without them.
+  // The live Worker embeds the images. Here they come from a static-assets
+  // binding filled by `npm run posters` (scripts/fetch-posters.mjs), so the
+  // repository itself carries no image.
   if (env.POSTERS) {
     const r = await env.POSTERS.fetch(
       new Request(`https://assets/posters/${school}/${poster}.jpg`),
     );
-    if (r.ok) return r;
+    if (r.ok) {
+      return new Response(r.body, { headers: { "content-type": "image/jpeg" } });
+    }
   }
-  return new Response(
-    `poster image for ${school}/${poster} is not bundled in this build`,
-    { status: 404, headers: { "content-type": "text/plain" } },
-  );
+  return notFound();
 }
 
-function notFound() {
-  return new Response("not found", { status: 404 });
+export function notFound() {
+  return new Response("Not found", {
+    status: 404,
+    headers: { "content-type": "text/plain;charset=UTF-8" },
+  });
 }
 
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request, env) {
     const url = new URL(request.url);
     const parts = url.pathname.split("/").filter(Boolean);
 
     if (parts.length === 0) {
-      return new Response(dashboardHtml(await statsPayload(env)), {
-        headers: { "content-type": "text/html; charset=utf-8" },
+      return new Response(DASHBOARD_HTML, {
+        headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
       });
     }
     if (parts[0] === "api" && parts[1] === "stats" && parts.length === 2) {
-      return Response.json(await statsPayload(env), {
-        headers: { "access-control-allow-origin": "*" },
+      return new Response(JSON.stringify(await statsPayload(env)), {
+        headers: { "content-type": "application/json", "cache-control": "no-store" },
       });
     }
     if (parts[0] === "scan") {
@@ -150,7 +117,7 @@ export default {
       else return notFound();
       if (!isValidCombo(school, poster)) return notFound();
       const key = scanKey(school, poster);
-      await recordScan(env, key, null, ctx);
+      await recordScan(env, key, null);
       return appStoreRedirect(env, key);
     }
     if (parts[0] === "posters" && parts.length === 3 && parts[2].endsWith(".jpg")) {

@@ -13,8 +13,11 @@ export const SCHOOLS = {
   clark: { name: "Clark University" },
 };
 
-// Designs available at every school.
+// Designs available at every school, in the order the live /api/stats lists
+// them (read off the live site 2026-11-10). The order is part of what the
+// public dashboard shows, so it is kept.
 export const DESIGNS = [
+  "best-actor",
   "ib",
   "kylie",
   "compute",
@@ -26,15 +29,37 @@ export const DESIGNS = [
   "tabard",
   "taylor",
   "venture",
-  "best-actor",
 ];
 
-// UPenn-only designs.
-export const UPENN_ONLY = ["jester", "regista"];
+// UPenn-only designs. On the live site they sit right after best-actor.
+export const UPENN_ONLY = ["regista", "jester"];
+
+// Display names, exactly as the live dashboard shows them.
+export const POSTER_NAMES = {
+  "best-actor": "Vote Here for Best Actor",
+  regista: "The Regista",
+  jester: "The Jester",
+  ib: "Funneled into IB",
+  kylie: "Kylie Jenner",
+  compute: "More Compute",
+  "these-two": "Have You Seen These Two?",
+  soccer: "That Was Pretty Smooth \u2014 Soccer",
+  grind: "Tired of the Grind?",
+  "ai-end": "AI Might Be the End",
+  smoother: "What If We Made It Smoother",
+  tabard: "Tabard Rush List",
+  taylor: "Taylor Swift Wedding",
+  venture: "Venture Backed \u2014 $300M",
+};
+
+export function posterName(poster) {
+  return POSTER_NAMES[poster] ?? poster;
+}
 
 export function designsFor(school) {
   if (!SCHOOLS[school]) return [];
-  return school === "upenn" ? [...DESIGNS, ...UPENN_ONLY] : [...DESIGNS];
+  if (school !== "upenn") return [...DESIGNS];
+  return [DESIGNS[0], ...UPENN_ONLY, ...DESIGNS.slice(1)];
 }
 
 export function isValidCombo(school, poster) {

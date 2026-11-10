@@ -11,7 +11,8 @@
     "migrate:local": "wrangler d1 migrations apply smooth-scans --local",
     "migrate:remote": "wrangler d1 migrations apply smooth-scans --remote",
     "backup:remote": "wrangler d1 export smooth-scans --remote --output backups/$(date +%Y%m%d-%H%M%S).sql",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "posters": "node scripts/fetch-posters.mjs"
   },
   "devDependencies": {
     "miniflare": "^4.0.0",

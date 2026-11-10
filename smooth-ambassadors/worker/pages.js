@@ -1,5 +1,5 @@
 // Page rendering for ambassadors (/a/{token}) and founders (/f/{secret}).
-import { SCHOOLS, CHANNELS, designsFor, posterImagePath } from "./catalog.js";
+import { SCHOOLS, CHANNELS, designsFor, posterImagePath, posterName } from "./catalog.js";
 import { layout, esc, attr } from "./html.js";
 import { isPhone, phoneForSms } from "./data.js";
 import { ambassadorLinks, digestText, welcomeText, momentTexts, moments, firstName } from "./digest.js";
@@ -67,14 +67,14 @@ export function ambassadorPage({ amb, stats, origin, flash }) {
   const postersHtml = designs
     .map(
       (d) => `<a class="poster" href="${posterImagePath(amb.school, d)}" target="_blank" rel="noopener">
-        <img loading="lazy" src="${posterImagePath(amb.school, d)}" alt="${esc(d)} poster">
-        <div>${esc(d)}</div></a>`,
+        <img loading="lazy" src="${posterImagePath(amb.school, d)}" alt="${attr(posterName(d))} poster">
+        <div>${esc(posterName(d).toLowerCase())}</div></a>`,
     )
     .join("");
 
   const dropChips = designs
     .map(
-      (d) => `<label class="chip"><input type="radio" name="design" value="${attr(d)}" required>${esc(d)}</label>`,
+      (d) => `<label class="chip"><input type="radio" name="design" value="${attr(d)}" required>${esc(posterName(d).toLowerCase())}</label>`,
     )
     .join("");
 
@@ -180,7 +180,7 @@ export function stickersPage({ amb, origin, qrSvg }) {
     .map(
       (d) => `<div class="card" style="text-align:center;padding:8px;margin:0">
         ${qrSvg(links.poster(d))}
-        <div><strong>${esc(d)}</strong></div>
+        <div><strong>${esc(posterName(d).toLowerCase())}</strong></div>
         <div class="small muted">smooth for students</div>
       </div>`,
     )

@@ -13,6 +13,13 @@ database_name = "smooth-scans"
 database_id = "00000000-0000-0000-0000-000000000000"   # replace with the real id when deploying from here
 migrations_dir = "migrations"
 
+# Poster previews (`npm run posters` fills public/posters). The Worker runs
+# first for every route and reads the files through the binding.
+[assets]
+directory = "./public"
+binding = "POSTERS"
+run_worker_first = true
+
 [vars]
 # Public origin the printed QR codes encode. Used to build ambassador links.
 PUBLIC_ORIGIN = "https://smooth-poster-scans.jazzysmile20.chatgpt.site"

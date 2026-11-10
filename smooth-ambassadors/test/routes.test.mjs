@@ -27,6 +27,14 @@ before(async () => {
     compatibilityDate: "2026-01-01",
     d1Databases: { DB: "test-db" },
     bindings: { FOUNDER_TOKEN: FOUNDER, PUBLIC_ORIGIN: "https://example.test" },
+    // Stands in for the static-assets binding: one poster file exists.
+    serviceBindings: {
+      POSTERS(request) {
+        return new URL(request.url).pathname === "/posters/uva/ib.jpg"
+          ? new Response(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]), { headers: { "content-type": "image/jpeg" } })
+          : new Response("nope", { status: 404 });
+      },
+    },
   });
   const db = await mf.getD1Database("DB");
   const sql = readFileSync(join(root, "migrations/0001_ambassadors.sql"), "utf8");
@@ -49,16 +57,42 @@ const post = (p, data) =>
   });
 const total = async (key) => (await (await mf.getD1Database("DB")).prepare("SELECT total FROM scans WHERE poster = ?1").bind(key).first())?.total ?? 0;
 
-test("existing routes: dashboard and stats", async () => {
+test("existing routes: the dashboard is the live page", async () => {
   const r = await get("/");
   assert.equal(r.status, 200);
-  assert.match(await r.text(), /smooth poster scans/);
-  const s = await (await get("/api/stats")).json();
-  const upenn = s.schools.find((x) => x.key === "upenn");
-  assert.equal(upenn.designs.length, 14);
-  assert.equal(s.schools.find((x) => x.key === "uva").designs.length, 12);
-  assert.equal(upenn.designs.find((d) => d.poster === "ib").total, 40);
-  assert.equal(s.schools.length, 5);
+  assert.equal(r.headers.get("content-type"), "text/html; charset=utf-8");
+  assert.equal(r.headers.get("cache-control"), "no-store");
+  const page = await r.text();
+  assert.match(page, /<title>Smooth Poster Scans<\/title>/);
+  assert.match(page, /Poster scan performance/);
+  assert.match(page, /fetch\('\/api\/stats'/);
+  assert.doesNotMatch(page, /cdn-cgi|__CF\$cv/);
+});
+
+test("existing routes: /api/stats lists exactly the live rows, in the live order", async () => {
+  const r = await get("/api/stats");
+  assert.equal(r.headers.get("content-type"), "application/json");
+  assert.equal(r.headers.get("cache-control"), "no-store");
+  const s = await r.json();
+  assert.deepEqual(Object.keys(s), ["rows"]);
+  const live = JSON.parse(readFileSync(join(root, "test/fixtures/live-stats-shape.json"), "utf8")).rows;
+  assert.equal(s.rows.length, 62);
+  assert.deepEqual(s.rows.map(({ total, ...rest }) => rest), live);
+  assert.deepEqual(Object.keys(s.rows[0]), ["school", "schoolName", "poster", "name", "total"]);
+  const total = (school, poster) => s.rows.find((x) => x.school === school && x.poster === poster).total;
+  assert.equal(total("upenn", "ib"), 40);
+  assert.equal(total("umiami", "ib"), 7);
+  assert.equal(total("upenn", "jester"), 3);
+  assert.equal(total("clark", "venture"), 0);
+});
+
+test("unknown routes answer like the live site", async () => {
+  for (const p of ["/nope", "/api/nope", "/scan", "/scan/", "/posters/uva/ib.png", "/a/abcdefghijklmn"]) {
+    const r = await get(p);
+    assert.equal(r.status, 404, p);
+    assert.equal(await r.text(), "Not found", p);
+    assert.equal(r.headers.get("content-type"), "text/plain;charset=UTF-8", p);
+  }
 });
 
 test("existing routes: legacy UPenn scan increments bare key and redirects", async () => {
@@ -84,9 +118,14 @@ test("existing routes: UPenn-only designs are restricted elsewhere", async () =>
   assert.equal(await total("uva/jester"), 0);
 });
 
-test("poster preview route exists (404 without bundled assets)", async () => {
-  assert.equal((await get("/posters/uva/ib.jpg")).status, 404);
-  assert.equal((await get("/posters/uva/jester.jpg")).status, 404);
+test("poster previews come from the assets binding, and restricted designs never do", async () => {
+  const r = await get("/posters/uva/ib.jpg");
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get("content-type"), "image/jpeg");
+  assert.equal((await r.arrayBuffer()).byteLength, 4);
+  assert.equal((await get("/posters/uva/jester.jpg")).status, 404); // UPenn-only
+  assert.equal((await get("/posters/uva/kylie.jpg")).status, 404); // valid, file missing
+  assert.equal((await get("/posters/nowhere/ib.jpg")).status, 404);
 });
 
 test("founder view needs the secret", async () => {

@@ -12,3 +12,5 @@ roster*
 contacts*
 .env
 .DS_Store
+# poster previews, fetched by `npm run posters`
+public/posters/

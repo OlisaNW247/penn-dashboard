@@ -15,7 +15,10 @@ database, no accounts, no passwords, runs on a phone.
 | Path | What |
 |---|---|
 | `worker/index.js` | entry. ambassador routes first, then the legacy tracker |
-| `worker/legacy.js` | today's routes (`/`, `/api/stats`, `/scan/...`, `/posters/...`), re-implemented from the handoff spec. **Replace with the live `worker/index.js` from the Sites repo when merging** (see docs/deploy.md) |
+| `worker/legacy.js` | today's routes (`/`, `/api/stats`, `/scan/...`, `/posters/...`), rebuilt to answer exactly as the live site did on 2026-11-10: the same stats JSON (`{ rows: [...] }`, same order and names), the same "Not found". **Replace with the live `worker/index.js` from the Sites repo when merging** (see docs/deploy.md) |
+| `worker/dashboard.js` | the public dashboard page, byte for byte as the live site serves it |
+| `scripts/fetch-posters.mjs` | `npm run posters`: downloads the 62 poster previews from the live site into `public/posters/` (git-ignored; several posters carry photos of real people, so they stay out of git) |
+| `test/fixtures/live-stats-shape.json` | the live `/api/stats` rows (totals removed); a test fails if the Worker lists anything else |
 | `worker/ambassadors.js` | new routes: `/a/{token}...`, `/f/{secret}...`, `/api/leaderboard` |
 | `worker/data.js` | every D1 query. the roster is only touched here |
 | `worker/pages.js` | the ambassador page and the founder view |
@@ -74,6 +77,7 @@ Decisions baked in:
 npm install
 cp .dev.vars.example .dev.vars          # set FOUNDER_TOKEN to something long
 npm run migrate:local
+npm run posters                          # optional: the 62 poster previews, from the live site
 npm run dev                              # http://localhost:8787
 ```
 

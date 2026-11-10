@@ -8,12 +8,19 @@ domain is a ChatGPT Sites project (`appgprj_6aebbfcc56e48191a690c176014ceddf`)
 running a Cloudflare Worker with D1 bound as `DB`. The hosting stays there.
 A branded domain means reprinting, so it is a later decision.
 
-This session could not reach the Sites git repository or the live site
-(the network policy blocked the host), so the integration below is
-written, not executed. **Access needed to go live:** read/write to the
-Sites project's git repository, and the ability to run the D1 migration
-and set the `FOUNDER_TOKEN` secret on that project. Olisa grants that, or
-runs the steps.
+The live site was read on 2026-11-10 (read-only routes; no `/scan/` link
+was opened, so no counter moved), and `worker/legacy.js` now answers the
+same way: the dashboard page is byte-identical, `/api/stats` lists the same
+62 rows in the same order with the same names, posters and unknown routes
+answer alike. One thing is still taken from the handoff and not from the
+live site: where a scan redirects (Smooth's App Store listing), because
+checking it means opening a real code.
+
+What has not been reached is the Sites git repository and its deploy, so
+the steps below are written, not executed. **Access needed to go live:**
+read/write to the Sites project's git repository (or its files, uploaded),
+and the ability to run the D1 migration and set the `FOUNDER_TOKEN` secret
+on that project. Olisa grants that, or runs the steps.
 
 ## Step by step (first deploy)
 
@@ -24,7 +31,12 @@ runs the steps.
    `default { fetch }` and the two helpers `recordScan(env, key, ambassadorId)`
    and `appStoreRedirect(env, campaignToken)` (copy them from the current
    `legacy.js`; they are ~30 lines). Keep its poster images exactly as they
-   are. Run `npm test`: the existing-route tests must still pass.
+   are. Run `npm test`: the existing-route tests must still pass, including
+   the one that compares `/api/stats` to the live rows
+   (`test/fixtures/live-stats-shape.json`).
+   If the Sites repository cannot be brought in at all, this repository's
+   Worker is a complete stand-in: run `npm run posters` before deploying so
+   the previews exist, and confirm the scan redirect target first.
 3. **Apply the migration.** `migrations/0001_ambassadors.sql` is additive
    (`CREATE TABLE IF NOT EXISTS` only). Apply it to the Sites D1 database.
 4. **Set the secret.** `FOUNDER_TOKEN`, at least 24 random characters:
