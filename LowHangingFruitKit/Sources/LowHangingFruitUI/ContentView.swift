@@ -49,6 +49,7 @@ struct ContentView: View {
     @State private var reviewingDraft: AgentDraftReview?
     @State private var showAddSheet = false
     @State private var showAnnouncementFinds = false
+    @State private var showSweeper = false
     /// Frozen when the megaphone sheet opens, so rows can still say "new"
     /// after opening has marked everything seen. Holds both kinds of id: a
     /// find's `Assignment.id` and a record's `AnnouncementReadState.recordKey`.
@@ -258,6 +259,7 @@ struct ContentView: View {
                 vm.loadSampleData()
                 state.gradeWatcher.loadPreviewSnapshots(SampleData.gradeSnapshots())
                 if args.contains("-LHFShowSettings") { path = [.profile] }
+                if args.contains("-LHFShowSweeper") { showSweeper = true }
                 if args.contains("-LHFShowProfile") { path = [.profile] }
                 if args.contains("-LHFShowGrades") { path = [.grades] }
                 if args.contains("-LHFShowAssistant") { path = [.assistant] }
@@ -402,6 +404,16 @@ struct ContentView: View {
         .sheet(isPresented: $showAnnouncementFinds, onDismiss: rescheduleNotifications) {
             announcementFindsSheet
         }
+        // The Sweeper's choices reschedule themselves as they are made
+        // (`NotificationScheduler.rescheduleAfterPreferenceChange`), so the
+        // sheet needs no `onDismiss` replan. The environment objects are
+        // passed explicitly, as every other presentation here does.
+        .sheet(isPresented: $showSweeper) {
+            SweeperView(items: vm.items)
+                .environmentObject(state)
+                .environmentObject(scheduler)
+                .lhfSheetTheme()
+        }
         // A Canvas or Gradescope reconnect (`AppState.restartOnboarding(for:)`
         // with a single service, from a signed-in install) opens over the
         // dashboard instead of replacing the root, so the dashboard, its
@@ -506,6 +518,33 @@ struct ContentView: View {
         showAnnouncementFinds = true
     }
 
+    /// The broom, left of the megaphone: opens the Sweeper page. Tomato, the
+    /// Sweeper's own colour. The dot on its corner is the "on" light, shown
+    /// only while the Sweeper is on, so the header answers "is it armed?"
+    /// without opening the page.
+    private var sweeperButton: some View {
+        Button { showSweeper = true } label: {
+            headerButton(color: .smoothTomato) {
+                BroomGlyph()
+                    .frame(width: 19, height: 19)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if scheduler.loudAlertEnabled {
+                    Circle()
+                        .fill(Color.smoothTomatoInk)
+                        .frame(width: 13, height: 13)
+                        .overlay { Circle().stroke(Color.smoothPaper, lineWidth: 2) }
+                        .offset(x: 3, y: 3)
+                        .accessibilityHidden(true)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Smooth Sweeper")
+        .accessibilityValue(scheduler.loudAlertEnabled ? "on" : "off")
+        .help("Smooth Sweeper")
+    }
+
     /// The megaphone, in the header (it was a 38pt control in the row under
     /// it until 2026-10-18). Same squircle as `navButton`; only the action
     /// differs.
@@ -522,8 +561,8 @@ struct ContentView: View {
                 // Sits on the squircle's upper-right corner. The continuous
                 // 15pt radius cuts the corner far less than the circle did,
                 // so the same 2pt offsets still land on the shape. They leave it overhanging
-                // the 48pt frame by 2pt, which nothing above or beside it
-                // clips (the profile button is 10pt away). A capsule, not a
+                // the button frame by 2pt, which nothing above or beside it
+                // clips (the profile button is 8pt away). A capsule, not a
                 // circle, so "12" and "99+" widen it rather than overflow it.
                 .overlay(alignment: .topTrailing) {
                     if unreadAnnouncementCount > 0 {
@@ -720,7 +759,11 @@ struct ContentView: View {
 
             Spacer(minLength: 12)
 
-            HStack(spacing: 10) {
+            HStack(spacing: Self.headerButtonSpacing) {
+                // The broom first (owner's sketch, 2026-11-09): three buttons
+                // now share the row with "Smooth Wednesday", so all three are
+                // 42pt and 8pt apart instead of 48 and 10 (`headerButtonSize`).
+                sweeperButton
                 // Where the grades button used to be (Grade Watcher was removed
                 // 2026-10-18, `FeatureFlags.gradeWatcher`). Always here, even
                 // with nothing to list: a control that appears and disappears
@@ -732,6 +775,9 @@ struct ContentView: View {
                 }
                 navButton(to: .profile, icon: "person.crop.circle.fill", title: "profile", color: .smoothTeal)
             }
+            // The title block is 48pt tall; centre the shorter buttons on it
+            // instead of letting them hang from the top.
+            .frame(height: 48)
         }
     }
 
@@ -760,23 +806,40 @@ struct ContentView: View {
         .help(title)
     }
 
-    /// The header's 48pt squircle, shared by the push buttons above and the
-    /// megaphone (which presents a sheet, so it is a `Button`, not a
-    /// `NavigationLink`). One drawing, so the buttons cannot drift apart in
+    /// The header's squircle, shared by the push buttons above and the
+    /// broom and megaphone (which present sheets, so they are `Button`s, not
+    /// `NavigationLink`s). One drawing, so the buttons cannot drift apart in
     /// size, fill or stroke.
     /// A squircle, not a rounded square: `.continuous` corners are what make
     /// it one, and 0.32 of the side matches the other controls. The owner
     /// replaced the circles with these on 2026-11-06.
-    private static let headerShape = RoundedRectangle(cornerRadius: 48 * 0.32, style: .continuous)
+    ///
+    /// **42pt, not 48 (2026-11-10).** With the broom the row holds three
+    /// buttons beside "Smooth Wednesday". The title already steps down through
+    /// `dashboardTitlePointSizes` to fit, and the owner's rule is that the
+    /// buttons give way before the title does, so all three shrink together
+    /// (a lone smaller button would read as a mistake). The wrong fix is
+    /// shrinking only the title: it is the screen's identity.
+    static let headerButtonSize: CGFloat = 42
+    static let headerButtonSpacing: CGFloat = 8
+    private static let headerShape = RoundedRectangle(cornerRadius: headerButtonSize * 0.32, style: .continuous)
 
     private func headerButton(icon: String, color: Color) -> some View {
-        Image(systemName: icon)
-            .font(.system(size: 17, weight: .semibold))
+        headerButton(color: color) {
+            Image(systemName: icon)
+                .font(.system(size: 17, weight: .semibold))
+        }
+    }
+
+    private func headerButton<Glyph: View>(color: Color, @ViewBuilder glyph: () -> Glyph) -> some View {
+        glyph()
             .foregroundStyle(Color.smoothInk)
-            .frame(width: 48, height: 48)
+            .frame(width: Self.headerButtonSize, height: Self.headerButtonSize)
             .background(Self.headerShape.fill(color.opacity(0.18)))
             .overlay { Self.headerShape.stroke(color.opacity(0.48), lineWidth: 1.25) }
-            .contentShape(Self.headerShape)
+            // Drawn 42pt so three fit beside the title, but touched at 44pt,
+            // the platform's minimum, the same trick the control row uses.
+            .contentShape(Self.headerShape.inset(by: -1))
     }
 
     /// Silent refresh: re-fetch the cookieless Canvas feed, re-sync Gradescope

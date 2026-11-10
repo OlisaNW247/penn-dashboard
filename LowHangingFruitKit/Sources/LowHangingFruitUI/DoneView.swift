@@ -104,6 +104,8 @@ struct DoneCardView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dragX: CGFloat = 0
     @State private var didUndo = false
+    /// Held for one drag; see `CompletionSwipe.Axis`.
+    @State private var swipeAxis: CompletionSwipe.Axis = .undecided
     private let corner: CGFloat = 18
 
     var body: some View {
@@ -118,15 +120,24 @@ struct DoneCardView: View {
         }
         .contentShape(RoundedRectangle(cornerRadius: corner))
         .onTapGesture { if item.canMarkActive { undo() } }
-        .gesture(
+        // Simultaneous so a scroll that starts on a finished card still
+        // scrolls; the axis is decided once per drag (CompletionSwipe.Axis).
+        .simultaneousGesture(
             DragGesture(minimumDistance: 18)
                 .onChanged { value in
-                    guard item.canMarkActive, !didUndo,
-                          abs(value.translation.width) > abs(value.translation.height) else { return }
+                    if swipeAxis == .undecided {
+                        swipeAxis = CompletionSwipe.axis(
+                            width: value.translation.width,
+                            height: value.translation.height
+                        )
+                    }
+                    guard item.canMarkActive, !didUndo, swipeAxis == .horizontal else { return }
                     dragX = max(-86, min(0, value.translation.width))
                 }
                 .onEnded { value in
-                    guard item.canMarkActive else { return }
+                    let wasHorizontal = swipeAxis == .horizontal
+                    swipeAxis = .undecided
+                    guard item.canMarkActive, wasHorizontal else { return }
                     if CompletionSwipe.accepts(horizontal: value.translation.width,
                                                vertical: value.translation.height,
                                                predicted: value.predictedEndTranslation.width,

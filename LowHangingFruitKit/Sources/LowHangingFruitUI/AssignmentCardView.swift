@@ -97,6 +97,8 @@ struct AssignmentCardView: View {
     @State private var isCompleting = false
     @State private var paperScatter = false
     @State private var isArmed = false
+    /// Held for one drag; see `CompletionSwipe.Axis`.
+    @State private var swipeAxis: CompletionSwipe.Axis = .undecided
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -179,7 +181,9 @@ struct AssignmentCardView: View {
                     .allowsHitTesting(false)
             }
         }
-        .gesture(completeDrag(state: state))
+        // Simultaneous, not `.gesture`: the ScrollView must always get the
+        // touch too, or a scroll that starts on a card dies (CompletionSwipe.Axis).
+        .simultaneousGesture(completeDrag(state: state))
         // Swipe is invisible to VoiceOver, so completing needs a spoken action
         // of its own. Without this the feature would simply not exist for
         // anyone navigating by rotor.
@@ -522,10 +526,16 @@ struct AssignmentCardView: View {
     private func completeDrag(state: DueState) -> some Gesture {
         DragGesture(minimumDistance: 18, coordinateSpace: .local)
             .onChanged { value in
-                // Vertical intent belongs to the ScrollView. Checking this on
-                // every change (not just the first) keeps a diagonal drag from
-                // dragging the card sideways while the list scrolls under it.
-                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                // Vertical intent belongs to the ScrollView, for the whole
+                // drag: decided once, so a scroll that drifts sideways never
+                // starts moving the card while the list moves under it.
+                if swipeAxis == .undecided {
+                    swipeAxis = CompletionSwipe.axis(
+                        width: value.translation.width,
+                        height: value.translation.height
+                    )
+                }
+                guard swipeAxis == .horizontal else { return }
                 let nextDrag = min(max(0, value.translation.width), maxDrag)
                 let nextArmed = nextDrag >= completeThreshold
                 if nextArmed && !isArmed { lhfHapticLight() }
@@ -533,6 +543,9 @@ struct AssignmentCardView: View {
                 dragX = nextDrag
             }
             .onEnded { value in
+                let wasHorizontal = swipeAxis == .horizontal
+                swipeAxis = .undecided
+                guard wasHorizontal else { return }
                 let horizontalFlick = value.predictedEndTranslation.width >= completeThreshold + 14
                 if isArmed || (dragX >= 42 && horizontalFlick) {
                     triggerComplete(state: state)

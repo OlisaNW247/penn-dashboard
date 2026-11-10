@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smooth Sweeper sketch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400..700;1,9..40,600&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+@font-face { font-family: "Satoshi"; src: url("fonts/Satoshi-Variable.ttf") format("truetype"); font-weight: 300 900; }
+/* Tokens copied from RedesignTokens.swift (light). */
+:root {
+  --paper: #FFFFFF; --surface: #F2E5C9; --rule: #D9C9A6; --ink: #1B1714; --muted: #7C7060;
+  --tomato: #F07256; --marigold: #F7A844; --lemon: #F5D353; --teal: #40B3A5; --cobalt: #699AE7; --grape: #AF85F0;
+  --tomato-ink: #B63B23; --marigold-ink: #985700; --lemon-ink: #746400; --teal-ink: #176D65; --cobalt-ink: #345EA8;
+  --sans: "Inter", system-ui, sans-serif; --word: "DM Sans", system-ui, sans-serif; --mono: "Space Mono", ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: #EDE6D6; font-family: var(--sans); color: var(--ink); -webkit-font-smoothing: antialiased; }
+.board { display: flex; flex-wrap: wrap; gap: 48px; justify-content: center; padding: 40px 16px 60px; }
+.col { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.label { font: 700 11px/1 var(--mono); letter-spacing: .08em; color: var(--muted); text-transform: uppercase; }
+.phone { width: 393px; max-width: 100%; height: 852px; background: var(--paper); border-radius: 44px; overflow: hidden; position: relative; box-shadow: 0 24px 60px rgba(27,23,20,.14); display: flex; flex-direction: column; }
+.status { height: 54px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 6px 34px 0 52px; font: 600 16px var(--sans); }
+.status span:last-child { font: 700 11px var(--mono); letter-spacing: .04em; }
+.scroll { flex: 1; overflow-y: auto; scrollbar-width: none; padding-bottom: 30px; }
+.scroll::-webkit-scrollbar { display: none; }
+.home { position: absolute; bottom: 8px; left: 50%; width: 134px; height: 5px; border-radius: 3px; background: var(--ink); transform: translateX(-50%); }
+
+/* The dashboard's squircle header button: accent at 18% under ink, accent at 48% for the border. */
+.sq { width: 40px; height: 40px; flex-shrink: 0; border-radius: 13px; border: 1.25px solid; display: grid; place-items: center; position: relative; padding: 0; cursor: pointer; }
+.sq.tomato { background: #F072562E; border-color: #F072567A; }
+.sq.marigold { background: #F7A8442E; border-color: #F7A8447A; }
+.sq.teal { background: #40B3A52E; border-color: #40B3A57A; }
+.sq.plain { background: #F2E5C966; border-color: #D9C9A6; }
+.pip { position: absolute; right: -3px; bottom: -3px; width: 13px; height: 13px; border-radius: 7px; background: var(--tomato-ink); border: 2px solid var(--paper); }
+.badge { position: absolute; right: -3px; top: -3px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: var(--tomato); color: #fff; font: 700 9px/17px var(--mono); text-align: center; }
+
+/* Dashboard header */
+.dash-head { display: flex; justify-content: space-between; align-items: flex-start; padding: 14px 20px 0; }
+.word { font: 600 24px/32px var(--word); letter-spacing: -.01em; white-space: nowrap; }
+.word i { position: relative; }
+.word i svg { position: absolute; left: 0; bottom: -5px; }
+.date { font: 14px/18px var(--mono); color: var(--muted); margin-top: 6px; }
+.nav { display: flex; gap: 7px; padding-top: 4px; }
+
+/* The todo · all · prev picker: surface pill, rule border, a darker chip for the selection. */
+.picker { display: flex; padding: 3px; border-radius: 999px; background: #F2E5C980; border: 1px solid var(--rule); }
+.picker button { flex: 1; height: 32px; border: 0; border-radius: 999px; background: transparent; font: 500 15px var(--sans); color: var(--muted); cursor: pointer; padding: 0; }
+.picker button.on { background: #E2D5B7; color: var(--ink); font-weight: 600; }
+.control { display: flex; gap: 10px; align-items: center; padding: 18px 20px 6px; }
+.control .picker { flex: 1; }
+.circ { width: 38px; height: 38px; border-radius: 19px; display: grid; place-items: center; flex-shrink: 0; }
+
+.section { font: 600 12px/1 var(--sans); letter-spacing: .08em; text-transform: uppercase; padding: 22px 20px 10px; display: flex; justify-content: space-between; align-items: baseline; }
+.section small { font: 400 12px var(--mono); letter-spacing: 0; text-transform: none; color: var(--muted); }
+
+/* Due card, as on the dashboard */
+.card { margin: 0 20px 8px; border-radius: 18px; padding: 11px 16px 12px; display: flex; justify-content: space-between; align-items: center; }
+.code { font: 700 10px/14px var(--mono); letter-spacing: .04em; }
+.title { font: 600 18px/24px var(--word); letter-spacing: -.01em; }
+.when { text-align: right; font: 400 18px/22px var(--mono); }
+.when small { display: block; font: 700 8px/10px var(--mono); }
+.f-tomato { background: #FBDCD4; } .i-tomato { color: var(--tomato-ink); }
+.f-marigold { background: #FDE8CF; } .i-marigold { color: var(--marigold-ink); }
+.urgent .picker button.on { background: #F0725638; color: var(--tomato-ink); }
+.f-lemon { background: #FCF3D0; } .i-lemon { color: var(--lemon-ink); }
+
+/* Sweeper page */
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: 6px 20px 0; height: 46px; }
+.topbar .t { font: 700 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.hero { padding: 4px 22px 0; }
+.hero-row { display: flex; justify-content: space-between; align-items: center; }
+.is { font: 500 19px/22px var(--word); color: var(--muted); }
+.big { font: 700 64px/62px var(--word); letter-spacing: -.045em; }
+.big b { color: var(--tomato); }
+.lede { font: 15px/21px var(--sans); color: #4A4239; margin: 12px 0 0; }
+.lede strong { color: var(--ink); }
+
+.tog { width: 51px; height: 31px; border-radius: 16px; background: #E6DCC8; padding: 2px; border: 0; cursor: pointer; display: flex; flex-shrink: 0; transition: background .2s; }
+.tog::after { content: ""; width: 27px; height: 27px; border-radius: 14px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.18); transition: transform .2s; }
+.tog.on { background: var(--tomato); }
+.tog.on::after { transform: translateX(20px); }
+.tog.lg { width: 76px; height: 44px; border-radius: 22px; padding: 4px; }
+.tog.lg::after { width: 36px; height: 36px; border-radius: 18px; }
+.tog.lg.on::after { transform: translateX(32px); }
+
+/* Armed card: a dashboard due card with the alarm laid over it. */
+.armed { margin: 6px 20px 0; border-radius: 18px; padding: 14px 16px 14px; background: #FBDCD4; position: relative; overflow: hidden; }
+.armed-top { display: flex; justify-content: space-between; align-items: center; }
+.live { display: inline-flex; align-items: center; gap: 7px; font: 700 10px/1 var(--mono); letter-spacing: .08em; color: var(--tomato-ink); }
+.live i { width: 8px; height: 8px; border-radius: 4px; background: var(--tomato); animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 #F0725699; } 50% { box-shadow: 0 0 0 5px #F0725600; } }
+.test { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; border-radius: 15px; border: 0; background: #FFFFFFB3; font: 600 12px var(--sans); color: var(--tomato-ink); cursor: pointer; }
+.armed .title { margin-top: 10px; }
+.clock { display: flex; align-items: baseline; gap: 10px; margin-top: 6px; }
+.clock .n { font: 700 38px/44px var(--mono); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.clock .u { font: 13px/18px var(--sans); color: #6B3A2E; }
+.bar { height: 6px; border-radius: 3px; background: #FFFFFF99; margin-top: 10px; overflow: hidden; }
+.bar i { display: block; height: 100%; border-radius: 3px; background: var(--tomato); transition: width 1s linear; }
+.meta { display: flex; justify-content: space-between; margin-top: 9px; font: 11px/14px var(--mono); color: var(--tomato-ink); }
+.armed.off { background: #F2E5C966; }
+.armed.off .live { color: var(--muted); } .armed.off .live i { background: var(--rule); animation: none; }
+.armed.off .clock, .armed.off .bar, .armed.off .meta, .armed.off .test { display: none; }
+.armed.off .title { color: var(--muted); }
+
+.chips { display: flex; padding: 0 20px; }
+.sound { margin: 10px 20px 0; height: 50px; border-radius: 14px; background: #F2E5C966; display: flex; align-items: center; gap: 12px; padding: 0 6px 0 14px; }
+.sound .name { flex: 1; font: 15px var(--sans); }
+.sound .chg { font: 12px var(--mono); color: var(--muted); }
+.play { width: 38px; height: 38px; border-radius: 19px; background: var(--paper); border: 0; display: grid; place-items: center; cursor: pointer; }
+
+.rows { padding: 0 20px; }
+.row { display: flex; align-items: center; gap: 12px; height: 60px; border-bottom: 1px solid #EFE6D3; }
+.row:last-child { border-bottom: 0; }
+.dot { width: 10px; height: 10px; border-radius: 5px; flex-shrink: 0; }
+.row .txt { flex: 1; min-width: 0; }
+.row .c { font: 600 15px/20px var(--sans); }
+.row .s { font: 11px/15px var(--mono); color: var(--muted); }
+.row.off .c { color: var(--muted); }
+.chev { flex-shrink: 0; }
+
+.radio { width: 22px; height: 22px; border-radius: 11px; border: 1.5px solid var(--rule); flex-shrink: 0; display: grid; place-items: center; }
+.radio.on { border-color: var(--tomato); }
+.radio.on::after { content: ""; width: 12px; height: 12px; border-radius: 6px; background: var(--tomato); }
+.hint { font: 13px/18px var(--sans); color: var(--muted); padding: 8px 20px 0; }
+.reset { margin: 26px 20px 0; height: 48px; border-radius: 14px; border: 1.25px solid var(--rule); background: transparent; width: calc(100% - 40px); font: 600 14px var(--sans); color: var(--ink); cursor: pointer; }
+.classhead { padding: 4px 22px 0; display: flex; align-items: center; gap: 12px; }
+.classchip { width: 48px; height: 48px; border-radius: 15px; background: #F072562E; border: 1.25px solid #F072567A; display: grid; place-items: center; font: 700 10px var(--mono); color: var(--tomato-ink); }
+/* SmoothFormHeader: 32pt Satoshi Bold title, shape cluster on the right. */
+.phead { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 22px 0; }
+.phead h1 { margin: 0; font: 700 32px/38px "Satoshi", var(--word); letter-spacing: -.01em; white-space: nowrap; }
+.shapes { width: 78px; height: 72px; position: relative; flex-shrink: 0; }
+.shapes i { position: absolute; left: 50%; top: 50%; display: block; }
+.shapes .spark { width: 22px; height: 22px; border-radius: 11px; transform: translate(calc(-50% - 24px), calc(-50% + 20px)); }
+.shapes .lemon { width: 12px; height: 12px; border-radius: 6px; background: var(--lemon); transform: translate(calc(-50% + 26px), calc(-50% - 21px)); }
+.shapes .slab { width: 58px; height: 42px; border-radius: 16px; transform: translate(-50%, -50%) rotate(-8deg); }
+.shapes .pill { width: 42px; height: 13px; border-radius: 7px; transform: translate(-50%, -50%) rotate(18deg); }
+/* SmoothSectionHeader: 11pt mono, the page accent. */
+.shead { font: 700 11px/1 var(--mono); letter-spacing: .04em; color: var(--tomato-ink); padding: 24px 22px 10px; }
+.notes { max-width: 1300px; margin: 0 auto; padding: 0 24px 50px; font: 14px/21px var(--sans); color: #4A4239; }
+.notes b { color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="board">
+
+  <!-- 9 · Dashboard with the sweeper button -->
+  <div class="col">
+    <div class="label">9 · dashboard</div>
+    <div class="phone">
+      <div class="status"><span>9:41</span><span>●●● 100</span></div>
+      <div class="scroll">
+        <div class="dash-head">
+          <div>
+            <div class="word"><i>Smooth<svg width="80" height="6" viewBox="0 0 90 6"><defs><linearGradient id="sq" x1="0" x2="1"><stop offset="0" stop-color="#F07256"/><stop offset=".5" stop-color="#F7A844"/><stop offset="1" stop-color="#AF85F0"/></linearGradient></defs><path d="M1 3C8 .5 8 5.5 15 3s7-2.5 15 0 7 2.5 15 0 7-2.5 15 0 7 2.5 15 0 7-2.5 14 0" fill="none" stroke="url(#sq)" stroke-width="2.2" stroke-linecap="round"/></svg></i> Monday</div>
+            <div class="date">Nov 9</div>
+          </div>
+          <div class="nav">
+            <button class="sq tomato" onclick="go('page')" aria-label="Smooth Sweeper">
+              <svg width="19" height="19" viewBox="0 0 17 17"><path d="M15.6 1.4 9.4 7.6" stroke="#1B1714" stroke-width="1.8" stroke-linecap="round"/><path d="M7.4 6.4l3.2 3.2-1.2 1.2c-.9.9-2.3 1.1-3.2 2L3.4 15.6.4 12.6l2.8-2.8c.9-.9 1.1-2.3 2-3.2z" fill="#1B1714"/></svg>
+              <span class="pip" data-pip></span>
+            </button>
+            <button class="sq marigold" aria-label="announcements"><svg width="17" height="17" viewBox="0 0 17 17"><path d="M14.5 2.2 5 5.5H3a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h.3l1.2 3.4a1 1 0 0 0 .95.6h1.3a.7.7 0 0 0 .66-.93L6.6 11.6l7.9 2.7a.8.8 0 0 0 1.05-.76V2.96a.8.8 0 0 0-1.05-.76z" fill="#1B1714"/></svg><span class="badge">2</span></button>
+            <button class="sq teal" aria-label="profile"><svg width="20" height="20" viewBox="0 0 22 22"><path d="M11 1a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 4.2a3.3 3.3 0 1 1 0 6.6 3.3 3.3 0 0 1 0-6.6zM11 19a8 8 0 0 1-6.2-2.95c.3-2.1 3.2-3.3 6.2-3.3s5.9 1.2 6.2 3.3A8 8 0 0 1 11 19z" fill="#1B1714"/></svg></button>
+          </div>
+        </div>
+        <div class="control">
+          <div class="picker"><button class="on">todo</button><button>all</button><button>prev</button></div>
+          <div class="circ" style="background:#699AE740"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 4h12M4.5 8h7M7 12h2" stroke="#345EA8" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+          <div class="circ" style="background:#F0725638"><svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 1.5v11M1.5 7h11" stroke="#B63B23" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+        </div>
+        <div class="section">Today</div>
+        <div class="card f-tomato"><div><div class="code i-tomato">CIS 1210</div><div class="title">PSet 5: graph algorithms</div></div><div class="when">11:59<small class="i-tomato">pm</small></div></div>
+        <div class="card f-marigold"><div><div class="code i-marigold">ECON 1</div><div class="title">Problem set 3</div></div><div class="when">5h</div></div>
+        <div class="section">Next two days</div>
+        <div class="card f-lemon"><div><div class="code i-lemon">MGMT 1010</div><div class="title">Reading response 7</div></div><div class="when">Tue<small class="i-lemon">in class</small></div></div>
+      </div>
+      <div class="home"></div>
+    </div>
+  </div>
+
+  <!-- 10 · Sweeper page -->
+  <div class="col">
+    <div class="label">10 · sweeper</div>
+    <div class="phone urgent" id="page">
+      <div class="status"><span>9:41</span><span>●●● 100</span></div>
+      <div class="scroll">
+        <div class="phead"><h1>Sweeper</h1><div class="shapes"><i class="spark" style="background:var(--marigold)"></i><i class="lemon"></i><i class="slab" style="background:#F0725638"></i><i class="pill" style="background:var(--tomato)"></i></div></div>
+        <div class="hero">
+          <div class="hero-row">
+            <div class="big" id="state">on<b>.</b></div>
+            <button class="tog lg on" id="master" aria-label="Smooth Sweeper on"></button>
+          </div>
+        </div>
+
+        <div class="armed" id="armed">
+          <div class="armed-top">
+            <span class="live"><i></i><span id="liveText">CIS 1210</span></span>
+            <button class="test"><svg width="10" height="10" viewBox="0 0 14 14"><path d="M3 1.5v11l9.5-5.5z" fill="#B63B23"/></svg></button>
+          </div>
+          <div class="title" id="armedTitle">PSet 5: graph algorithms</div>
+          <div class="clock"><span class="n" id="count">2:14:07</span><span class="u">rings 11:29 pm</span></div>
+          <div class="bar"><i id="bar" style="width:60%"></i></div>
+        </div>
+
+        <div class="shead">default</div>
+        <div class="chips"><div class="picker" style="flex:1"><button>5m</button><button>10m</button><button class="on">15m</button><button>20m</button><button>30m</button><button>1h</button></div></div>
+        <div class="sound">
+          <svg width="18" height="18" viewBox="0 0 18 18"><path d="M3 7h3l4-3.5v11L6 11H3z" fill="#1B1714"/><path d="M12.5 6.2a4 4 0 0 1 0 5.6M14.6 4.2a7 7 0 0 1 0 9.6" stroke="#1B1714" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+          <span class="name">Smooth · original</span>
+          <button class="play" aria-label="preview"><svg width="12" height="12" viewBox="0 0 14 14"><path d="M3 1.5v11l9.5-5.5z" fill="#1B1714"/></svg></button>
+        </div>
+
+        <div class="shead">classes</div>
+        <div class="rows">
+          <div class="row" onclick="go('cls')" style="cursor:pointer"><span class="dot" style="background:var(--tomato)"></span><div class="txt"><div class="c">CIS 1210</div><div class="s i-tomato">30m · gentle chime</div></div><button class="tog on"></button><svg class="chev" width="8" height="12" viewBox="0 0 8 12"><path d="M2 1.5 6.5 6 2 10.5" stroke="#B5A88E" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="row"><span class="dot" style="background:var(--marigold)"></span><div class="txt"><div class="c">ECON 1</div></div><button class="tog on"></button><svg class="chev" width="8" height="12" viewBox="0 0 8 12"><path d="M2 1.5 6.5 6 2 10.5" stroke="#B5A88E" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="row off"><span class="dot" style="background:var(--rule)"></span><div class="txt"><div class="c">FNAR 3230</div></div><button class="tog"></button><svg class="chev" width="8" height="12" viewBox="0 0 8 12"><path d="M2 1.5 6.5 6 2 10.5" stroke="#B5A88E" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="row"><span class="dot" style="background:var(--teal)"></span><div class="txt"><div class="c">MEAM 1010</div></div><button class="tog on"></button><svg class="chev" width="8" height="12" viewBox="0 0 8 12"><path d="M2 1.5 6.5 6 2 10.5" stroke="#B5A88E" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+          <div class="row"><span class="dot" style="background:var(--lemon)"></span><div class="txt"><div class="c">MGMT 1010</div><div class="s i-lemon">1h · system alarm</div></div><button class="tog on"></button><svg class="chev" width="8" height="12" viewBox="0 0 8 12"><path d="M2 1.5 6.5 6 2 10.5" stroke="#B5A88E" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg></div>
+        </div>
+      </div>
+      <div class="home"></div>
+    </div>
+  </div>
+
+  <!-- 11 · One class -->
+  <div class="col">
+    <div class="label">11 · one class</div>
+    <div class="phone urgent" id="cls">
+      <div class="status"><span>9:41</span><span>●●● 100</span></div>
+      <div class="scroll">
+        <div class="phead"><h1>CIS 1210</h1><div class="shapes"><i class="spark" style="background:var(--marigold)"></i><i class="lemon"></i><i class="slab" style="background:#F0725638"></i><i class="pill" style="background:var(--tomato)"></i></div></div>
+        <div class="classhead">
+          <div class="big" style="flex:1">on<b>.</b></div>
+          <button class="tog lg on" aria-label="sweep CIS 1210"></button>
+        </div>
+        <div class="shead">ring</div>
+        <div class="chips"><div class="picker" style="flex:1"><button style="flex:1.5">default</button><button>5m</button><button>10m</button><button>15m</button><button class="on">30m</button><button>1h</button></div></div>
+        <div class="shead">sound</div>
+        <div class="rows">
+          <div class="row"><span class="radio"></span><div class="txt"><div class="c" style="font-weight:500">default</div></div></div>
+          <div class="row"><span class="radio"></span><div class="txt"><div class="c" style="font-weight:500">Smooth · original</div></div><button class="play" style="background:#F2E5C966"><svg width="11" height="11" viewBox="0 0 14 14"><path d="M3 1.5v11l9.5-5.5z" fill="#1B1714"/></svg></button></div>
+          <div class="row"><span class="radio on"></span><div class="txt"><div class="c">gentle chime</div></div><button class="play" style="background:#F2E5C966"><svg width="11" height="11" viewBox="0 0 14 14"><path d="M3 1.5v11l9.5-5.5z" fill="#1B1714"/></svg></button></div>
+          <div class="row"><span class="radio"></span><div class="txt"><div class="c" style="font-weight:500">classic pulse</div></div><button class="play" style="background:#F2E5C966"><svg width="11" height="11" viewBox="0 0 14 14"><path d="M3 1.5v11l9.5-5.5z" fill="#1B1714"/></svg></button></div>
+          <div class="row"><span class="radio"></span><div class="txt"><div class="c" style="font-weight:500">system alarm</div></div></div>
+        </div>
+        <button class="reset">reset</button>
+      </div>
+      <div class="home"></div>
+    </div>
+  </div>
+</div>
+
+<div class="notes">
+  <b>Prototype only.</b> Tap the broom to jump to the sweeper page, tap CIS 1210 for its page, and flip the big switch to see the off state (the card goes quiet and the dot on the broom disappears).
+</div>
+
+<script>
+  // The countdown runs toward a ring time 2h14m from page load, so the card
+  // always reads as a live alarm rather than a frozen number.
+  const ringAt = Date.now() + (2 * 3600 + 14 * 60 + 7) * 1000;
+  const window_ = 4 * 3600 * 1000; // the bar drains over the last four hours
+  const pad = n => String(n).padStart(2, "0");
+  function tick() {
+    const left = Math.max(0, ringAt - Date.now());
+    const s = Math.floor(left / 1000);
+    document.getElementById("count").textContent = `${Math.floor(s / 3600)}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`;
+    document.getElementById("bar").style.width = `${Math.min(100, 100 - (left / window_) * 100)}%`;
+  }
+  tick(); setInterval(tick, 1000);
+
+  const master = document.getElementById("master");
+  master.addEventListener("click", () => {
+    const on = master.classList.toggle("on");
+    document.getElementById("state").innerHTML = on ? "on<b>.</b>" : "off<b style='color:var(--rule)'>.</b>";
+    document.getElementById("armed").classList.toggle("off", !on);
+    document.getElementById("liveText").textContent = on ? "CIS 1210" : "nothing set";
+    document.querySelectorAll("[data-pip]").forEach(p => p.style.display = on ? "" : "none");
+  });
+  document.querySelectorAll(".row .tog, .classhead .tog").forEach(t => t.addEventListener("click", e => { e.stopPropagation(); t.classList.toggle("on"); }));
+  function go(id) { document.getElementById(id).scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" }); }
+</script>
+</body>
+</html>

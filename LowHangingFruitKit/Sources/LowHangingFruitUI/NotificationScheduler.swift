@@ -46,6 +46,14 @@ final class NotificationScheduler: ObservableObject {
     @Published private(set) var sweeperMinutes: Int
     @Published private(set) var sweeperSound: SweeperSound
     @Published private(set) var sweeperExcludedCourses: Set<String>
+    /// A class's own lead time and sound, when it chose one. Absent means
+    /// "follow the default", so changing the default moves every class that
+    /// never chose (`SweeperSettings`). Versioned keys, because the shape
+    /// (course -> value) is new and an older build must not misread it.
+    @Published private(set) var sweeperMinutesOverrides: [String: Int]
+    @Published private(set) var sweeperSoundOverrides: [String: SweeperSound]
+    private static let sweeperMinutesOverridesKey = "notif.sweeperCourseMinutesV1"
+    private static let sweeperSoundOverridesKey = "notif.sweeperCourseSoundV1"
     nonisolated static let sweeperMinuteOptions = [5, 10, 15, 20, 30, 60]
     var sweeperLead: TimeInterval { TimeInterval(sweeperMinutes * 60) }
 
@@ -79,6 +87,71 @@ final class NotificationScheduler: ObservableObject {
         sweeperExcludedCourses = []
         defaults.removeObject(forKey: "notif.sweeperExcludedCourses")
         rescheduleAfterPreferenceChange()
+    }
+
+    /// Everything the Sweeper plans from, as one value (`SweeperSettings`).
+    var sweeperSettings: SweeperSettings {
+        SweeperSettings(
+            isOn: loudAlertEnabled,
+            defaultMinutes: sweeperMinutes,
+            defaultSound: sweeperSound,
+            excludedCourses: sweeperExcludedCourses,
+            minutesOverrides: sweeperMinutesOverrides,
+            soundOverrides: sweeperSoundOverrides)
+    }
+
+    /// Gives a class its own lead time; nil goes back to the default. An
+    /// unoffered value is ignored, like `setSweeperMinutes`.
+    func setSweeperCourseMinutes(_ course: String, minutes: Int?) {
+        if let minutes {
+            guard Self.sweeperMinuteOptions.contains(minutes) else { return }
+            sweeperMinutesOverrides[course] = minutes
+        } else {
+            sweeperMinutesOverrides[course] = nil
+        }
+        persistSweeperOverrides()
+        rescheduleAfterPreferenceChange()
+    }
+
+    /// Gives a class its own sound; nil goes back to the default.
+    func setSweeperCourseSound(_ course: String, sound: SweeperSound?) {
+        sweeperSoundOverrides[course] = sound
+        persistSweeperOverrides()
+        rescheduleAfterPreferenceChange()
+    }
+
+    /// Clears one class's lead time and sound. Whether the class is switched
+    /// on or off is a separate choice and is left alone.
+    func resetSweeperCourseOverrides(_ course: String) {
+        sweeperMinutesOverrides[course] = nil
+        sweeperSoundOverrides[course] = nil
+        persistSweeperOverrides()
+        rescheduleAfterPreferenceChange()
+    }
+
+    /// An empty map removes its key rather than storing `[:]`, so a student
+    /// who never touched a class leaves nothing behind.
+    private func persistSweeperOverrides() {
+        if sweeperMinutesOverrides.isEmpty {
+            defaults.removeObject(forKey: Self.sweeperMinutesOverridesKey)
+        } else {
+            defaults.set(sweeperMinutesOverrides, forKey: Self.sweeperMinutesOverridesKey)
+        }
+        if sweeperSoundOverrides.isEmpty {
+            defaults.removeObject(forKey: Self.sweeperSoundOverridesKey)
+        } else {
+            defaults.set(sweeperSoundOverrides.mapValues(\.rawValue), forKey: Self.sweeperSoundOverridesKey)
+        }
+    }
+
+    /// The soonest alarm that will really ring, for the Sweeper page's card.
+    /// Nil while reminders are off as well as while the Sweeper is: `reschedule`
+    /// returns before planning when reminders are off, so nothing is set.
+    func nextSweep(in items: [DashItem], now: Date = Date()) -> SweepRing? {
+        guard isEnabled else { return nil }
+        let prefs = resolvedPreferences(nil)
+        return SweeperSettings.nextSweep(in: items, now: now, settings: sweeperSettings,
+                                         courseRemindersOn: { prefs.notificationsEnabled($0) })
     }
     @Published private(set) var authStatus: UNAuthorizationStatus = .notDetermined
 
@@ -162,7 +235,7 @@ final class NotificationScheduler: ObservableObject {
 
     /// iOS caps pending local notifications at 64; stay under it with headroom.
     static let maxPending = 60
-    static let horizonDays = 14
+    nonisolated static let horizonDays = 14
 
     // MARK: The loud 10-minute alert's shape
 
@@ -230,6 +303,12 @@ final class NotificationScheduler: ObservableObject {
         self.sweeperMinutes = Self.sweeperMinuteOptions.contains(minutes) ? minutes : 10
         self.sweeperSound = SweeperSound(rawValue: d.string(forKey: "notif.sweeperSound") ?? "") ?? .smooth
         self.sweeperExcludedCourses = Set(d.stringArray(forKey: "notif.sweeperExcludedCourses") ?? [])
+        // Read defensively: a value that is no longer an offered choice
+        // (an option list that shrank) is dropped, not trusted.
+        let savedMinutes = d.dictionary(forKey: Self.sweeperMinutesOverridesKey) as? [String: Int] ?? [:]
+        self.sweeperMinutesOverrides = savedMinutes.filter { Self.sweeperMinuteOptions.contains($0.value) }
+        let savedSounds = d.dictionary(forKey: Self.sweeperSoundOverridesKey) as? [String: String] ?? [:]
+        self.sweeperSoundOverrides = savedSounds.compactMapValues(SweeperSound.init(rawValue:))
 
         #if DEBUG
         // Screenshot seam: show the reminders feature fully expanded (in-memory
@@ -795,11 +874,12 @@ final class NotificationScheduler: ObservableObject {
         // an item the `maxLoudItems` cut dropped keeps its plain 10-minute
         // reminder, if the student asked for one, because otherwise it would
         // have neither.
-        let loudItemIDs = Set(loud.map(\.item.id))
+        // Each item's own lead, because a class can ring earlier or later than
+        // the default: the plain reminder it replaces is the one at THAT lead.
+        let loudLeadByItem = Dictionary(uniqueKeysWithValues: loud.map { ($0.item.id, TimeInterval($0.minutes * 60)) })
         let loudByItem = loud.map { alert in
             (id: alert.item.assignment.id,
-             requests: Self.loudRequests(for: alert, now: now, nameOverrides: nameOverrides,
-                                         minutes: sweeperMinutes, sound: sweeperSound))
+             requests: Self.loudRequests(for: alert, now: now, nameOverrides: nameOverrides))
         }
 
         var byCourse: [String: [Candidate]] = [:]
@@ -844,7 +924,7 @@ final class NotificationScheduler: ObservableObject {
                 // The loud alert IS the 10-minute reminder for this item, only
                 // louder. Scheduling the plain one beside it would put a fourth
                 // "Due in 10 minutes" on the lock screen at the same instant.
-                if TimeInterval(offset.rawValue) == sweeperLead, loudItemIDs.contains(item.id) { continue }
+                if let loudLead = loudLeadByItem[item.id], TimeInterval(offset.rawValue) == loudLead { continue }
                 let fire = due.addingTimeInterval(-Double(offset.rawValue))
                 guard fire > now else { continue }
                 byCourse[course, default: []]
@@ -929,6 +1009,11 @@ final class NotificationScheduler: ObservableObject {
         /// position (1...3) so the identifier means the same thing on every
         /// pass. Never empty.
         let pending: [(number: Int, fire: Date)]
+        /// The lead time and sound this item's class resolves to
+        /// (`SweeperSettings.resolved(for:)`), so the buzzes' wording and
+        /// sound and the plain reminder they replace all follow the class.
+        let minutes: Int
+        let sound: SweeperSound
     }
 
     /// Which items get the loud alert, nearest-due first, capped at
@@ -977,20 +1062,22 @@ final class NotificationScheduler: ObservableObject {
     ) -> [LoudAlert] {
         guard loudAlertEnabled else { return [] }
 
+        // The eligibility rule lives on `SweeperSettings`, shared with the
+        // Sweeper page's "next sweep" card; only the timing is judged here.
+        let settings = sweeperSettings
         var alerts: [LoudAlert] = []
         for item in items {
-            guard !item.isCompleted, let due = item.due, due > now, due <= horizon else { continue }
-            guard !item.showsNothingToSubmit, !RecurringTask.isOccurrence(item.assignment) else { continue }
-            guard !item.isFoundExam else { continue }
-            guard !sweeperExcludedCourses.contains(item.assignment.course) else { continue }
-            guard prefs.notificationsEnabled(item.assignment.course) else { continue }
+            guard settings.qualifies(item, now: now, horizon: horizon,
+                                     courseRemindersOn: { prefs.notificationsEnabled($0) }),
+                  let due = item.due else { continue }
+            let (minutes, sound) = settings.resolved(for: item.assignment.course)
 
-            let first = due.addingTimeInterval(-sweeperLead)
+            let first = due.addingTimeInterval(-TimeInterval(minutes * 60))
             let pending = (1...Self.loudAlertCount)
                 .map { (number: $0, fire: first.addingTimeInterval(Double($0 - 1) * Self.loudAlertSpacing)) }
                 .filter { $0.fire > now }
             guard !pending.isEmpty else { continue }
-            alerts.append(LoudAlert(item: item, pending: pending))
+            alerts.append(LoudAlert(item: item, pending: pending, minutes: minutes, sound: sound))
         }
 
         // Nearest first, and the id after that, so the cut is a function of
@@ -1026,7 +1113,14 @@ final class NotificationScheduler: ObservableObject {
         let horizon = now.addingTimeInterval(Double(Self.horizonDays) * 86_400)
         let selection = loudAlerts(from: items.filter { !$0.isFactCancelled }, now: now, horizon: horizon, preferences: prefs)
             .map(\.item)
-        return BerserkAlarmPlan.alarms(for: selection, now: now, nameOverrides: prefs.courseNameOverrides, lead: sweeperLead, sound: sweeperSound)
+        // One call per item, because each class resolves its own lead and
+        // sound and `alarms` takes one of each. Order is the selection's.
+        let settings = sweeperSettings
+        return selection.flatMap { item -> [PlannedAlarm] in
+            let (minutes, sound) = settings.resolved(for: item.assignment.course)
+            return BerserkAlarmPlan.alarms(for: [item], now: now, nameOverrides: prefs.courseNameOverrides,
+                                           lead: TimeInterval(minutes * 60), sound: sound)
+        }
     }
 
     /// The notifications of one item's alert, in the voice of the ordinary
@@ -1067,10 +1161,10 @@ final class NotificationScheduler: ObservableObject {
     private static func loudRequests(
         for alert: LoudAlert,
         now: Date,
-        nameOverrides: [String: String],
-        minutes: Int,
-        sound: SweeperSound
+        nameOverrides: [String: String]
     ) -> [UNNotificationRequest] {
+        let minutes = alert.minutes
+        let sound = alert.sound
         let assignment = alert.item.assignment
         let buttons = LoudAlertActions.buttons(for: assignment)
         return alert.pending.map { number, fire in

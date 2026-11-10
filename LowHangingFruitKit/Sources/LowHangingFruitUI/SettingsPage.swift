@@ -213,7 +213,6 @@ struct SettingsPage: View {
             .smoothSectionBackground(.smoothCobalt)
 
             remindersSection
-            SweeperSettingsSection()
             ProfileClassesSection { showRecurring = true }
             ProfileNotificationsSection()
             iCloudSyncSection

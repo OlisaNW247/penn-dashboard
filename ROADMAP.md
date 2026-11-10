@@ -947,6 +947,11 @@ Kept so nobody rebuilds them blind.
 - **2026-11-10.** A no-submission card says "in class" only when Canvas says
   on paper, it is an event, or its title names a quiz or exam; otherwise
   "off canvas" (`NothingToSubmitLabel`, CIS 3990 Project 2). Not on a phone.
+- **2026-11-10, `v11`.** The Sweeper gets a header button (broom, left of
+  the megaphone) and its own page: on/off, a countdown card for the next
+  alarm, defaults, and per-class on/off, lead time and sound. The Profile
+  section is gone. Scrolling that starts on a card no longer sticks
+  (`CompletionSwipe.Axis`).
 - **2026-11-07 (16:39 EST).** 3.4.1 (20) archived from `c3a4feb` and
   uploaded, superseding builds 18 and 19. Marco attaches 20 and submits.
 - **2026-11-07 (evening).** The megaphone lists every post the phone keeps
