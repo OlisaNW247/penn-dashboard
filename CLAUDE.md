@@ -752,7 +752,16 @@ Keep this current. It is the fastest way for a new session to know what exists.
     "no date" does. The old "nothing to submit" caveat line under the
     title is gone. Diagonal stripes were tried on the phone the same day
     and rejected as too busy. VoiceOver hears "nothing to submit" as the
-    card's value.
+    card's value. **Since 2026-11-10 the word is truthful** (Marco: CIS
+    3990's Project 2, handed in on a git server, read "in class"):
+    `NothingToSubmitLabel.text` says "in class" only for Canvas `on_paper`
+    (`onPaperCanvasAssignmentIDsV1`, beside `noSubmissionCanvasAssignmentIDsV1`,
+    same per-item update), an `.event`, or a title naming a quiz or exam, and
+    "off canvas" otherwise. Only the word: reminders, the Sweeper's silence
+    and the auto-file at the due time are unchanged. Compiled and tested on
+    the Mac; not on a phone. The missed PHYS 0151 Quiz 7 of 2026-11-09 was
+    shown in todo and filed at its due time; nothing loud rings for an
+    in-class quiz (`docs/QUIZ_MISSED_2026-11-09.md`).
   - **Where a card came from** ("from announcements", "from ed", "from
     syllabus", `DashItem.sourceText`) shows only in the opened card, under
     the full due date (2026-11-06). The collapsed card's caveat line now
@@ -1300,6 +1309,11 @@ assignment-PDF pass (`AssignmentAttachmentPlannerTests`,
 Deno 870 (was 824: the hardening, the drafts backend, the assignment
 context, the file-retirement rule), `deno task check` clean, Node 46. The
 Swift pass is blind: never run against real Canvas.**
+
+**On `claude/quiz-inclass-9d38b8` (2026-11-10): the label fix's filtered runs
+green (`DueValueSecondaryLabelTests` 8, `NoSubmissionCaveatTests` +1, 40 tests
+in 3 suites); full `swift test --no-parallel` alone on Marco's Mac: 3760 / 362, all green
+(55 s), +6 over the 3754 / 362 below. No iOS build (no iOS-only code touched).**
 
 **Chrome extension (a separate suite; never add it to the Swift or Deno
 counts): 517 tests, all green, on `v8` (2026-11-04, `cd chrome-extension

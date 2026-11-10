@@ -22,6 +22,10 @@ struct DashItem: Identifiable, Equatable {
     /// construction site (`SampleData`, tests) keeps compiling and previews
     /// render exactly as before unless a fixture opts a specific item in.
     var requiresNoSubmission: Bool = false
+    /// Canvas says the no-submission work is handed in on paper
+    /// (`AppState.submitsOnPaper`): the one case "in class" is true for a
+    /// Canvas assignment. Snapshotted at `reload` like the field above.
+    var submitsOnPaper: Bool = false
     /// What the opened card offers to take away (`OwnTaskRemoval`): "delete" on
     /// the student's own one-off task, "stop repeating" on an occurrence of a
     /// recurring one, nil for everything else. Snapshotted at `reload` time for
@@ -83,6 +87,14 @@ struct DashItem: Identifiable, Equatable {
     /// property is what lets the *display* be unified while the two
     /// reminder-toggle scopes stay exactly as they were.
     var showsNothingToSubmit: Bool { requiresNoSubmission || assignment.kind == .event }
+
+    /// The word under the due value for a card with nothing to submit
+    /// (`NothingToSubmitLabel.text`), nil for every other card.
+    var nothingToSubmitLabel: String? {
+        guard showsNothingToSubmit else { return nil }
+        return NothingToSubmitLabel.text(
+            isEvent: assignment.kind == .event, submitsOnPaper: submitsOnPaper, title: assignment.title)
+    }
 
     /// True for a task the Announcement Watcher extracted from an
     /// announcement's text rather than one Canvas lists as an assignment.
@@ -276,6 +288,7 @@ final class DashboardViewModel: ObservableObject {
                                   isCompleted: false,
                                   completedAt: nil,
                                   requiresNoSubmission: state.requiresNoSubmission(a),
+                                  submitsOnPaper: state.submitsOnPaper(a),
                                   removal: OwnTaskRemoval.offered(for: a, isUsingFixtureData: isFixture),
                                   fact: state.factDisplay[a.id]))
         }
@@ -301,6 +314,7 @@ final class DashboardViewModel: ObservableObject {
                                   isCompleted: true,
                                   completedAt: state.completedAt(a) ?? priorByID[a.id]?.completedAt,
                                   requiresNoSubmission: state.requiresNoSubmission(a),
+                                  submitsOnPaper: state.submitsOnPaper(a),
                                   canMarkActive: !state.completionIsLockedByCanvas(a)))
         }
 

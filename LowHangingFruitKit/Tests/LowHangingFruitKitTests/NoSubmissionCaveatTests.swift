@@ -91,6 +91,17 @@ struct NoSubmissionCaveatTests {
         #expect(next == ["a"])
     }
 
+    @Test("The on-paper subset follows the same per-item replace")
+    func onPaperSubsetFollowsCanvas() {
+        let snap = snapshot(courseID: "1", items: [
+            gradeItem("paper", submissionTypes: ["on_paper"]),
+            gradeItem("none", submissionTypes: ["none"]),
+            gradeItem("was-paper", submissionTypes: ["none"]),
+        ])
+        let next = AppState.updatedOnPaperIDs(cached: ["was-paper", "other-course"], snapshots: [snap])
+        #expect(next == ["paper", "other-course"])
+    }
+
     @Test("The same id later observed as submittable leaves the cache")
     func laterSubmittableLeavesCache() {
         // "a" was cached from an earlier refresh (the professor has since

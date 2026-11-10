@@ -544,8 +544,51 @@ struct SmoothDueValue {
     /// ("late", "no date") always wins: lateness is the more urgent fact.
     /// `nonisolated` and off the View on purpose, so tests can call it and a
     /// non-main caller is not caught by a View's main-actor isolation.
-    nonisolated func secondaryLabel(showsNothingToSubmit: Bool) -> String? {
-        secondary ?? (showsNothingToSubmit ? "in class" : nil)
+    ///
+    /// The word itself is `NothingToSubmitLabel.text`: "in class" only when
+    /// that is true, "off canvas" for work Canvas takes nothing for.
+    nonisolated func secondaryLabel(nothingToSubmit: String?) -> String? {
+        secondary ?? nothingToSubmit
+    }
+}
+
+/// What a card with nothing to submit says under its due value.
+///
+/// Until 2026-11-10 every such card said "in class". Marco's CIS 3990
+/// "Project 2: Feature Extension" takes no Canvas submission because it is
+/// handed in on the course's git server, and "in class" was simply false
+/// ("not in class... something I submit, but not through Canvas"). Canvas
+/// does say which case it is: `on_paper` is work handed in in the room,
+/// `none` (and `not_graded`) only says Canvas takes nothing. So:
+/// - "in class" for `on_paper`, for an `.event` (a lecture, a reading, a
+///   preparation task: the word it always had), and for a `none` item whose
+///   title names a quiz or an exam, because an instructor who sets an
+///   in-class quiz to "No Submission" rather than "On Paper" is common and
+///   the quiz is still sat in the room;
+/// - "off canvas" for everything else.
+///
+/// Only the word changes. Reminders, the Sweeper's silence and the auto-file
+/// after the due time still read `requiresNoSubmission`, as before: Smooth
+/// cannot see a submission made off Canvas, so an alarm for "not turned in"
+/// would ring every time. The wrong fix would have been taking `none` out of
+/// `requiresNoSubmission`, which rings the Sweeper for every class meeting
+/// and every in-class quiz.
+enum NothingToSubmitLabel {
+    static let inClass = "in class"
+    static let offCanvas = "off canvas"
+
+    nonisolated static func text(isEvent: Bool, submitsOnPaper: Bool, title: String) -> String {
+        if isEvent || submitsOnPaper || namesASitting(title) { return inClass }
+        return offCanvas
+    }
+
+    /// A quiz or an exam by whole word. `ExamDetection.isExam` alone is not
+    /// enough: it deliberately says no to "Quiz 7" (a quiz is not an exam
+    /// card), and here a quiz is exactly the in-room case.
+    nonisolated static func namesASitting(_ title: String) -> Bool {
+        if ExamDetection.isExam(title: title) { return true }
+        let words = title.lowercased().split { !$0.isLetter }
+        return words.contains { $0 == "quiz" || $0 == "quizzes" }
     }
 }
 

@@ -402,6 +402,14 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
 
 ## Next: features
 
+- **A loud same-day warning for in-class quizzes** (Marco, 2026-11-09: "it
+  didn't tell me I had a quiz today"). PHYS 0151 Quiz 7 was in todo for two
+  days and filed at its due time; the Sweeper never rings for nothing to
+  submit, so the 1-hour reminder is the only alert. Three options for Marco
+  in `docs/QUIZ_MISSED_2026-11-09.md` (a morning-of notice for quiz/exam
+  titles; exam-card treatment; leave it). His pick first; then read his
+  lead times off the plist.
+
 - **Agent connection for v11** (Marco, 2026-11-07: "a connection for an
   agent to have all the context to your classes and the possibility to
   submit assignments"). Plan in `docs/AGENT_CONNECTION_PLAN_V11_2026-11-07.md`
@@ -911,6 +919,9 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-10.** A no-submission card says "in class" only when Canvas says
+  on paper, it is an event, or its title names a quiz or exam; otherwise
+  "off canvas" (`NothingToSubmitLabel`, CIS 3990 Project 2). Not on a phone.
 - **2026-11-07 (16:39 EST).** 3.4.1 (20) archived from `c3a4feb` and
   uploaded, superseding builds 18 and 19. Marco attaches 20 and submits.
 - **2026-11-07 (evening).** The megaphone lists every post the phone keeps

@@ -336,6 +336,20 @@ final class AppState: ObservableObject {
     /// partial refresh didn't cover. Read through `requiresNoSubmission(_:)`.
     @Published private(set) var noSubmissionCanvasAssignmentIDs: Set<String> = []
 
+    /// The subset of `noSubmissionCanvasAssignmentIDs` Canvas says is handed
+    /// in on paper (`GradeItem.submitsOnPaper`), persisted beside it under
+    /// `onPaperCanvasAssignmentIDsKey` and updated by the same per-item rule.
+    /// It decides one word only: a no-submission card says "in class" when
+    /// its id is here and "off canvas" otherwise (`NothingToSubmitLabel`).
+    /// Reminders, the Sweeper and auto-filing still read the wider set, so a
+    /// student who submits Project 2 on a git server keeps every rule that
+    /// "nothing to submit on Canvas" already had. A separate set rather than
+    /// a map of submission types, so the existing key and its readers stay
+    /// byte for byte; until the first grade refresh after the update the set
+    /// is empty and such a card reads "off canvas" (or "in class" when its
+    /// title names a quiz or exam), which the launch refresh corrects.
+    @Published private(set) var onPaperCanvasAssignmentIDs: Set<String> = []
+
     /// Settings → "ai assist". Default
     /// **true**, absent-key-means-on, same idiom as
     /// on: it runs under LHF's own
@@ -851,6 +865,9 @@ final class AppState: ObservableObject {
     /// device, not a student preference, so there is nothing here worth
     /// syncing and no harm in two devices disagreeing about it for a while.
     private static let noSubmissionCanvasAssignmentIDsKey = "noSubmissionCanvasAssignmentIDsV1"
+    /// Backs `onPaperCanvasAssignmentIDs`. Device-local, never mirrored, for
+    /// the reasons the key just above gives.
+    private static let onPaperCanvasAssignmentIDsKey = "onPaperCanvasAssignmentIDsV1"
     private static let announcementWatcherEnabledKey = "announcementWatcherEnabledV1"
     /// Backs `announcementAIEnabled`. Default-**on** now — see that
     /// property's doc comment — so, like `announcementWatcherEnabledKey`
@@ -1139,6 +1156,9 @@ final class AppState: ObservableObject {
         // cold launch, before any grade refresh has had a chance to run.
         self.noSubmissionCanvasAssignmentIDs = Set(
             UserDefaults.lhf.stringArray(forKey: Self.noSubmissionCanvasAssignmentIDsKey) ?? []
+        )
+        self.onPaperCanvasAssignmentIDs = Set(
+            UserDefaults.lhf.stringArray(forKey: Self.onPaperCanvasAssignmentIDsKey) ?? []
         )
         // Both default to true (absent-key-means-on, per each property's doc
         // comment) but MUST be read back from UserDefaults.lhf rather than
@@ -5138,6 +5158,8 @@ final class AppState: ObservableObject {
         // Canvas account) would otherwise inherit and caveat incorrectly.
         noSubmissionCanvasAssignmentIDs = []
         UserDefaults.lhf.removeObject(forKey: Self.noSubmissionCanvasAssignmentIDsKey)
+        onPaperCanvasAssignmentIDs = []
+        UserDefaults.lhf.removeObject(forKey: Self.onPaperCanvasAssignmentIDsKey)
         gradeWatcher.clearAll(keepingHistory: keepingStudentWork)
         // Drop the durable ledger's Canvas rows too, or a disconnected
         // account's unfinished work survives in the store and reappears on
@@ -9350,6 +9372,13 @@ final class AppState: ObservableObject {
         assignment.canvasAssignmentID.map { noSubmissionCanvasAssignmentIDs.contains($0) } ?? false
     }
 
+    /// True when Canvas says this no-submission assignment is handed in on
+    /// paper (`onPaperCanvasAssignmentIDs`): the card may then say "in class".
+    func submitsOnPaper(_ assignment: Assignment) -> Bool {
+        guard requiresNoSubmission(assignment), let id = assignment.canvasAssignmentID else { return false }
+        return onPaperCanvasAssignmentIDs.contains(id)
+    }
+
     /// The cache-backed, works-offline twin of `autoSubmittedNoSubmissionIDs`
     /// below. That function only ever runs as part of a live grade refresh —
     /// it writes durable ledger state (`applySubmissionState`) once one
@@ -9496,6 +9525,14 @@ final class AppState: ObservableObject {
                 Array(noSubmissionCanvasAssignmentIDs).sorted(),
                 forKey: Self.noSubmissionCanvasAssignmentIDsKey
             )
+            onPaperCanvasAssignmentIDs = Self.updatedOnPaperIDs(
+                cached: onPaperCanvasAssignmentIDs,
+                snapshots: Array(gradeWatcher.snapshots.values)
+            )
+            UserDefaults.lhf.set(
+                Array(onPaperCanvasAssignmentIDs).sorted(),
+                forKey: Self.onPaperCanvasAssignmentIDsKey
+            )
         }
 
         // Persist onto the ledger so the next cold launch already knows what's
@@ -9604,6 +9641,24 @@ final class AppState: ObservableObject {
     /// `noSubmissionAssignmentIDs` above, so the cache's self-healing
     /// behaviour is testable without a network, a `GradeWatcherStore`, or
     /// `UserDefaults`.
+    /// The same per-item replace as `updatedNoSubmissionIDs`, for the
+    /// on-paper subset: an observed item enters when Canvas says on paper and
+    /// leaves otherwise; an unobserved course keeps what `cached` had.
+    static func updatedOnPaperIDs(
+        cached: Set<String>,
+        snapshots: [CourseGradeSnapshot]
+    ) -> Set<String> {
+        var next = cached
+        for snapshot in snapshots {
+            for category in snapshot.categories {
+                for item in category.items {
+                    if item.submitsOnPaper { next.insert(item.id) } else { next.remove(item.id) }
+                }
+            }
+        }
+        return next
+    }
+
     static func updatedNoSubmissionIDs(
         cached: Set<String>,
         snapshots: [CourseGradeSnapshot]

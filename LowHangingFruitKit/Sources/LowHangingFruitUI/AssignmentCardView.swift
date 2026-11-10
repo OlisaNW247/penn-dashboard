@@ -283,7 +283,7 @@ struct AssignmentCardView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 if let secondary = value.secondaryLabel(
-                    showsNothingToSubmit: item.showsNothingToSubmit
+                    nothingToSubmit: item.nothingToSubmitLabel
                 ) {
                     Text(secondary)
                         .font(.lhfMono(8.5, weight: .semibold))
