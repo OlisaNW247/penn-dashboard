@@ -163,7 +163,11 @@ Marco's "Yes, deploy"** (the sign-in page's "Connected to Smooth, returning
 to <agent>" state before the redirect, and explicit annotation hints on every
 read tool; no migration; the 14-step `agent-e2e.mjs` probe, drafts included,
 passed on them); then **`mcp` v5 about 19:00 UTC the same day** (each attachment
-listed once in `get_assignment`) (`node backend/scripts/deploy-agent.mjs --public-base
+listed once in `get_assignment`); then **`agent-auth` v8, `mcp` v7, `agent-snapshot` v5 about
+20:40 UTC with migration `20261110090000_agent_uploads.sql`** (files from an
+agent in checksummed 16 KB chunks or by one signed PUT, after claude.ai
+refused to transcribe a 57,000-character base64 PDF; the probe's upload leg
+passed on production with 100 KB chunked, one chunk resent, and 50 KB PUT) (`node backend/scripts/deploy-agent.mjs --public-base
 https://smooth-agent.vercel.app/functions/v1`): `agent-auth` (our own OAuth
 authorization server, the phone approves each connection), `mcp` (the
 remote MCP server Claude connects to) and `agent-snapshot` (the opted-in
@@ -1227,6 +1231,24 @@ Keep this current. It is the fastest way for a new session to know what exists.
     `error_class`). Disconnecting Canvas and turning the opt-in off clear
     the drafts, the cache, the notice memory, the known-connection ids and
     the attempt records.
+  - **Markdown as a PDF** (2026-11-10; compiled and tested, never on a
+    phone). claude.ai will not emit a 144,000-character base64 PDF, so a
+    document travels as source text and is rendered on the phone. A `text`
+    draft whose body looks like markdown (a heading, list, code fence,
+    emphasis, an explicit first line `<!-- format: markdown -->`, or a
+    `format` field if the server ever sends one) gets a "submit as text" /
+    "submit as pdf" choice in the review sheet, default pdf; any other
+    draft defaults to text. `DraftDocumentRenderer` (Kit, `Agent/`):
+    `AttributedString(markdown:)` to blocks, Inter 11.5 pt body, larger
+    Inter-Bold headings, Space Mono code, US Letter with 1-inch margins
+    through `UIGraphicsPDFRenderer` + `CTFramesetter` behind
+    `#if canImport(UIKit)` (macOS answers nil). `$...$` math stays text.
+    The sheet shows the PDF in a PDFKit view; submit sends it as
+    `<title>.pdf` (`application/pdf`) through the ordinary file path, same
+    attempt record, same never-twice rule. A render failure falls back to
+    text with "couldn't make a pdf". If the assignment does not take file
+    uploads the preflight refuses and the draft stays open for the text
+    choice.
   - **Connected.** After the right number is picked the approve sheet
     becomes a confirmation ("connected to claude", "go back to claude to
     finish", done) instead of closing itself a second later; and a
