@@ -611,13 +611,24 @@ export function retirableCollector(client: SyncClient): "phone" | undefined {
 export function liveIDsRetirableBy<T extends { id: string; kind: string; collector?: string }>(
   liveRows: T[],
   client: SyncClient,
+  reportListsFiles = false,
 ): string[] {
   const only = retirableCollector(client);
   return liveRows
     .filter((row) => !isWindowKind(row.kind))
+    // A report that lists no `file` id for the course has no view of files
+    // (an older phone build, or an extension whose Files tab is hidden), so
+    // it cannot vouch for their absence.
+    .filter((row) => reportListsFiles || row.kind !== "file")
     .filter((row) => (row.collector ?? "phone") !== "server")
     .filter((row) => only === undefined || (row.collector ?? "phone") === only)
     .map((row) => row.id);
+}
+
+/** True when a course's complete-set report names at least one `file`
+ * document (ids are `"{kind}:{courseID}:{sourceID}"`). */
+export function reportListsFiles(documentIDs: string[]): boolean {
+  return documentIDs.some((id) => id.startsWith("file:"));
 }
 
 /** Step 2 of sync: for a fully-synced course, any id that is currently

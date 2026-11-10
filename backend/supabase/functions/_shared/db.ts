@@ -299,6 +299,7 @@ export async function selectLiveDocumentIDsForCourse(
   client: SupabaseClient,
   courseID: string,
   onlyCollector?: "phone" | "extension",
+  reportListsFiles = false,
 ): Promise<string[]> {
   // Window kinds (`announcement`, `ed`; see `WINDOW_KINDS` in manifest.ts)
   // are excluded on purpose, so the complete-set rule in the upload step can
@@ -329,6 +330,10 @@ export async function selectLiveDocumentIDsForCourse(
   // between a crawl and its own next manifest simply had not downloaded
   // them, which is exactly how ECON 0100 lost five fresh crawl rows on
   // 2026-10-26, when crawled rows still carried the default 'phone'.
+  //
+  // And a report that lists no `file` id for the course cannot retire file
+  // rows: a client that collects no files has no view of them.
+  if (!reportListsFiles) query = query.neq("kind", "file");
   query = onlyCollector ? query.eq("collector", onlyCollector) : query.neq("collector", "server");
   const { data, error } = await query;
   if (error) throw error;

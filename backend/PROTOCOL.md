@@ -143,6 +143,14 @@ the rest. Live-document reads are paginated (500 rows a page, ordered by
 `id`) because the project's PostgREST `max_rows` is 1000 and a larger
 single select is silently truncated.
 
+`file` rows follow a third rule (2026-11-10): a complete-set report retires a
+course's `file` rows only when that report itself lists at least one `file`
+id for the course. A client that collects no files (an older phone build, or
+the extension for a course whose Files tab is hidden) has no view of them and
+cannot vouch for their absence; without this rule it would retire, every
+sync, the files another client or a newer build pooled. A report that does
+list files speaks for the files of its collector scope as before.
+
 `CourseSummaryWire.section` is the Canvas SIS section number for *this
 Canvas course site* (e.g. `"401"`), at most 8 characters matching
 `^[0-9A-Za-z]{1,8}$` -- not to be confused with `sectionIDs`, which is a
