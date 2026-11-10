@@ -71,6 +71,44 @@ jobs:
           name: swift-test-log
           path: swift-test.log
 
+  # The iOS slice, which `swift test` never compiles: the widget extension,
+  # `BackgroundRefresh.swift` and everything behind `#if os(iOS)`. Unsigned,
+  # generic device, Debug: CLAUDE.md's own compile check for a tree nobody
+  # has a Mac for. Manual runs only (2026-11-10): it is several minutes of a
+  # macOS runner, and a push to the line already has the suite above.
+  ios-build:
+    name: xcodebuild iOS (unsigned)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          newest=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$newest" ]; then sudo xcode-select -s "$newest"; fi
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i ios || true
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit \
+            -configuration Debug -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee ios-build.log | grep -E "error:|warning: unre|BUILD|Compiling Ambassador|\*\* " || true
+          grep -q "BUILD SUCCEEDED" ios-build.log
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## xcodebuild iOS (unsigned)"
+            grep -E "error:|BUILD (SUCCEEDED|FAILED)" ios-build.log | sort -u | tail -40 | sed 's/^/    /'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-build-log
+          path: ios-build.log
+
   deno:
     name: deno test --no-check
     runs-on: ubuntu-latest
