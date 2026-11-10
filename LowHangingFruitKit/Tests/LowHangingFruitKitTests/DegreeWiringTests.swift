@@ -220,7 +220,11 @@ struct DegreeAppStateTests {
     @Test("a snapshot with the new fields survives a round trip through the store")
     func snapshotRoundTrip() throws {
         let state = try makeState()
-        let snapshot = SampleData.degreeSnapshot()
+        // A whole-second `now`: the store writes dates as ISO 8601, which
+        // drops the fraction, so a snapshot stamped with `Date()` comes back
+        // a few hundred milliseconds different and unequal. That is the
+        // fixture's doing, not a loss in the store.
+        let snapshot = SampleData.degreeSnapshot(now: Date(timeIntervalSince1970: 1_800_000_000))
         try state.degreeStore.save(snapshot)
         #expect(state.degreeStore.load() == snapshot)
         #expect(!snapshot.degrees.isEmpty)
