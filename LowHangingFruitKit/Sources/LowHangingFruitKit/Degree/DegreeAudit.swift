@@ -35,6 +35,13 @@ public struct DegreeGoals: Codable, Sendable, Hashable {
     /// A lowercase one-liner such as "computer science, bse". Descriptions
     /// come from the caller (Penn's dictionaries, `PathDictionaries`); a code with no description
     /// falls back to itself. The caller owns the lookup so this stays pure.
+    ///
+    /// The degree is always its code ("bse"), never Penn's description of it.
+    /// The registrar's text for a degree is "Bachelor of Sci in Engineering",
+    /// abbreviation and all, and beside the ring it wrapped to three lines;
+    /// the owner asked for a cleaner name on first sight (2026-11-10). A
+    /// student says "BSE". Majors keep their descriptions, because a major
+    /// code ("CSCI") is the registrar's, not the student's.
     public func title(descriptions: [String: String]) -> String {
         func word(_ key: String) -> String {
             (descriptions[key] ?? key).trimmingCharacters(in: .whitespaces).lowercased()
@@ -42,7 +49,7 @@ public struct DegreeGoals: Codable, Sendable, Hashable {
         var parts: [String] = []
         let majorWords = majors.filter { !$0.isEmpty }.map(word)
         if !majorWords.isEmpty { parts.append(majorWords.joined(separator: " + ")) }
-        if let degree, !degree.isEmpty { parts.append(word(degree)) }
+        if let degree, !degree.isEmpty { parts.append(degree.trimmingCharacters(in: .whitespaces).lowercased()) }
         if parts.isEmpty, let program, !program.isEmpty { parts.append(word(program)) }
         return parts.joined(separator: ", ")
     }

@@ -94,7 +94,9 @@ struct DegreeWhatIfTests {
         #expect(DegreeGoals.chipTitles(for: [ai, cs], descriptions: names) == ["artificial intelligence", "computer science"])
         let csBAS = DegreeGoals(degree: "BAS", majors: ["CSCI"])
         #expect(DegreeGoals.chipTitles(for: [cs, csBAS], descriptions: names)
-            == ["computer science, bachelor of sci in engineering", "computer science, bachelor of applied science"])
+            == ["computer science, bse", "computer science, bas"])
+        // The degree is its code even when Penn has a description for it.
+        #expect(cs.title(descriptions: names) == "computer science, bse")
         #expect(DegreeGoals.chipTitles(for: [], descriptions: names).isEmpty)
     }
 }
