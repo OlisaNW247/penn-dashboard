@@ -251,9 +251,10 @@ followed by a command the session (or anyone) runs:**
    `20261109090000_agent_hardening.sql` and `20261109100000_agent_drafts.sql`
    applied, `agent-auth` v5, `mcp` v3, `agent-snapshot` v3; smoke checks
    and the e2e probe green; `get_assignment` live for Problem Set 7.
-3. **claude.ai.** Add the dev tunnel (alive at the time of writing,
-   `https://1e28-2607-f470-6-1001-186d-8e5-da38-7223.ngrok-free.app/functions/v1/mcp`,
-   dies with the Mac's sleep) or, after 1 and 2, the real host
+3. **claude.ai.** (Done 2026-11-09 against the real host. The first night's
+   ngrok tunnel and its `serve-agent.ts` were stopped on 2026-11-10 and the
+   scratch `smooth-dev` Claude Code entry removed; see "Dev loop" below to
+   start one again.) Add the real host
    `https://smooth-agent.vercel.app/functions/v1/mcp` as a custom connector
    on his claude.ai account, or `claude /login` once in a terminal on the
    Mac. Then the three remaining Phase 0 answers can be taken (claude.ai
@@ -288,3 +289,27 @@ Cookie export, the phone as a proxy, an autonomous submit tool anywhere, an
 MCP server that proxies Canvas APIs, and (2026-11-08) the laptop-first
 design with the Chrome extension submitting: cheaper, but not what the
 student would use. The October report has the sources for the first four.
+
+## Dev loop (local server and tunnel)
+
+Nothing local is running since 2026-11-10: the ngrok tunnel and the
+`serve-agent.ts` process of 2026-11-08 were stopped, and the scratch Claude
+Code MCP entry `smooth-dev` was removed from `~/.claude.json`. Production
+(`https://smooth-agent.vercel.app/functions/v1/mcp`) is the normal target now,
+and `node backend/scripts/agent-e2e.mjs` proves it without a phone or a
+Claude client. To try an undeployed change against a real client again:
+
+1. `ngrok http 8787` (any tunnel works; the free ngrok host changes every
+   start, so the URL below changes with it).
+2. From `backend/`: `LHF_AGENT_PUBLIC_BASE=https://<tunnel host>/functions/v1
+   deno run --allow-net --allow-env --allow-read scripts/serve-agent.ts`
+   (port 8787; the fixture backend and an in-memory store, so no student data
+   and nothing on Supabase; `/dev/token` mints a token without OAuth, and the
+   authorize page shows an "approve (dev)" link in place of the phone).
+3. Point the client at `https://<tunnel host>/functions/v1/mcp`: in Claude
+   Code, `claude mcp add --transport http smooth-dev <that URL>` from a
+   scratch folder (and `claude mcp remove smooth-dev -s local` from the same
+   folder afterwards); in claude.ai, a custom connector.
+4. Stop both processes when done. The tunnel stays open while the Mac is
+   awake and exposes the dev server to anyone with the URL.
+
