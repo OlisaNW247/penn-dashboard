@@ -122,11 +122,14 @@ struct SweeperOnboardingTests {
         #expect(try footerSlice.contains("progressDots(current: 3)"))
     }
 
-    @Test("Settings names the switch Smooth Sweeper, not the loud 10-minute alert")
+    @Test("The Sweeper page names the switch Smooth Sweeper, not the loud 10-minute alert")
     func settingsToggle() throws {
-        let settings = try ui("SweeperSettingsSection.swift")
-        #expect(settings.contains("Toggle(\"Smooth Sweeper\""))
-        #expect(!settings.contains("Toggle(\"loud 10-minute alert\""))
+        // The switch moved from Profile to the header's Sweeper page
+        // (SweeperView), and Profile no longer holds the section.
+        let page = try ui("SweeperView.swift")
+        #expect(page.contains("label: \"Smooth Sweeper\""))
+        #expect(!page.contains("loud 10-minute alert"))
+        #expect(!(try ui("SettingsPage.swift")).contains("SweeperSettingsSection"))
     }
 
     @Test("The takeover screen and the alarm's lock screen card are headed Smooth Sweeper")

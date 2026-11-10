@@ -22,7 +22,7 @@ struct DashboardSmallFixesTests {
         #expect(!source.contains(".alert(\"Rename class\""))
     }
 
-    @Test("the add button has the same 44pt hit area as the filter button, and the megaphone is the header's 48pt squircle; the control row stays round")
+    @Test("the add button has the same 44pt hit area as the filter button, and the megaphone is the header's 42pt squircle; the control row stays round")
     func controlRowHitAreas() throws {
         let source = try uiSource("ContentView.swift")
         guard !source.isEmpty else { return }
@@ -41,10 +41,13 @@ struct DashboardSmallFixesTests {
         // buttons, so its size, fill and stroke cannot drift from theirs.
         let megaphone = try declarationBody("private var announcementFindsButton: some View", in: source)
         #expect(megaphone.contains("headerButton(icon: \"megaphone.fill\""))
-        let circle = try declarationBody("private func headerButton(", in: source)
-        #expect(circle.contains(".frame(width: 48, height: 48)"))
-        #expect(circle.contains(".contentShape(Self.headerShape)"))
-        #expect(source.contains("RoundedRectangle(cornerRadius: 48 * 0.32, style: .continuous)"))
+        // Three header buttons since the Sweeper broom (2026-11-10): drawn
+        // 42pt so "Smooth Wednesday" keeps one line, touched at 44pt.
+        let squircle = try declarationBody("private func headerButton<Glyph: View>(", in: source)
+        #expect(source.contains("static let headerButtonSize: CGFloat = 42"))
+        #expect(squircle.contains(".frame(width: Self.headerButtonSize, height: Self.headerButtonSize)"))
+        #expect(squircle.contains(".contentShape(Self.headerShape.inset(by: -1))"))
+        #expect(source.contains("RoundedRectangle(cornerRadius: headerButtonSize * 0.32, style: .continuous)"))
         // The reference the others copy.
         let controls = try uiSource("DashboardControls.swift")
         #expect(controls.contains(".contentShape(Circle().inset(by: -3))"))

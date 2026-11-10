@@ -328,8 +328,10 @@ Keep this current. It is the fastest way for a new session to know what exists.
   opens through "update password" once Penn has rejected a saved password.
 - **Dashboard** (`ContentView`):
   - **Header.** The "Smooth" wordmark and the weekday. Tapping the wordmark
-    ripples its squiggle and sweeps a shine across it. The **megaphone**
-    and a profile button sit beside it, both 48pt squircles
+    ripples its squiggle and sweeps a shine across it. The **Sweeper**
+    broom (tomato, a small dark-red dot while it is on; since 2026-11-10 on
+    `v11`), the **megaphone** and a profile button sit beside it. All
+    three are 42pt squircles with 8pt spacing on `v11` (48pt with two)
     (continuous corners, radius 0.32 × size; owner's call 2026-11-06; the
     control row's filter and + stay round). Since
     2026-10-18 the megaphone is here, where the grades button was, and
@@ -1006,7 +1008,14 @@ Keep this current. It is the fastest way for a new session to know what exists.
      lock-screen card, are not recorded.
      **Smooth Sweeper settings** (2026-10-23, Marco, `codex/sweeper-settings`;
      in 3.2.1 (15), 2026-10-24; build 15 was first stamped 3.2.0): the Sweeper has its own
-     section immediately below reminders (`SweeperSettingsSection`), with
+     section immediately below reminders (`SweeperSettingsSection`; since
+     2026-11-10 on `v11` that section is gone and the Sweeper is its own
+     page, `SweeperView`, opened from the header broom: on/off, a live
+     countdown card for the next alarm actually set, the defaults, and a
+     page per class with its own lead time and sound,
+     `notif.sweeperCourseMinutesV1` / `notif.sweeperCourseSoundV1`,
+     resolved by `SweeperPlan.swift`; sketch in
+     `smooth-prototype/sweeper.html`), with
      5/10/15/20/30/60-minute timing (`notif.sweeperMinutes`), four sounds
      (`SweeperSound`: Smooth's clip, `App/sweeper-chime.wav`,
      `App/sweeper-pulse.wav`, both original synthesized audio, and the
@@ -1264,7 +1273,17 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v10` (2026-11-07, evening, every post listed, the 3-day grace):
+**Current on `v11` (2026-11-10): 3687 tests / 352 suites, `swift test
+--no-parallel` on Marco's Mac.** +13 / +1 over `v10`'s 3674 / 351: two
+`CompletionSwipeTests` for the drag-direction rule and the new
+`SweeperOverridesTests` (11). In that run two things failed and both are
+accounted for. `DashboardSmallFixesTests` pinned the 48pt header
+squircle; it now pins 42pt drawn with a 44pt hit area, on purpose. The
+`AnnouncementFuzzTests` 5-second cap was missed while an `xcodebuild` ran
+alongside; alone it passed 2/2. The signed iOS Debug device build of the
+same tree succeeded.
+
+Before that: Current on `v10` (2026-11-07, evening, every post listed, the 3-day grace):
 3674 tests / 351 suites, all green, `swift test --no-parallel` on Marco's Mac
 (85 s); the signed iOS Debug device build (3.4.1 (20)) is on his phone and
 launched.** -26 over 3700 / 351 on purpose: 31 tests that pinned the 7-day
@@ -2486,6 +2505,18 @@ itself.
 
 ## Traps that have already bitten
 
+- **A card's swipe `DragGesture` attached with `.gesture` steals the
+  scroll** (2026-11-10, Marco: "if you're clicking on an assignment and
+  you try to scroll, it's buggy"). `AssignmentCardView` and `DoneView`
+  put `DragGesture(minimumDistance: 18)` on every card inside the
+  dashboard's `ScrollView`. Their `onChanged` returned early for vertical
+  movement, which looked like "vertical belongs to the ScrollView", but
+  the gesture had already claimed the touch, so a scroll that began on a
+  card stuck or stuttered, and an opened card covers most of the screen.
+  Fixed with `.simultaneousGesture` plus a direction decided once per drag
+  (`CompletionSwipe.Axis`), so the scroll always gets the touch and a
+  drifting scroll never moves the card. The wrong fix is a bigger
+  `minimumDistance`: it only delays the theft and makes the swipe late.
 - **"Unextracted" in SQL is not "pending", and the index's cap must look at
   now, not at the oldest date** (2026-11-05). After the round-4 deploy a
   count of PHYS 0151 documents with no `course_fact_extractions` row at
@@ -3471,6 +3502,11 @@ itself.
 
 ## Branches
 
+`v11` (2026-11-10): `v10` `4c136b2` plus the Sweeper page (header broom,
+per-class lead time and sound) and the scroll fix for cards
+(`CompletionSwipe.Axis`). Pushed at Marco's request; not merged into
+`v10`. The unpushed `agent/connection-v11` work is separate and has not
+been merged into it.
 `v10` is the line (2026-11-03): `v9` plus `origin/v8` `7e004c5` plus
 `phase0/extract-facts-bench`. Start at `docs/HANDOFF_V10_2026-11-04.md`
 (it replaces the 2026-11-03 one). The 2026-11-04 composed-day work
