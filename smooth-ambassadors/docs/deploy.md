@@ -16,55 +16,63 @@ answer alike. One thing is still taken from the handoff and not from the
 live site: where a scan redirects (Smooth's App Store listing), because
 checking it means opening a real code.
 
-What has not been reached is the Sites git repository and its deploy, so
-the steps below are written, not executed. **Access needed to go live:**
-read/write to the Sites project's git repository (or its files, uploaded),
-and the ability to run the D1 migration and set the `FOUNDER_TOKEN` secret
-on that project. Olisa grants that, or runs the steps.
+The Sites repository's source arrived as an archive on 2026-11-10 (commit
+`3770608`). It settles how a deploy works: the Sites build ships exactly one
+dependency-free file, `worker/index.js`, with the poster images embedded in
+it, and runs no install. Nothing here can publish to Sites; the ChatGPT
+session that owns the project does (it saves a version and deploys it). So
+this repository's job is to produce that one file.
 
-## Step by step (first deploy)
+`worker/legacy.js` stays as a faithful stand-in for local work and for
+`npm test`. It is not what deploys. In the Sites build the real tracker's
+own code serves the old routes, untouched, and the ambassador system is
+folded in beside it.
 
-1. **Back up D1.** Export the `scans` table before anything else and keep
-   the file off git (`backups/` is ignored).
-2. **Bring the real legacy code in.** Copy the live `worker/index.js` from
-   the Sites repo into this repo as `worker/legacy.js`, exporting
-   `default { fetch }` and the two helpers `recordScan(env, key, ambassadorId)`
-   and `appStoreRedirect(env, campaignToken)` (copy them from the current
-   `legacy.js`; they are ~30 lines). Keep its poster images exactly as they
-   are. Run `npm test`: the existing-route tests must still pass, including
-   the one that compares `/api/stats` to the live rows
-   (`test/fixtures/live-stats-shape.json`).
-   If the Sites repository cannot be brought in at all, this repository's
-   Worker is a complete stand-in: run `npm run posters` before deploying so
-   the previews exist, and confirm the scan redirect target first.
-3. **Apply the migration.** `migrations/0001_ambassadors.sql` is additive
-   (`CREATE TABLE IF NOT EXISTS` only). Apply it to the Sites D1 database.
-4. **Set the secret.** `FOUNDER_TOKEN`, at least 24 random characters:
-   `node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"`.
-   Never in git, never in chat. Set `PUBLIC_ORIGIN` to the live origin.
-5. **Deploy** the Worker from this repo's `worker/` (bundled: it imports
-   `qrcode-generator` and JSON templates, so the deploy step must bundle,
-   which wrangler and Sites' Worker build both do).
-6. **Re-test live.** `/`, `/api/stats`, `/scan/ib`, `/scan/uva/ib`,
-   `/scan/uva/jester` (must 404), a poster preview, then
-   `/f/<FOUNDER_TOKEN>`. Compare `/api/stats` totals to the backup: they
-   must be identical plus your test scans.
+## Step by step
+
+1. **Get the current Sites source** (the archive ChatGPT exports, with
+   `repository/worker/index.js`). Unpack it somewhere outside this repo and
+   keep one copy untouched.
+2. **Fold the ambassador system in.**
+   `node scripts/build-sites.mjs <copy>/repository` makes two small edits to
+   the real `fetch` (ask the ambassador handler first; log a scan to
+   `scan_events` after its counter is saved) and appends the bundled
+   ambassador code between two markers. It refuses to write if the real
+   file no longer looks the way it expects, and a second run changes nothing.
+3. **Prove nothing moved.** In `<copy>/repository`: `node --check
+   worker/index.js && bash scripts/build.sh && node
+   scripts/validate-artifact.mjs`. Then here:
+   `SITES_ORIGINAL=<untouched>/repository/worker/index.js
+   SITES_EDITED=<copy>/repository/dist/server/index.js npm run test:sites`
+   runs both Workers side by side and compares every existing route byte
+   for byte, then walks the app's whole contract. `bash
+   scripts/verify-sites-bytes.sh <original> <edited>` shows the diff with
+   the image line left out.
+4. **Pack it.** `node scripts/package-sites.mjs <untouched> <copy> <zip>`.
+   Hand the zip to the ChatGPT session with
+   `sites/CHANGES_FOR_DEPLOYMENT.md` (it is inside the zip).
+5. **There, before deploying:** export the `scans` table; set
+   `FOUNDER_TOKEN` (32 random characters, never in git or chat). No
+   migration has to be run: the tables are created lazily with `CREATE ...
+   IF NOT EXISTS`, the way the tracker has always created `scans`.
+   `migrations/0001_ambassadors.sql` is the same statements for a platform
+   that wants an explicit migration.
+6. **Re-test live** with the list in `sites/AMBASSADORS.md` (it is copied
+   into the Sites repository). Compare `/api/stats` totals to the backup:
+   identical, plus the one deliberate test scan.
 
 ## How Marco ships a change without Olisa
 
-Pick one and delete the other job from `.github/workflows/deploy.yml`:
+Today he cannot, and the mirror job in `.github/workflows/deploy.yml` does
+not change that. The Sites handoff says a git push alone does not publish:
+a version has to be saved and deployed from the ChatGPT account that owns
+the project. So a change ships by building the zip (steps 1 to 4) and
+giving it to whoever can open that ChatGPT session, which is Olisa.
 
-- **Mirror (recommended).** GitHub is the source of truth; on every push
-  to `main`, CI runs the tests and pushes the same commit to the Sites git
-  repository, which deploys it. Needs two repository secrets:
-  `SITES_GIT_URL` and `SITES_DEPLOY_KEY`, and the repository variable
-  `DEPLOY_MODE=mirror`. If Sites only accepts https pushes with a token,
-  swap the ssh lines for a `https://x-access-token:${TOKEN}@...` remote.
-- **Manual.** Same thing by hand: `git remote add sites <url>` once, then
-  `git push sites main`. Documented in one line so either founder can do it.
-- **Wrangler direct** only applies if the Worker ever moves off Sites onto
-  the founders' own Cloudflare account. Then the printed domain would have
-  to be re-pointed, which is the "later decision".
+The way out is the "later decision" above: move the Worker and its D1
+database onto a Cloudflare account both founders hold, keep the printed
+domain pointing at it, and deploy with `wrangler deploy` from CI. Until
+then the deploy workflow stays switched off (`DEPLOY_MODE` unset).
 
 ## After every deploy
 

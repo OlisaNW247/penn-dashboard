@@ -12,11 +12,14 @@
     "migrate:remote": "wrangler d1 migrations apply smooth-scans --remote",
     "backup:remote": "wrangler d1 export smooth-scans --remote --output backups/$(date +%Y%m%d-%H%M%S).sql",
     "deploy": "wrangler deploy",
-    "posters": "node scripts/fetch-posters.mjs"
+    "posters": "node scripts/fetch-posters.mjs",
+    "build:sites": "node scripts/build-sites.mjs",
+    "test:sites": "node --test test/sites.test.mjs"
   },
   "devDependencies": {
     "miniflare": "^4.0.0",
-    "wrangler": "^4.0.0"
+    "wrangler": "^4.0.0",
+    "esbuild": "^0.28.2"
   },
   "dependencies": {
     "qrcode-generator": "^2.0.4"
