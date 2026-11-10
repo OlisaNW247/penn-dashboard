@@ -2618,6 +2618,24 @@ itself.
 
 ## Traps that have already bitten
 
+- **`cur` on the Path@Penn record is a history, not the student's current
+  degrees** (2026-11-10, the first build on a phone). The capture that
+  designed the rewrite printed only the *shape* of `cur` (key names and
+  string lengths of the first entry), so nobody saw that every term's holder
+  repeats every curriculum the student has ever had: the owner's latest term
+  held a pre-college non-degree entry, the major he was admitted to (twice,
+  with two different end terms), the major he switched to, a fragment with
+  no major carrying only a concentration code, and a second school's
+  program. An entry that is over carries `end_term`; a live one has none.
+  The script took all of them, in Penn's order, so the screen opened on a
+  major he had left and offered a "non degree" chip that could only fail.
+  The tells: more chips than the student has degrees, the same major twice,
+  and a chip that answers "couldn't read path@penn". The wrong fixes are
+  filters on names (drop "non degree", prefer the entry that says computer
+  science); the rule is the end term. The lesson about captures: a shape
+  with the values hidden hides the counts too, so print how many entries
+  there are and which keys are sometimes absent, even when the values must
+  stay private.
 - **Someone else's client is not the system: the degree feature was built
   against a host no Penn student's browser ever reaches** (2026-11-09 to
   11-10). The first build read Penn Labs' open-source Degree Works client and
@@ -3696,22 +3714,30 @@ none is a ship line.
   push was needed is not recorded. What that run did **not** check: the
   numbers against Path@Penn's own page, the second degree's audit, any
   what-if, and a second read after the 24-hour token lapses.
-  **Open from that run:** the record held two curriculum entries and the
-  first chip, the one the screen opened on, was Artificial Intelligence BSE;
-  Olisa says his official major is Computer Science. The app takes the
-  entries under the greatest term key in `cur`, in Penn's order
-  (`PathScripts.degrees`), and Penn's own rule for which entries are current
-  (`currentStudentDegrees`) was never captured, so either the record really
-  lists both or the pick is wrong. A console snippet that prints `cur`'s
-  terms and codes and the page script around `currentStudentDegrees` was
-  sent to Olisa the same day; fix the pick from its output, not from a
-  guess. Changed from his screenshot the same hour (compiled on the runner,
-  not yet back on the phone): the "· catalog 202430" suffix beside the ring
-  is gone ("tacky"), a degree chip shows the major alone
-  (`DegreeGoals.chipTitles`) because the full title pushed the second chip
-  off the edge of the screen, and a three-word key (`DegreeLegend`: done, in
-  progress, left) sits under the ring because he asked what orange against
-  green meant.
+  **Found from that run, and fixed blind the same afternoon** (see Test
+  baseline for whether it has compiled; not yet back on the phone): the
+  screen opened on Artificial Intelligence, then showed a "no major, non
+  degree" chip whose audit failed, a second Artificial Intelligence chip and
+  a Wharton one; Olisa's major is Computer Science. `cur` is a history (the
+  trap "`cur` on the Path@Penn record is a history"). `PathScripts.degrees`
+  now keeps only the entries with no `end_term`, or one later than the
+  latest term, folds a major-less fragment's `conc` into its degree and
+  drops duplicates; `AppState.degreeSelection` opens on the first degree
+  when the record's list changed, so the corrected build does not open on
+  whichever stale chip was tapped last. Also changed from his screenshots:
+  the "· catalog 202430" suffix beside the ring is gone ("tacky"), a degree
+  is named by its code ("computer science, bse", not "bachelor of sci in
+  engineering"), a chip shows the major alone (`DegreeGoals.chipTitles`),
+  and a three-word key (`DegreeLegend`: done, in progress, left) sits under
+  the ring because he asked what orange against green meant. Still open:
+  Penn's own function for this, `foseStudentDataUtils.currentDegrees({
+  verboseTitles, selectedTerm })`, has never been run and captured; when it
+  has, it should replace the rule. His record lists a second live program
+  in another school with no end term; whether that is a real second degree
+  or a leftover is his to say, and the app shows it because Penn's record
+  does. The ring read "53%" rather than "x of y cu" on both audits, so
+  `PathAuditDecoder.creditTotals` did not find Penn's credit sentence in his
+  DEGREE block; not looked at yet.
   Not captured either: a record with a concentration or a minor (the `conc`
   / `minor` field names on a curriculum entry are inferred from the page's
   what-if rules), any program whose `prog_type` is not `major`, and a

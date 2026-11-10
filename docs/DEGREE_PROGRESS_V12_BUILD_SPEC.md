@@ -143,6 +143,18 @@ WebKit hands it, or `window.opener` is nil.
   string fields `ctlg`, `coll`, `degc`, `program`, `levl`, `end_term`,
   `major` (a student with a concentration or minor presumably has `conc` /
   `minor` there too; not observed). A dual-degree student has two entries.
+  **Corrected 2026-11-10 from the first phone run and a second console
+  read (codes and terms only):** `cur` is a history. Each term's holder
+  repeats every curriculum the student has had; one that is over carries
+  `end_term`, a live one has no `end_term` key at all (not a far-future
+  value); the same ended curriculum can appear twice with different end
+  terms; and a live entry with no `major` can carry only `conc` (`NCON`)
+  for a degree listed beside it. The app keeps the latest term's entries
+  with no `end_term` or one later than that term, and folds such a fragment
+  into the entry with the same `program`, `degc`, `coll` and `levl`. Penn's
+  page does this with `foseStudentDataUtils.currentDegrees({ verboseTitles,
+  selectedTerm })`, which returns objects with `code`, `info` and `title`
+  and selects the first; its output has not been captured.
   The record's other properties are `reg` (term → strings), `cart`, `hist`
   (term → strings) and `plan`.
 - **The program catalogue.** `programs-v2-list` returned 1,049 entries of

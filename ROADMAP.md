@@ -63,9 +63,11 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   build on Olisa's phone with `-LHFShowDegree`: **first read done
   2026-11-10** (Debug build of `d2f37a0` on his iPhone 17: the page loaded
   past Cloudflare, the popup handed the token back, a real audit drew).
-  Still to do there: settle why the first degree shown is Artificial
-  Intelligence when he says his major is Computer Science (CLAUDE.md →
-  Known gaps; waits on a console snippet's output), compare each degree's
+  The wrong first degree (Artificial Intelligence, where his major is
+  Computer Science) was the record being a history; fixed the same
+  afternoon from a console read of it (CLAUDE.md → Traps). Still to do
+  there: see the fix on the phone, capture Penn's own
+  `foseStudentDataUtils.currentDegrees(...)` output, compare each degree's
   numbers with Path@Penn, run one "switch to" and one "add minor", and
   reinstall for the catalog-suffix, chip and colour-key changes and the
   new "plan" tab (the semester table he asked for the same day; on the

@@ -148,6 +148,24 @@ extension AppState {
         readFailed && !alreadyRetried
     }
 
+    /// Which degree is selected once the record has been read again.
+    ///
+    /// The saved choice stands while the record lists the same degrees. When
+    /// the list itself is different, the first one is selected instead, even
+    /// if the saved one is still there. That second half exists because of
+    /// the build that listed every curriculum the student had ever had
+    /// (2026-11-10): the owner tapped through the stale chips, the last one
+    /// he tapped happened to be a real second degree, and without this the
+    /// corrected build would have opened on it rather than on his major. A
+    /// record that changes is rare (a declared or dropped program), and
+    /// opening on the first degree after one is the unsurprising thing.
+    nonisolated static func degreeSelection(previous: [String], found: [String], saved: String?) -> String? {
+        guard let first = found.first else { return nil }
+        guard let saved, found.contains(saved) else { return first }
+        if !previous.isEmpty, Set(previous) != Set(found) { return first }
+        return saved
+    }
+
     /// Where the status goes when a what-if finishes: back to what showed
     /// before it, but only if the status is still the "reading" this call set
     /// (anything else was written by a read that has since finished or failed,
@@ -298,16 +316,13 @@ extension AppState {
                 degreeStatus = .failed(Self.degreeFailedLine)
                 return
             }
+            // A saved choice the record no longer lists (a dropped degree), or
+            // a record whose list changed at all, falls back to the first one
+            // (`degreeSelection`).
+            let previousIDs = degree.degrees.map(\.id)
             degree.degrees = found
-            // A saved choice that the record no longer lists (a graduated or
-            // dropped degree) falls back to the first one rather than auditing
-            // nothing.
-            if let id = degree.selectedDegreeID, !found.contains(where: { $0.id == id }) {
-                degree.selectedDegreeID = nil
-            }
-            if degree.selectedDegreeID == nil {
-                degree.selectedDegreeID = found[0].id
-            }
+            degree.selectedDegreeID = Self.degreeSelection(
+                previous: previousIDs, found: found.map(\.id), saved: degree.selectedDegreeID)
             if let id = degree.selectedDegreeID {
                 UserDefaults.lhf.set(id, forKey: Self.degreeSelectedKey)
             }

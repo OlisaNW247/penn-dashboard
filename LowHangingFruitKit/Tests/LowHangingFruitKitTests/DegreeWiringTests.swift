@@ -238,6 +238,18 @@ struct PathPortalBudgetRuleTests {
         #expect(!AppState.shouldRetryAfterInvalidate(readFailed: false, alreadyRetried: true))
     }
 
+    @Test("the saved degree stands while the record's list does; a changed list opens on the first")
+    func selectionRule() {
+        #expect(AppState.degreeSelection(previous: [], found: ["a", "b"], saved: nil) == "a")
+        #expect(AppState.degreeSelection(previous: [], found: ["a", "b"], saved: "b") == "b")
+        #expect(AppState.degreeSelection(previous: ["a", "b"], found: ["b", "a"], saved: "b") == "b")
+        // Dropped from the record: the first one.
+        #expect(AppState.degreeSelection(previous: ["a", "b"], found: ["a"], saved: "b") == "a")
+        // Still listed, but the list changed (the stale-chips build): the first one.
+        #expect(AppState.degreeSelection(previous: ["x", "y", "a", "b"], found: ["a", "b"], saved: "b") == "a")
+        #expect(AppState.degreeSelection(previous: ["a"], found: [], saved: "a") == nil)
+    }
+
     @Test("a what-if restores the old status only while its own reading still stands")
     func whatIfStatus() {
         let before = DegreeStatus.read(now)

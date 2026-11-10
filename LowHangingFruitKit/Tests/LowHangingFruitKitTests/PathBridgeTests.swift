@@ -125,6 +125,10 @@ struct PathBridgeTests {
     func scriptsCallThePage() {
         #expect(PathScripts.audit.contains("fetchStudentAudit"))
         #expect(PathScripts.degrees.contains("sam.user.fetch"))
+        // `cur` is a history: an entry that is over carries an end term, and
+        // the script must look at it (2026-11-10, the stale-chips build).
+        #expect(PathScripts.degrees.contains("end_term"))
+        #expect(PathScripts.degrees.contains("end <= bestTerm"))
         #expect(PathScripts.programs.contains("programs-v2-list"))
         #expect(PathScripts.programInfo.contains("programs-v2-info"))
         #expect(PathScripts.openSignIn.contains("sam.config.authURL"))

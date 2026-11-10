@@ -63,6 +63,32 @@ public enum PathScripts {
     """
 
     /// The student's current curriculum entries, string fields only.
+    ///
+    /// `cur` is a history, not a list of current degrees. Each term's holder
+    /// repeats every curriculum the student has ever had, and one that is over
+    /// carries an `end_term`; the live ones carry none. Read off the owner's
+    /// own record on 2026-11-10 (codes and terms only): a pre-college
+    /// non-degree entry, the major he was admitted to (twice, with two end
+    /// terms), the major he switched to, a second school's program, and a
+    /// fragment with no major that holds only the concentration code. The
+    /// first version of this script took every entry under the latest term,
+    /// so the screen opened on a major he had left, offered a "no major, non
+    /// degree" chip whose audit could only fail, and showed the old major
+    /// twice.
+    ///
+    /// The rule now: under the latest term, an entry is current when it has
+    /// no `end_term` or one later than that term. A current entry with no
+    /// major is a fragment: its `conc` and `minor` are folded into the
+    /// current entry of the same program, degree, college and level, which is
+    /// the shape Penn's audit answers with (one degree, `conc` beside
+    /// `major`). Identical entries are sent once.
+    ///
+    /// The wrong fixes were all filters on names ("drop anything called non
+    /// degree", "prefer the entry that says computer science"): they fix one
+    /// record and say nothing about the next student's. Penn's own page calls
+    /// `foseStudentDataUtils.currentDegrees(...)` for this; its output has
+    /// not been captured, so it is not called here, and when it has been it
+    /// should replace this rule rather than sit beside it.
     public static let degrees: String = """
     if (typeof sam === "undefined" || typeof fose === "undefined") { return JSON.stringify({ error: "page not ready" }); }
     try {
@@ -82,16 +108,41 @@ public enum PathScripts {
           }
         }
       }
-      var out = [];
+      var whole = [];
+      var parts = [];
       for (var j = 0; j < bestEntries.length; j++) {
         var entry = bestEntries[j];
+        if (!entry || typeof entry !== "object") { continue; }
         var strings = {};
-        if (entry && typeof entry === "object") {
-          for (var key in entry) {
-            if (typeof entry[key] === "string") { strings[key] = entry[key]; }
-          }
+        for (var key in entry) {
+          if (typeof entry[key] === "string") { strings[key] = entry[key]; }
         }
-        out.push(strings);
+        var end = strings.end_term || "";
+        if (end !== "" && end <= bestTerm) { continue; }
+        if (strings.major) { whole.push(strings); } else { parts.push(strings); }
+      }
+      var same = function (a, b) {
+        return (a.program || "") === (b.program || "") && (a.degc || "") === (b.degc || "")
+          && (a.coll || "") === (b.coll || "") && (a.levl || "") === (b.levl || "");
+      };
+      var loose = [];
+      for (var p = 0; p < parts.length; p++) {
+        var home = null;
+        for (var w = 0; w < whole.length; w++) {
+          if (same(whole[w], parts[p])) { home = whole[w]; break; }
+        }
+        if (!home) { loose.push(parts[p]); continue; }
+        if (parts[p].conc && !home.conc) { home.conc = parts[p].conc; }
+        if (parts[p].minor && !home.minor) { home.minor = parts[p].minor; }
+      }
+      var kept = whole.length > 0 ? whole : loose;
+      var out = [];
+      var seen = {};
+      for (var k = 0; k < kept.length; k++) {
+        var names = Object.keys(kept[k]).sort();
+        var mark = "";
+        for (var n = 0; n < names.length; n++) { mark += names[n] + "=" + kept[k][names[n]] + ";"; }
+        if (!seen[mark]) { seen[mark] = true; out.push(kept[k]); }
       }
       return JSON.stringify({ term: bestTerm, degrees: out });
     } catch (e) {
