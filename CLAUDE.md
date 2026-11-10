@@ -212,7 +212,12 @@ UTC) on 2026-11-07** ("Upload succeeded"; it supersedes build 19 (`5bc1a9f`,
 dedup); attach 20), after 3708/353 Swift, Deno 713 and
 the iOS simulator build on the same tree, and after the facts backend was
 redeployed from the same commit (`sync` v22, `extract-facts` v6, the
-`finish_fact_extraction` migration applied). The Debug build of the same
+`finish_fact_extraction` migration applied). `sync` is at **v25 since 2026-11-10
+about 08:00 UTC** (Marco's "Yes, deploy sync"; v24 was deployed on
+2026-11-06 by someone else, without a note here): v24 plus the rule that a
+client report listing no `file` ids cannot retire a course's file rows,
+which the phone's assignment-PDF pass needs; a throwaway user's manifest
+round trip passed on it. The Debug build of the same
 tree is on Marco's iPhone 17 Pro since 14:06 EST the same day, over the 3.4.0
 (17) store copy, so the App Group container is readable again. Marco creates the 3.4.1 version
 record, attaches build 20, pastes `docs/appstore/LISTING.md` → What's New in
