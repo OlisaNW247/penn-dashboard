@@ -7,7 +7,7 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-11-09 on `v12` (degree progress built and compiled on the runner; the Now entry). Before that, 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
+Last updated 2026-11-10 on `v12` (degree progress rewritten against the real Path@Penn; the Now entry). Before that, 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
 backend half went live 2026-11-05 01:20-01:45 UTC, the evening of 2026-11-04
 US Eastern). Before that, 2026-10-28 on `release/3.4.0` (the 3.4.0 release,
 renamed from 3.3.1 that afternoon when PR #16 was folded in). Before
@@ -48,21 +48,25 @@ These block shipping, or would make shipping risky. The launch-prep
 work of 2026-10-09/10 is summarised, with the order to take these in,
 in `docs/LAUNCH_PREP_HANDOFF.md`.
 
-- **v12 degree progress: compile, capture, then a phone** (Olisa's
-  decision 2026-11-09: use the Path@Penn login; build progress and what-if,
-  no course recommendations; "make this extremely smooth"). Built the
-  same day on `v12` (`docs/DEGREE_PROGRESS_V12_BUILD_SPEC.md` is the
-  contract). In order: (1) ~~the `tests` workflow on `v12` goes green~~ done
-  2026-11-10, 3738/364 green at `d5d5a79` (the runner is the compiler; the iOS `xcodebuild`
-  still needs a Mac); (2) ~~the capture~~ half done by Olisa in Chrome on 2026-11-10: the audit's real shape is decoded (`PathAuditDecoder`, 3752/365 green), the host and sign-in turned out to be `courses.upenn.edu` with an `authtoken`, and the sign-in and what-if code must be rewritten once the page-script excerpts are in (the spec's open questions). The original wording of this step: Marco's capture on his Mac and phone, keys
-  and hosts only, never a token: does `/worksheets/` on the Degree Works
-  host reach the dashboard through WebLogin without Duo, what does
-  `/api/students/myself` answer, which audit call the dashboard makes, and
-  the key shape of one audit response (`DebugDegreeLog` on a DEBUG build
-  prints it); fix `DegreeWorksEndpoints` and the decoder from that; (3) a
-  DEBUG build on a phone: the ring and blocks for his own program, one
-  what-if, disconnect clears; (4) the privacy label and `REVIEW_NOTES.md`
-  before any upload. Not for 3.4.1.
+- **v12 degree progress: a Mac build, then a phone** (Olisa's decision
+  2026-11-09: use the Path@Penn login; build progress and what-if, no course
+  recommendations; "make this extremely smooth"). Built on 2026-11-09 against
+  a guessed Degree Works host, then rewritten on 2026-11-10 after Olisa
+  captured his own Path@Penn session in Chrome
+  (`docs/DEGREE_PROGRESS_V12_BUILD_SPEC.md` → "Observed on 2026-11-10" and
+  "The rewrite contract"): the app runs Penn's page in a hidden WebView and
+  asks the page for the audit. Done: the capture, the decoder, the models
+  and what-if rules, the portal, the screens, the privacy text, all green on
+  the runner. In order now: (1) `xcodebuild` on a Mac (the runner compiles
+  the package only, not the widget or the iOS-only files); (2) a DEBUG
+  build on Olisa's phone with `-LHFShowDegree`: does the page load past
+  Cloudflare, does the sign-in popup hand the token back, does the audit
+  for each of his two degrees match Path@Penn, does one "switch to" and one
+  "add minor" run; read `debugDegreeLogV1` off the App Group plist when a
+  step fails (CLAUDE.md → Known gaps lists the three unknowns); (3) capture
+  what was not seen: a record with a concentration or minor, and the page's
+  own `currentStudentDegrees`; (4) the privacy label and `REVIEW_NOTES.md`,
+  and the Apple 5.2.2 / Penn ISC question, before any upload. Not for 3.4.1.
 - **Facts deploy: re-run 2026-11-06 18:56 UTC from `bd9d20c` (`finish_fact_extraction` applied, `sync` v22, `extract-facts` v6; `docs/DEPLOY_FACTS_2026-11-04.md` → Run 3); first done 2026-11-05 (01:20-01:45 UTC)**
   (`docs/DEPLOY_FACTS_2026-11-04.md` is the runbook and now ends with the run
   record; `backend/scripts/deploy-facts.mjs` runs it). Done, with Olisa's go

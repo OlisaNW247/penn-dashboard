@@ -79,13 +79,16 @@ model on the server for course-level "facts"; they belong to the class,
 carry no user id, and a student's AI-assist switch does not stop them
 (`docs/PRIVACY.md` says so). The phone also reads Canvas's own structured
 endpoints (Planner, module completion, section dates) with the student's
-session and keeps the results on the phone. Since 2026-11-09 (`v12`, compiled green on the GitHub runner, not on a Mac, not on a device) a
-Penn install can read the student's own Degree Works audit through
-Path@Penn with the same saved PennKey (`DegreeWorksSessionReader`) and
-keeps the audit on the phone (`degree-audit.json`, tokens in the Keychain);
-no name, email, GPA or grade is ever decoded, and nothing about the degree
-goes to the server, the laptop or the tree (`docs/PRIVACY.md` → "Degree
-progress"). There is no analytics, tracking,
+session and keeps the results on the phone. Since 2026-11-10 (`v12`, compiled green on the GitHub runner, never built with `xcodebuild`, never on a device) a
+Penn install can show the student's degree audit by running Penn's own
+Path@Penn page in a hidden WebView (`PathPortal`), signed in with the same
+saved PennKey, and asking that page for the audit through allowlisted
+scripts. The audit is kept on the phone (`degree-audit.json`); nothing is
+stored in the Keychain for it. The page's sign-in token, Penn's id for the
+student, the name, the pronoun, the rendered audit and any sentence about a
+GPA or grades never cross from the page into the app, and nothing about the
+degree goes to the server, the laptop or the tree (`docs/PRIVACY.md` →
+"Degree progress"). There is no analytics, tracking,
 or third-party SDK. Don't say "everything is on-device" (untrue since
 `assistant-ui`) or "no server" (untrue since the backend). `docs/PRIVACY.md`
 is the student-facing version and must change in the same commit as any
@@ -829,32 +832,49 @@ Keep this current. It is the fastest way for a new session to know what exists.
   working perfectly"). Owner's ask of 2026-10-22: "voice mode for the tree AI";
   dictate-then-send was the agreed first version, hands-free with spoken
   answers set aside (`ROADMAP.md` → Next).
-- **Degree** (`DegreeProgressView`, 2026-11-09, `v12`, behind
-  `FeatureFlags.degreeProgress`; written in the cloud container and compiled
-  only by the GitHub runner, nothing on a phone). Olisa's ask: "see your degree progress,
-  see what would hypothetically be your course of action if you switched
-  degrees", no course recommendations. Reached from the first row of
-  Profile → classes ("degree", with "31 of 40 cu" or the status line) and
-  `DashRoute.degree`; Penn only; never in preview or demo, which show
-  `SampleData.degreeSnapshot()`. Two tabs on a `SmoothSegmentPicker`,
-  **progress · what if**. Progress: a teal ring (credits applied over the
-  DEGREE block's requirement, else met rules over all), the program title,
-  then one card per audit block (DEGREE last as "everything else") with
-  "n of N" or "x of y cu", a bar in teal / marigold / rule-grey for
-  `met` / `in progress` / `open`, expanding to the rules with applied
-  courses as class-coloured chips ("· now" while in progress) and the
-  audit's advice codes as ghost chips on open rules. Footer: "path@penn's
-  reading · official audit ↗". What if: a stepped picker over Penn's
-  program catalogue (program → degree → major → concentration → minor),
-  "run", and the same list for the target with a grape "what if" tag and
-  one summary line ("N met · M in progress · K open · J of your courses
-  count"); recent what-ifs as chips. The data: Penn's Degree Works behind
-  Path@Penn, read with the student's own session (`docs/DEGREE_PROGRESS_V12_BUILD_SPEC.md`
-  has the endpoints, every one unverified against the live system; Known
-  gaps). Status words: "reading path@penn…", "approve the duo push on this
-  phone", "sign in to canvas", "pick your degree", "couldn't read
-  path@penn · retry", "read today". Code decides nothing here: the audit
-  is Penn's and the screen only draws it.
+- **Degree** (`DegreeProgressView`, `v12`, behind
+  `FeatureFlags.degreeProgress`; rewritten 2026-11-10 against the real
+  Path@Penn after Olisa's capture; compiled only by the GitHub runner,
+  nothing on a phone). Olisa's ask: "see your degree progress, see what
+  would hypothetically be your course of action if you switched degrees",
+  no course recommendations. Reached from the first row of Profile →
+  classes ("degree", with "31 of 40 cu", a percent, or the status line) and
+  `DashRoute.degree` (`-LHFShowDegree` in a DEBUG build); Penn only; preview
+  and demo show `SampleData.degreeSnapshot()`. Two tabs on a
+  `SmoothSegmentPicker`, **progress · what if**.
+  - **Progress.** A student in two degrees gets a chip per degree above the
+    ring (`AppState.selectDegree`, `degreeSelectedIDV1`); the degrees come
+    from the student's record, so nobody is asked to pick one. A teal ring
+    at Penn's own percent for the degree, with "x of y cu" taken from Penn's
+    sentence in the degree block (`PathAuditDecoder.creditTotals`), then one
+    card per audit block ("Major in …", "General Electives", …) with a bar
+    in teal / marigold / rule-grey for met / in progress / open, expanding
+    to its rules: taken and registered courses as class-coloured chips
+    ("· now" while registered), options still open as ghost chips, Penn's
+    notes as quiet lines. Penn's empty synthetic blocks are skipped. Footer:
+    "path@penn's reading · official audit ↗".
+  - **What if.** One searchable list of Penn's public programs (1,049 on
+    2026-11-10). Picking one shows a button per change Penn's own rules
+    allow, `PathWhatIf` mirroring the page's script: "switch to", "add
+    major", "add minor", "add concentration"; the result is the same block
+    list under a grape "what if" tag with one summary line. The last four
+    are kept as chips.
+  - **How it reads.** `PathPortal` keeps one hidden `WKWebView` on
+    `https://courses.upenn.edu/` for the app run, on the Canvas login data
+    store so the PennKey session and Duo trust carry over. The page opens
+    its own sign-in popup (a child WebView built from the configuration
+    WebKit passes in, or `window.opener` is nil and the token cannot be
+    handed back); the saved PennKey is filled on Penn's form under the same
+    submission budget as the silent Canvas renewer. Then `PathScripts`
+    (Kit, pure strings) run in the page and return allowlisted JSON:
+    readiness (the token only as a boolean), the degrees from the record,
+    the audit rebuilt field by field, the program list, one program's codes,
+    the code-to-name tables. `docs/DEGREE_PROGRESS_V12_BUILD_SPEC.md` holds
+    the capture and the contract.
+  - Status words: "reading path@penn…", "approve the duo push on this
+    phone", "sign in to canvas", "couldn't read path@penn · retry", "read
+    today". Code decides nothing here: the audit is Penn's and the screen
+    only draws it.
 - **Profile** (`SettingsPage`; `ProfileView` is only a wrapper), in order:
   1. your name
   2. accounts (Canvas and Gradescope connect/disconnect; "update password"
@@ -1296,7 +1316,26 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v12` (2026-11-10, later, the Path@Penn audit decoder): 3752
+**Current on `v12` (2026-11-10, the Path@Penn rewrite): 3753 tests / 363
+suites, all green, `swift test --no-parallel` on the GitHub macOS runner in
+92 s (the `tests` workflow, run 42846226886 at `0dba617`); Deno and the
+extension's suite green on the same run. No Mac, no `xcodebuild`, no phone.
+The steps that day: `6e42641` 3752 / 365 (`PathAuditDecoderTests`, +14);
+`4e2a44f` 3778 / 367 (`PathWhatIfTests` and `PathBridgeTests`, +26 / +2);
+`07eefee`, the rewire, compiled at the first attempt and ran 3753 / 363 with
+one red (the snapshot round trip in `DegreeWiringTests`, stamped with
+`Date()` where the store's ISO 8601 dates drop the fraction; the fixture now
+uses a whole second, `0dba617`). **-25 tests / -4 suites against `4e2a44f`
+on purpose:** the five test files of the deleted Degree Works code went with
+it (`DegreeWorksAuditDecoderTests`, `DegreeWorksRequestsTests`,
+`DegreeWorksTokensTests`, `DegreeGoalCatalogTests`,
+`StudentSelfReaderTests`), and `DegreeWiringTests`, `DegreeCopyTests`,
+`DegreeStructureTests` and `DegreeAuditStoreTests` were rewritten for the
+new API. Not in the suite: the page scripts were also run in Node against a
+fake Path@Penn page seeded with marker secrets, none of which appeared in
+any script's output.**
+
+Before it: **on `v12` (2026-11-10, earlier, the Path@Penn audit decoder): 3752
 tests / 365 suites, all green, `swift test --no-parallel` on the GitHub macOS
 runner in 109 s (run 42837454207 at `6e42641`). +14 tests / +1 suite:
 `PathAuditDecoderTests`, the decoder for the audit shape Olisa captured from
@@ -2542,6 +2581,27 @@ itself.
 
 ## Traps that have already bitten
 
+- **Someone else's client is not the system: the degree feature was built
+  against a host no Penn student's browser ever reaches** (2026-11-09 to
+  11-10). The first build read Penn Labs' open-source Degree Works client and
+  another school's command-line tool and took their host, JWT cookies and
+  `/api/audit` shapes as Penn's. They compiled, passed 64 tests and described
+  nothing a student sees: Olisa's capture of his own session showed that
+  `courses.upenn.edu` serves the advising page and proxies the audit
+  (`page=dgw-server`), that sign-in is a 32-character token held in the
+  page's memory and sent in each POST body, and that the response is
+  CourseLeaf's own translation of the audit, not Degree Works' JSON. The
+  tell was in the first screenshot: the request's `Cookie` header held only
+  analytics and Cloudflare cookies. The wrong fix would have been correcting
+  the constants; the design was wrong, so the Degree Works reader, client,
+  token store and decoder were deleted, and the app now runs Penn's page and
+  calls the page's own functions. Two lessons: capture the real traffic
+  before writing a client (twenty minutes in a browser's developer tools
+  settled what a day of reading could not), and a recorder injected after
+  the page has loaded sees nothing when the page reuses what it already
+  fetched, so read the page's script and the Network tab instead of hooking
+  `XMLHttpRequest`.
+
 - **"Unextracted" in SQL is not "pending", and the index's cap must look at
   now, not at the oldest date** (2026-11-05). After the round-4 deploy a
   count of PHYS 0151 documents with no `course_fact_extractions` row at
@@ -3546,7 +3606,7 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
-| `v12` | **Current line (2026-11-09 onward).** `v10` at `4c136b2` plus the degree-progress research (`docs/DEGREE_PROGRESS_RESEARCH_2026-11-09.md`) and the v12 feature: `Degree/` in the Kit, `DegreeWorksSessionReader`, `DegreeWorksClient`, `AppState+Degree`, `DegreeProgressView`, `DegreeWhatIfSheet`, `FeatureFlags.degreeProgress`. Compiled green by the `tests` workflow, which runs on pushes to it (3738/364, Test baseline); never built with `xcodebuild`, nothing on a phone. There is no `v11`. |
+| `v12` | **Current line (2026-11-09 onward).** `v10` at `4c136b2` plus the degree-progress research (`docs/DEGREE_PROGRESS_RESEARCH_2026-11-09.md`) and the degree feature. Built on 2026-11-09 against a guessed Degree Works host; rewritten on 2026-11-10 against what Olisa captured from his own Path@Penn session: `Degree/` in the Kit (`PathAuditDecoder`, `PathBridge`, `PathDegree`, `PathWhatIf`), `PathPortal`, `AppState+Degree`, `DegreeProgressView`, `DegreeWhatIfSheet`, `FeatureFlags.degreeProgress`. Compiled green by the `tests` workflow, which runs on pushes to it (Test baseline); never built with `xcodebuild`, nothing on a phone. There is no `v11`. |
 | `v10` | **Current line (2026-11-03 onward).** `v9` (the no-banner sign-in, the onboarding polish, the composed-day research) plus `origin/v8` `7e004c5` (the tree's recency and follow-up work) plus `phase0/extract-facts-bench`. The merge's Swift run is recorded under Test baseline. |
 | `phase0/extract-facts-bench` | 2026-11-03, off `v9`: the extract-facts bench, prompt, schema and parser; the model decision (Haiku 5.5, `docs/EXTRACT_FACTS_BENCH_2026-11-03.md`). In `v10`. |
 | `v9` | 2026-11-01 to 11-03: the no-banner sign-in and keepalive, proven on Marco's phone; the onboarding polish merged; the composed-day research. In `v10`. |
@@ -3586,37 +3646,32 @@ none is a ship line.
 
 ## Known gaps
 
-- **Degree progress (`v12`): the audit's real shape is known and decoded
-  since 2026-11-10, and the sign-in half is still the wrong design.** Olisa's
-  capture showed that `courses.upenn.edu` serves the audit itself
-  (`page=dgw-server`), signed in by a 32-character `authtoken` in each POST
-  body, with no Degree Works host and no JWT cookies anywhere in the
-  student's path. `PathAuditDecoder` handles the response;
-  `DegreeWorksSessionReader`, `DegreeWorksClient`, `DegreeWorksEndpoints`,
-  `DegreeWorksTokens` and the what-if request builder are still wired and
-  still wrong, so every student would see "couldn't read path@penn · retry".
-  Open: where the page gets the token, the sign-in URL, the what-if
-  parameters and the program catalogue's source (the spec lists them). The
-  rest of this entry is the 2026-11-09 text, kept for the policy questions.
-  **Written blind against a data source nobody on this project had
-  observed.** Every endpoint in
-  `DegreeWorksEndpoints` (the SSO entry `/worksheets/`, `/api/students/myself`,
-  the GET and POST shapes of `/api/audit`, `/api/goals`, the cookie names
-  `X-AUTH-TOKEN`/`REFRESH_TOKEN`) comes from Penn Labs' MIT-licensed Degree
-  Works client and another school's CLI, not from Penn's live system. The
-  decoder is lenient and `DebugDegreeLog` records JSON key names (never
-  values) so one capture on Marco's phone can correct the constants. What
-  to check first: whether the hidden WebView on `LoginDataStores.canvas`
-  reaches the Degree Works host from `/worksheets/` without Duo (expected:
-  the SSO session and Duo trust carry over), whether `/api/students/myself`
-  exists, and whether the student's own audit needs the GET or the
-  `isKeepCurriculum: true` POST. Marco's brief is in
-  `docs/DEGREE_PROGRESS_V12_BUILD_SPEC.md`. Until then the feature can show
-  "couldn't read path@penn · retry" to every student, which is the designed
-  failure. Also open: Apple 5.2.2 authorisation for reading a second Penn
-  system with the saved PennKey (`docs/research/degree-progress/04-privacy-and-app-store.md`),
-  and whether Penn ISC has a position on it; Olisa chose to proceed on
-  2026-11-09.
+- **Degree progress (`v12`) has never run outside a test runner.** The
+  audit's shape, the sign-in hand-off and the page's functions were captured
+  from Olisa's own Path@Penn session in Chrome on 2026-11-10 and the code was
+  rewritten to them, but no build has been on a phone and `xcodebuild` has
+  not compiled the tree. Three things only a device can settle, each of
+  which fails as "couldn't read path@penn · retry" with the stopped step in
+  `debugDegreeLogV1` (DEBUG; step names and hosts only): (1) whether
+  Cloudflare's check on `courses.upenn.edu` passes in a hidden WebView (a
+  `cf_clearance` cookie was present in the browser); (2) whether WebKit
+  keeps `window.opener` for a popup that crosses to Penn's SSO hosts and
+  back, which is how the token is handed over; (3) whether Penn accepts a
+  curriculum entry from the student's record as `degreeInfo` exactly as it
+  stands (the page's own `currentStudentDegrees` shape was not captured).
+  Not captured either: a record with a concentration or a minor (the `conc`
+  / `minor` field names on a curriculum entry are inferred from the page's
+  what-if rules), any program whose `prog_type` is not `major`, and a
+  what-if run end to end. Known limits: the token lives 24 hours in the
+  page, so the first read after that signs in again; a student whose saved
+  PennKey Penn has rejected gets no degree read until the password is
+  updated in Profile; the what-if for "add minor" appends the entry's major
+  code as the minor, because that is what Penn's script does. Policy, still
+  open from 2026-11-09: Apple 5.2.2 authorisation for reading a second Penn
+  system with the saved PennKey
+  (`docs/research/degree-progress/04-privacy-and-app-store.md`) and whether
+  Penn ISC has a position; the privacy label and `REVIEW_NOTES.md` need a
+  degree section before any upload.
 - **A finished item whose completion is Canvas's alone has no swipe back
   in prev** (since 2026-11-06, `AppState.completionIsLockedByCanvas`,
   `DashItem.canMarkActive`). Before that the swipe was offered, did nothing
