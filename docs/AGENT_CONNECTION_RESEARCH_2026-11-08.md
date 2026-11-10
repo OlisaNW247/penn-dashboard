@@ -546,3 +546,22 @@ front serves (the same requirement as Claude Code, answered). The page
 then stalled on a bug of ours (the stripped-path root, CLAUDE.md →
 Traps), fixed the same hour as `agent-auth` v3. What claude.ai sends as
 `file_base64` and what it shows for `propose_submission` are still open.
+
+**2026-11-10 afternoon, claude.ai, the `file_base64` question, answered in
+practice.** Asked to upload a finished problem-set PDF (about 108 KB,
+144,000 base64 characters) through `propose_submission`, Claude on claude.ai
+declined on its own: "transcribing roughly 144,000 characters of encoded
+binary by hand with no way to verify it afterward. A single wrong character
+produces a PDF that won't open". So the measured answer is not a byte limit
+but a model limit: a tool argument is emitted token by token, and a model
+will not (and should not be trusted to) emit a six-figure base64 string.
+Inline files are fine for a few kilobytes and wrong as the main path.
+Implication for Phase 3 (an open decision, plan → "Open asks for Marco"):
+accept the agent's *source* instead of its bytes, `kind: text` with a
+`format` of `markdown` or `latex`, and let the phone render the PDF with
+PDFKit before submitting, or let the agent hand over a file it already
+holds by a signed upload slot (`propose_submission` returns a short-lived
+PUT URL into the private bucket, the agent's own tool fetches and uploads;
+only works for clients with a file tool). Marco asked Claude to attempt the
+inline upload anyway; the review sheet's preview will say whether the PDF
+opened.

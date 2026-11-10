@@ -260,6 +260,14 @@ followed by a command the session (or anyone) runs:**
    Mac. Then the three remaining Phase 0 answers can be taken (claude.ai
    discovery, what a model sends as `file_base64`, what Claude shows under
    each `destructiveHint`).
+4a. **Files from the agent, a decision.** claude.ai will not transcribe a
+   144,000-character base64 PDF into a tool call (research §8, 2026-11-10).
+   Options: (i) `kind: text` with `format: markdown | latex` rendered to PDF
+   on the phone with PDFKit before the submit (small source, verifiable on
+   the review sheet, works for every client); (ii) a signed upload slot the
+   agent's own file tool PUTs to; (iii) keep inline base64 for small files
+   only and say so in the tool description. Recommendation: (i) now, (iii)
+   kept, (ii) later.
 4. **A Canvas sandbox** for the submit spike (a Free-for-Teacher course with
    a student test user, signed in through the Mac build; **never a graded
    one**), then `-LHFSubmitSpike <courseID> <assignmentID>`; and **his
