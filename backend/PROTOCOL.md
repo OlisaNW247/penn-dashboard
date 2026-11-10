@@ -1618,6 +1618,14 @@ Logs counts and outcome codes, never ids, titles or bodies. Table
   `error_class` (at most 64 characters); `attempt` is an integer 0 to 1000;
   otherwise `400 bad_request`. At declined, submitted or failed the file's
   object is deleted from Storage (best effort) and `file_path` cleared.
+  A signed URL already handed out keeps serving the file until it expires,
+  even after the object is gone (measured 2026-11-10: a URL fetched 20 s
+  after the object left `storage.objects` answered 200, and 400 at 135 s).
+  So "deleted" means "unreachable within 120 seconds", not at once.
+  `backend/scripts/agent-e2e.mjs` walks all of this against production with
+  a throwaway user (propose a text and a 20 KB file draft, list, download
+  and compare bytes, seen, declined, `400` without `canvas_submission_id`,
+  submitted, `409` on a second move, then the opt-out's `delete`).
 - `delete` removes the snapshot **and revokes every agent connection** of the
   student, answering `{ "deleted": true, "revoked": n }`. It also deletes the
   student's drafts and their Storage objects. A student with no
