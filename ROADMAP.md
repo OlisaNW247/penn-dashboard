@@ -60,11 +60,14 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   the runner. In order now: (1) ~~`xcodebuild` on a Mac~~ done 2026-11-10 on
   Olisa's Mac, Xcode 27.2: BUILD SUCCEEDED for `generic/platform=iOS`,
   widget included; (2) a DEBUG
-  build on Olisa's phone with `-LHFShowDegree`: does the page load past
-  Cloudflare, does the sign-in popup hand the token back, does the audit
-  for each of his two degrees match Path@Penn, does one "switch to" and one
-  "add minor" run; read `debugDegreeLogV1` off the App Group plist when a
-  step fails (CLAUDE.md → Known gaps lists the three unknowns); (3) capture
+  build on Olisa's phone with `-LHFShowDegree`: **first read done
+  2026-11-10** (Debug build of `d2f37a0` on his iPhone 17: the page loaded
+  past Cloudflare, the popup handed the token back, a real audit drew).
+  Still to do there: settle why the first degree shown is Artificial
+  Intelligence when he says his major is Computer Science (CLAUDE.md →
+  Known gaps; waits on a console snippet's output), compare each degree's
+  numbers with Path@Penn, run one "switch to" and one "add minor", and
+  reinstall for the catalog-suffix, chip and colour-key changes; (3) capture
   what was not seen: a record with a concentration or minor, and the page's
   own `currentStudentDegrees`; (4) the privacy label and `REVIEW_NOTES.md`,
   and the Apple 5.2.2 / Penn ISC question, before any upload. Not for 3.4.1.

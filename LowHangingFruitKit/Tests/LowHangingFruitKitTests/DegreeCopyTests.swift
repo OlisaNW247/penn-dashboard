@@ -28,6 +28,21 @@ struct DegreeCopyTests {
         }
     }
 
+    @Test("the title beside the ring never carries the catalog term")
+    func noCatalogTerm() throws {
+        let source = try uiSource("DegreeProgressView.swift")
+        #expect(!source.contains("catalogYearLabel"))
+    }
+
+    @Test("the bars have a three-word key: done, in progress, left")
+    func legend() throws {
+        let source = try uiSource("DegreeProgressView.swift")
+        #expect(source.contains("DegreeLegend()"))
+        for word in ["\"done\"", "\"in progress\"", "\"left\""] {
+            #expect(source.contains(word), "legend is missing \(word)")
+        }
+    }
+
     @Test("the footer names the official audit")
     func footer() throws {
         let source = try uiSource("DegreeProgressView.swift")

@@ -46,6 +46,28 @@ public struct DegreeGoals: Codable, Sendable, Hashable {
         if parts.isEmpty, let program, !program.isEmpty { parts.append(word(program)) }
         return parts.joined(separator: ", ")
     }
+
+    /// The major alone ("computer science"), for the chip that switches
+    /// between a student's degrees; the full title when there is no major.
+    /// The full title made a chip so wide that a second degree sat off the
+    /// edge of an iPhone, which is how the owner came to ask why Smooth
+    /// thought he studied something else (2026-11-10): the answer was one
+    /// swipe to the right and nothing on screen said so.
+    public func shortTitle(descriptions: [String: String]) -> String {
+        let words = majors.filter { !$0.isEmpty }.map {
+            (descriptions[$0] ?? $0).trimmingCharacters(in: .whitespaces).lowercased()
+        }
+        return words.isEmpty ? title(descriptions: descriptions) : words.joined(separator: " + ")
+    }
+
+    /// One chip label per degree, in order. Short when the short forms tell
+    /// the degrees apart, full otherwise (two degrees in one major would
+    /// otherwise read as the same chip twice).
+    public static func chipTitles(for goals: [DegreeGoals], descriptions: [String: String]) -> [String] {
+        let short = goals.map { $0.shortTitle(descriptions: descriptions) }
+        if Set(short).count == short.count { return short }
+        return goals.map { $0.title(descriptions: descriptions) }
+    }
 }
 
 public enum RuleStatus: String, Codable, Sendable { case met, inProgress, open, info }

@@ -79,7 +79,7 @@ model on the server for course-level "facts"; they belong to the class,
 carry no user id, and a student's AI-assist switch does not stop them
 (`docs/PRIVACY.md` says so). The phone also reads Canvas's own structured
 endpoints (Planner, module completion, section dates) with the student's
-session and keeps the results on the phone. Since 2026-11-10 (`v12`, green on the GitHub runner and built for iOS with `xcodebuild` on Olisa's Mac, never on a device) a
+session and keeps the results on the phone. Since 2026-11-10 (`v12`; first read on a device the same day, Olisa's iPhone 17, a Debug build of `d2f37a0`) a
 Penn install can show the student's degree audit by running Penn's own
 Path@Penn page in a hidden WebView (`PathPortal`), signed in with the same
 saved PennKey, and asking that page for the audit through allowlisted
@@ -834,8 +834,10 @@ Keep this current. It is the fastest way for a new session to know what exists.
   answers set aside (`ROADMAP.md` → Next).
 - **Degree** (`DegreeProgressView`, `v12`, behind
   `FeatureFlags.degreeProgress`; rewritten 2026-11-10 against the real
-  Path@Penn after Olisa's capture; green on the GitHub runner and built for
-  iOS on Olisa's Mac the same day, nothing on a phone). Olisa's ask: "see your degree progress, see what
+  Path@Penn after Olisa's capture; green on the GitHub runner, built for
+  iOS on Olisa's Mac and read on his iPhone 17 the same day: the ring and
+  the requirement cards drew from his real audit, Known gaps has what is
+  still unchecked). Olisa's ask: "see your degree progress, see what
   would hypothetically be your course of action if you switched degrees",
   no course recommendations. Reached from the first row of Profile →
   classes ("degree", with "31 of 40 cu", a percent, or the status line) and
@@ -3622,7 +3624,7 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
-| `v12` | **Current line (2026-11-09 onward).** `v10` at `4c136b2` plus the degree-progress research (`docs/DEGREE_PROGRESS_RESEARCH_2026-11-09.md`) and the degree feature. Built on 2026-11-09 against a guessed Degree Works host; rewritten on 2026-11-10 against what Olisa captured from his own Path@Penn session: `Degree/` in the Kit (`PathAuditDecoder`, `PathBridge`, `PathDegree`, `PathWhatIf`), `PathPortal`, `AppState+Degree`, `DegreeProgressView`, `DegreeWhatIfSheet`, `FeatureFlags.degreeProgress`. Green on the `tests` workflow, which runs on pushes to it, and built for iOS with `xcodebuild` on Olisa's Mac (Xcode 27.2) on 2026-11-10 (Test baseline); nothing on a phone. There is no `v11`. |
+| `v12` | **Current line (2026-11-09 onward).** `v10` at `4c136b2` plus the degree-progress research (`docs/DEGREE_PROGRESS_RESEARCH_2026-11-09.md`) and the degree feature. Built on 2026-11-09 against a guessed Degree Works host; rewritten on 2026-11-10 against what Olisa captured from his own Path@Penn session: `Degree/` in the Kit (`PathAuditDecoder`, `PathBridge`, `PathDegree`, `PathWhatIf`), `PathPortal`, `AppState+Degree`, `DegreeProgressView`, `DegreeWhatIfSheet`, `FeatureFlags.degreeProgress`. Green on the `tests` workflow, which runs on pushes to it, and built for iOS with `xcodebuild` on Olisa's Mac (Xcode 27.2) on 2026-11-10 (Test baseline); the Debug build of `d2f37a0` read a real audit on Olisa's iPhone 17 the same day (Known gaps). There is no `v11`. |
 | `v10` | **Current line (2026-11-03 onward).** `v9` (the no-banner sign-in, the onboarding polish, the composed-day research) plus `origin/v8` `7e004c5` (the tree's recency and follow-up work) plus `phase0/extract-facts-bench`. The merge's Swift run is recorded under Test baseline. |
 | `phase0/extract-facts-bench` | 2026-11-03, off `v9`: the extract-facts bench, prompt, schema and parser; the model decision (Haiku 5.5, `docs/EXTRACT_FACTS_BENCH_2026-11-03.md`). In `v10`. |
 | `v9` | 2026-11-01 to 11-03: the no-banner sign-in and keepalive, proven on Marco's phone; the onboarding polish merged; the composed-day research. In `v10`. |
@@ -3662,19 +3664,35 @@ none is a ship line.
 
 ## Known gaps
 
-- **Degree progress (`v12`) has never run on a device.** The
-  audit's shape, the sign-in hand-off and the page's functions were captured
-  from Olisa's own Path@Penn session in Chrome on 2026-11-10 and the code was
-  rewritten to them; the tree builds for iOS (`xcodebuild`, Xcode 27.2, on
-  Olisa's Mac, 2026-11-10), but no build has been on a phone. Three things only a device can settle, each of
-  which fails as "couldn't read path@penn · retry" with the stopped step in
-  `debugDegreeLogV1` (DEBUG; step names and hosts only): (1) whether
-  Cloudflare's check on `courses.upenn.edu` passes in a hidden WebView (a
-  `cf_clearance` cookie was present in the browser); (2) whether WebKit
-  keeps `window.opener` for a popup that crosses to Penn's SSO hosts and
-  back, which is how the token is handed over; (3) whether Penn accepts a
-  curriculum entry from the student's record as `degreeInfo` exactly as it
-  stands (the page's own `currentStudentDegrees` shape was not captured).
+- **Degree progress (`v12`) has read one real audit on one phone, and
+  which degree it shows first is unsettled.** On 2026-11-10 at 12:07 local
+  the Debug build of `d2f37a0` (installed with `devicectl` over the store
+  copy on Olisa's iPhone 17, launched with `-LHFShowDegree`) showed "read
+  today", a 53% ring and Penn's requirement cards (major, general electives,
+  SEAS writing, free electives, elective coursework, everything else). So the
+  three things only a device could settle all passed, at least once:
+  Cloudflare let the hidden WebView through, WebKit kept `window.opener`
+  across Penn's SSO hosts so the popup handed the token back, and Penn
+  accepted a curriculum entry from the record as `degreeInfo`. Whether a Duo
+  push was needed is not recorded. What that run did **not** check: the
+  numbers against Path@Penn's own page, the second degree's audit, any
+  what-if, and a second read after the 24-hour token lapses.
+  **Open from that run:** the record held two curriculum entries and the
+  first chip, the one the screen opened on, was Artificial Intelligence BSE;
+  Olisa says his official major is Computer Science. The app takes the
+  entries under the greatest term key in `cur`, in Penn's order
+  (`PathScripts.degrees`), and Penn's own rule for which entries are current
+  (`currentStudentDegrees`) was never captured, so either the record really
+  lists both or the pick is wrong. A console snippet that prints `cur`'s
+  terms and codes and the page script around `currentStudentDegrees` was
+  sent to Olisa the same day; fix the pick from its output, not from a
+  guess. Changed from his screenshot the same hour (compiled on the runner,
+  not yet back on the phone): the "· catalog 202430" suffix beside the ring
+  is gone ("tacky"), a degree chip shows the major alone
+  (`DegreeGoals.chipTitles`) because the full title pushed the second chip
+  off the edge of the screen, and a three-word key (`DegreeLegend`: done, in
+  progress, left) sits under the ring because he asked what orange against
+  green meant.
   Not captured either: a record with a concentration or a minor (the `conc`
   / `minor` field names on a curriculum entry are inferred from the page's
   what-if rules), any program whose `prog_type` is not `major`, and a

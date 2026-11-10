@@ -83,4 +83,18 @@ struct DegreeWhatIfTests {
         #expect(DegreeGoals(program: "EU_BSE").title(descriptions: [:]) == "eu_bse")
         #expect(DegreeGoals().title(descriptions: [:]) == "")
     }
+
+    @Test("a degree chip shows the major alone, and the full title only when majors collide")
+    func chipTitles() {
+        let names = ["CSCI": "Computer Science", "AIEN": "Artificial Intelligence", "BSE": "Bachelor of Sci in Engineering", "BAS": "Bachelor of Applied Science"]
+        let cs = DegreeGoals(degree: "BSE", majors: ["CSCI"])
+        let ai = DegreeGoals(degree: "BSE", majors: ["AIEN"])
+        #expect(cs.shortTitle(descriptions: names) == "computer science")
+        #expect(DegreeGoals(program: "EU_BSE").shortTitle(descriptions: [:]) == "eu_bse")
+        #expect(DegreeGoals.chipTitles(for: [ai, cs], descriptions: names) == ["artificial intelligence", "computer science"])
+        let csBAS = DegreeGoals(degree: "BAS", majors: ["CSCI"])
+        #expect(DegreeGoals.chipTitles(for: [cs, csBAS], descriptions: names)
+            == ["computer science, bachelor of sci in engineering", "computer science, bachelor of applied science"])
+        #expect(DegreeGoals.chipTitles(for: [], descriptions: names).isEmpty)
+    }
 }

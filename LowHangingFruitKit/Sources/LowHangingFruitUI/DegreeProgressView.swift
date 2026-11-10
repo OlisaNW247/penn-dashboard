@@ -249,13 +249,14 @@ struct DegreeProgressView: View {
         let degrees = state.degree.degrees
         if degrees.count > 1 {
             let selectedID = state.degree.selectedDegreeID ?? degrees.first?.id
+            let labels = DegreeGoals.chipTitles(for: degrees.map(\.goals), descriptions: descriptions)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(degrees) { degree in
+                    ForEach(Array(degrees.enumerated()), id: \.element.id) { index, degree in
                         let isSelected = degree.id == selectedID
                         let title = degree.goals.title(descriptions: descriptions)
                         Button { Task { await state.selectDegree(degree.id) } } label: {
-                            Text(title)
+                            Text(index < labels.count ? labels[index] : title)
                                 .font(.lhfSans(13, weight: isSelected ? .semibold : .medium))
                                 .foregroundStyle(isSelected ? Color.smoothTealInk : Color.smoothMuted)
                                 .lineLimit(1)
@@ -300,7 +301,9 @@ struct DegreeProgressView: View {
     private func programTitle(_ audit: DegreeAudit) -> String {
         var title = audit.goals.title(descriptions: descriptions)
         if let label = audit.degreeLabel, !label.isEmpty, descriptions.isEmpty { title = label.lowercased() }
-        if let year = audit.catalogYearLabel, !year.isEmpty { title += " · catalog \(year)" }
+        // No catalog term here. It was appended as "· catalog 202430" until
+        // Olisa saw it on his phone (2026-11-10) and called it tacky: a
+        // six-digit registrar code beside the ring tells a student nothing.
         return title
     }
 
@@ -402,6 +405,7 @@ struct DegreeProgressView: View {
                 }
                 Spacer(minLength: 0)
             }
+            DegreeLegend()
             ForEach(DegreeProgressMath.orderedBlocks(audit.blocks).filter(DegreeProgressMath.isShown)) { block in
                 DegreeBlockRow(block: block, isExpanded: expanded.contains(prefix + block.id)) {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
@@ -419,6 +423,31 @@ struct DegreeProgressView: View {
             .foregroundStyle(Color.smoothTealInk)
             .frame(maxWidth: .infinity)
             .padding(.top, 8)
+    }
+}
+
+/// The key to the bars: teal is done, marigold is being taken now, the track
+/// is what is left. Added 2026-11-10, when the owner looked at the first real
+/// audit on his phone and asked what orange against green meant. Three words,
+/// because the bars carry no other explanation and a colour alone is not one.
+struct DegreeLegend: View {
+    var body: some View {
+        HStack(spacing: 14) {
+            entry(Color.smoothTeal, "done")
+            entry(Color.smoothMarigold, "in progress")
+            entry(Color.smoothRule, "left")
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func entry(_ colour: Color, _ word: String) -> some View {
+        HStack(spacing: 5) {
+            Circle().fill(colour).frame(width: 8, height: 8)
+            Text(word)
+                .font(.lhfSans(12))
+                .foregroundStyle(Color.smoothMuted)
+        }
     }
 }
 
