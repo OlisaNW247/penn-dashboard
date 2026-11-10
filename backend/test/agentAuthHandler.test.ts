@@ -55,7 +55,14 @@ function harness(): Harness {
       return Promise.resolve(user);
     },
   };
+  lastDeps = deps;
   return { store, clock, call: (path, init) => handleAgentAuth(new Request(`${ROOT}${path}`, init), deps) };
+}
+
+let lastDeps: AgentAuthDeps | null = null;
+/** The deps of the most recent harness(), for a test that builds its own Request URL. */
+function harnessDeps(): Promise<AgentAuthDeps> {
+  return Promise.resolve(lastDeps!);
 }
 
 function authorizeQuery(extra: Record<string, string> = {}): string {
@@ -676,4 +683,21 @@ Deno.test("sweep keeps a pending row until two minutes past its expiry", async (
   assert.strictEqual(await h.store.sweep(), 0);
   h.clock.ms = Date.parse(row.expiresAt) + 3 * 60_000;
   assert.strictEqual(await h.store.sweep(), 1);
+});
+
+Deno.test("the root comes from the public base even when the runtime strips /functions/v1 from the path", async () => {
+  // Supabase's edge runtime hands the function `/agent-auth/...`; the browser
+  // is at `<front>/functions/v1/agent-auth/...`. Two approvals on a phone on
+  // 2026-11-09 never became a code because the cookie path and the status
+  // URL followed the stripped path.
+  harness();
+  const stripped = `https://ref.supabase.co/agent-auth${authorizeQuery()}`;
+  const res = await handleAgentAuth(new Request(stripped), {
+    ...(await harnessDeps()),
+  });
+  assert.strictEqual(res.status, 200);
+  assert.match(res.headers.get("set-cookie")!, /Path=\/functions\/v1\/agent-auth/);
+  const page = await res.text();
+  assert.ok(page.includes("/functions/v1/agent-auth/status?p="));
+  assert.ok(!page.includes('"/agent-auth/status'));
 });

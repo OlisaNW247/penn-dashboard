@@ -538,3 +538,11 @@ and a fixture backend) behind an ngrok free tunnel; nothing was deployed.
    full `_meta` envelope (`protocolVersion`, `clientCapabilities`,
    `clientInfo`); a request without `clientCapabilities` is a 400 `-32602`.
 
+**2026-11-09, claude.ai (web), the production front.** Marco added
+`https://smooth-agent.vercel.app/functions/v1/mcp` as a custom connector
+and clicked Connect: claude.ai opened our authorize page with the code
+and the match number, so its discovery works through the root paths the
+front serves (the same requirement as Claude Code, answered). The page
+then stalled on a bug of ours (the stripped-path root, CLAUDE.md →
+Traps), fixed the same hour as `agent-auth` v3. What claude.ai sends as
+`file_base64` and what it shows for `propose_submission` are still open.

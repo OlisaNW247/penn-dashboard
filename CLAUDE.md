@@ -2535,6 +2535,23 @@ itself.
 
 ## Traps that have already bitten
 
+- **Supabase's runtime strips `/functions/v1` from the path it hands a
+  function, so a root derived from the request path is wrong for every
+  browser** (2026-11-09, the first claude.ai sign-in). `agent-auth` built
+  its nonce cookie's `Path` and the authorize page's status URL from
+  `url.pathname` up to `agent-auth`, which inside the runtime is
+  `/agent-auth`, while the browser sat at
+  `<front>/functions/v1/agent-auth/authorize`. The page polled
+  `/agent-auth/status` on the front (a 404 there) with a cookie scoped to
+  a path it never visited; Marco approved twice on his phone (two
+  `approved` rows, `auth_code_hash` null) and the page never moved. The
+  dev tunnel and the handler tests both used the full public path and hid
+  it. Fixed by deriving the root from `LHF_AGENT_PUBLIC_BASE`'s path, which
+  is what every caller sees; deployed alone as `agent-auth` v3 from a
+  scratch worktree at the deployed commit, so the undeployed hardening did
+  not ride along. The wrong fix is a path rewrite in the front: a direct
+  caller of `supabase.co` would still get the stripped root. The tell: an
+  approval that lands in the table while `status?go=1` never does.
 - **Supabase's gateway serves an Edge Function's HTML as `text/plain` with
   a sandbox CSP** (2026-11-08, the first production probe of `agent-auth`).
   The function sends `Content-Type: text/html; charset=utf-8` and its own

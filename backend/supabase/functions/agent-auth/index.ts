@@ -133,7 +133,16 @@ export async function handleAgentAuth(req: Request, deps: AgentAuthDeps): Promis
   const segments = url.pathname.split("/");
   const at = segments.indexOf("agent-auth");
   if (at < 0) return logged(json(404, { error: "not_found" }), "route");
-  const root = segments.slice(0, at + 1).join("/");
+  // The root is derived from the public base, never from the request path:
+  // Supabase's runtime hands the function `/agent-auth/...` with
+  // `/functions/v1` stripped, while the browser sits at
+  // `<front>/functions/v1/agent-auth/authorize`. Taken from the path, the
+  // root gave the nonce cookie `Path=/agent-auth` and the page a status URL
+  // the front could not route, so two approvals on Marco's phone
+  // (2026-11-09) never became a code. The dev tunnel kept the full path and
+  // hid it. The wrong fix is a rewrite in the front: a direct caller of
+  // supabase.co would still get the stripped root.
+  const root = `${new URL(deps.publicBase).pathname.replace(/\/+$/, "")}/agent-auth`;
   const route = "/" + segments.slice(at + 1).join("/");
 
   try {
