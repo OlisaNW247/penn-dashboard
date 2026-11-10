@@ -127,12 +127,94 @@ The popup needs `javaScriptCanOpenWindowsAutomatically` and a
 `WKUIDelegate` that returns a child WebView built from the configuration
 WebKit hands it, or `window.opener` is nil.
 
-**Still open:** (1) the popup's last page (only a device run with
-`DebugDegreeLog` will show it); (2) the exact shape of the degree
-descriptions the advising page passes (`d.info`), and of a
-`programs-v2-list` entry; (3) whether Cloudflare's check on
-`courses.upenn.edu` passes in a hidden WebView (a `cf_clearance` cookie was
-present in the browser).
+### The last capture (2026-11-10, a fresh sign-in watched from the console)
+
+- **The hand-off.** The popup opened at the auth URL, ran the SSO, and its
+  last page (same origin as the opener, or the call could not happen) called
+  the opener's global `setAuthToken(token)`, a function defined in `fose.js`,
+  which called `sam.auth.setToken(<32 chars>, undefined, {skipSave: 1})`.
+  Then the popup closed. No `samauthtoken` cookie is written. So a WebView
+  that opens the popup through `WKUIDelegate` and keeps the opener
+  relationship gets the token exactly as a browser does.
+- **`pers`** (names and lengths only): `fn`, `id` (24), `idProof` (30),
+  `inst`, `mymanaged_keyword`, `clas`, `levl`, `coll`, `roles`, `flags`
+  (which holds a pronoun and graduation terms) and `cur`: an array of objects
+  keyed by a six-digit term, each value an array of curriculum entries with
+  string fields `ctlg`, `coll`, `degc`, `program`, `levl`, `end_term`,
+  `major` (a student with a concentration or minor presumably has `conc` /
+  `minor` there too; not observed). A dual-degree student has two entries.
+  The record's other properties are `reg` (term → strings), `cart`, `hist`
+  (term → strings) and `plan`.
+- **The program catalogue.** `programs-v2-list` returned 1,049 entries of
+  `{ code, title }` (`"CMPE-BSE"`, "Computer Engineering BSE").
+  `programs-v2-info` for one code returns `key`, `prog_code`, `prog_name`,
+  `prog_type` (`major` seen), `prog_parent`, `levl_code`, `degc_code`,
+  `majr_code`, `minr_code`, `conc_code`, `coll_code`, `dept_code`,
+  `sis_prog_code` (`"EU_BSE"`), `hide`, `minor_sis_prog_codes` and
+  `audit_xml` (50 to 80 kB of Degree Works XML, the requirement template).
+- **Dictionaries.** `foseStudentDataUtils.dictionaries()` holds five
+  code-to-name maps: `majors` (1,255), `degrees` (106), `levels` (12),
+  `colleges` (70), `programs` (1,049).
+- **Terms** are six digits: `202710`, `202630`, `202620` … (`fose.srcdb`).
+- The advising panel keeps the degree descriptions it audits in
+  `panel.data().currentStudentDegrees`; its shape was not captured (the panel
+  was closed), so the app builds the description from the `cur` entry, whose
+  field names are the ones the page's what-if rules read (`degc`, `levl`,
+  `coll`, `major`, `conc`, `minor`, `program`).
+
+## The rewrite contract (2026-11-10): Penn's page does the work
+
+Everything under "Kit API" and "UI" further down that names Degree Works
+(`DegreeWorks*`, `DegreeGoalCatalog`, `StudentSelfReader`, the token store,
+the stepped what-if picker) is superseded by this section.
+
+**Rules that bind it**
+1. The token, the 24-character id, its proof, the first name, the pronoun,
+   `hist`, `reg`, `cart` and `plan` never cross from the WebView into Swift.
+   Every script returns an allowlisted JSON string and nothing else.
+2. The audit crosses the bridge already stripped to the fields
+   `PathAuditDecoder` reads. `blockhtml`, `legendHtml`, `actionsMap`,
+   `explanations` and `decisions` are dropped in the page.
+3. Nothing is stored in the Keychain for this feature and no native request
+   goes to Penn: the WebView is the only client. It lives for the app run
+   (the page's session is 24 hours) and is torn down on disconnect.
+4. Foreground only, never from a background wake, never in preview or demo.
+5. Code decides nothing about requirements: the audit is Penn's.
+
+**Kit (pure, `Degree/`)**
+- `PathDegree.swift`: `StudentDegree` (one `cur` entry: level, degree,
+  college, program, majors, concentrations, minors, catalog term, and `raw`,
+  the entry's string fields, which go back to the page verbatim as its
+  `degreeInfo`), `PathProgramListing`, `PathProgramInfo`, `PathDictionaries`.
+- `PathWhatIf.swift`: the page's four change rules, pure
+  (`new-program`, `add-major`, `add-minor`, `add-conc`), producing the
+  `degreeInfo` dictionary to send and the `DegreeGoals` to show.
+- `PathBridge.swift`: `PathPage` (home URL, hosts), `PathScripts` (the
+  JavaScript bodies for `callAsyncJavaScript`: readiness, open sign-in,
+  degrees, audit, programs, program info, dictionaries) and
+  `PathBridgeDecoder` (lenient decoding of what those scripts return).
+- `PathAuditDecoder.swift` (done, 3752/365 on the runner).
+
+**UI**
+- `PathPortal` replaces `DegreeWorksSessionReader`, `DegreeWorksClient` and
+  `DegreeWorksTokenStore`: one hidden `WKWebView` on `LoginDataStores.canvas`
+  with `javaScriptCanOpenWindowsAutomatically`, a `WKUIDelegate` that returns
+  a child WebView built from the configuration WebKit passes (so
+  `window.opener` survives), the existing PennKey form fill and Duo taps on
+  the child, and one method per script.
+- `AppState+Degree`: sign in, read the degrees, audit the selected one,
+  decode, store. A student with two degrees picks between them (chips above
+  the ring; `degreeSelectedIDV1`). "pick your degree" is retired: the record
+  lists the degrees.
+- What if: one searchable list of Penn's programs, then a button per
+  applicable change ("switch to", "add major", "add minor", "add
+  concentration"), then the same block list with the grape tag.
+
+**Still open after the rewrite:** whether Cloudflare's check passes in a
+hidden WebView; whether WebKit keeps `window.opener` for a popup that
+crosses to the SSO hosts and back; whether a `cur` entry is accepted as
+`degreeInfo` exactly as it stands. Each fails as "couldn't read path@penn ·
+retry", and `DebugDegreeLog` names which step stopped.
 
 ### Before the capture (history)
 
