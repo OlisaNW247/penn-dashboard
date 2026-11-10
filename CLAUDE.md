@@ -158,7 +158,11 @@ Eastern), at Olisa's go relayed by Marco; redeployed 2026-11-10 about
 `agent-snapshot` v3 with migrations `20261109090000_agent_hardening.sql`
 and `20261109100000_agent_drafts.sql` applied (rate limits, sweeper,
 approve and deny bound to lookup, the drafts backend, the assignment
-context)** (`node backend/scripts/deploy-agent.mjs --public-base
+context)**; then **`agent-auth` v6 and `mcp` v4 on 2026-11-10 about 07:45 UTC at
+Marco's "Yes, deploy"** (the sign-in page's "Connected to Smooth, returning
+to <agent>" state before the redirect, and explicit annotation hints on every
+read tool; no migration; the 14-step `agent-e2e.mjs` probe, drafts included,
+passed on them) (`node backend/scripts/deploy-agent.mjs --public-base
 https://smooth-agent.vercel.app/functions/v1`): `agent-auth` (our own OAuth
 authorization server, the phone approves each connection), `mcp` (the
 remote MCP server Claude connects to) and `agent-snapshot` (the opted-in
