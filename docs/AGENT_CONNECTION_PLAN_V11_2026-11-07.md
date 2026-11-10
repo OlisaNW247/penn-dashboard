@@ -267,6 +267,42 @@ followed by a command the session (or anyone) runs:**
    (the phone was unreachable on 2026-11-08 evening). The link test also
    needs 2, since the phone looks the code up on the production backend.
 
+
+**Open asks for Marco, as of 2026-11-10 (morning, after the backend session
+`claude/v11-backend-645aa0`):**
+
+- **Tell Olisa about the course-material sync changes of 2026-11-10** before
+  anything else lands near his area: the phone's assignment-PDF pass
+  (`attachmentPass` at the end of `refreshCourseKnowledge`, PDFs linked from
+  open assignments uploaded as `file` documents) and `sync` v25's rule that a
+  report listing no `file` ids cannot retire a course's file rows. Both are
+  in his sync; neither was his change. Also that his phone and Marco's report
+  `manifest failed` for a reason on the phone, not the server
+  (`docs/MANIFEST_FAILURE_2026-11-10.md`).
+- **A deploy go for this branch's two server changes**: the sign-in page's
+  connected state (`agent-auth`) and the explicit read-tool annotations
+  (`mcp`). `node backend/scripts/deploy-agent.mjs --public-base
+  https://smooth-agent.vercel.app/functions/v1`, then `node
+  backend/scripts/agent-e2e.mjs`. No migration.
+- **A Canvas sandbox** for the submit spike (Free-for-Teacher course, a
+  student test user, never a graded course), then `-LHFSubmitSpike`.
+- **The iPhone `smooth://link` tap**: start a connection from the Claude
+  iPhone app (or Safari on the phone) and tap "Open Smooth"; only the typed
+  code has been used so far.
+- **ChatGPT**: check which plan may add a custom MCP server
+  (help.openai.com article 12584461, signed in), then add
+  `https://smooth-agent.vercel.app/functions/v1/mcp` and sign in. Nothing on
+  our side is known to be missing for it
+  (`docs/CONNECTOR_LISTING_CHECKLIST_2026-11-10.md`).
+- **Listing materials**, if he wants either directory: a privacy policy page
+  that is current and served (today's `docs/site/privacy.html` is old
+  branding and not hosted), terms of service, a support URL, a square logo,
+  public documentation of the connector, the publisher identity (Stem
+  Forward Co. or him), and a decision on a reviewer path, since both reviews
+  need a sign-in without MFA and ours is a Penn student's phone.
+- **His verdict on the connected page** once deployed, and the Smooth half
+  of the same ask (the app saying "connected" at the moment of approval).
+
 - **Instructure 3(i)** names MCP servers that connect to its APIs. Ours
   serves Smooth's own data; the submission is the student's act in their
   own session, the same footing as every read today. A reading, not a

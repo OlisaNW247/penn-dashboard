@@ -451,6 +451,18 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   2026-11-10: hardening, drafts backend and the assignment-context fix
   deployed; open decision: pool the PDFs linked from open assignments so
   Claude can read a problem set (privacy text and Olisa's sync).
+  2026-11-10 later, on `claude/v11-backend-645aa0` (off `agent/connection-v11`,
+  nothing deployed): the sign-in page now shows "Connected to Smooth /
+  Returning to <agent>…" with a tick for 1.5 s before handing back (Marco's
+  ask; a hidden tab goes at once); `agent-e2e.mjs` walks the drafts against
+  production (13/13 green); every read tool states all three annotation
+  hints, as OpenAI requires; `docs/CONNECTOR_LISTING_CHECKLIST_2026-11-10.md`
+  lists what ChatGPT and Claude's directory need and what Marco has to
+  supply; and `docs/MANIFEST_FAILURE_2026-11-10.md` shows Marco's
+  "manifest failed" is the phone giving up on a 200 (most likely a
+  cancelled task), which also keeps the assignment-PDF pass from ever
+  running on his phone. The Swift fix is with the dashboard-investigation
+  session.
 - **Megaphone: the model sorts posts into todo and prev** (Marco,
   2026-11-07: "prev being either from way before or unapplicable, need
   [the model] to sort based on text"). What ships first is the rule half
