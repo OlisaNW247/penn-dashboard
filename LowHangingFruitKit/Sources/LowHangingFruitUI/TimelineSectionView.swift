@@ -28,6 +28,10 @@ struct TimelineSectionView: View {
     var onCommit: (DashItem) -> Void = { _ in }
     /// The student took back what facts did to a card (`undo`).
     var onUndo: (DashItem) -> Void = { _ in }
+    /// "review and submit" on a card with an agent's draft.
+    var onReviewDraft: (DashItem) -> Void = { _ in }
+    /// The first open of a card with an agent's draft (marks it seen).
+    var onDraftOpened: (DashItem) -> Void = { _ in }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -41,6 +45,8 @@ struct TimelineSectionView: View {
                     onEdit: { onEdit(item) },
                     onRemove: { onRemove(item) },
                     onUndo: { onUndo(item) },
+                    onReviewDraft: { onReviewDraft(item) },
+                    onDraftOpened: { onDraftOpened(item) },
                     isExamOverride: item.examStyleOverride
                 )
                 .transition(.asymmetric(

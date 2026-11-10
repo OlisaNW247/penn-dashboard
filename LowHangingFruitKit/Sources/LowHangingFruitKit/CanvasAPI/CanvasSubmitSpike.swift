@@ -8,8 +8,10 @@ import Foundation
 ///
 /// This is a spike, never a product feature: it is reachable only from the
 /// DEBUG launch argument `-LHFSubmitSpike`. The production path is
-/// `CanvasSubmissionClient` (Phase 4, not yet written); nothing here should
-/// grow into it.
+/// `CanvasSubmissionClient` (Phase 4, 2026-11-10), which reuses this file's
+/// pure URL builders and CSRF parsers and nothing else: the runner below,
+/// with its retry after a 422, must never grow into it (the product path
+/// posts exactly once).
 ///
 /// The enum is pure so every request shape and failure class is testable
 /// without a network. Secrets are kept out of the output by construction:

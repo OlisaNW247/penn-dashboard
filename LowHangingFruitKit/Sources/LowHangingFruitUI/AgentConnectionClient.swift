@@ -137,6 +137,51 @@ struct AgentConnectionClient: Sendable {
         return response.revoked
     }
 
+    // MARK: Drafts
+
+    /// The student's open drafts (`proposed` or `seen`), newest first. A file
+    /// draft's `fileURL` is good for 120 seconds.
+    func listDrafts() async throws -> [AgentDraft] {
+        struct Request: Encodable { let action = "drafts" }
+        struct Response: Decodable { let drafts: [AgentDraft] }
+        let response: Response = try await call("agent-snapshot", Request())
+        return response.drafts
+    }
+
+    /// Moves one draft. 409 (`alreadyDecided`) means it left an open state
+    /// already, from another phone or an earlier report; 404 that it is gone.
+    func decide(draftID: String, _ decision: AgentDraftDecision) async throws {
+        struct Request: Encodable {
+            let action = "draft"
+            let id: String
+            let status: String
+            let canvas_submission_id: String?
+            let attempt: Int?
+            let error_class: String?
+
+            func encode(to encoder: Encoder) throws {
+                enum Keys: String, CodingKey { case action, id, status, canvas_submission_id, attempt, error_class }
+                var c = encoder.container(keyedBy: Keys.self)
+                try c.encode(action, forKey: .action)
+                try c.encode(id, forKey: .id)
+                try c.encode(status, forKey: .status)
+                try c.encodeIfPresent(canvas_submission_id, forKey: .canvas_submission_id)
+                try c.encodeIfPresent(attempt, forKey: .attempt)
+                try c.encodeIfPresent(error_class, forKey: .error_class)
+            }
+        }
+        struct Response: Decodable { let id: String; let status: String }
+        var submissionID: String?, attempt: Int?, errorClass: String?
+        switch decision {
+        case let .submitted(id, a): submissionID = String(id.prefix(64)); attempt = a.map { min(max($0, 0), 1000) }
+        case let .failed(e): errorClass = String(e.prefix(64))
+        case .seen, .declined: break
+        }
+        let _: Response = try await call("agent-snapshot", Request(
+            id: draftID, status: decision.status, canvas_submission_id: submissionID,
+            attempt: attempt, error_class: errorClass))
+    }
+
     private func call<T: Decodable>(_ function: String, _ body: some Encodable) async throws -> T {
         do {
             return try await client.post(function, body: body)

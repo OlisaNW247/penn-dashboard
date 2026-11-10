@@ -380,6 +380,28 @@ nothing until you pair it with your phone.
   only thing it can do is propose a draft (text, a link or a file), which
   appears on the assignment's card marked as drafted by that assistant. Only
   you, in Smooth, can review and submit it.
+- **Drafts on this phone.** Smooth asks our server for your open drafts
+  while the app is open (at most every five minutes, never in the
+  background). The drafts themselves are kept in the app's memory; a short
+  list of which drafts exist (the draft's id, the assignment, the
+  assistant's name, a file's name and size, but not the text, link or file)
+  is kept on this phone so the cards show it after a relaunch. Opening a
+  card with a draft tells our server you have seen it. A file is fetched
+  only when you preview or submit it, through a link that works for two
+  minutes, and a preview copy is deleted when you close the draft.
+- **Submitting.** When you tap submit and confirm, this phone sends the
+  draft to Canvas itself, with your own Canvas session, exactly as Canvas's
+  website would; our server is not involved and never sees your session.
+  Before anything is sent, the phone writes down that it is about to submit
+  this draft, so the same draft can never be submitted twice, even if the
+  phone loses its connection or the app is closed mid-way; if Canvas's
+  answer never arrives, Smooth tells you to check Canvas instead of trying
+  again. That record holds the draft and assignment ids, the time and
+  Canvas's submission number, stays on this phone, and is deleted when you
+  disconnect Canvas or turn the feature off. Afterwards the phone tells our
+  server only the outcome (submitted with Canvas's submission number, or
+  failed with a short reason such as "rejected"), never your session or
+  the submission's content.
 - **What our server keeps for this.** The work list above, in readable form,
   replaced each time the phone uploads it; the connection records (which
   assistant, when it was made, when it was last used); and the drafts the

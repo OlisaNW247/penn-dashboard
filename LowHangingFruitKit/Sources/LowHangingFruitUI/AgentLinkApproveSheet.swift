@@ -11,7 +11,9 @@ enum AgentConnectionCopy {
     static let question = "did you just start this?"
     static let pick = "pick the number the page shows"
     static let notNow = "not now"
-    static func connected(_ name: String) -> String { "connected · go back to \(name)" }
+    static func connectedHeading(_ name: String) -> String { "connected to \(name.lowercased())" }
+    static func connectedNext(_ name: String) -> String { "go back to \(name.lowercased()) to finish" }
+    static let done = "done"
     static let mismatch = "didn't match"
     static let failure = "couldn't connect"
 
@@ -44,6 +46,35 @@ enum AgentConnectionCopy {
     static let codePlaceholder = "XXXX-XXXX"
     static let connect = "connect"
     static let codeNotFound = "code not found"
+
+    // Dashboard line, once a new connection shows up while the app is open
+    static func connectedBanner(_ name: String) -> String { "connected to \(name.lowercased())" }
+
+    // Drafts: the card
+    static func draftedBy(_ name: String) -> String { "drafted by \(name.lowercased())" }
+    static let reviewAndSubmit = "review and submit"
+    static let checkCanvas = "check canvas"
+
+    // Drafts: the review sheet
+    static func noteFrom(_ name: String) -> String { "\(name.lowercased())'s note" }
+    static let integrity = "this goes in under your name; read it"
+    static let submit = "submit"
+    static let decline = "decline"
+    static let confirmSubmitTitle = "submit to canvas?"
+    static let sending = "sending to canvas"
+    static let submitted = "submitted"
+    static let submittedUnverified = "submitted \u{00B7} check canvas to be sure"
+    static let failed = "canvas didn't take it \u{00B7} ask for a new draft"
+    static let mayHaveGoneIn = "it may have gone in \u{00B7} check canvas"
+    static let unsupported = "submit this one in canvas"
+    static let signInFirst = "sign in to canvas first"
+    static let offline = "no connection"
+    static let fileUnavailable = "couldn't load the file"
+    static let couldntSend = "couldn't send"
+    static let declineFailure = "couldn't decline"
+    static let openInCanvas = "open in canvas"
+    static let previewFile = "preview"
+    static let loading = "loading"
 }
 
 /// "connect <agent>?": shown for `smooth://link?c=...` or a typed code. The
@@ -100,8 +131,7 @@ struct AgentLinkApproveSheet: View {
 
                     switch result {
                     case .connected:
-                        Text(AgentConnectionCopy.connected(lookup.clientName))
-                            .font(.lhfSecondary(12))
+                        EmptyView()
                     case .mismatch:
                         Text(AgentConnectionCopy.mismatch)
                             .font(.lhfSecondary(12)).foregroundStyle(Color.smoothTomatoInk)
@@ -115,6 +145,14 @@ struct AgentLinkApproveSheet: View {
                 .smoothSectionBackground(.smoothTeal)
             }
             .formStyle(.grouped)
+            // Marco, 2026-11-09: "there should be some UI that makes it clear
+            // when you're connected since it is not that clear." The sheet
+            // used to print one small line and close itself a second later;
+            // now the whole sheet becomes the confirmation and stays until
+            // the student taps done.
+            .overlay {
+                if result == .connected { connectedState }
+            }
             .font(.lhfSecondary(15))
             .foregroundStyle(Color.smoothInk)
             .smoothFormChrome(accent: .smoothTeal)
@@ -131,6 +169,28 @@ struct AgentLinkApproveSheet: View {
 #endif
     }
 
+    private var connectedState: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 48, weight: .semibold))
+                .foregroundStyle(Color.smoothTeal)
+                .accessibilityHidden(true)
+            Text(AgentConnectionCopy.connectedHeading(lookup.clientName))
+                .font(.lhfSecondary(22, weight: .semibold))
+            Text(AgentConnectionCopy.connectedNext(lookup.clientName))
+                .font(.lhfSecondary(14))
+                .foregroundStyle(Color.smoothMuted)
+            Button(AgentConnectionCopy.done) { dismiss() }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.smoothTeal)
+                .padding(.top, 6)
+        }
+        .foregroundStyle(Color.smoothInk)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.smoothPaper)
+        .accessibilityElement(children: .combine)
+    }
+
     private func pick(_ number: Int) {
         guard !isWorking, result == nil else { return }
         isWorking = true
@@ -139,8 +199,7 @@ struct AgentLinkApproveSheet: View {
             isWorking = false
             if ok {
                 result = .connected
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                dismiss()
+                lhfHapticLight()
             } else {
                 // A wrong number is denied by the server; a failed call is
                 // indistinguishable here, and either way the student restarts

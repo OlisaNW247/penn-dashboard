@@ -79,7 +79,13 @@ model on the server for course-level "facts"; they belong to the class,
 carry no user id, and a student's AI-assist switch does not stop them
 (`docs/PRIVACY.md` says so). The phone also reads Canvas's own structured
 endpoints (Planner, module completion, section dates) with the student's
-session and keeps the results on the phone. There is no analytics, tracking,
+session and keeps the results on the phone. Since 2026-11-10 (built, never
+on a phone or against Canvas) a student with the agent connection on also
+polls their agent's open drafts, keeps a content-free list of them in
+`UserDefaults.lhf` (`agentDraftsCacheV1`), tells the server when a draft
+was seen, declined, submitted or failed, and submits a draft to Canvas from
+the phone with their own session; the server never sees the session and
+the phone sends it only the outcome. There is no analytics, tracking,
 or third-party SDK. Don't say "everything is on-device" (untrue since
 `assistant-ui`) or "no server" (untrue since the backend). `docs/PRIVACY.md`
 is the student-facing version and must change in the same commit as any
@@ -1155,6 +1161,68 @@ Keep this current. It is the fastest way for a new session to know what exists.
   delete the server's list and revoke every agent. `docs/PRIVACY.md` →
   "Connecting an AI assistant" is the student-facing text. Copy in
   `AgentConnectionCopy`, pinned by `AgentConnectionCopyTests`.
+- **Drafts from an agent, and submitting them** (2026-11-10, v11 Phases 3
+  and 4, phone half; on `claude/v11-phone-c7aaf2`, compiled and tested,
+  **never on a phone and never against Canvas**). `agentDraftsPass`
+  (`AppState+AgentDrafts.swift`) runs right after `agentSnapshotPass` in
+  `ContentView.refresh()` and the launch task, with the same gates (Penn,
+  backend, opt-in on, foreground only), at most every 5 minutes, failures
+  silent. It also refreshes the connection list (for the line below),
+  re-sends any outcome report the server never acknowledged, and replaces
+  `AppState.agentDrafts` (memory) and `agentDraftsCacheV1` (the same drafts
+  with no body, link, note or signed URL, so a relaunch draws the chips
+  before the first poll). A draft matches a card by equality: its
+  `assignment_id` is the snapshot item id, which is `Assignment.id`.
+  - **The card.** "drafted by claude" in the collapsed card's caveat line
+    beside cancelled / moved / changed (`DashItem.caveatText`,
+    `DashItem.agentDraft`); the opened card shows up to three lines of the
+    body, the link, or the file's name and size, and one button, "review
+    and submit" ("check canvas" once a submission went out with no
+    answer). The first open marks the draft `seen`. Only the newest open
+    draft per item shows.
+  - **The notice.** One local notification per new draft, "Claude drafted
+    Problem Set 7" (`AgentDraftNotices`, remembered in
+    `agentDraftsNotifiedV1`, bounded at 200), only for a draft whose card
+    is on the dashboard, posted with the turned-in notices' rules.
+  - **The review sheet** (`AgentDraftReviewSheet`): the assignment, the
+    agent's note, the whole text (selectable) or the link or the file
+    (name, size, a QuickLook preview fetched through the 120-second signed
+    URL, refetching the list once if it has expired; the copy is deleted
+    when the sheet closes), the line "this goes in under your name; read
+    it", then **submit** (behind "submit to canvas?") and **decline**. A
+    quiz, a discussion, an event, "nothing to submit", a Gradescope item or
+    an item the snapshot holds no Canvas ids for offers "submit this one in
+    canvas" and the Canvas link instead of submit.
+  - **Submitting** (`CanvasSubmissionClient`, promoted from the spike, and
+    `AgentDraftSubmitter`): a preflight GET of the assignment decides
+    everything that can refuse (submission types, `allowed_extensions`,
+    locked, `can_submit`, session, CSRF token) before any POST; then the
+    attempt record is written (`AgentSubmitAttemptStore`, its own JSON file
+    under Application Support, written `.atomic` before `begin` returns);
+    then, for a file, Canvas's slot POST, the multipart upload to the slot's
+    URL with no cookie or CSRF header, and a confirm GET on a redirect; then
+    the submission POST, **exactly once, never retried, not even after a
+    422**; then a verify GET of `/submissions/self`. A 2xx with an id is
+    `submitted` (verified or not); a refusal by Canvas or a request that
+    never left the phone is `failed`; a 5xx, a timeout or a lost connection
+    after the POST is indeterminate: the record stays, the card says "check
+    canvas", nothing retries. A draft with a record is never submitted
+    again, whatever the server says, and cannot be declined either.
+    Outcomes are reported with `draft` (`submitted` with
+    `canvas_submission_id` and `attempt`, or `failed` with a short
+    `error_class`). Disconnecting Canvas and turning the opt-in off clear
+    the drafts, the cache, the notice memory, the known-connection ids and
+    the attempt records.
+  - **Connected.** After the right number is picked the approve sheet
+    becomes a confirmation ("connected to claude", "go back to claude to
+    finish", done) instead of closing itself a second later; and a
+    connection that appears in the list while the app is open (the
+    connection row is created when Claude trades the code, after the
+    approval) raises a one-line "connected to claude" under the status
+    lines, dismissed with a tap (`AppState.agentConnectionBanner`,
+    `noteAgentConnections`; the first list on an install only records).
+    Marco, 2026-11-09: "there should be some UI that makes it clear when
+    you're connected since it is not that clear."
 - **Pair a laptop** (2026-10-22, never compiled). Scanning the Chrome
   extension's QR code with the iPhone camera opens Smooth
   (`smooth://pair?c=…#k=…`, `.onOpenURL` in `RootCore`) on "pair this
@@ -1305,7 +1373,20 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
-**Current on `agent/connection-v11` (2026-11-10, early morning US Eastern):
+**Current on `claude/v11-phone-c7aaf2` (2026-11-10, off `agent/connection-v11`
+`2503a3b`): 3797 tests / 367 suites, all green, `swift test --no-parallel`
+alone on Marco's Mac (98 s), +43 / +5 over the 3754 / 362 below, nothing
+removed: `CanvasSubmissionClientTests` (the CSRF header, the text, URL and
+file bodies, the file two-step with no cookie on the upload, the confirm
+GET, the attempt-before-POST order, one POST never retried, the
+indeterminate branch, verify agreement), `AgentDraftTests`,
+`AgentSubmitAttemptStoreTests`, `AgentDraftSubmitterTests` (never twice),
+`AgentDraftsStateTests`, plus additions to `AgentConnectionClientTests`,
+`AgentConnectionWiringTests` and `AgentConnectionCopyTests` (whose
+`connected("claude")` pin became `connectedHeading` / `connectedNext`).
+Blind: never on a phone, never against Canvas.**
+
+**Before it, on `agent/connection-v11` (2026-11-10, early morning US Eastern):
 3754 tests / 362 suites, all green, `swift test --no-parallel` alone on
 Marco's Mac (88 s), +40 / +4 over the branch's 3714 / 358 of 2026-11-08:
 the snapshot's Canvas ids and the assignment link lines (+7 / +1), and the
@@ -3652,6 +3733,7 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
+| `claude/v11-phone-c7aaf2` | **2026-11-10, off `agent/connection-v11` `2503a3b`, local, not pushed, not merged.** The phone halves of v11 Phases 3 and 4: drafts polled onto the card, the review sheet, `CanvasSubmissionClient` with the attempt store, the "connected" confirmation and dashboard line (What the app does → "Drafts from an agent"). Compiled and tested; never on a phone, never against Canvas. The session that started it merges. |
 | `agent/connection-v11` | **2026-11-08, off `research/agent-connection-v11` (so off `v10` `4c136b2`), local, not pushed, not merged.** The build session's branch: the Canvas submit spike (`f5da516`), the Phase 1 backend (`7ca84a5`: `agent-auth`, `mcp`, `agent-snapshot`, migration `20261108090000_agent_connection.sql`, the `AgentStore` contract with PostgREST and memory implementations, `scripts/serve-agent.ts`), the docs. A Claude Code sign-in completed end to end against the dev tunnel the same day (research §8). Never push to or merge into `v10` without Marco's approval. |
 | `research/agent-connection-v11` | 2026-11-07/08, docs only, off `v10` `4c136b2`: the v11 agent-connection plan (`docs/AGENT_CONNECTION_PLAN_V11_2026-11-07.md`, revised to cloud-first and phone-submits on Marco's word), the research write-up (`docs/AGENT_CONNECTION_RESEARCH_2026-11-08.md`) and the brief for the build session (`docs/AGENT_CONNECTION_SESSION_PROMPT.md`). Supersedes `research/agent-canvas-via-smooth` (2026-10-30, also docs only). Nothing built. |
 | `v10` | **Current line (2026-11-03 onward).** `v9` (the no-banner sign-in, the onboarding polish, the composed-day research) plus `origin/v8` `7e004c5` (the tree's recency and follow-up work) plus `phase0/extract-facts-bench`. The merge's Swift run is recorded under Test baseline. |
@@ -3734,6 +3816,22 @@ none is a ship line.
   hold the sync in an `AppState` task that a view's cancellation cannot
   reach. Handed to the dashboard-investigation session. Until then nothing
   uploads from his phone and the assignment-PDF pass never runs there.
+- **The phone halves of Phases 3 and 4 are built, compiled and tested
+  (2026-11-10, `claude/v11-phone-c7aaf2`, merged here), never on a phone and
+  never against Canvas.** Phase 2 (the phone side) is on Marco's phone and
+  worked; the phone halves of Phases 3 and 4 (drafts on the card, the review
+  sheet, `CanvasSubmissionClient`, the attempt store, the "connected" state)
+  are **built, compiled and tested (2026-11-10), never on a phone and never
+  against Canvas** (What the app does, "Drafts from an agent"). Before any
+  real submit: a Canvas sandbox course and assignment (text, URL and file) for
+  the first run, never a graded assignment; open questions there: whether
+  Canvas accepts the JSON body with `X-CSRF-Token` from URLSession at all (the
+  spike never ran), whether `_csrf_token` is in the saved jar or only in the
+  preflight's `Set-Cookie`, what Penn's upload slot answers (inst-fs 201 with
+  an id, or a redirect), and whether `can_submit` is sent. Known limits: only
+  the newest draft per item shows; a draft for an item not on the dashboard
+  has no card and no notice; a definite failure (a 422, a refused upload) ends
+  the draft for good, and the student asks the agent for another.
 - **A finished item whose completion is Canvas's alone has no swipe back
   in prev** (since 2026-11-06, `AppState.completionIsLockedByCanvas`,
   `DashItem.canMarkActive`). Before that the swipe was offered, did nothing

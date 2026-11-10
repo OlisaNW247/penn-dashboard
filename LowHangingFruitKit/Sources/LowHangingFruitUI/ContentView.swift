@@ -45,6 +45,8 @@ struct ContentView: View {
 
     @State private var filter: DashFilter = .thisWeek
     @State private var editing: DashItem?
+    /// The agent draft whose review sheet is up.
+    @State private var reviewingDraft: AgentDraftReview?
     @State private var showAddSheet = false
     @State private var showAnnouncementFinds = false
     /// Frozen when the megaphone sheet opens, so rows can still say "new"
@@ -129,6 +131,17 @@ struct ContentView: View {
                     // produce it: on 2026-11-01 a banner built on those
                     // showed over a live session.
                     canvasSessionStatusLineView
+
+                    // "connected to claude": a connection that appeared while
+                    // the app was open (Marco, 2026-11-09: connecting was
+                    // "not that clear"). Same quiet line as the session's;
+                    // a tap puts it away.
+                    if let line = state.agentConnectionBanner {
+                        Button { state.agentConnectionBanner = nil } label: {
+                            agentConnectedLine(line)
+                        }
+                        .buttonStyle(.plain)
+                    }
 
                     // Gradescope's own line, for a student whose connection the
                     // server stopped recognising on two runs an hour apart
@@ -374,6 +387,10 @@ struct ContentView: View {
                     set: { vm.setDue(item, to: $0) }
                 )
             )
+        }
+        .sheet(item: $reviewingDraft, onDismiss: rescheduleNotifications) { review in
+            AgentDraftReviewSheet(draftID: review.draftID)
+                .environmentObject(state)
         }
         .sheet(isPresented: $showAddSheet, onDismiss: rescheduleNotifications) {
             AddAssignmentSheet()
@@ -622,6 +639,23 @@ struct ContentView: View {
         }
     }
 
+    private func agentConnectedLine(_ text: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 13, weight: .semibold))
+            Text(text)
+                .font(.lhfSans(11))
+            Spacer(minLength: 0)
+            Image(systemName: "xmark")
+                .font(.system(size: 10, weight: .semibold))
+                .accessibilityLabel("dismiss")
+        }
+        .foregroundStyle(Color.v2DateText)
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
+        .accessibilityElement(children: .combine)
+    }
+
     private func statusLineLabel(_ text: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "arrow.triangle.2.circlepath")
@@ -774,9 +808,23 @@ struct ContentView: View {
         // key, throttled to once per two minutes, never a banner.
         await state.deviceSyncPass()
         await state.agentSnapshotPass()
+        // Before the reload in `settleAfterFetch`, so a new draft's chip is on
+        // its card in this same pass.
+        await state.agentDraftsPass()
         await settleAfterFetch()
         await announceGradeChanges()
         await announceTurnedIn()
+        await announceAgentDrafts()
+    }
+
+    /// "Claude drafted …", once per draft (`AgentDraftNotices`). Posted with
+    /// the turned-in notices' rules: never asks for permission, silent when
+    /// reminders are off.
+    private func announceAgentDrafts() async {
+        let notices = state.pendingAgentDraftNotices
+        guard !notices.isEmpty else { return }
+        state.pendingAgentDraftNotices = []
+        await scheduler.postAgentDraftNotifications(notices)
     }
 
     /// The cold-launch pass: the cookie-authenticated fetches and the
@@ -1039,6 +1087,13 @@ struct ContentView: View {
                         onUndo: { item in
                             vm.undoFacts(item)
                             rescheduleNotifications()
+                        },
+                        onReviewDraft: { item in
+                            if let draft = item.agentDraft { reviewingDraft = AgentDraftReview(draftID: draft.draftID) }
+                        },
+                        onDraftOpened: { item in
+                            guard let draft = item.agentDraft else { return }
+                            Task { await state.markAgentDraftSeen(draft.draftID) }
                         }
                     )
                 }

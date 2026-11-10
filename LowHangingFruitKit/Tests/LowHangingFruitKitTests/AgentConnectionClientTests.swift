@@ -149,4 +149,38 @@ struct AgentConnectionClientTests {
         #expect(try await client.deleteSnapshot() == 2)
         #expect(lastBody["action"] as? String == "delete")
     }
+
+    @Test func listDraftsAndDecide() async throws {
+        var client = make(200, #"{"drafts":[{"id":"smd_1","assignment_id":"canvas:1","kind":"url","body":null,"url":"https://a.b","file_name":null,"mime_type":null,"file_bytes":null,"note":null,"client_name":"Claude","status":"proposed","created_at":"2026-11-10T12:00:00.123456+00:00"}]}"#)
+        let drafts = try await client.listDrafts()
+        #expect(lastPath.hasSuffix("/functions/v1/agent-snapshot"))
+        #expect(lastBody["action"] as? String == "drafts")
+        #expect(drafts.count == 1 && drafts[0].kind == .url && drafts[0].url == "https://a.b")
+
+        client = make(200, #"{"id":"smd_1","status":"submitted"}"#)
+        try await client.decide(draftID: "smd_1", .submitted(canvasSubmissionID: "987", attempt: 2))
+        #expect(lastBody["action"] as? String == "draft")
+        #expect(lastBody["id"] as? String == "smd_1")
+        #expect(lastBody["status"] as? String == "submitted")
+        #expect(lastBody["canvas_submission_id"] as? String == "987")
+        #expect(lastBody["attempt"] as? Int == 2)
+        #expect(lastBody["error_class"] == nil)
+
+        client = make(200, #"{"id":"smd_1","status":"failed"}"#)
+        try await client.decide(draftID: "smd_1", .failed(errorClass: String(repeating: "e", count: 80)))
+        #expect((lastBody["error_class"] as? String)?.count == 64)
+        #expect(lastBody["canvas_submission_id"] == nil && lastBody["attempt"] == nil)
+
+        client = make(200, #"{"id":"smd_1","status":"seen"}"#)
+        try await client.decide(draftID: "smd_1", .seen)
+        #expect(Set(lastBody.keys) == ["action", "id", "status"])
+        #expect(lastBody["status"] as? String == "seen")
+    }
+
+    @Test func decideConflictMaps() async {
+        let client = make(409, #"{"error":"conflict"}"#)
+        await #expect(throws: AgentConnectionError.alreadyDecided) {
+            try await client.decide(draftID: "smd_1", .declined)
+        }
+    }
 }
