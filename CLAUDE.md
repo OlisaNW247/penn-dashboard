@@ -1469,6 +1469,18 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
+**Current on `claude/v11-test-phone-e16828` (2026-11-11, off `v11` `ee653d9`):
+3910 tests / 376 suites, all green, `swift test --no-parallel` alone on
+Marco's Mac (99 s), +55 / +3 over `v11`'s 3855 / 373, nothing removed: the
+v11 phone test pass (`V11SubmitRulesTests` with `V11ProblemSet7Tests`,
+`V11HostileInputTests`, `V11PhoneStateTests`; the report is
+`docs/V11_TEST_PHONE_2026-11-11.md`). One existing scan,
+`AgentConnectionWiringTests` "the drafts pass keeps the snapshot pass's
+gates", now reads the `AgentPassRules.shouldStart` spelling. iOS Debug
+build green. The PDF-only cases ran on an iPhone 17e Simulator
+(`xcodebuild test -scheme LowHangingFruitKit-Package`, 37 / 3 green), the
+first time the paginator itself has been under test.**
+
 **Current on `agent/connection-v11` at the merge of 2026-11-10 (about 06:45
 UTC, 01:45 US Eastern): 3819 tests / 369 suites, all green, `swift test
 --no-parallel` alone on Marco's Mac (55 s). The tree is `agent/connection-v11`
