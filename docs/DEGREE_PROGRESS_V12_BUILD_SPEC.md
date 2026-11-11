@@ -182,8 +182,26 @@ the stepped what-if picker) is superseded by this section.
 
 **Rules that bind it**
 1. The token, the 24-character id, its proof, the first name, the pronoun,
-   `hist`, `reg`, `cart` and `plan` never cross from the WebView into Swift.
-   Every script returns an allowlisted JSON string and nothing else.
+   `cart` and `plan` never cross from the WebView into Swift. Every script
+   returns an allowlisted JSON string and nothing else. **Changed
+   2026-11-11:** `hist` and `reg` were on this list too. The owner asked for
+   a semester table, the audit carries no term for a course, and so one
+   script (`PathScripts.history`) now reads those two maps and sends the
+   course code under its term, nothing else from a row. Their format, read
+   that day with every letter and digit masked: both are objects keyed by
+   six-digit term, each value an array of strings joined with "|".
+   `hist` rows have five fields, `CODE|||NNNNN|<6 chars>` (the course code
+   first; a section number fourth; a proof string last), one row per
+   completed course, and no entry for the term in progress. `reg` rows have
+   seven, `NNNNN|CODE||X|credit|XX|<6 chars>` (section number, course code,
+   an empty field, one letter, the credit as "1", ".5" or "1.5", two
+   letters, a proof string), one row per *section*, so about nine rows for
+   five or six courses, and they cover finished terms as well as the
+   current one. What the one-letter and two-letter fields mean was not
+   read; if `reg` keeps a dropped course, the two-letter field is the
+   likely place it says so. `plan` (Penn's own planner, five rows here) is
+   `word|SUBJ|NNNN|term?|||timestamp|id||` and `cart` rows start with the
+   term; neither is read.
 2. The audit crosses the bridge already stripped to the fields
    `PathAuditDecoder` reads. `blockhtml`, `legendHtml`, `actionsMap`,
    `explanations` and `decisions` are dropped in the page.

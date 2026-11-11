@@ -156,14 +156,18 @@ audit.
   the courses that count toward each (code, title, credits, whether you are
   registered for it now) and the options still open. For a "what if", the
   same for a program you pick from Penn's public list of programs, run by
-  Penn's audit against your own record.
+  Penn's audit against your own record. Since 2026-11-11 also which
+  semester each of your courses belongs to (the course code under its term,
+  for semesters you finished and the ones you are registered in), so the
+  semester table can lay them out. Nothing else from those records is taken:
+  not the section, the credit, a status or a grade.
 - **What Penn's page sends to Penn:** what it sends when you use Path@Penn in a
   browser, which includes your registered, cart and planned courses so the
   audit can count them. That exchange is between Penn's page and Penn. Smooth
   adds nothing to it and sends none of it anywhere else.
 - **What never leaves Penn's page:** the sign-in token, Penn's id for you,
-  your name, your pronoun, your list of past courses as such, and the audit
-  as Penn draws it, which is the one place a grade could appear. Smooth takes
+  your name, your pronoun, your shopping cart and Penn's own planner, and
+  the audit as Penn draws it, which is the one place a grade could appear. Smooth takes
   out only the fields listed above, so your grades and GPA are never read.
   Nothing is saved in the Keychain for this.
 - **Where it stays:** on this phone, in a file in the app's own storage.

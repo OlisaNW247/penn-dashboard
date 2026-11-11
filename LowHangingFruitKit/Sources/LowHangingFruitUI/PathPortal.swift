@@ -319,6 +319,15 @@ final class PathPortal: NSObject, WKUIDelegate {
         return PathBridgeDecoder.programInfo(json)
     }
 
+    /// Course codes per term from the student's record; nil when the page did
+    /// not answer, which the caller treats as "keep what you had".
+    func history() async -> PathHistory? {
+        guard let json = await run(PathScripts.history, name: "history") else { return nil }
+        let found = PathBridgeDecoder.history(json)
+        if found == nil { log("history: no answer") }
+        return found
+    }
+
     func dictionaries() async -> PathDictionaries? {
         guard let json = await run(PathScripts.dictionaries, name: "dictionaries") else { return nil }
         return PathBridgeDecoder.dictionaries(json)

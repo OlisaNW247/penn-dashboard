@@ -111,14 +111,62 @@ struct PathBridgeTests {
     func scriptsStayInsideTheAllowlist() {
         let forbidden: [String] = [
             "blockhtml", "legendHtml", "actionsMap", "explanations", "decisions", "audit_xml",
-            "idProof", "pers.fn", "pers.id", "sam.auth.token ||", "hist", "cookie",
+            "idProof", "pers.fn", "pers.id", "sam.auth.token ||", "cookie",
         ]
         for script in PathScripts.all {
             for word in forbidden {
                 #expect(!script.contains(word), "a script contains \(word)")
             }
         }
-        #expect(PathScripts.all.count == 7)
+        // The record's term maps are read by exactly one script, the one
+        // written for them (2026-11-11, the semester table). Until then no
+        // script named them at all, and no other one may start to.
+        for script in PathScripts.all where script != PathScripts.history {
+            #expect(!script.contains("hist"), "a script other than history reads the term maps")
+            #expect(!script.contains("getProperty(\"reg\")"))
+        }
+        #expect(PathScripts.all.count == 8)
+    }
+
+    @Test("the history script sends course codes per term and nothing else from a row")
+    func historyScript() {
+        let script = PathScripts.history
+        #expect(script.contains("samRecordSource()"))
+        #expect(script.contains("getProperty(\"hist\"), 0"))
+        #expect(script.contains("getProperty(\"reg\"), 1"))
+        // One field of a row is ever indexed, and it must look like a course.
+        #expect(script.contains("split(\"|\")[index]"))
+        #expect(script.contains("isCourse.test(code)"))
+        #expect(script.contains("/^[A-Z]{2,5} [0-9]{3,4}[A-Z]?$/"))
+        // The cart and Penn's own planner are not this script's business.
+        #expect(!script.contains("cart"))
+        #expect(!script.contains("getProperty(\"plan"))
+        #expect(script.contains("page not ready"))
+    }
+
+    @Test("history decodes two term maps and drops what is not a term or a string")
+    func historyDecoder() {
+        let json = "{\"completed\":{\"202430\":[\"AAAA 1010\",\"BBB 2020\"],\"bad\":[\"AAAA 1010\"],\"202510\":[5,\"\"]},\"registered\":{\"202630\":[\"CCC 3030\"],\"2026300\":[\"CCC 3030\"]}}"
+        let found = PathBridgeDecoder.history(json)
+        #expect(found?.completed == ["202430": ["AAAA 1010", "BBB 2020"]])
+        #expect(found?.registered == ["202630": ["CCC 3030"]])
+        #expect(PathBridgeDecoder.history("{\"error\":\"page not ready\"}") == nil)
+        #expect(PathBridgeDecoder.history("not json") == nil)
+        #expect(PathBridgeDecoder.history("{}") == PathHistory())
+    }
+
+    @Test("a finished term comes from the completed record, an unfinished one from registration")
+    func historyTimeline() {
+        let both = PathHistory(
+            completed: ["202430": ["AAAA 1010"], "202510": ["BBB 2020"]],
+            registered: ["202430": ["AAAA 1010", "DROP 9999"], "202630": ["CCC 3030", "DDD 4040"]])
+        let map = both.timeline()
+        // The dropped course in the registration record of a finished term does not come back.
+        #expect(map["202430"] == ["AAAA 1010"])
+        #expect(map["202510"] == ["BBB 2020"])
+        #expect(map["202630"] == ["CCC 3030", "DDD 4040"])
+        #expect(map.count == 3)
+        #expect(PathHistory().timeline().isEmpty)
     }
 
     @Test("each script calls the page function it exists for")
@@ -140,7 +188,8 @@ struct PathBridgeTests {
         #expect(PathScripts.readiness.contains("!!(sam.auth && sam.auth.token)"))
         #expect(!PathScripts.readiness.contains("page not ready"))
         for script in [PathScripts.openSignIn, PathScripts.degrees, PathScripts.audit,
-                       PathScripts.programs, PathScripts.programInfo, PathScripts.dictionaries] {
+                       PathScripts.programs, PathScripts.programInfo, PathScripts.dictionaries,
+                       PathScripts.history] {
             #expect(script.contains("page not ready"))
         }
     }

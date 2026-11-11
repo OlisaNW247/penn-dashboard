@@ -895,16 +895,18 @@ Keep this current. It is the fastest way for a new session to know what exists.
     column, or onto a planned row to go before it
     (`DegreePlanMath.moving`); nothing else moves, because a taken or
     registered course is Penn's fact and not the student's sketch.
-    **The past and current columns are empty on a real phone so far.**
-    Penn's audit carries no term for a course (`AuditCourse.termCode` is
-    always nil from `PathAuditDecoder`, which is also why the plan tab's
-    "registered" rows never showed). The term comes from
-    `DegreeSnapshot.history` (term code -> course codes), which only the
-    sample data fills: reading it from the record's `hist` and `reg` waits
-    on seeing their string format, asked of Olisa as a masked console
-    snippet the same day, and on the privacy text changing with it
-    (`docs/PRIVACY.md` says the list of past courses never leaves Penn's
-    page).
+    **Where the past and current columns come from** (same day, after
+    Olisa's masked console read of the record): Penn's audit carries no term
+    for a course (`AuditCourse.termCode` is always nil from
+    `PathAuditDecoder`, which is also why the plan tab's "registered" rows
+    never showed), so `PathScripts.history` reads the record's two term maps
+    and sends course codes per term and nothing else; `PathHistory.timeline()`
+    takes a finished term from the completed record and a term that record
+    does not have yet (the one in progress, any ahead) from the registration
+    record; `refreshDegreeAudit` stores the result in
+    `DegreeSnapshot.history` and keeps the last one when the read fails.
+    `docs/PRIVACY.md` changed in the same commit: the course-per-semester
+    list is now read, and stays on the phone.
   - **How it reads.** `PathPortal` keeps one hidden `WKWebView` on
     `https://courses.upenn.edu/` for the app run, on the Canvas login data
     store so the PennKey session and Duo trust carry over. The page opens
@@ -3781,6 +3783,16 @@ none is a ship line.
   does. The ring read "53%" rather than "x of y cu" on both audits, so
   `PathAuditDecoder.creditTotals` did not find Penn's credit sentence in his
   DEGREE block; not looked at yet.
+  **The semester table (2026-11-11) has not been on a phone.** Unknowns it
+  will settle: whether the registration record still lists a course dropped
+  in the current term (then the current column shows a class he is not
+  taking; the fix is the row's two-letter field or a cross-check against the
+  audit, whichever the evidence supports), whether a cross-listed course
+  carries the same code in the record and in the audit (if not, its chip has
+  no credits), and whether drag works inside the sideways scroll on a real
+  touch screen. A planned semester that has since become the current one
+  keeps its planned courses in the file but the table no longer shows them.
+  Penn's own planner on his record holds five courses the app does not read.
   Not captured either: a record with a concentration or a minor (the `conc`
   / `minor` field names on a curriculum entry are inferred from the page's
   what-if rules), any program whose `prog_type` is not `major`, and a
