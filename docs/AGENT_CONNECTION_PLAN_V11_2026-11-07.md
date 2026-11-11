@@ -206,6 +206,13 @@ Detailed, with files and acceptance tests, in the session brief.
    lookup), also undeployed, and a scripted client
    (`backend/scripts/agent-e2e.mjs`) proved the live production path end
    to end.
+   **First draft on a real phone, 2026-11-11 02:06 UTC (evening of
+   2026-11-10 US Eastern):** a test text draft proposed from a Claude
+   session on Marco's account was polled by his iPhone, shown on the
+   Problem Set 7 card as "drafted by claude", and the server row moved to
+   `seen` when he opened the review sheet. The same evening the upload tools
+   went live after claude.ai refused to transcribe a 57,000-character
+   base64 PDF; the phone's "submit as pdf" choice is installed, untried.
 4. **Submit**: `CanvasSubmissionClient`, the attempt store, text and file
    submissions on a sandbox, then one low-stakes Penn assignment Marco
    picks. Done when the verify GET agrees and a repeat is refused.
