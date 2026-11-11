@@ -1281,6 +1281,11 @@ xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit -configura
 xcrun devicectl device install app --device <CoreDevice id from `xcrun devicectl list devices`> <path>/Smooth.app
 xcrun devicectl device process launch --device <CoreDevice id> com.lhf.lowhangingfruit
 
+# The three lines above as one step, finding both ids of the plugged-in phone
+# itself (2026-11-11; its phone-picking was tested on a made-up device list in
+# the cloud, the rest has not yet been run on a Mac):
+bash scripts/build-to-phone.sh
+
 # macOS build (the package; `swift test` also exercises this)
 cd LowHangingFruitKit && swift build
 
