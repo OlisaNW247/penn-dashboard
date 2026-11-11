@@ -503,6 +503,14 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   **Canvas sandbox assignment** (never a graded one) and submit it; then a
   URL and a file; then one low-stakes Penn assignment Marco picks (Phase 4's
   "done when the verify GET agrees and a repeat is refused").
+- **v11 extensions, ranked** (2026-11-11, documents only):
+  `docs/V11_EXTENSIONS_2026-11-11.md` evaluates fourteen candidates and
+  ranks five to do next: close the unverified submit paths (text, URL, a
+  manual repeat, `smooth://link`), rate caps on the MCP (tool calls and
+  draft creation have none today), a "work on this in Claude" card button,
+  a ChatGPT trial by Marco, and math rendering (Unicode guidance now, a
+  KaTeX spike later). Set aside with reasons: Gradescope drafts, pooled
+  agent notes, student Ed threads, a blocking course opt-out.
 - **Megaphone: the model sorts posts into todo and prev** (Marco,
   2026-11-07: "prev being either from way before or unapplicable, need
   [the model] to sort based on text"). What ships first is the rule half
