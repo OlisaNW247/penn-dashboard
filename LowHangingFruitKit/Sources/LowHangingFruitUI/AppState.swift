@@ -579,6 +579,15 @@ final class AppState: ObservableObject {
     /// "Claude drafted …" notices the last drafts pass found, drained by
     /// `ContentView` the way turned-in notices are.
     var pendingAgentDraftNotices: [(title: String, body: String)] = []
+    /// What Canvas takes for each Canvas assignment id, as the last
+    /// structured-sources run read it off the assignments list. Memory only;
+    /// the review sheet reads it before asking Canvas itself.
+    var canvasSubmissionRulesByAssignmentID: [String: CanvasSubmissionRules] = [:]
+    /// What Canvas takes for each open draft, read once per draft when its
+    /// review sheet first opens (`agentDraftAcceptance`). Memory only.
+    var agentDraftAcceptanceByDraftID: [String: CanvasAcceptance] = [:]
+    /// Tests stand in for `CanvasSubmissionClient.fetchRules` here.
+    var agentRulesFetchForTesting: (@Sendable (_ courseID: String, _ assignmentID: String) async -> CanvasSubmissionClient.RulesResult)?
     /// The dashboard's one-line "connected to claude", set when a connection
     /// appears that the phone had not seen. Memory only.
     @Published var agentConnectionBanner: String?
@@ -8569,6 +8578,24 @@ final class AppState: ObservableObject {
         if let completedAt {
             completionDates[survivorID] = completedAt
         }
+    }
+
+    /// The card the dashboard shows for a snapshot item id, resolved the way
+    /// the dashboard collapses twins: the card's own id, then a card whose
+    /// `linkedID` is this id, then a card this id is a hidden twin of
+    /// (`completionTwins`, from the last rebuild), then, for an id the
+    /// merged coursework holds, the card its own `linkedID` names. A draft
+    /// on the Gradescope half of a Canvas+Gradescope pair still finds the
+    /// one card the student sees.
+    func shownAssignment(forItemID itemID: String) -> Assignment? {
+        let shown = assignments + laterAssignments + assessments
+        if let a = shown.first(where: { $0.id == itemID }) { return a }
+        if let a = shown.first(where: { $0.linkedID == itemID }) { return a }
+        if let survivor = completionTwins.first(where: { $0.value.contains(itemID) })?.key,
+           let a = shown.first(where: { $0.id == survivor }) { return a }
+        if let source = mergedCoursework.first(where: { $0.id == itemID }), let linked = source.linkedID,
+           let a = shown.first(where: { $0.id == linked || $0.linkedID == linked }) { return a }
+        return nil
     }
 
     func rebuildDashboardItems(now: Date = Date()) {

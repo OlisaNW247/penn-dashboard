@@ -244,6 +244,42 @@ struct CanvasSubmissionClientTests {
         #expect(Stub.posts.isEmpty)
     }
 
+    @Test("extensions are normalised like the sheet's: a leading dot and upper case still match")
+    func extensionNormalised() async {
+        Stub.reset(Self.happy(preflight: #"{"submission_types":["online_upload"],"allowed_extensions":[".PDF"],"locked_for_user":false}"#))
+        let outcome = await submit(.file(name: "essay.pdf", mimeType: "application/pdf", data: Data("pdf".utf8)))
+        #expect(outcome == .submitted(submissionID: "987", attempt: 1, verified: true))
+        #expect(CanvasSubmissionClient.accepts(types: ["online_upload"], payload: .file(name: "a.Pdf", mimeType: "", data: Data()),
+                                               allowedExtensions: [" .pdf "]))
+    }
+
+    // MARK: The early read
+
+    @Test("fetchRules is the preflight GET alone: nothing posted, no attempt recorded")
+    func fetchRulesGETOnly() async throws {
+        Stub.reset(Self.happy(preflight: #"{"submission_types":["online_upload"],"allowed_extensions":[".PDF","docx"],"locked_for_user":false,"can_submit":true}"#))
+        let store = AgentSubmitAttemptStore(fileURL: FileManager.default.temporaryDirectory
+            .appendingPathComponent("FetchRules-\(UUID().uuidString)/a.json"))
+        let answer = await client().fetchRules(courseID: "12", assignmentID: "34")
+        #expect(answer == .rules(CanvasSubmissionRules(submissionTypes: ["online_upload"], allowedExtensions: ["pdf", "docx"], canSubmit: true)))
+        #expect(Stub.requests.count == 1)
+        #expect(Stub.requests.allSatisfy { $0.httpMethod == "GET" })
+        #expect(Stub.requests.first?.url?.path == "/api/v1/courses/12/assignments/34")
+        #expect(Stub.posts.isEmpty)
+        #expect(!Stub.events.contains("ATTEMPT"))
+        #expect(store.all().isEmpty)
+
+        Stub.reset { _ in .reply(401, [:], "{}") }
+        #expect(await client().fetchRules(courseID: "12", assignmentID: "34") == .refused(.sessionDead))
+        Stub.reset { _ in .fail(.notConnectedToInternet) }
+        #expect(await client().fetchRules(courseID: "12", assignmentID: "34") == .refused(.offline))
+        Stub.reset { _ in .reply(500, [:], "{}") }
+        #expect(await client().fetchRules(courseID: "12", assignmentID: "34") == .refused(.preflightFailed))
+        Stub.reset(Self.happy())
+        #expect(await client().fetchRules(courseID: "x", assignmentID: "34") == .refused(.missingIDs))
+        #expect(Stub.requests.isEmpty)
+    }
+
     // MARK: Refusals before anything is posted
 
     @Test("quizzes, external tools, media and none are refused up front", arguments: [

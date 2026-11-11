@@ -5,6 +5,8 @@ import PDFKit
 struct DraftPDFView {
     let data: Data
 
+    static func pageCount(_ data: Data) -> Int { PDFDocument(data: data)?.pageCount ?? 0 }
+
     private func makeDocumentView() -> PDFView {
         let view = PDFView()
         view.autoScales = true

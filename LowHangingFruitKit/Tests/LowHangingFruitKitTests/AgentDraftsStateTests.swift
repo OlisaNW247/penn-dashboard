@@ -115,5 +115,117 @@ struct AgentDraftsStateTests {
         #expect(item.caveatText == nil)
         item.agentDraft = AgentDraftDisplay(draftID: "d", agentName: "claude", preview: nil, checkCanvas: false, isUnseen: true)
         #expect(item.caveatText == "drafted by claude")
+        #expect(item.agentChipText == "drafted by claude" && item.factCaveatText == nil)
+    }
+
+    @Test("prev: a draft the student sent says submitted by you, drafted by its agent")
+    func submittedInPrev() async throws {
+        try await withCleanKeys {
+            let state = try makeState()
+            #expect(state.agentSubmittedNamesByItemID().isEmpty)
+            try state.agentSubmitAttempts.begin(draftID: "smd_1", assignmentID: Self.item.id, agentName: "Claude")
+            #expect(state.agentSubmittedNamesByItemID().isEmpty, "no outcome yet")
+            state.agentSubmitAttempts.finish(draftID: "smd_1", outcome: .submitted, canvasSubmissionID: "9")
+            try state.agentSubmitAttempts.begin(draftID: "smd_2", assignmentID: "other")
+            state.agentSubmitAttempts.finish(draftID: "smd_2", outcome: .failed)
+            #expect(state.agentSubmittedNamesByItemID() == [Self.item.id: "claude"])
+
+            var done = DashItem(assignment: Self.item, dueOverride: nil, isCompleted: true, completedAt: nil,
+                                agentSubmittedBy: "claude")
+            #expect(done.caveatText == "submitted by you \u{00B7} drafted by claude")
+            done.isCompleted = false
+            #expect(done.caveatText == nil, "only on a completed card")
+            state.agentSubmitAttempts.removeAll()
+        }
+    }
+
+    @Test("an item the phone can never send is not online, without asking canvas")
+    func acceptanceWithoutNetwork() async throws {
+        try await withCleanKeys {
+            let state = try makeState()
+            let draft = AgentDraft(id: "smd_9", assignmentID: "x", kind: .text, body: "a")
+            #expect(await state.agentDraftAcceptance(for: draft, item: nil) == .known(.notOnline))
+            let quiz = AgentSnapshot.WorkItem(id: "x", course: "C", title: "Q", kind: .quiz, dueAt: nil, done: false,
+                                              noSubmission: false, url: nil, source: "canvas",
+                                              canvasAssignmentID: "34", canvasCourseID: "12")
+            #expect(await state.agentDraftAcceptance(for: draft, item: quiz) == .known(.notOnline))
+
+            // What the structured sources read off the assignments list is
+            // used first when it lets the student send, and cached per draft:
+            // no GET.
+            let calls = Calls()
+            state.agentRulesFetchForTesting = { _, _ in calls.count += 1; return .refused(.offline) }
+            var ps = quiz; ps.kind = .assignment
+            state.canvasSubmissionRulesByAssignmentID["34"] = CanvasSubmissionRules(submissionTypes: ["online_upload"])
+            let fileOnly = CanvasAcceptance.online(text: false, url: false, file: true, extensions: [])
+            #expect(await state.agentDraftAcceptance(for: draft, item: ps) == .known(fileOnly))
+            state.canvasSubmissionRulesByAssignmentID = [:]
+            #expect(await state.agentDraftAcceptance(for: draft, item: ps) == .known(fileOnly))
+            #expect(calls.count == 0)
+            state.clearAgentDraftsLocally()
+            #expect(state.agentDraftAcceptanceByDraftID.isEmpty)
+        }
+    }
+
+    final class Calls: @unchecked Sendable { var count = 0 }
+
+    @Test("a stale locked list is confirmed live before it blocks: a live unlock opens the sheet")
+    func staleLockedList() async throws {
+        try await withCleanKeys {
+            let state = try makeState()
+            let draft = AgentDraft(id: "smd_s", assignmentID: "x", kind: .text, body: "a")
+            let item = AgentSnapshot.WorkItem(id: "x", course: "C", title: "PS", kind: .assignment, dueAt: nil, done: false,
+                                              noSubmission: false, url: nil, source: "canvas",
+                                              canvasAssignmentID: "34", canvasCourseID: "12")
+            state.canvasSubmissionRulesByAssignmentID["34"] = CanvasSubmissionRules(submissionTypes: ["online_upload"], lockedForUser: true)
+            let calls = Calls()
+            state.agentRulesFetchForTesting = { course, assignment in
+                calls.count += 1
+                #expect(course == "12" && assignment == "34")
+                return .rules(CanvasSubmissionRules(submissionTypes: ["online_upload"], canSubmit: true))
+            }
+            let open = CanvasAcceptance.online(text: false, url: false, file: true, extensions: [])
+            #expect(await state.agentDraftAcceptance(for: draft, item: item) == .known(open))
+            #expect(calls.count == 1)
+            // The confirmed answer is cached, for the draft and for the list.
+            #expect(await state.agentDraftAcceptance(for: draft, item: item) == .known(open))
+            #expect(calls.count == 1)
+            #expect(state.canvasSubmissionRulesByAssignmentID["34"]?.lockedForUser == false)
+
+            // A stale "nothing online" that the live read cannot confirm does
+            // not block: the sheet falls back to the draft's own kind.
+            let other = AgentDraft(id: "smd_t", assignmentID: "x", kind: .text, body: "a")
+            state.canvasSubmissionRulesByAssignmentID["34"] = CanvasSubmissionRules(submissionTypes: ["on_paper"])
+            state.agentRulesFetchForTesting = { _, _ in calls.count += 1; return .refused(.offline) }
+            #expect(await state.agentDraftAcceptance(for: other, item: item) == .refused(.offline))
+            #expect(calls.count == 2)
+
+            // A live lock does block, and is cached.
+            let third = AgentDraft(id: "smd_u", assignmentID: "x", kind: .text, body: "a")
+            state.agentRulesFetchForTesting = { _, _ in calls.count += 1; return .rules(.init(submissionTypes: ["online_upload"], lockedForUser: true)) }
+            #expect(await state.agentDraftAcceptance(for: third, item: item) == .known(.locked))
+            #expect(state.agentDraftAcceptanceByDraftID["smd_u"] == .locked)
+            // forceLive asks again even with a cached answer.
+            state.agentRulesFetchForTesting = { _, _ in calls.count += 1; return .rules(.init(submissionTypes: ["online_text_entry"])) }
+            #expect(await state.agentDraftAcceptance(for: third, item: item, forceLive: true)
+                    == .known(.online(text: true, url: false, file: false, extensions: [])))
+            state.agentRulesFetchForTesting = nil
+        }
+    }
+
+    @Test("a draft on the linked half of a pair completes the card the student sees")
+    func linkedItemCompletes() async throws {
+        try await withCleanKeys {
+            let state = try makeState()
+            let card = Assignment(source: .canvas, sourceID: "event-assignment-77", kind: .assignment,
+                                  course: "PHYS 0151", title: "Problem Set 8", dueAt: nil, url: nil,
+                                  linkedID: "gradescope:ps8")
+            state.assignments = [card]
+            #expect(state.shownAssignment(forItemID: card.id)?.id == card.id)
+            #expect(state.shownAssignment(forItemID: "gradescope:ps8")?.id == card.id)
+            #expect(state.shownAssignment(forItemID: "nothing") == nil)
+            state.completeAfterAgentSubmit(itemID: "gradescope:ps8")
+            #expect(state.isCompleted(card))
+        }
     }
 }

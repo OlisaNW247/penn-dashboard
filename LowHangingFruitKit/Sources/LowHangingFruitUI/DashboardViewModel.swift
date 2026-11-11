@@ -46,6 +46,10 @@ struct DashItem: Identifiable, Equatable {
     /// Snapshotted at reload like `fact`. Nil for sample data and every card
     /// with no draft.
     var agentDraft: AgentDraftDisplay? = nil
+    /// The agent whose draft the student sent from the phone, on a completed
+    /// card (`AppState.agentSubmittedNamesByItemID`): prev says "submitted by
+    /// you · drafted by claude". Nil everywhere else.
+    var agentSubmittedBy: String? = nil
 
     /// A fact cancelled it: off todo and reminders, still listed in all.
     var isFactCancelled: Bool { fact?.cancelled == true }
@@ -137,9 +141,24 @@ struct DashItem: Identifiable, Equatable {
     /// found by nobody. It is a word on the same line, so the card stays one
     /// height.
     var caveatText: String? {
-        var parts: [String] = fact?.caveatWords ?? []
-        if let draft = agentDraft { parts.append(AgentConnectionCopy.draftedBy(draft.agentName)) }
+        let parts = [factCaveatText, agentChipText].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " \u{00B7} ")
+    }
+
+    /// The fact words alone ("cancelled · moved"), drawn in the card's
+    /// secondary colour.
+    var factCaveatText: String? {
+        let words = fact?.caveatWords ?? []
+        return words.isEmpty ? nil : words.joined(separator: " \u{00B7} ")
+    }
+
+    /// The agent's chip, drawn in grape, the agent's colour (2026-11-11):
+    /// "drafted by claude" on an open draft, "submitted by you · drafted by
+    /// claude" in prev once the student sent it.
+    var agentChipText: String? {
+        if let draft = agentDraft { return AgentConnectionCopy.draftedBy(draft.agentName) }
+        if isCompleted, let name = agentSubmittedBy { return AgentConnectionCopy.submittedByYou(name) }
+        return nil
     }
 
     /// Where a task came from, for the opened card only. A task found in an
@@ -318,6 +337,7 @@ final class DashboardViewModel: ObservableObject {
         // pulling from the raw feeds put the Canvas copy and the Gradescope copy
         // in Done as two separate cards — one tap, two entries.
         let pool = state.mergedCoursework + state.manualAssignments.map { $0.asAssignment() }
+        let agentSubmitted = state.agentSubmittedNamesByItemID()
         var seen = Set(active.map { $0.id })
         // Respect the class picker here too, so a hidden course's completed work
         // doesn't linger on the Done tab after the user turned the course off.
@@ -329,7 +349,8 @@ final class DashboardViewModel: ObservableObject {
                                   completedAt: state.completedAt(a) ?? priorByID[a.id]?.completedAt,
                                   requiresNoSubmission: state.requiresNoSubmission(a),
                                   submitsOnPaper: state.submitsOnPaper(a),
-                                  canMarkActive: !state.completionIsLockedByCanvas(a)))
+                                  canMarkActive: !state.completionIsLockedByCanvas(a),
+                                  agentSubmittedBy: agentSubmitted[a.id]))
         }
 
         items = built

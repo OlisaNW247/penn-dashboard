@@ -1192,25 +1192,80 @@ Keep this current. It is the fastest way for a new session to know what exists.
   before the first poll). A draft matches a card by equality: its
   `assignment_id` is the snapshot item id, which is `Assignment.id`.
   - **The card.** "drafted by claude" in the collapsed card's caveat line
-    beside cancelled / moved / changed (`DashItem.caveatText`,
-    `DashItem.agentDraft`); the opened card shows up to three lines of the
-    body, the link, or the file's name and size, and one button, "review
-    and submit" ("check canvas" once a submission went out with no
-    answer). The first open marks the draft `seen`. Only the newest open
-    draft per item shows.
+    beside cancelled / moved / changed, the chip in grape (`smoothGrapeInk`,
+    the agent's and ask's colour; the exam card's secondary colour on its
+    inverted ground) (`DashItem.caveatText`, `factCaveatText`,
+    `agentChipText`, `DashItem.agentDraft`); the opened card shows two lines
+    of the body, the link, or the file's name and size, and one button drawn
+    like "edit date" (a glyph, then the words): "review and submit" ("check
+    canvas" once a submission went out with no answer). A draft on an item
+    that cannot be submitted online still shows, chip and all; the sheet
+    says why. The first open marks the draft `seen`. Only the newest open
+    draft per item shows. Once the phone sends it and Canvas takes it, the
+    card goes to prev at once (`completeAfterAgentSubmit`: the shown card is
+    found through its own id, a `linkedID` or a hidden twin by
+    `shownAssignment(forItemID:)`, then `markCompleted`, as a swipe would) and reads
+    "submitted by you · drafted by claude" there
+    (`AppState.agentSubmittedNamesByItemID`, from the attempt records, which
+    now keep the agent's name; `DashItem.agentSubmittedBy`).
   - **The notice.** One local notification per new draft, "Claude drafted
     Problem Set 7" (`AgentDraftNotices`, remembered in
     `agentDraftsNotifiedV1`, bounded at 200), only for a draft whose card
     is on the dashboard, posted with the turned-in notices' rules.
-  - **The review sheet** (`AgentDraftReviewSheet`): the assignment, the
-    agent's note, the whole text (selectable) or the link or the file
-    (name, size, a QuickLook preview fetched through the 120-second signed
-    URL, refetching the list once if it has expired; the copy is deleted
-    when the sheet closes), the line "this goes in under your name; read
-    it", then **submit** (behind "submit to canvas?") and **decline**. A
-    quiz, a discussion, an event, "nothing to submit", a Gradescope item or
-    an item the snapshot holds no Canvas ids for offers "submit this one in
-    canvas" and the Canvas link instead of submit.
+  - **The review sheet** (`AgentDraftReviewSheet`, redesigned 2026-11-11).
+    Why: on Marco's phone a plain-text draft on PHYS 0151 "Problem Set 7"
+    (Canvas `submission_types` = `online_upload` only) opened, Submit ran the
+    preflight, the preflight refused the text with `.unsupportedType`, and
+    the sheet printed "submit this one in canvas", which read as "review and
+    submit didn't work". Now the sheet **knows what Canvas takes before the
+    student decides**: when it opens, once per draft (memory,
+    `AppState.agentDraftAcceptanceByDraftID`), `agentDraftAcceptance` answers
+    "not online" without asking anyone for an item the phone can never send
+    (no Canvas ids, a quiz, Gradescope, nothing to submit), else uses what
+    the last structured-sources run read off the assignments list
+    (`CanvasOverrideAssignment.submissionRules`: `submission_types`,
+    `allowed_extensions`, `locked_for_user`, kept in memory in
+    `canvasSubmissionRulesByAssignmentID`) **only when it lets the student
+    send**: a list answer that would block (locked, nothing online) can be
+    hours old, so it is confirmed with one live GET and only the live answer
+    blocks (cached once confirmed; a GET that cannot be had blocks nothing
+    and the submit's preflight decides), else runs the submit's own
+    preflight GET early (`CanvasSubmissionClient.fetchRules`; the same request
+    the submit makes first, so no new network call and `docs/PRIVACY.md` is
+    unchanged). `CanvasAcceptance.derive` turns the four fields into text /
+    link / file (with extensions) / nothing online / locked;
+    `DraftSubmitPlan.make` turns (draft kind × that) into the routes on
+    offer, the default, or a block. Top to bottom: the class code in its
+    accent ink, the title (Familjen 24), "drafted by claude" in grape, the
+    agent's note behind a grape rule; the draft full width (the text in
+    Inter 16, selectable; or the rendered pdf pages inline in a PDFKit view
+    with "<title>.pdf · n pages"; a link as a ruled 56pt row that opens it;
+    a file as a row with name, size and "preview", QuickLook); one line,
+    "canvas takes a pdf or docx here" / "canvas takes text here" / "this one
+    can't be submitted online" / "canvas has this one locked" (and, under
+    it, a refusal for this draft: "canvas doesn't take .zip here · ask for a
+    pdf file", "canvas doesn't take a link here"); the `SmoothSegmentPicker`
+    "send as text" / "send as pdf" only when both go; then, pinned at the
+    bottom on paper, "this goes in under your name; read it", a filled grape
+    48pt squircle "submit to canvas" (confirmation names the kind: "send
+    problem set 7 as a pdf?") and a plain "decline". Blocked, "open in
+    canvas" (a text link to the Canvas app) takes the submit's place.
+    Choice rules: a text draft on a file-only assignment goes as a pdf
+    (**any** text draft, plain or markdown: `DraftDocumentRenderer`
+    renders plain text too, paragraphs on blank lines, single breaks kept,
+    nothing read as markup); on a text-taking assignment "send as text" is
+    the default and the pdf optional, except that a markdown draft where
+    Canvas takes both text and files defaults to "send as pdf"; if the early read failed the draft's
+    own kind is offered (text beside pdf, markdown leaning pdf) and the
+    submit's preflight decides. Results in plain words with the next step:
+    "no connection · try again", "sign in to canvas in profile, then try
+    again", "canvas has this one locked" + open in canvas, "it may have gone
+    in · check canvas" + open in canvas, "couldn't reach canvas · try
+    again"; submitted is a full-sheet state (teal tick, "submitted to
+    canvas", "in at 9:41 pm" when verified, else "check canvas to be sure",
+    done). Every string in `AgentConnectionCopy`, pinned by
+    `AgentConnectionCopyTests`; the table and choices by
+    `DraftSubmitPlanTests`.
   - **Submitting** (`CanvasSubmissionClient`, promoted from the spike, and
     `AgentDraftSubmitter`): a preflight GET of the assignment decides
     everything that can refuse (submission types, `allowed_extensions`,
@@ -1231,24 +1286,21 @@ Keep this current. It is the fastest way for a new session to know what exists.
     `error_class`). Disconnecting Canvas and turning the opt-in off clear
     the drafts, the cache, the notice memory, the known-connection ids and
     the attempt records.
-  - **Markdown as a PDF** (2026-11-10; compiled and tested, never on a
-    phone). claude.ai will not emit a 144,000-character base64 PDF, so a
-    document travels as source text and is rendered on the phone. A `text`
-    draft whose body looks like markdown (a heading, list, code fence,
-    emphasis, an explicit first line `<!-- format: markdown -->`, or a
-    `format` field if the server ever sends one) gets a "submit as text" /
-    "submit as pdf" choice in the review sheet, default pdf; any other
-    draft defaults to text. `DraftDocumentRenderer` (Kit, `Agent/`):
-    `AttributedString(markdown:)` to blocks, Inter 11.5 pt body, larger
-    Inter-Bold headings, Space Mono code, US Letter with 1-inch margins
-    through `UIGraphicsPDFRenderer` + `CTFramesetter` behind
-    `#if canImport(UIKit)` (macOS answers nil). `$...$` math stays text.
-    The sheet shows the PDF in a PDFKit view; submit sends it as
-    `<title>.pdf` (`application/pdf`) through the ordinary file path, same
-    attempt record, same never-twice rule. A render failure falls back to
-    text with "couldn't make a pdf". If the assignment does not take file
-    uploads the preflight refuses and the draft stays open for the text
-    choice.
+  - **Text as a PDF** (2026-11-10 for markdown; 2026-11-11 for every text
+    draft; compiled and tested, never on a phone). claude.ai will not emit a
+    144,000-character base64 PDF, so a document travels as source text and
+    is rendered on the phone. `DraftDocumentRenderer` (Kit, `Agent/`):
+    `pdfData(forDraftBody:format:)` picks markdown (a heading, list, code
+    fence, emphasis, an explicit first line `<!-- format: markdown -->`, or
+    a `format` field) or plain text (`plainParagraphs`,
+    `attributedString(fromPlainText:)`). Markdown: `AttributedString(markdown:)`
+    to blocks, Inter 11.5 pt body, larger Inter-Bold headings, Space Mono
+    code. Both: US Letter with 1-inch margins through
+    `UIGraphicsPDFRenderer` + `CTFramesetter` behind `#if canImport(UIKit)`
+    (macOS answers nil, and the plan then offers no pdf). `$...$` math stays
+    text. Submit sends it as `<title>.pdf` (`application/pdf`) through the
+    ordinary file path, same attempt record, same never-twice rule. A render
+    failure drops the pdf route with "couldn't make a pdf".
   - **Connected.** After the right number is picked the approve sheet
     becomes a confirmation ("connected to claude", "go back to claude to
     finish", done) instead of closing itself a second later; and a

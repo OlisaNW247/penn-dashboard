@@ -117,6 +117,21 @@ struct AgentSubmitAttemptStoreTests {
         #expect(s.record(for: "nobody") == nil)
     }
 
+    @Test("a record saved before agentName existed still decodes, and still blocks a second attempt")
+    func legacyRecord() throws {
+        let (s, url) = store()
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let legacy = #"{"d":{"assignmentID":"a","draftID":"d","outcome":"submitted","reported":true,"startedAt":100,"canvasSubmissionID":"9"}}"#
+        try Data(legacy.utf8).write(to: url)
+        let record = try #require(s.record(for: "d"))
+        #expect(record.agentName == nil && record.outcome == .submitted && record.canvasSubmissionID == "9")
+        #expect(throws: AgentSubmitAttemptStore.StoreError.alreadyAttempted) {
+            try s.begin(draftID: "d", assignmentID: "a", agentName: "Claude")
+        }
+        try s.begin(draftID: "e", assignmentID: "b", agentName: "Claude")
+        #expect(AgentSubmitAttemptStore(fileURL: url).record(for: "e")?.agentName == "Claude")
+    }
+
     @Test("an unreadable file refuses every new attempt")
     func corrupt() throws {
         let (s, url) = store()

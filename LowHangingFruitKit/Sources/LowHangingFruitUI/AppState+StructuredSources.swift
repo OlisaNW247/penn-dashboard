@@ -196,6 +196,14 @@ extension AppState {
             return summary
         }
 
+        // What each assignment takes, for the agent review sheet. Merged, so
+        // a course this run could not read keeps what an earlier run saw.
+        for course in run.courses {
+            for assignment in course.assignments {
+                if let rules = assignment.submissionRules { canvasSubmissionRulesByAssignmentID[assignment.id] = rules }
+            }
+        }
+
         let signals = CanvasStructuredSourcesReconciler.signals(from: run, courses: courses, baseURL: canvasBaseURL)
         summary.missing = signals.missing.count
 

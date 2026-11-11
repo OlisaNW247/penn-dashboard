@@ -22,8 +22,8 @@ import Foundation
 /// when `begin` returns. It lives under Application Support, not the App
 /// Group: nothing outside the app process reads it.
 ///
-/// It holds draft ids, assignment ids, dates, the outcome word and Canvas's
-/// submission id: no content, no cookie, no token.
+/// It holds draft ids, assignment ids, dates, the outcome word, Canvas's
+/// submission id and the agent's name: no content, no cookie, no token.
 public final class AgentSubmitAttemptStore: @unchecked Sendable {
     public enum Outcome: String, Codable, Sendable {
         /// Canvas created the submission.
@@ -46,6 +46,10 @@ public final class AgentSubmitAttemptStore: @unchecked Sendable {
         /// draft is already decided). Until then the drafts pass re-sends the
         /// status report: a report retry, never a submission retry.
         public var reported: Bool
+        /// The agent that drafted it ("Claude"), for prev's "submitted by
+        /// you · drafted by claude". Optional: records written before
+        /// 2026-11-11 have none and read as nil.
+        public var agentName: String?
     }
 
     public enum StoreError: Error, Equatable {
@@ -87,7 +91,7 @@ public final class AgentSubmitAttemptStore: @unchecked Sendable {
 
     /// Writes the record, on disk, or throws. Throws `alreadyAttempted` when
     /// the draft has one, which is the never-twice rule's teeth.
-    public func begin(draftID: String, assignmentID: String, now: Date = Date()) throws {
+    public func begin(draftID: String, assignmentID: String, agentName: String? = nil, now: Date = Date()) throws {
         lock.lock(); defer { lock.unlock() }
         // An unreadable file is not an empty one: it may hold this draft's
         // record, so nothing is submitted until it reads again.
@@ -95,7 +99,7 @@ public final class AgentSubmitAttemptStore: @unchecked Sendable {
         guard records[draftID] == nil else { throw StoreError.alreadyAttempted }
         records[draftID] = Record(draftID: draftID, assignmentID: assignmentID, startedAt: now,
                                   outcome: nil, canvasSubmissionID: nil, attempt: nil,
-                                  errorClass: nil, reported: false)
+                                  errorClass: nil, reported: false, agentName: agentName)
         guard write(records) else { throw StoreError.writeFailed }
     }
 

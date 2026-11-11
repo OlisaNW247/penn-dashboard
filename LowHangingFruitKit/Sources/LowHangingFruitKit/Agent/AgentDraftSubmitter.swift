@@ -108,7 +108,7 @@ public enum AgentDraftSubmitter {
         guard let payload = built else { return .refused(.unsupportedType) }
 
         let outcome = await submit(courseID, assignmentID, payload) {
-            try store.begin(draftID: draft.id, assignmentID: draft.assignmentID, now: now)
+            try store.begin(draftID: draft.id, assignmentID: draft.assignmentID, agentName: draft.agentName, now: now)
         }
 
         switch outcome {

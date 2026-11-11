@@ -95,14 +95,14 @@ struct DraftDocumentRendererTests {
 struct DraftChoiceSubmitTests {
     final class Seen: @unchecked Sendable { var payload: CanvasSubmissionClient.Payload?; var loads = 0 }
 
-    func send(_ pdf: RenderedDraftPDF?) async -> (AgentSubmitResult, Seen, AgentSubmitAttemptStore) {
+    func send(_ pdf: RenderedDraftPDF?, body: String = "# Hi\n\n- a") async -> (AgentSubmitResult, Seen, AgentSubmitAttemptStore) {
         let seen = Seen()
         let store = AgentSubmitAttemptStore(fileURL: FileManager.default.temporaryDirectory
             .appendingPathComponent("ChoiceTests-\(UUID().uuidString)/a.json"))
         let item = AgentSnapshot.WorkItem(
             id: "canvas:x", course: "C", title: "T", kind: .assignment, dueAt: nil, done: false,
             noSubmission: false, url: nil, source: "canvas", canvasAssignmentID: "34", canvasCourseID: "12")
-        let draft = AgentDraft(id: "smd_1", assignmentID: "canvas:x", kind: .text, body: "# Hi\n\n- a")
+        let draft = AgentDraft(id: "smd_1", assignmentID: "canvas:x", kind: .text, body: body, clientName: "Claude")
         let result = await AgentDraftSubmitter.run(
             draft: draft, item: item, store: store,
             loadFile: { seen.loads += 1; return nil },
@@ -130,6 +130,16 @@ struct DraftChoiceSubmitTests {
         #expect(seen.payload == .file(name: "T.pdf", mimeType: "application/pdf", data: pdf.data))
         #expect(seen.loads == 0)
         #expect(store.record(for: "smd_1")?.outcome == .submitted)
+    }
+
+    @Test("a plain-text draft the student chose to send as a pdf goes as online_upload, once, and names the agent")
+    func plainTextAsPDF() async {
+        let pdf = RenderedDraftPDF(name: "Problem Set 7.pdf", data: Data("%PDF-1.4 plain".utf8))
+        let (result, seen, store) = await send(pdf, body: "Q1: 2 * 3 = 6\n\nQ2: the normal force.")
+        #expect(result == .submitted(verified: true))
+        #expect(seen.payload?.submissionType == "online_upload")
+        #expect(seen.payload == .file(name: "Problem Set 7.pdf", mimeType: "application/pdf", data: pdf.data))
+        #expect(store.record(for: "smd_1")?.agentName == "Claude")
     }
 
     @Test("an empty pdf is refused, nothing sent")

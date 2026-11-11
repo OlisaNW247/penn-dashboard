@@ -173,6 +173,28 @@ public enum DraftDocumentRenderer {
         return .paragraph
     }
 
+    // MARK: Plain text
+
+    /// A plain-text draft as its paragraphs: split on blank lines, each
+    /// paragraph keeping its own single line breaks, trailing spaces and
+    /// empty paragraphs dropped. Nothing in it is read as markup, so a
+    /// "2 * 3" or a "snake_case" survives as written.
+    public static func plainParagraphs(_ text: String) -> [String] {
+        let normalized = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+        var paragraphs: [String] = []
+        var current: [String] = []
+        for line in normalized.components(separatedBy: "\n") {
+            let trimmed = line.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
+            if trimmed.trimmingCharacters(in: .whitespaces).isEmpty {
+                if !current.isEmpty { paragraphs.append(current.joined(separator: "\n")); current = [] }
+            } else {
+                current.append(trimmed)
+            }
+        }
+        if !current.isEmpty { paragraphs.append(current.joined(separator: "\n")) }
+        return paragraphs
+    }
+
     // MARK: Attributed string
 
 #if canImport(UIKit)
@@ -259,6 +281,20 @@ public enum DraftDocumentRenderer {
         }
         return out
     }
+
+    /// A plain-text draft in the body face: one paragraph per blank-line
+    /// block, single line breaks kept as line breaks inside it (U+2028, so
+    /// the paragraph spacing falls only between paragraphs).
+    public static func attributedString(fromPlainText text: String) -> NSAttributedString {
+        let style = NSMutableParagraphStyle()
+        style.lineSpacing = 2
+        style.paragraphSpacing = 10
+        let attrs: [NSAttributedString.Key: Any] = [.font: font("Inter-Regular", size: bodySize), .paragraphStyle: style]
+        let joined = plainParagraphs(text)
+            .map { $0.replacingOccurrences(of: "\n", with: "\u{2028}") }
+            .joined(separator: "\n")
+        return NSAttributedString(string: joined, attributes: attrs)
+    }
 #endif
 
     // MARK: PDF
@@ -279,7 +315,30 @@ public enum DraftDocumentRenderer {
     /// cannot render or nothing printable is left.
     public static func pdfData(from markdown: String) -> Data? {
 #if canImport(UIKit)
-        let text = attributedString(from: markdown)
+        return paginate(attributedString(from: markdown))
+#else
+        return nil
+#endif
+    }
+
+    /// Plain text as pages, paragraphs preserved, nothing read as markup.
+    public static func pdfData(fromPlainText text: String) -> Data? {
+#if canImport(UIKit)
+        return paginate(attributedString(fromPlainText: text))
+#else
+        return nil
+#endif
+    }
+
+    /// Any text draft: markdown when it reads as markdown (or says so), plain
+    /// text otherwise. The review sheet offers "send as pdf" for every text
+    /// draft on an assignment that takes files, not only markdown ones.
+    public static func pdfData(forDraftBody body: String, format: String? = nil) -> Data? {
+        isMarkdown(body: body, format: format) ? pdfData(from: body) : pdfData(fromPlainText: body)
+    }
+
+#if canImport(UIKit)
+    static func paginate(_ text: NSAttributedString) -> Data? {
         guard text.length > 0 else { return nil }
         let framesetter = CTFramesetterCreateWithAttributedString(text)
         let page = CGRect(origin: .zero, size: pageSize)
@@ -305,8 +364,6 @@ public enum DraftDocumentRenderer {
             }
         }
         return failed || data.isEmpty ? nil : data
-#else
-        return nil
-#endif
     }
+#endif
 }

@@ -169,6 +169,35 @@ public struct CanvasSubmissionClient: Sendable {
         return .submitted(submissionID: submissionID, attempt: attempt, verified: verified)
     }
 
+    // MARK: What Canvas takes, early
+
+    public enum RulesResult: Equatable, Sendable {
+        case rules(CanvasSubmissionRules)
+        case refused(Refusal)
+    }
+
+    /// The preflight GET on its own, for the review sheet to read what the
+    /// assignment takes before the student decides. **The same request
+    /// `submit` makes first** (same URL, same cookies, nothing written), so
+    /// it adds no new network call to `docs/PRIVACY.md`: it only moves the
+    /// read earlier. `submit` still runs its own preflight; this one never
+    /// stands in for it.
+    public func fetchRules(courseID: String, assignmentID: String) async -> RulesResult {
+        guard Self.isCanvasID(courseID), Self.isCanvasID(assignmentID) else { return .refused(.missingIDs) }
+        let url = CanvasSubmitSpike.preflightURL(baseURL: baseURL, courseID: courseID, assignmentID: assignmentID)
+        let reply: Reply
+        do {
+            reply = try await send(Self.getRequest(url: url, cookies: cookies))
+        } catch {
+            return .refused(Self.isNeverSent(error) ? .offline : .preflightFailed)
+        }
+        if Self.isSessionDead(reply) { return .refused(.sessionDead) }
+        guard (200..<300).contains(reply.status), let object = Self.json(reply.data) else {
+            return .refused(.preflightFailed)
+        }
+        return .rules(CanvasSubmissionRules(assignmentJSON: object))
+    }
+
     // MARK: Upload
 
     enum UploadFailure: String, Error {
@@ -346,9 +375,13 @@ public struct CanvasSubmissionClient: Sendable {
     /// answer false, so they are refused before anything is posted.
     public static func accepts(types: [String], payload: Payload, allowedExtensions: [String]?) -> Bool {
         guard types.contains(payload.submissionType) else { return false }
-        if case let .file(name, _, _) = payload, let allowed = allowedExtensions, !allowed.isEmpty {
+        // Normalised the way the review sheet reads them
+        // (`CanvasSubmissionRules.normalised`: no leading dot, lowercase), so
+        // the sheet and the submit can never disagree about ".PDF".
+        if case let .file(name, _, _) = payload, let allowed = allowedExtensions.map(CanvasSubmissionRules.normalised),
+           !allowed.isEmpty {
             let ext = (name as NSString).pathExtension.lowercased()
-            return allowed.map { $0.lowercased() }.contains(ext)
+            return allowed.contains(ext)
         }
         return true
     }

@@ -281,6 +281,11 @@ public struct CanvasOverrideAssignment: Decodable, Sendable, Hashable {
     public let workflowState: String?
     public let submissionTypes: [String]
     public let htmlURL: String?
+    /// Read for the agent review sheet (`submissionRules`), 2026-11-11.
+    /// Canvas sends both on the plain assignments list; absent reads as
+    /// empty and false.
+    public let allowedExtensions: [String]
+    public let lockedForUser: Bool
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: AnyKey.self)
@@ -298,17 +303,30 @@ public struct CanvasOverrideAssignment: Decodable, Sendable, Hashable {
         workflowState = c.lenientString(key("workflow_state"))
         submissionTypes = c.lenientList(String.self, key("submission_types"))
         htmlURL = c.lenientString(key("html_url"))
+        allowedExtensions = c.lenientList(String.self, key("allowed_extensions"))
+        lockedForUser = c.lenientBool(key("locked_for_user")) ?? false
     }
 
     public init(
         id: String, name: String = "", dueAt: Date? = nil, allDates: [CanvasAssignmentDate] = [],
         overrides: [CanvasAssignmentOverride] = [], onlyVisibleToOverrides: Bool = false,
-        published: Bool? = nil, workflowState: String? = nil, submissionTypes: [String] = [], htmlURL: String? = nil
+        published: Bool? = nil, workflowState: String? = nil, submissionTypes: [String] = [], htmlURL: String? = nil,
+        allowedExtensions: [String] = [], lockedForUser: Bool = false
     ) {
         self.id = id; self.name = name; self.dueAt = dueAt; self.allDates = allDates
         self.overrides = overrides; self.onlyVisibleToOverrides = onlyVisibleToOverrides
         self.published = published; self.workflowState = workflowState
         self.submissionTypes = submissionTypes; self.htmlURL = htmlURL
+        self.allowedExtensions = allowedExtensions; self.lockedForUser = lockedForUser
+    }
+
+    /// What the agent review sheet needs to know before the student decides
+    /// (`CanvasAcceptance`). Nil when Canvas sent no submission types, which
+    /// is "not known", not "nothing online".
+    public var submissionRules: CanvasSubmissionRules? {
+        guard !submissionTypes.isEmpty else { return nil }
+        return CanvasSubmissionRules(submissionTypes: submissionTypes, allowedExtensions: allowedExtensions,
+                                     lockedForUser: lockedForUser)
     }
 
     /// Canvas will not show an unpublished or deleted assignment to a student,

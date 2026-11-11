@@ -52,29 +52,83 @@ enum AgentConnectionCopy {
 
     // Drafts: the card
     static func draftedBy(_ name: String) -> String { "drafted by \(name.lowercased())" }
+    /// prev, once the student sent an agent's draft from the phone.
+    static func submittedByYou(_ name: String) -> String { "submitted by you \u{00B7} \(draftedBy(name))" }
     static let reviewAndSubmit = "review and submit"
     static let checkCanvas = "check canvas"
 
-    // Drafts: the review sheet
+    // Drafts: the review sheet (2026-11-11 redesign: what canvas takes, then
+    // the one choice there is, then submit or decline)
     static func noteFrom(_ name: String) -> String { "\(name.lowercased())'s note" }
     static let integrity = "this goes in under your name; read it"
-    static let submit = "submit"
-    static let submitAsText = "submit as text"
-    static let submitAsPDF = "submit as pdf"
+    static let submit = "submit to canvas"
+    static let send = "send"
+    static let sendAsText = "send as text"
+    static let sendAsPDF = "send as pdf"
     static let pdfFailed = "couldn't make a pdf"
     static let decline = "decline"
-    static let confirmSubmitTitle = "submit to canvas?"
     static let sending = "sending to canvas"
-    static let submitted = "submitted"
-    static let submittedUnverified = "submitted \u{00B7} check canvas to be sure"
+    static let checking = "checking canvas"
+    static func pages(_ count: Int) -> String { count == 1 ? "1 page" : "\(count) pages" }
+
+    /// "send problem set 7 as a pdf?": the confirmation names the kind.
+    static func confirmSend(_ title: String, as route: DraftSubmitRoute, fileName: String? = nil) -> String {
+        let t = title.lowercased()
+        switch route {
+        case .text: return "send \(t) as text?"
+        case .pdf: return "send \(t) as a pdf?"
+        case .url: return "send \(t) as a link?"
+        case .file: return "send \(fileName.map { $0.lowercased() } ?? "the file") for \(t)?"
+        }
+    }
+
+    /// The one line that says what Canvas takes for this assignment.
+    static func canvasTakes(_ acceptance: CanvasAcceptance) -> String {
+        switch acceptance {
+        case .notOnline: return notOnline
+        case .locked: return locked
+        case let .online(text, url, file, extensions):
+            var things: [String] = []
+            if text { things.append("text") }
+            if url { things.append("a link") }
+            if file { things.append(extensions.isEmpty ? "a file" : "a " + orList(extensions)) }
+            return "canvas takes \(orList(things)) here"
+        }
+    }
+
+    /// "pdf", "pdf or docx", "pdf, docx or txt".
+    static func orList(_ words: [String]) -> String {
+        guard words.count > 1 else { return words.first ?? "" }
+        return words.dropLast().joined(separator: ", ") + " or " + (words.last ?? "")
+    }
+
+    static let notOnline = "this one can't be submitted online"
+    static let locked = "canvas has this one locked"
+    static func kindRefused(_ kind: AgentDraft.Kind) -> String {
+        switch kind {
+        case .text: return "canvas doesn't take text here"
+        case .url: return "canvas doesn't take a link here"
+        case .file, .unknown: return "canvas doesn't take a file here"
+        }
+    }
+    static func fileTypeRefused(_ ext: String, allowed: [String]) -> String {
+        let shown = ext.isEmpty ? "this file" : ".\(ext.lowercased())"
+        guard !allowed.isEmpty else { return "canvas doesn't take \(shown) here" }
+        return "canvas doesn't take \(shown) here \u{00B7} ask for a \(orList(allowed.map { $0.lowercased() })) file"
+    }
+    static let unknownKind = "this build can't send this draft"
+
+    // Results
+    static let submitted = "submitted to canvas"
+    static func submittedAt(_ time: String) -> String { "in at \(time.lowercased())" }
+    static let submittedUnverified = "check canvas to be sure"
     static let failed = "canvas didn't take it \u{00B7} ask for a new draft"
     static let mayHaveGoneIn = "it may have gone in \u{00B7} check canvas"
-    static let unsupported = "submit this one in canvas"
-    static let signInFirst = "sign in to canvas first"
-    static let offline = "no connection"
-    static let fileUnavailable = "couldn't load the file"
-    static let couldntSend = "couldn't send"
-    static let declineFailure = "couldn't decline"
+    static let signInFirst = "sign in to canvas in profile, then try again"
+    static let offline = "no connection \u{00B7} try again"
+    static let couldntReach = "couldn't reach canvas \u{00B7} try again"
+    static let fileUnavailable = "couldn't load the file \u{00B7} try again"
+    static let declineFailure = "couldn't decline \u{00B7} try again"
     static let openInCanvas = "open in canvas"
     static let previewFile = "preview"
     static let loading = "loading"

@@ -275,10 +275,17 @@ struct AssignmentCardView: View {
                 // "in class" under the due value (`secondaryLabel`), where
                 // "late" sits. VoiceOver hears "nothing to submit", and the
                 // source, through the card's accessibility value.
-                if let caveat = item.caveatText {
-                    Text(caveat)
+                //
+                // The agent's chip ("drafted by claude", or "submitted by you
+                // · drafted by claude" in prev) rides the same line in grape,
+                // the agent's colour (the ask accent), so the one thing to act
+                // on is found without opening the card. On the exam card's
+                // inverted ground it keeps the secondary colour, which is the
+                // one that reads there.
+                if item.caveatText != nil {
+                    caveatLine
                         .font(.lhfSecondary(9, weight: .semibold))
-                        .foregroundStyle(secondaryTextColor)
+                        .lineLimit(1)
                 }
             }
 
@@ -450,6 +457,18 @@ struct AssignmentCardView: View {
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
+    private var caveatLine: Text {
+        let chipColor = isExam ? secondaryTextColor : Color.smoothGrapeInk
+        let facts = item.factCaveatText.map { Text($0).foregroundStyle(secondaryTextColor) }
+        let chip = item.agentChipText.map { Text($0).foregroundStyle(chipColor) }
+        switch (facts, chip) {
+        case let (f?, c?): return f + Text(" \u{00B7} ").foregroundStyle(secondaryTextColor) + c
+        case let (f?, nil): return f
+        case let (nil, c?): return c
+        case (nil, nil): return Text("")
+        }
+    }
+
     /// The agent's draft in the opened card: a few lines of it, then the one
     /// button. A `Button` for the same reason as "edit date": a control of
     /// its own claims the touch before the card's collapse tap does.
@@ -459,17 +478,18 @@ struct AssignmentCardView: View {
                 Text(preview)
                     .font(.lhfSecondary(12))
                     .foregroundStyle(secondaryTextColor)
-                    .lineLimit(3)
+                    .lineLimit(2)
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            // Drawn like "edit date" and "undo": a glyph, then the words.
             Button { onReview() } label: {
                 HStack(spacing: 5) {
-                    Text(draft.checkCanvas ? AgentConnectionCopy.checkCanvas : AgentConnectionCopy.reviewAndSubmit)
-                        .font(.lhfAssignmentTitle(12))
-                    Image(systemName: "arrow.right")
+                    Image(systemName: draft.checkCanvas ? "questionmark.circle" : "paperplane")
                         .font(.system(size: 12, weight: .medium))
                         .accessibilityHidden(true)
+                    Text(draft.checkCanvas ? AgentConnectionCopy.checkCanvas : AgentConnectionCopy.reviewAndSubmit)
+                        .font(.lhfAssignmentTitle(12))
                 }
                 .foregroundStyle(primaryTextColor)
                 .frame(minHeight: 44)

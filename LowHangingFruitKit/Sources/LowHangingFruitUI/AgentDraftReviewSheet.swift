@@ -8,11 +8,27 @@ struct AgentDraftReview: Identifiable, Equatable {
     var id: String { draftID }
 }
 
-/// "drafted by claude": everything that will be sent, then Submit or Decline
-/// (docs/AGENT_CONNECTION_PLAN_V11_2026-11-07.md, "The card"). The sheet shows
-/// the content itself, not a summary of it, because the student is the one
-/// putting their name on it: the whole text, the exact link, or the file with
-/// a preview. One line says so in plain words. Submit asks once more.
+/// "drafted by claude": the draft, what Canvas takes for this assignment, the
+/// one choice there is, then submit or decline.
+///
+/// Redesigned 2026-11-11 after Marco's phone: a plain-text draft on PHYS 0151
+/// "Problem Set 7" (Canvas takes `online_upload` only) opened, Submit ran the
+/// preflight, the preflight refused the text, and the sheet printed "submit
+/// this one in canvas", which read as "review and submit didn't work". Now the
+/// sheet asks Canvas what it takes when it opens (`agentDraftAcceptance`, the
+/// same GET the submit makes first, once per draft), says it in one line, and
+/// shapes the choice to it (`DraftSubmitPlan`): any text draft on a file-only
+/// assignment goes as a pdf rendered on the phone, shown inline page by page,
+/// so a refusal for the kind of draft is no longer reachable for text.
+///
+/// Top to bottom: the class in its accent, the assignment title, "drafted by
+/// claude" and the agent's note; the draft itself, full width (the text in
+/// the body face, or the rendered pages; a link as a tappable row; a file as
+/// a row with its name, size and a QuickLook preview); the line that says
+/// what Canvas takes; the text / pdf picker only when both go; then, pinned
+/// at the bottom, the integrity line, "submit to canvas" (a confirmation that
+/// names the kind: "send problem set 7 as a pdf?") and "decline". When the
+/// phone cannot send it, "open in canvas" takes the submit's place.
 ///
 /// The sheet reads the live draft from `AppState.agentDrafts` by id, so a
 /// refetch (a cached draft with no content yet, or a file link past its two
@@ -28,6 +44,7 @@ struct AgentDraftReviewSheet: View {
     @State private var isWorking = false
     @State private var confirming = false
     @State private var outcome: Outcome?
+    @State private var submittedAt: Date?
     @State private var previewURL: URL?
     @State private var isLoadingPreview = false
     @State private var previewFailed = false
@@ -36,13 +53,14 @@ struct AgentDraftReviewSheet: View {
     /// must not run on every render (CLAUDE.md, the freeze trap).
     @State private var snapshotItem: AgentSnapshot.WorkItem?
     @State private var resolved = false
-    /// Text drafts that read as markdown: the rendered PDF, and which of the
-    /// two the student sends. `choiceMade` keeps a late render from
-    /// overriding a tap.
-    @State private var choice: AgentDraftSubmitChoice = .text
+    /// What Canvas takes; nil while the early read is out.
+    @State private var lookup: AgentAcceptanceLookup?
+    /// The route the student picked; nil until they pick, so the plan's
+    /// default holds until a tap.
+    @State private var pickedRoute: DraftSubmitRoute?
     @State private var pdf: RenderedDraftPDF?
     @State private var pdfFailed = false
-    @State private var choiceMade = false
+    @State private var pdfPages = 0
     @State private var renderedBody: String?
 
     private enum Outcome: Equatable {
@@ -59,9 +77,26 @@ struct AgentDraftReviewSheet: View {
         return (state.assignments + state.laterAssignments + state.assessments).first { $0.id == draft.assignmentID }
     }
 
-    private var unsupported: CanvasSubmissionClient.Refusal? {
-        guard let draft else { return .missingIDs }
-        return AgentDraftSubmitter.unsupportedReason(draft: draft, item: snapshotItem)
+    private var acceptance: CanvasAcceptance? {
+        if case .known(let a)? = lookup { return a }
+        return nil
+    }
+
+    /// The plan, with the pdf route taken out if the render failed.
+    private var plan: DraftSubmitPlan? {
+        guard let draft, lookup != nil else { return nil }
+        var plan = DraftSubmitPlan.make(draft: draft, acceptance: acceptance, canRenderPDF: DraftDocumentRenderer.canRender)
+        if pdfFailed {
+            plan.routes.removeAll { $0 == .pdf }
+            if plan.defaultRoute == .pdf { plan.defaultRoute = plan.routes.first }
+        }
+        return plan
+    }
+
+    private var route: DraftSubmitRoute? {
+        guard let plan else { return nil }
+        if let pickedRoute, plan.routes.contains(pickedRoute) { return pickedRoute }
+        return plan.defaultRoute
     }
 
     private var isFinished: Bool {
@@ -71,51 +106,40 @@ struct AgentDraftReviewSheet: View {
         }
     }
 
+    private var title: String { item?.title ?? snapshotItem?.title ?? "" }
+    private var course: String { item?.course ?? snapshotItem?.course ?? "" }
+
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    SmoothFormHeader(title: AgentConnectionCopy.draftedBy(draft?.agentName ?? "Claude"),
-                                     accent: .smoothGrape, spark: .smoothTeal)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    header
+                    content
+                        .padding(.top, 22)
+                    canvasLine
+                        .padding(.top, 18)
+                    picker
+                    outcomeLine
                 }
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
-                .listRowSeparator(.hidden)
-
-                if let item {
-                    Section {
-                        Text(item.title).font(.lhfSecondary(17, weight: .semibold))
-                        Text(item.course.uppercased())
-                            .font(.lhfMono(10, weight: .semibold))
-                            .foregroundStyle(Color.smoothMuted)
-                    }
-                    .smoothSectionBackground(.smoothGrape)
-                }
-
-                if let draft, let note = draft.note, !note.isEmpty {
-                    Section {
-                        Text(note).foregroundStyle(Color.smoothMuted)
-                    } header: {
-                        SmoothSectionHeader(AgentConnectionCopy.noteFrom(draft.agentName), accent: .smoothCobalt)
-                    }
-                    .smoothSectionBackground(.smoothGrape)
-                }
-
-                Section { content } .smoothSectionBackground(.smoothGrape)
-
-                Section { actions } .smoothSectionBackground(.smoothGrape)
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .padding(.bottom, 24)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .formStyle(.grouped)
-            .font(.lhfSecondary(15))
+            .safeAreaInset(edge: .bottom) { actions }
+            .background(Color.smoothPaper.ignoresSafeArea())
             .foregroundStyle(Color.smoothInk)
-            .smoothFormChrome(accent: .smoothGrape)
+            .tint(Color.smoothGrapeInk)
+            .overlay {
+                if case .result(.submitted(let verified))? = outcome { submittedState(verified: verified) }
+            }
             .navigationTitle("")
 #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
 #endif
             .quickLookPreview($previewURL)
-            .confirmationDialog(AgentConnectionCopy.confirmSubmitTitle, isPresented: $confirming, titleVisibility: .visible) {
-                Button(AgentConnectionCopy.submit) { submit() }
+            .confirmationDialog(confirmTitle, isPresented: $confirming, titleVisibility: .visible) {
+                Button(AgentConnectionCopy.send) { submit() }
                 Button(AgentConnectionCopy.cancel, role: .cancel) {}
             }
         }
@@ -130,6 +154,7 @@ struct AgentDraftReviewSheet: View {
             if let d = draft, d.preview() == nil || (d.kind == .file && d.fileURL == nil) {
                 if let fresh = await state.refetchAgentDraft(d.id) { shown = fresh }
             }
+            if let d = draft { lookup = await state.agentDraftAcceptance(for: d, item: snapshotItem) }
             await prepareDocument()
         }
         .onChange(of: state.agentDrafts) { _, drafts in
@@ -140,152 +165,332 @@ struct AgentDraftReviewSheet: View {
         }
         .onDisappear { removePreviewFile() }
 #if os(macOS)
-        .frame(minWidth: 380, minHeight: 520)
+        .frame(minWidth: 380, minHeight: 560)
 #endif
     }
 
-    // MARK: Content
+    // MARK: Header
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if !course.isEmpty {
+                Text(course.uppercased())
+                    .font(.lhfMono(10.5, weight: .semibold))
+                    .tracking(1.1)
+                    .foregroundStyle(courseAccentInk(for: course))
+            }
+            Text(title)
+                .font(.lhfAssignmentTitle(24))
+                .fixedSize(horizontal: false, vertical: true)
+            Text(AgentConnectionCopy.draftedBy(draft?.agentName ?? "Claude"))
+                .font(.lhfSecondary(13, weight: .semibold))
+                .foregroundStyle(Color.smoothGrapeInk)
+            if let note = draft?.note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty {
+                HStack(alignment: .top, spacing: 10) {
+                    RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                        .fill(Color.smoothGrape)
+                        .frame(width: 3)
+                    Text(note)
+                        .font(.lhfSecondary(14))
+                        .foregroundStyle(Color.smoothMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 6)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(AgentConnectionCopy.noteFrom(draft?.agentName ?? "Claude")): \(note)")
+            }
+        }
+    }
+
+    // MARK: The draft
 
     @ViewBuilder
     private var content: some View {
         switch draft?.kind {
         case .text?:
             if let body = draft?.body {
-                if pdfChoiceOffered {
-                    Picker("", selection: $choice) {
-                        Text(AgentConnectionCopy.submitAsText).tag(AgentDraftSubmitChoice.text)
-                        Text(AgentConnectionCopy.submitAsPDF).tag(AgentDraftSubmitChoice.pdf)
+                if route == .pdf, let pdf {
+                    VStack(alignment: .leading, spacing: 8) {
+                        DraftPDFView(data: pdf.data)
+                            .frame(height: 480)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(Color.smoothRule, lineWidth: 1.25)
+                            }
+                        Text(pdfCaption(pdf))
+                            .font(.lhfMono(10, weight: .semibold))
+                            .foregroundStyle(Color.smoothMuted)
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .disabled(isWorking || isFinished)
-                    .onChange(of: choice) { _, _ in choiceMade = true }
-                }
-                if choice == .pdf, let pdf {
-                    DraftPDFView(data: pdf.data)
-                        .frame(height: 420)
+                } else if route == .pdf, !pdfFailed {
+                    ProgressView().frame(maxWidth: .infinity, minHeight: 120)
                 } else {
                     Text(body)
+                        .font(.lhfSecondary(16))
+                        .lineSpacing(3)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
-                }
-                if pdfFailed {
-                    Text(AgentConnectionCopy.pdfFailed)
-                        .font(.lhfSecondary(12)).foregroundStyle(Color.smoothTomatoInk)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } else {
-                Text(AgentConnectionCopy.loading).foregroundStyle(Color.smoothMuted)
+                loadingLine
             }
         case .url?:
             if let raw = draft?.url, let url = URL(string: raw) {
                 Link(destination: url) {
-                    Text(raw).underline().multilineTextAlignment(.leading)
+                    row(icon: "link", title: raw, detail: nil, trailing: "arrow.up.right")
                 }
+                .buttonStyle(.plain)
             } else {
-                Text(AgentConnectionCopy.loading).foregroundStyle(Color.smoothMuted)
+                loadingLine
             }
         case .file?:
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(draft?.fileName ?? "")
-                    if let bytes = draft?.fileBytes {
-                        Text(AgentDraft.byteText(bytes))
-                            .font(.lhfSecondary(12)).foregroundStyle(Color.smoothMuted)
-                    }
-                }
-                Spacer()
-                Button { openPreview() } label: {
-                    HStack(spacing: 6) {
-                        if isLoadingPreview { ProgressView().controlSize(.small) }
-                        Text(AgentConnectionCopy.previewFile)
-                    }
-                }
-                .buttonStyle(.borderless)
-                .disabled(isLoadingPreview)
+            Button { openPreview() } label: {
+                row(icon: "doc", title: draft?.fileName ?? "",
+                    detail: draft?.fileBytes.map(AgentDraft.byteText),
+                    trailing: nil, trailingText: AgentConnectionCopy.previewFile, busy: isLoadingPreview)
             }
+            .buttonStyle(.plain)
+            .disabled(isLoadingPreview)
             if previewFailed {
                 Text(AgentConnectionCopy.fileUnavailable)
                     .font(.lhfSecondary(12)).foregroundStyle(Color.smoothTomatoInk)
+                    .padding(.top, 6)
             }
         case .unknown?, nil:
-            Text(AgentConnectionCopy.unsupported).foregroundStyle(Color.smoothMuted)
+            Text(AgentConnectionCopy.unknownKind).foregroundStyle(Color.smoothMuted)
         }
     }
 
-    // MARK: Markdown as a PDF
+    private var loadingLine: some View {
+        Text(AgentConnectionCopy.loading)
+            .font(.lhfSecondary(14))
+            .foregroundStyle(Color.smoothMuted)
+    }
 
-    private var pdfChoiceOffered: Bool { pdf != nil }
+    /// A link or a file: one 56pt row in a ruled squircle.
+    private func row(icon: String, title: String, detail: String?, trailing: String?,
+                     trailingText: String? = nil, busy: Bool = false) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(Color.smoothGrapeInk)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.lhfSecondary(15, weight: .medium))
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .multilineTextAlignment(.leading)
+                if let detail {
+                    Text(detail).font(.lhfMono(10)).foregroundStyle(Color.smoothMuted)
+                }
+            }
+            Spacer(minLength: 8)
+            if busy { ProgressView().controlSize(.small) }
+            if let trailingText {
+                Text(trailingText).font(.lhfSecondary(13, weight: .semibold)).foregroundStyle(Color.smoothGrapeInk)
+            }
+            if let trailing {
+                Image(systemName: trailing)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.smoothMuted)
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 56)
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.smoothRule, lineWidth: 1.25)
+        }
+        .contentShape(Rectangle())
+    }
 
-    /// Renders the body once per distinct body. A failure drops back to the
-    /// text choice and says so in one line.
+    private func pdfCaption(_ pdf: RenderedDraftPDF) -> String {
+        let pages = pdfPages
+        return ([pdf.name.lowercased()] + (pages > 0 ? [AgentConnectionCopy.pages(pages)] : []))
+            .joined(separator: " \u{00B7} ")
+    }
+
+    // MARK: What Canvas takes
+
+    @ViewBuilder
+    private var canvasLine: some View {
+        if !isFinished {
+            switch lookup {
+            case nil:
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(AgentConnectionCopy.checking)
+                }
+                .font(.lhfSecondary(14))
+                .foregroundStyle(Color.smoothMuted)
+            case .known(let acceptance)?:
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(AgentConnectionCopy.canvasTakes(acceptance))
+                        .font(.lhfSecondary(14, weight: .semibold))
+                    if let block = plan?.block, let text = Self.blockText(block) {
+                        Text(text)
+                            .font(.lhfSecondary(14))
+                            .foregroundStyle(Color.smoothTomatoInk)
+                    } else if plan?.routes.isEmpty == true, pdfFailed {
+                        Text(AgentConnectionCopy.pdfFailed)
+                            .font(.lhfSecondary(14)).foregroundStyle(Color.smoothTomatoInk)
+                    }
+                }
+            case .refused(let refusal)?:
+                Text(Self.refusalText(refusal))
+                    .font(.lhfSecondary(14))
+                    .foregroundStyle(Color.smoothMuted)
+            }
+        }
+    }
+
+    /// The second line, for a block the "canvas takes" line does not
+    /// already say (not online and locked are that line).
+    static func blockText(_ block: DraftSubmitPlan.Block) -> String? {
+        switch block {
+        case .notOnline, .locked: return nil
+        case let .fileType(ext, allowed): return AgentConnectionCopy.fileTypeRefused(ext, allowed: allowed)
+        case .kind(let kind): return AgentConnectionCopy.kindRefused(kind)
+        case .unknownKind: return AgentConnectionCopy.unknownKind
+        }
+    }
+
+    // MARK: The choice
+
+    private enum SendAs: String, CaseIterable, Identifiable {
+        case text, pdf
+        var id: String { rawValue }
+        var route: DraftSubmitRoute { self == .text ? .text : .pdf }
+    }
+
+    @ViewBuilder
+    private var picker: some View {
+        if !isFinished, let plan, plan.routes.contains(.text), plan.routes.contains(.pdf) {
+            SmoothSegmentPicker(
+                selection: Binding(
+                    get: { route == .pdf ? SendAs.pdf : SendAs.text },
+                    set: { pickedRoute = $0.route }
+                ),
+                label: { $0 == .text ? AgentConnectionCopy.sendAsText : AgentConnectionCopy.sendAsPDF }
+            )
+            .disabled(isWorking)
+            .padding(.top, 14)
+        }
+    }
+
+    // MARK: Rendering
+
+    /// Renders the body to a pdf once per distinct body, whenever the plan
+    /// offers the pdf route (any text draft, markdown or not). A failure
+    /// drops the pdf route and says so in one line.
     private func prepareDocument() async {
-        guard let d = draft, d.kind == .text, let body = d.body, body != renderedBody else { return }
+        guard let d = draft, d.kind == .text, let body = d.body, body != renderedBody,
+              DraftDocumentRenderer.canRender else { return }
         renderedBody = body
         pdf = nil
         pdfFailed = false
-        guard AgentDraftSubmitChoice.defaultChoice(for: d) == .pdf else {
-            if !choiceMade { choice = .text }
-            return
-        }
         SmoothFonts.ensureRegistered()
-        let name = DraftDocumentRenderer.fileName(forTitle: item?.title ?? "draft")
-        let data = await Task.detached { DraftDocumentRenderer.pdfData(from: body) }.value
+        let name = DraftDocumentRenderer.fileName(forTitle: title.isEmpty ? "draft" : title)
+        let format = d.format
+        let data = await Task.detached { DraftDocumentRenderer.pdfData(forDraftBody: body, format: format) }.value
         if let data {
             pdf = RenderedDraftPDF(name: name, data: data)
-            if !choiceMade { choice = .pdf }
+            pdfPages = DraftPDFView.pageCount(data)
         } else {
             pdfFailed = true
-            choice = .text
         }
     }
 
     // MARK: Actions
 
-    @ViewBuilder
     private var actions: some View {
-        Text(AgentConnectionCopy.integrity)
-            .font(.lhfSecondary(13, weight: .semibold))
-
-        if let line = outcomeLine {
-            Text(line.text)
-                .font(.lhfSecondary(13))
-                .foregroundStyle(line.isError ? Color.smoothTomatoInk : Color.smoothInk)
-        }
-
-        if !resolved {
-            ProgressView()
-        } else if isFinished {
-            if let url = canvasURL {
-                Link(AgentConnectionCopy.openInCanvas, destination: url)
-                    .environment(\.openURL, CanvasAppLink.action)
-            }
-            Button(AgentConnectionCopy.done) { dismiss() }
-        } else if unsupported == .unsupportedType || unsupported == .missingIDs {
-            Text(AgentConnectionCopy.unsupported).foregroundStyle(Color.smoothMuted)
-            if let url = canvasURL {
-                Link(AgentConnectionCopy.openInCanvas, destination: url)
-                    .environment(\.openURL, CanvasAppLink.action)
-            }
-            declineButton
-        } else {
-            Button { confirming = true } label: {
-                HStack(spacing: 10) {
-                    if isWorking { ProgressView().controlSize(.small) }
-                    Text(isWorking ? AgentConnectionCopy.sending : AgentConnectionCopy.submit)
-                        .frame(maxWidth: .infinity)
+        VStack(spacing: 10) {
+            if !resolved {
+                ProgressView()
+            } else if isFinished {
+                if let url = canvasURL, outcome != .result(.submitted(verified: true)) {
+                    openInCanvasLink(url)
                 }
-                .frame(minHeight: 44)
+                Button { dismiss() } label: { plainLabel(AgentConnectionCopy.done) }
+                    .buttonStyle(.plain)
+            } else {
+                Text(AgentConnectionCopy.integrity)
+                    .font(.lhfSecondary(13, weight: .semibold))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if canSubmit {
+                    Button { confirming = true } label: {
+                        HStack(spacing: 10) {
+                            if isWorking { ProgressView().controlSize(.small).tint(Self.onGrape) }
+                            Text(isWorking ? AgentConnectionCopy.sending : AgentConnectionCopy.submit)
+                        }
+                        .font(.lhfSans(16, weight: .semibold))
+                        .foregroundStyle(Self.onGrape)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(Self.squircle.fill(Color.smoothGrape))
+                        .contentShape(Self.squircle)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isWorking)
+                } else if let url = canvasURL, lookup != nil {
+                    openInCanvasLink(url)
+                }
+                Button { decline() } label: { plainLabel(AgentConnectionCopy.decline) }
+                    .buttonStyle(.plain)
+                    .disabled(isWorking)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(Color.smoothGrape)
-            .disabled(isWorking || draft == nil)
-            declineButton
         }
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+        .background(Color.smoothPaper.ignoresSafeArea())
+        .overlay(alignment: .top) { Rectangle().fill(Color.smoothRule.opacity(0.65)).frame(height: 0.5) }
     }
 
-    private var declineButton: some View {
-        Button(AgentConnectionCopy.decline, role: .destructive) { decline() }
-            .disabled(isWorking)
+    /// Ink that reads on the grape fill in both modes.
+    private static let onGrape = Color(hex: 0x1B1714)
+    private static let squircle = RoundedRectangle(cornerRadius: 48 * 0.32, style: .continuous)
+
+    private func plainLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.lhfSans(15, weight: .medium))
+            .foregroundStyle(Color.smoothInk)
+            .frame(maxWidth: .infinity)
+            .frame(height: 44)
+            .contentShape(Rectangle())
+    }
+
+    private func openInCanvasLink(_ url: URL) -> some View {
+        Link(destination: url) {
+            HStack(spacing: 5) {
+                Text(AgentConnectionCopy.openInCanvas)
+                    .font(.lhfSecondary(14, weight: .semibold))
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 12, weight: .medium))
+                    .accessibilityHidden(true)
+            }
+            .foregroundStyle(Color.smoothGrapeInk)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .environment(\.openURL, CanvasAppLink.action)
+    }
+
+    /// Submit shows only once Canvas's answer is in (or could not be had)
+    /// and the plan has a route with its content ready.
+    private var canSubmit: Bool {
+        guard draft != nil, let plan, plan.block == nil, let route else { return false }
+        if route == .pdf { return pdf != nil }
+        return true
+    }
+
+    private var confirmTitle: String {
+        AgentConnectionCopy.confirmSend(title.isEmpty ? "this" : title, as: route ?? .text, fileName: draft?.fileName)
     }
 
     private var canvasURL: URL? {
@@ -295,36 +500,106 @@ struct AgentDraftReviewSheet: View {
         return item?.url
     }
 
-    private var outcomeLine: (text: String, isError: Bool)? {
-        switch outcome {
-        case .result(.submitted(let verified))?:
-            return (verified ? AgentConnectionCopy.submitted : AgentConnectionCopy.submittedUnverified, false)
-        case .result(.failed)?: return (AgentConnectionCopy.failed, true)
-        case .result(.checkCanvas)?: return (AgentConnectionCopy.mayHaveGoneIn, true)
-        case .result(.fileUnavailable)?: return (AgentConnectionCopy.fileUnavailable, true)
-        case .result(.refused(let reason))?: return (Self.refusalText(reason), true)
-        case .declineFailed?: return (AgentConnectionCopy.declineFailure, true)
-        case nil:
-            return state.agentSubmitAttempts.record(for: draftID) != nil ? (AgentConnectionCopy.mayHaveGoneIn, true) : nil
+    @ViewBuilder
+    private var outcomeLine: some View {
+        if let line = outcomeText {
+            Text(line)
+                .font(.lhfSecondary(14))
+                .foregroundStyle(Color.smoothTomatoInk)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 14)
         }
     }
 
+    private var outcomeText: String? {
+        switch outcome {
+        case .result(.submitted)?: return nil
+        case .result(.failed)?: return AgentConnectionCopy.failed
+        case .result(.checkCanvas)?: return AgentConnectionCopy.mayHaveGoneIn
+        case .result(.fileUnavailable)?: return AgentConnectionCopy.fileUnavailable
+        case .result(.refused(let reason))?: return Self.refusalText(reason)
+        case .declineFailed?: return AgentConnectionCopy.declineFailure
+        case nil:
+            return state.agentSubmitAttempts.record(for: draftID) != nil ? AgentConnectionCopy.mayHaveGoneIn : nil
+        }
+    }
+
+    /// What happened and what to do next, in one line.
     static func refusalText(_ reason: CanvasSubmissionClient.Refusal) -> String {
         switch reason {
-        case .unsupportedType, .missingIDs, .locked: return AgentConnectionCopy.unsupported
-        case .sessionDead, .noCSRF: return AgentConnectionCopy.signInFirst
         case .offline: return AgentConnectionCopy.offline
-        case .preflightFailed, .attemptNotRecorded: return AgentConnectionCopy.couldntSend
+        case .sessionDead, .noCSRF: return AgentConnectionCopy.signInFirst
+        case .locked: return AgentConnectionCopy.locked
+        case .unsupportedType, .missingIDs: return AgentConnectionCopy.notOnline
+        case .preflightFailed: return AgentConnectionCopy.couldntReach
+        case .attemptNotRecorded: return AgentConnectionCopy.couldntReach
         }
+    }
+
+    // MARK: Submitted
+
+    private func submittedState(verified: Bool) -> some View {
+        VStack(spacing: 14) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 52, weight: .semibold))
+                .foregroundStyle(Color.smoothTeal)
+                .accessibilityHidden(true)
+            Text(AgentConnectionCopy.submitted)
+                .font(.lhfSecondary(22, weight: .semibold))
+            if verified, let submittedAt {
+                Text(AgentConnectionCopy.submittedAt(submittedAt.formatted(date: .omitted, time: .shortened)))
+                    .font(.lhfMono(12, weight: .semibold))
+                    .foregroundStyle(Color.smoothMuted)
+            } else if !verified {
+                Text(AgentConnectionCopy.submittedUnverified)
+                    .font(.lhfSecondary(14))
+                    .foregroundStyle(Color.smoothMuted)
+                if let url = canvasURL { openInCanvasLink(url) }
+            }
+            Button { dismiss() } label: {
+                Text(AgentConnectionCopy.done)
+                    .font(.lhfSans(16, weight: .semibold))
+                    .foregroundStyle(Self.onGrape)
+                    .frame(width: 160, height: 48)
+                    .background(Self.squircle.fill(Color.smoothTeal))
+                    .contentShape(Self.squircle)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 8)
+        }
+        .foregroundStyle(Color.smoothInk)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.smoothPaper.ignoresSafeArea())
+        .accessibilityElement(children: .combine)
     }
 
     private func submit() {
-        guard !isWorking else { return }
+        guard !isWorking, let route else { return }
         isWorking = true
+        let chosen = route == .pdf ? pdf : nil
         Task {
-            let result = await state.submitAgentDraft(draftID, pdf: choice == .pdf ? pdf : nil)
+            let result = await state.submitAgentDraft(draftID, pdf: chosen)
             isWorking = false
-            outcome = .result(result)
+            if case .submitted = result { submittedAt = Date() }
+            // A refusal about what Canvas takes reshapes the sheet instead of
+            // printing a second line: the "canvas takes" line then says it.
+            var reshaped = false
+            switch result {
+            case .refused(.locked):
+                lookup = .known(.locked); reshaped = true
+            case .refused(.missingIDs):
+                lookup = .known(.notOnline); reshaped = true
+            case .refused(.unsupportedType):
+                // The answer the sheet was shaped by was out of date: ask
+                // Canvas again, live, and reshape the sheet to what it says.
+                if let d = draft {
+                    let fresh = await state.agentDraftAcceptance(for: d, item: snapshotItem, forceLive: true)
+                    if case .known = fresh { lookup = fresh; reshaped = true }
+                }
+            default:
+                break
+            }
+            outcome = reshaped ? nil : .result(result)
             lhfHapticLight()
         }
     }

@@ -14,6 +14,14 @@ struct AgentDraftDisplay: Equatable {
     let isUnseen: Bool
 }
 
+/// What the review sheet learned about the assignment when it opened.
+enum AgentAcceptanceLookup: Equatable {
+    case known(CanvasAcceptance)
+    /// The early read could not run (offline, the session, Canvas erred):
+    /// the sheet says so in one line and the submit's own preflight decides.
+    case refused(CanvasSubmissionClient.Refusal)
+}
+
 /// Phase 3 and 4 of the agent connection on the phone
 /// (docs/AGENT_CONNECTION_PLAN_V11_2026-11-07.md): drafts arrive by polling
 /// (decision 7), show on their card, are reviewed in a sheet and are either
@@ -94,7 +102,7 @@ extension AppState {
         guard !isUsingFixtureData, let draft = agentDraft(forItemID: itemID) else { return nil }
         let record = agentSubmitAttempts.record(for: draft.id)
         return AgentDraftDisplay(
-            draftID: draft.id, agentName: draft.agentName.lowercased(), preview: draft.preview(),
+            draftID: draft.id, agentName: draft.agentName.lowercased(), preview: draft.preview(maxLines: 2, maxCharacters: 160),
             checkCanvas: record != nil, isUnseen: draft.status == .proposed)
     }
 
@@ -103,6 +111,83 @@ extension AppState {
     /// the ids the agent saw.
     func agentSnapshotItem(for itemID: String, now: Date = Date()) -> AgentSnapshot.WorkItem? {
         buildAgentSnapshot(now: now).workList.first { $0.id == itemID }
+    }
+
+    // MARK: What Canvas takes
+
+    /// What Canvas takes for this draft's assignment, before the student
+    /// decides. Once per draft (cached in memory by draft id). In order: an
+    /// item the phone can never send (no Canvas ids, a quiz, Gradescope,
+    /// nothing to submit) is "not online" without asking anyone; then what
+    /// the last structured-sources run read off the assignments list; then
+    /// the submit's own preflight GET, run early. That GET is the same
+    /// request the submit already makes first, so it adds no network call
+    /// to docs/PRIVACY.md. The submit still runs its own preflight: this
+    /// answer shapes the sheet, it never authorises a POST.
+    func agentDraftAcceptance(for draft: AgentDraft, item: AgentSnapshot.WorkItem?,
+                              forceLive: Bool = false) async -> AgentAcceptanceLookup {
+        if draft.kind != .unknown, AgentDraftSubmitter.unsupportedReason(draft: draft, item: item) != nil {
+            return .known(.notOnline)
+        }
+        if !forceLive, let cached = agentDraftAcceptanceByDraftID[draft.id] { return .known(cached) }
+        guard let item, let courseID = item.canvasCourseID, let assignmentID = item.canvasAssignmentID else {
+            return .known(.notOnline)
+        }
+        // The list's answer may be hours old. It is used as it stands only
+        // when it lets the student send; an answer that would block (locked,
+        // nothing online) is confirmed with one live GET first, and only the
+        // live answer blocks. If that GET cannot be had, nothing blocks: the
+        // sheet offers the draft's own kind and the submit's preflight decides.
+        if !forceLive, let rules = canvasSubmissionRulesByAssignmentID[assignmentID] {
+            let listed = CanvasAcceptance.derive(rules)
+            switch listed {
+            case .online:
+                agentDraftAcceptanceByDraftID[draft.id] = listed
+                return .known(listed)
+            case .locked, .notOnline:
+                break
+            }
+        }
+        guard agentRulesFetchForTesting != nil || !isUsingFixtureData else { return .refused(.preflightFailed) }
+        let answer: CanvasSubmissionClient.RulesResult
+        if let fetch = agentRulesFetchForTesting {
+            answer = await fetch(courseID, assignmentID)
+        } else {
+            let cookies = await AutoSyncCoordinator.canvasCookies(forHost: canvasInstallation.host)
+            let client = CanvasSubmissionClient(session: .shared, baseURL: canvasBaseURL, cookies: cookies)
+            answer = await client.fetchRules(courseID: courseID, assignmentID: assignmentID)
+        }
+        switch answer {
+        case .rules(let rules):
+            canvasSubmissionRulesByAssignmentID[assignmentID] = rules
+            let acceptance = CanvasAcceptance.derive(rules)
+            agentDraftAcceptanceByDraftID[draft.id] = acceptance
+            return .known(acceptance)
+        case .refused(let refusal):
+            return .refused(refusal)
+        }
+    }
+
+    /// After Canvas took a draft: the card the student sees goes to prev, as
+    /// a swipe would (`shownAssignment(forItemID:)` finds it through a twin
+    /// or linked id), and says "submitted by you · drafted by claude" there.
+    /// Canvas's own submitted state agrees on the next refresh.
+    func completeAfterAgentSubmit(itemID: String) {
+        guard let assignment = shownAssignment(forItemID: itemID) else { return }
+        markCompleted(assignment)
+    }
+
+    /// prev's "submitted by you · drafted by claude": item id to the
+    /// agent's name, for every draft the phone sent and Canvas took. Read
+    /// once per dashboard rebuild (the store is a small file).
+    func agentSubmittedNamesByItemID() -> [String: String] {
+        guard !isUsingFixtureData else { return [:] }
+        var names: [String: String] = [:]
+        for record in agentSubmitAttempts.all() where record.outcome == .submitted {
+            let name = (record.agentName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            names[record.assignmentID] = (name.isEmpty ? "claude" : name).lowercased()
+        }
+        return names
     }
 
     // MARK: Decisions
@@ -149,9 +234,20 @@ extension AppState {
             },
             pdf: pdf)
         switch result {
-        case .submitted, .failed: dropAgentDraft(draft.id)
-        case .checkCanvas: agentDrafts = agentDrafts  // republish: the card now says "check canvas"
-        case .refused, .fileUnavailable: break
+        case .submitted:
+            dropAgentDraft(draft.id)
+            completeAfterAgentSubmit(itemID: draft.assignmentID)
+        case .failed:
+            dropAgentDraft(draft.id)
+        case .checkCanvas:
+            agentDrafts = agentDrafts  // republish: the card now says "check canvas"
+        case .refused(.locked):
+            agentDraftAcceptanceByDraftID[draft.id] = .locked
+        case .refused(.unsupportedType):
+            // The early answer was out of date: ask again next time.
+            agentDraftAcceptanceByDraftID[draft.id] = nil
+        case .refused, .fileUnavailable:
+            break
         }
         return result
     }
@@ -212,6 +308,7 @@ extension AppState {
     /// attempt records that could only ever guard those drafts.
     func clearAgentDraftsLocally() {
         agentDrafts = []
+        agentDraftAcceptanceByDraftID = [:]
         pendingAgentDraftNotices = []
         lastAgentDraftsAt = nil
         agentConnectionBanner = nil
