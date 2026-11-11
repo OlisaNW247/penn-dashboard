@@ -35,8 +35,19 @@ export function shouldCollectOnEdToken({ summary, token, lastTriggeredToken } = 
 
 let inFlight = null;
 
+// A forced run (an Ed token just arrived) that finds a pass in flight is
+// queued and started once that pass ends, instead of being handed the running
+// pass and lost: on 2026-11-11 the owner opened Ed while the first pass of a
+// new laptop was running, the arrival got that pass back, and the pass ended
+// with ed "none". One queued run at most; a second request while one waits
+// is the same request.
+let queuedForce = null;
+
 export function collectRun(opts) {
-  if (inFlight) return inFlight;
+  if (inFlight) {
+    if (opts?.force && !queuedForce) queuedForce = opts;
+    return inFlight;
+  }
   const o = opts ?? {};
   const deadlineMs = o.deadlineMs ?? PASS_DEADLINE_MS;
   const mine = {};
@@ -52,7 +63,15 @@ export function collectRun(opts) {
       try { await writeDeadlineSummary(o.storage, mine); } catch { /* never throws */ }
     }
     return result;
-  }).finally(() => { clearTimeout(timer); if (inFlight === promise) inFlight = null; });
+  }).finally(() => {
+    clearTimeout(timer);
+    if (inFlight === promise) inFlight = null;
+    if (queuedForce && inFlight === null) {
+      const next = queuedForce;
+      queuedForce = null;
+      collectRun(next).catch(() => {});
+    }
+  });
   inFlight = promise;
   return promise;
 }
