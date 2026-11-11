@@ -14,10 +14,15 @@ export interface FrontEnv {
   upstreamBase: string;
   publicBase: string;
   apikey?: string;
+  /** `CLIENT_IP_SECRET`: when set, the student's address goes upstream as
+   *  `x-smooth-client-ip` with this secret beside it (see `forward`). */
+  clientIPSecret?: string;
 }
 
 const MAX_BODY = 6 * 1024 * 1024;
 const HOP_BY_HOP = new Set(["host", "connection", "transfer-encoding", "content-length", "keep-alive", "upgrade", "te", "trailer", "proxy-authorization", "proxy-authenticate"]);
+/** Never copied from the caller: only the front itself may say these. */
+const FRONT_ONLY = new Set(["x-smooth-client-ip", "x-smooth-front-secret"]);
 const ROOT_FALLBACKS: Record<string, string> = {
   "/register": "/agent-auth/register",
   "/authorize": "/agent-auth/authorize",
@@ -34,7 +39,13 @@ export function envFromDeno(get: (k: string) => string | undefined = (k) => Deno
   const publicBase = get("PUBLIC_BASE")?.trim();
   if (!upstreamBase || !publicBase) throw new Error("UPSTREAM_BASE and PUBLIC_BASE are required");
   const apikey = get("UPSTREAM_APIKEY")?.trim();
-  return { upstreamBase: trimSlash(upstreamBase), publicBase: trimSlash(publicBase), apikey: apikey || undefined };
+  const clientIPSecret = get("CLIENT_IP_SECRET")?.trim();
+  return {
+    upstreamBase: trimSlash(upstreamBase),
+    publicBase: trimSlash(publicBase),
+    apikey: apikey || undefined,
+    clientIPSecret: clientIPSecret || undefined,
+  };
 }
 
 function json(body: unknown, status = 200, extra: Record<string, string> = {}): Response {
@@ -82,8 +93,19 @@ function upstreamPath(path: string): string | null {
 
 async function forward(req: Request, url: URL, target: string, env: FrontEnv): Promise<Response> {
   const headers = new Headers();
-  for (const [k, v] of req.headers) if (!HOP_BY_HOP.has(k.toLowerCase())) headers.set(k, v);
+  for (const [k, v] of req.headers) if (!HOP_BY_HOP.has(k.toLowerCase()) && !FRONT_ONLY.has(k.toLowerCase())) headers.set(k, v);
   if (env.apikey) headers.set("apikey", env.apikey);
+  // Supabase's gateway replaces x-forwarded-for with the address that
+  // connected to it, which from here is Vercel's egress, shared by every
+  // student (measured 2026-11-11). Vercel itself overwrites x-forwarded-for
+  // with the real client, so its first entry is the student's browser; it
+  // goes upstream in a header of our own, believed by agent-auth only with
+  // the secret beside it (agent-auth `clientIP`).
+  const client = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  if (env.clientIPSecret && client && target.startsWith("/agent-auth")) {
+    headers.set("x-smooth-client-ip", client);
+    headers.set("x-smooth-front-secret", env.clientIPSecret);
+  }
   headers.set("x-forwarded-host", url.host);
   headers.set("x-forwarded-proto", url.protocol.replace(":", ""));
   const hasBody = req.body !== null && req.method !== "GET" && req.method !== "HEAD";

@@ -143,6 +143,33 @@ export const MAX_BODY_CHARS = 100_000;
 export const MAX_NOTE_CHARS = 2_000;
 export const MAX_FILE_NAME_CHARS = 200;
 export const MAX_FILE_BYTES = 1_572_864;
+export const MAX_MIME_CHARS = 127;
+/** `type/subtype` with RFC 6838 token characters, at most 127 characters.
+ *  Found 2026-11-11 (docs/V11_TEST_BACKEND_2026-11-11.md): nothing checked
+ *  `mime_type`, so a CR/LF or a 5,000-character value went as far as the
+ *  Storage upload, which refused it with its own internal message ("Invalid
+ *  header value: ...") echoed back to the agent, and any other string was
+ *  stored for the phone to send to Canvas. */
+const MIME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$/;
+
+/** Why a file name is refused, or null. Separators were already refused (the
+ *  Storage path is sanitized anyway); also refused since 2026-11-11: a name
+ *  that is only dots or spaces ("..", which was accepted and reached the
+ *  phone as the name Canvas would get) and control characters. */
+export function fileNameProblem(name: string | undefined): string | null {
+  if (!name || name.length > MAX_FILE_NAME_CHARS || /[\\/]/.test(name)) {
+    return `file_name must be at most ${MAX_FILE_NAME_CHARS} characters with no path separators`;
+  }
+  // deno-lint-ignore no-control-regex
+  if (/^[.\s]*$/.test(name) || /[\u0000-\u001f\u007f]/.test(name)) return "file_name must be a plain file name";
+  return null;
+}
+
+export function mimeTypeProblem(mime: string | undefined): string | null {
+  if (!mime) return "mime_type is required";
+  if (mime.length > MAX_MIME_CHARS || !MIME_PATTERN.test(mime)) return "mime_type must look like type/subtype, e.g. application/pdf";
+  return null;
+}
 
 /** The exact decoded size of a base64 string, from its length alone, so a
  *  10 MB argument is refused without being decoded. Null when the length
@@ -620,9 +647,8 @@ export function registerTools(server: McpServer, backend: ToolBackend, options: 
     } else {
       const name = args.file_name;
       if (!args.file_base64 || !name || !args.mime_type) return failure("kind file needs file_base64, file_name and mime_type");
-      if (name.length > MAX_FILE_NAME_CHARS || /[\\/]/.test(name)) {
-        return failure(`file_name must be at most ${MAX_FILE_NAME_CHARS} characters with no path separators`);
-      }
+      const badName = fileNameProblem(name) ?? mimeTypeProblem(args.mime_type);
+      if (badName) return failure(badName);
       // Size from the length alone: an oversized argument is refused
       // without ever being decoded.
       const size = decodedSizeOf(args.file_base64);
@@ -674,10 +700,8 @@ export function registerTools(server: McpServer, backend: ToolBackend, options: 
     const denied = draftScope(who);
     if (denied) return denied;
     const name = args.file_name;
-    if (!name || name.length > MAX_FILE_NAME_CHARS || /[\\/]/.test(name)) {
-      return failure(`file_name must be at most ${MAX_FILE_NAME_CHARS} characters with no path separators`);
-    }
-    if (!args.mime_type) return failure("mime_type is required");
+    const badName = fileNameProblem(name) ?? mimeTypeProblem(args.mime_type);
+    if (badName) return failure(badName);
     if (args.total_bytes < 1) return failure("total_bytes must be at least 1");
     if (args.total_bytes > MAX_FILE_BYTES) return failure(`file is larger than ${MAX_FILE_BYTES} bytes`);
     if (!SHA256_PATTERN.test(args.sha256)) return failure("sha256 must be 64 hex characters");
@@ -685,7 +709,7 @@ export function registerTools(server: McpServer, backend: ToolBackend, options: 
     try {
       const began = await backend.beginUpload(who.userId, who.connectionId, {
         assignmentId: args.assignment_id,
-        fileName: name,
+        fileName: name as string,
         mimeType: args.mime_type,
         totalBytes: args.total_bytes,
         sha256: args.sha256,

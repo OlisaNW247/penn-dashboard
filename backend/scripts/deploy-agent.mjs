@@ -34,7 +34,7 @@
 //      Claude cannot discover the server on <ref>.supabase.co and goes on.
 //      Only that one (public) value is ever printed.
 //   1  the agent migration (after scanIdempotency passes), then deploy
-//      agent-auth, mcp, agent-snapshot, in that order.
+//      agent-auth, mcp, agent-snapshot, delete-account, in that order.
 //   2  smoke checks against the live functions: both metadata documents
 //      (issuer == <base>/agent-auth, resource == <base>/mcp), an
 //      unauthenticated POST to <base>/mcp must answer 401 with the
@@ -58,8 +58,13 @@ const MIGRATIONS_DIR = path.resolve(path.dirname(__filename), "..", "supabase", 
 export const AGENT_MIGRATION = "20261108090000_agent_connection.sql";
 /** Every agent migration step 1 applies, in order; a new one goes at the END. */
 export const AGENT_MIGRATIONS = [AGENT_MIGRATION, "20261109090000_agent_hardening.sql", "20261109100000_agent_drafts.sql", "20261110090000_agent_uploads.sql"];
-/** Deploy order matters only for readability of the log, but it is pinned. */
-export const AGENT_FUNCTIONS = ["agent-auth", "mcp", "agent-snapshot"];
+/** Deploy order matters only for readability of the log, but it is pinned.
+ *  `delete-account` is here because its agent half (`deleteUserData` and
+ *  `removeUserDraftObjects` in `_shared/`) changes with the agent code:
+ *  found 2026-11-11 (docs/V11_TEST_BACKEND_2026-11-11.md), production still
+ *  ran delete-account v13 of 2026-10-22, older than the whole connection, so
+ *  account deletion left every open draft's file in Storage. */
+export const AGENT_FUNCTIONS = ["agent-auth", "mcp", "agent-snapshot", "delete-account"];
 export const PUBLIC_BASE_SECRET = "LHF_AGENT_PUBLIC_BASE";
 export const DEFAULT_ORDER = [4, 1, 2];
 
@@ -166,7 +171,7 @@ export async function stepMigrateAndDeploy(
   ctx,
   { deploy = deployFunction, sqlPaths = AGENT_MIGRATIONS.map((f) => path.join(MIGRATIONS_DIR, f)) } = {},
 ) {
-  ctx.log("== step 1: migrations, then agent-auth, mcp, agent-snapshot ==");
+  ctx.log("== step 1: migrations, then agent-auth, mcp, agent-snapshot, delete-account ==");
   const loaded = sqlPaths.map((p) => ({ name: path.basename(p), sql: fs.readFileSync(p, "utf8") }));
   for (const { name, sql } of loaded) {
     const problems = scanIdempotency(sql);

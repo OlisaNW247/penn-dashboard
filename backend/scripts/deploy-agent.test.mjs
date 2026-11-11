@@ -81,8 +81,8 @@ test("challenge check", () => {
 });
 
 test("deploy order and verify_jwt", async () => {
-  assert.deepEqual(AGENT_FUNCTIONS, ["agent-auth", "mcp", "agent-snapshot"]);
-  assert.deepEqual(AGENT_FUNCTIONS.map((s) => verifyJwtFor(s)), [false, false, true]);
+  assert.deepEqual(AGENT_FUNCTIONS, ["agent-auth", "mcp", "agent-snapshot", "delete-account"]);
+  assert.deepEqual(AGENT_FUNCTIONS.map((s) => verifyJwtFor(s)), [false, false, true, true]);
   const { ctx } = ctxFor({ dryRun: true });
   const seen = [];
   await stepMigrateAndDeploy(ctx, { deploy: async (slug) => seen.push(slug) });

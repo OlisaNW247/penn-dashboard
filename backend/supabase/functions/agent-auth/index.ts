@@ -67,6 +67,9 @@ export interface AgentAuthDeps {
   requireUserId: (req: Request) => Promise<string>;
   /** Local development only. */
   devApproveURL?: (pendingId: string) => string;
+  /** The secret the connector front proves itself with when it hands over
+   *  the student's address (`LHF_FRONT_CLIENT_IP_SECRET`); see `clientIP`. */
+  frontClientIPSecret?: string;
 }
 
 // Measured 2026-11-08: Supabase's gateway rewrites any text/html response from
@@ -205,14 +208,34 @@ interface Ctx {
   mcpURL: string;
 }
 
-/** The caller's address for rate limiting. Behind the connector front
- *  (backend/connector-front/main.ts) the connecting address is the front's,
- *  so the original one is read from `x-forwarded-for`, which the front copies
- *  through (its HOP_BY_HOP set does not list it) and which Vercel sets to the
- *  real client first. Straight to Supabase, the gateway sets it too, or
- *  `cf-connecting-ip`. Anything else is one shared bucket "unknown", which
- *  is stricter, not looser. Never logged. */
-function clientIP(req: Request): string {
+/** The caller's address for rate limiting.
+ *
+ *  Measured 2026-11-11 (docs/V11_TEST_BACKEND_2026-11-11.md): Supabase's
+ *  gateway overwrites `x-forwarded-for` with the address that connected to
+ *  it. Called straight, that is the caller's own (a spoofed header is
+ *  replaced, which is good). Behind the connector front it is Vercel's
+ *  egress address, a handful of addresses shared by every student, so the
+ *  "per ip" limits on `/authorize` and `/register` were one bucket for the
+ *  whole school: 60 requests an hour from anyone blocked every sign-in.
+ *
+ *  So the front, which sees Vercel's own `x-forwarded-for` (Vercel overwrites
+ *  that header with the real client), passes the address on as
+ *  `x-smooth-client-ip` together with `x-smooth-front-secret`, and that
+ *  address is believed only when the secret matches `LHF_FRONT_CLIENT_IP_SECRET`
+ *  (compared as hashes, in constant time). Without the secret configured, or
+ *  with a wrong one, nothing changes: `x-forwarded-for`, else
+ *  `cf-connecting-ip`, else one shared "unknown" bucket. The wrong fix is
+ *  trusting `x-smooth-client-ip` (or any client header) without the secret:
+ *  a direct caller of supabase.co could then pick a fresh bucket per request.
+ *  Never logged. */
+async function clientIP(req: Request, secret: string | undefined): Promise<string> {
+  if (secret) {
+    const presented = req.headers.get("x-smooth-front-secret");
+    const handed = req.headers.get("x-smooth-client-ip")?.trim();
+    if (presented && handed && handed.length <= 64 && digestsEqual(await hashToken(presented), await hashToken(secret))) {
+      return handed;
+    }
+  }
   const forwarded = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   if (forwarded) return forwarded;
   return req.headers.get("cf-connecting-ip")?.trim() || "unknown";
@@ -287,7 +310,7 @@ function redirectWith(base: string, params: Record<string, string | null>, issue
 // ---------------------------------------------------------------------
 
 async function register(req: Request, ctx: Ctx): Promise<Response> {
-  if (!(await withinLimit(ctx, `register:${clientIP(req)}`, LIMITS.register))) return tooMany("register_rate");
+  if (!(await withinLimit(ctx, `register:${await clientIP(req, ctx.deps.frontClientIPSecret)}`, LIMITS.register))) return tooMany("register_rate");
   const refuse = (description: string) => {
     console.error("agent-auth error: register_invalid_client_metadata (400)");
     return json(400, { error: "invalid_client_metadata", error_description: description }, { "Cache-Control": "no-store" });
@@ -347,7 +370,7 @@ async function resolveClient(
 // ---------------------------------------------------------------------
 
 async function authorize(req: Request, ctx: Ctx): Promise<Response> {
-  if (!(await withinLimit(ctx, `authorize:${clientIP(req)}`, LIMITS.authorize))) return tooMany("authorize_rate");
+  if (!(await withinLimit(ctx, `authorize:${await clientIP(req, ctx.deps.frontClientIPSecret)}`, LIMITS.authorize))) return tooMany("authorize_rate");
   await maybeSweep(ctx);
   const checked = validateAuthorizeRequest(ctx.url.searchParams, ctx.mcpURL);
   if (!checked.ok) {
@@ -538,7 +561,7 @@ async function mintTokens(
 }
 
 async function token(req: Request, ctx: Ctx): Promise<Response> {
-  if (!(await withinLimit(ctx, `token-ip:${clientIP(req)}`, LIMITS.tokenIP))) return tooMany("token_rate");
+  if (!(await withinLimit(ctx, `token-ip:${await clientIP(req, ctx.deps.frontClientIPSecret)}`, LIMITS.tokenIP))) return tooMany("token_rate");
   const form = await readForm(req);
   if (!form) return tokenError("invalid_request", "send application/x-www-form-urlencoded");
   const grantType = form.get("grant_type");
@@ -777,6 +800,7 @@ function productionDeps(): AgentAuthDeps {
       return JSON.parse(body.text);
     },
     requireUserId: async (req) => (await requireUser(req)).userId,
+    frontClientIPSecret: Deno.env.get("LHF_FRONT_CLIENT_IP_SECRET")?.trim() || undefined,
   };
 }
 

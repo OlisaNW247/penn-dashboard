@@ -1478,11 +1478,24 @@ public (`none`); PKCE `S256` is mandatory; there are no client secrets.
    known and live), 5 an hour per authorization code, and a per-ip ceiling of
    1,200 as a DoS backstop only; `/phone` `lookup` 20 and `approve` 10 per
    student.
-   The ip is the first `x-forwarded-for` entry (the connector front forwards
-   it; Vercel sets it), else `cf-connecting-ip`, else one shared "unknown".
+   The ip is the first `x-forwarded-for` entry, else `cf-connecting-ip`, else
+   one shared "unknown". **Measured 2026-11-11**
+   (`docs/V11_TEST_BACKEND_2026-11-11.md`): Supabase's gateway replaces
+   `x-forwarded-for` with the address that connected to it, so a direct
+   caller is counted by its own address (a spoofed header is overwritten),
+   but through the connector front every request is counted by Vercel's
+   egress address, a handful of addresses shared by every student: 60
+   `/authorize` requests an hour from anyone blocked every sign-in. Since
+   then (written, not deployed) the front sends the address Vercel saw as
+   `x-smooth-client-ip` with `x-smooth-front-secret`, and `agent-auth` uses
+   it only when the secret equals `LHF_FRONT_CLIENT_IP_SECRET` (the front's
+   `CLIENT_IP_SECRET`); the front never passes either header from a caller.
+   Until both secrets are set, behaviour is as before.
    Over the limit: `429 { "error": "slow_down" }` with `Retry-After: 60`
-   (RFC 6749 §5.2 has no rate-limit code; `slow_down` is RFC 8628's). A check
-   that throws fails open.
+   (RFC 6749 §5.2 has no rate-limit code; `slow_down` is RFC 8628's). The
+   window is a fixed hour from its first hit, so a client that waits the 60
+   seconds and retries is refused until that hour is over (and each retry
+   still counts, harmlessly). A check that throws fails open.
 
    **Sweeping** (`agent_sweep_expired`): about one `/authorize` in fifty
    deletes pending rows two minutes past expiry (a code minted just before
@@ -1552,9 +1565,9 @@ RLS): `course_id in (the caller's enrolled ids)`, live documents only
 | `get_facts` | `course?`, `since?` (Unix seconds) | `course_facts` of enrolled courses, by `seq`; `since` compares `posted_at`, and a fact with none is always included; facts of a gone or since-edited document are dropped, as in the manifest | 200 facts |
 | `get_announcements` | `course?`, `days` (1 to 365, default 14), `page?` | `announcement` documents, newest `posted_at` first | 10 per page, 8,000 characters a post |
 | `get_ed_posts` | `course?`, `page?` | `ed` documents, newest first | 10 per page, 8,000 characters a post |
-| `propose_submission` | `assignment_id`, `kind` (`text` \| `url` \| `file`), `body?`, `url?`, `file_base64?`, `file_name?`, `mime_type?`, `note?` | writes a draft (see Drafts below) | body 100,000 characters; note 2,000; file name 200 with no path separator; file 1,572,864 bytes (1.5 MB) decoded, judged from the base64 length without decoding, but the tool description tells the model `file_base64` is for files under about 24 KB (claude.ai will not emit a 144,000-character argument) and that larger files go through the upload tools; url https only; the SDK's own 4 MiB body limit applies on top |
+| `propose_submission` | `assignment_id`, `kind` (`text` \| `url` \| `file`), `body?`, `url?`, `file_base64?`, `file_name?`, `mime_type?`, `note?` | writes a draft (see Drafts below) | body 100,000 characters; note 2,000; file name 200 with no path separator, no control character and not only dots or spaces; `mime_type` `type/subtype` in RFC 6838 token characters, at most 127 (both since 2026-11-11, not deployed); file 1,572,864 bytes (1.5 MB) decoded, judged from the base64 length without decoding, but the tool description tells the model `file_base64` is for files under about 24 KB (claude.ai will not emit a 144,000-character argument) and that larger files go through the upload tools; url https only; the SDK's own 4 MiB body limit applies on top |
 | `draft_status` | `id` | a draft's state | |
-| `begin_file_upload` | `assignment_id`, `file_name`, `mime_type`, `total_bytes`, `sha256` | `{ upload_id, chunk_bytes: 16384, chunks, upload_url, upload_method: "PUT", upload_headers }` as a JSON first line, then the "fastest: PUT ..." guidance | scope `draft`; same name rules and unknown-assignment refusal as `propose_submission`; `total_bytes` 1 to 1,572,864; `sha256` 64 hex |
+| `begin_file_upload` | `assignment_id`, `file_name`, `mime_type`, `total_bytes`, `sha256` | `{ upload_id, chunk_bytes: 16384, chunks, upload_url, upload_method: "PUT", upload_headers }` as a JSON first line, then the "fastest: PUT ..." guidance | scope `draft`; same name and `mime_type` rules and unknown-assignment refusal as `propose_submission`; `total_bytes` 1 to 1,572,864; `sha256` 64 hex |
 | `append_file_chunk` | `upload_id`, `index`, `data_base64`, `sha256` | `{ received, missing: [...] }` | scope `draft`; a chunk is exactly 16384 bytes except the last; a wrong checksum is "chunk <i> checksum mismatch; resend it"; an index outside `0..chunks-1` is refused; re-sending an index replaces it |
 | `finish_file_upload` | `upload_id`, `note?` | `draft <id> proposed (<n> bytes decoded in <ms> ms)`, as `propose_submission` | scope `draft`; see Chunked uploads below |
 
@@ -1563,7 +1576,10 @@ RLS): `course_id in (the caller's enrolled ids)`, live documents only
 checks that the assignment exists. It then refuses when the student already
 has 20 open drafts (status `proposed` or `seen`: "too many open drafts; the
 student must review them in Smooth first"). The cap is a count then an
-insert, so two simultaneous proposals can overshoot it by one. A `file` draft
+insert, so simultaneous proposals overshoot it: 70 at once against an empty
+list made 25 open drafts on 2026-11-11 (`docs/V11_TEST_BACKEND_2026-11-11.md`),
+not "one". Through the API alone the phone's 50-draft listing cap is
+therefore out of reach. A `file` draft
 is decoded from base64 and uploaded with the service role to the private
 Storage bucket `agent-drafts` at `<user id>/<draft id>/<sanitized file name>`
 (`upsert: false`; the original name is kept in `file_name`); then one
@@ -1587,8 +1603,20 @@ is the table `agent_uploads` (`id` `smu_` + 22 base64url characters, `user_id`,
 primary key `(upload_id, index)`), created by
 `20261110090000_agent_uploads.sql`, service role only. PostgREST carries
 bytea as `\x` + hex. `agent_sweep_expired` deletes expired uploads (chunks
-cascade); opt-out (`agent-snapshot` `delete`) and `deleteUserData` delete the
-student's uploads and staged objects.
+cascade) but cannot reach Storage, so an expired upload's staged object stays
+until the sweep below; opt-out (`agent-snapshot` `delete`) and `deleteUserData` delete the
+student's uploads and every staged object under `<user id>/uploads/`.
+
+**Stray staged objects** (found 2026-11-11, fixed, not deployed): the signed
+upload URL lives about two hours and cannot be revoked, while the upload ends
+at finish, at a replacing begin, or after 30 minutes. A PUT after that answers
+200 and stores the file again under an upload id no row names; production
+kept such an object through both the opt-out and `delete-account`. Every
+`begin_file_upload` and `finish_file_upload` now removes the student's staged
+objects whose upload row is gone (listing first, then reading rows, so a live
+upload is never taken), and the opt-out removes all of them. A stray made
+after the student's last upload waits for the next upload, the opt-out or
+account deletion; there is no global job.
 
 Path A, chunks: `append_file_chunk` decodes `data_base64`, hashes the decoded
 bytes and refuses a mismatch with `sha256`; the store then checks the upload
@@ -1748,7 +1776,13 @@ row also cascades from `auth.users`).
   (`deleteUserData` removes the `agent-drafts/<user id>/` objects first, best
   effort, never failing the deletion). A file's object is deleted from
   Storage the moment the student decides; the row stays, so `draft_status`
-  still answers.
+  still answers. **Not live for account deletion as of 2026-11-11**:
+  production `delete-account` was v13 of 2026-10-22, older than the agent
+  connection, so its `deleteUserData` has no agent half; the rows still go
+  (every agent table cascades from `auth.users`) but every open draft's file
+  and staged upload stayed in Storage (measured with a throwaway user,
+  `docs/V11_TEST_BACKEND_2026-11-11.md`). Redeploying `delete-account`
+  (`deploy-agent.mjs` now includes it) makes this paragraph true.
 
 ## `pair` — link the Chrome extension to a phone
 

@@ -701,3 +701,35 @@ Deno.test("the root comes from the public base even when the runtime strips /fun
   assert.ok(page.includes("/functions/v1/agent-auth/status?p="));
   assert.ok(!page.includes('"/agent-auth/status'));
 });
+
+// Measured 2026-11-11 (docs/V11_TEST_BACKEND_2026-11-11.md): behind the
+// connector front every request reaches Supabase from Vercel's egress, and
+// the gateway rewrites x-forwarded-for to that address, so /authorize was one
+// bucket for every student. The front now hands the address over with a
+// shared secret; only that pair moves a request into its own bucket.
+Deno.test("/authorize trusts x-smooth-client-ip only with the front's secret", async () => {
+  const h = harness();
+  lastDeps!.frontClientIPSecret = "front-secret-for-tests";
+  const fromFront = (student: string, secret = "front-secret-for-tests") =>
+    h.call(authorizeQuery(), {
+      headers: { "x-forwarded-for": "76.76.21.1", "x-smooth-client-ip": student, "x-smooth-front-secret": secret },
+    });
+  // One student's 60, then 429; another student behind the same egress is untouched.
+  for (let i = 0; i < 60; i++) assert.strictEqual((await fromFront("198.51.100.10")).status, 200);
+  assert.strictEqual((await fromFront("198.51.100.10")).status, 429);
+  assert.strictEqual((await fromFront("198.51.100.11")).status, 200);
+  // A wrong secret falls back to x-forwarded-for: the egress bucket, untouched so far.
+  for (let i = 0; i < 60; i++) assert.strictEqual((await fromFront(`203.0.113.${i}`, "guess")).status, 200);
+  assert.strictEqual((await fromFront("203.0.113.200", "guess")).status, 429);
+  // No secret configured: the header is ignored even with the right value.
+  lastDeps!.frontClientIPSecret = undefined;
+  assert.strictEqual((await fromFront("198.51.100.12")).status, 429);
+});
+
+Deno.test("a direct caller cannot pick its bucket with x-smooth-client-ip (no secret)", async () => {
+  const h = harness();
+  lastDeps!.frontClientIPSecret = "front-secret-for-tests";
+  const direct = (spoof: string) => h.call(authorizeQuery(), { headers: { "x-forwarded-for": "192.0.2.7", "x-smooth-client-ip": spoof } });
+  for (let i = 0; i < 60; i++) assert.strictEqual((await direct(`10.0.0.${i}`)).status, 200);
+  assert.strictEqual((await direct("10.9.9.9")).status, 429);
+});

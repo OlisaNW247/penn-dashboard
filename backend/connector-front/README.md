@@ -8,6 +8,7 @@ It logs one line per request (method, path, status) and nothing else. Bodies are
 
 - `UPSTREAM_BASE` (required): the functions origin plus `/functions/v1`, e.g. `https://ynetfjixexksxqrrkwsg.supabase.co/functions/v1`.
 - `PUBLIC_BASE` (required): this front's origin plus `/functions/v1`, e.g. `https://smooth-agent.vercel.app/functions/v1`.
+- `CLIENT_IP_SECRET` (optional, a random string, the same value as `agent-auth`'s `LHF_FRONT_CLIENT_IP_SECRET`): the front then sends the student's address (Vercel's own `x-forwarded-for`) to `agent-auth` as `x-smooth-client-ip` with this secret as `x-smooth-front-secret`. Without it Supabase's gateway sees only Vercel's egress address, so `/authorize` and `/register` share one rate-limit bucket for every student (measured 2026-11-11). Callers can never send either header themselves; the front drops them.
 - `UPSTREAM_APIKEY` (optional): sent as the `apikey` header upstream. Supabase's gateway may want it even with `verify_jwt = false`; the first deploy decides whether it is needed. Try without, set the anon key if upstream answers 401 with a gateway message instead of our `WWW-Authenticate`.
 - `PORT` (local only, default 8000).
 

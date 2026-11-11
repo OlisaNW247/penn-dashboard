@@ -148,3 +148,30 @@ Deno.test("connector-front: the root is a one-paragraph page naming the MCP URL"
   const miss = await handle(new Request("https://front.example/nothing"), env);
   assertEquals(miss.status, 404);
 });
+
+Deno.test("the student's address goes to agent-auth with the secret; callers cannot send either header", async () => {
+  await withStub(() => new Response("ok"), async (seen) => {
+    const spoofed = { "x-forwarded-for": "198.51.100.20, 10.0.0.1", "x-smooth-client-ip": "1.2.3.4", "x-smooth-front-secret": "guess" };
+    await handle(new Request("https://front.example/functions/v1/agent-auth/authorize?x=1", { headers: spoofed }), { ...env, clientIPSecret: "s3cret" });
+    assertEquals(seen[0].headers.get("x-smooth-client-ip"), "198.51.100.20");
+    assertEquals(seen[0].headers.get("x-smooth-front-secret"), "s3cret");
+    // Without the secret configured, neither header goes upstream at all.
+    await handle(new Request("https://front.example/functions/v1/agent-auth/authorize?x=1", { headers: spoofed }), env);
+    assertFalse(seen[1].headers.has("x-smooth-client-ip"));
+    assertFalse(seen[1].headers.has("x-smooth-front-secret"));
+    // Never to mcp, which has no use for it.
+    await handle(new Request("https://front.example/functions/v1/mcp", { method: "POST", headers: spoofed, body: "{}" }), { ...env, clientIPSecret: "s3cret" });
+    assertFalse(seen[2].headers.has("x-smooth-client-ip"));
+    assertFalse(seen[2].headers.has("x-smooth-front-secret"));
+    // The root /register fallback is agent-auth too.
+    await handle(new Request("https://front.example/register", { method: "POST", headers: spoofed, body: "{}" }), { ...env, clientIPSecret: "s3cret" });
+    assertEquals(seen[3].headers.get("x-smooth-client-ip"), "198.51.100.20");
+  });
+});
+
+Deno.test("envFromDeno reads CLIENT_IP_SECRET", async () => {
+  const { envFromDeno } = await import("../connector-front/main.ts");
+  const e = envFromDeno((k) => ({ UPSTREAM_BASE: "https://u/functions/v1", PUBLIC_BASE: "https://p/functions/v1", CLIENT_IP_SECRET: " s " } as Record<string, string>)[k]);
+  assertEquals(e.clientIPSecret, "s");
+  assertEquals(envFromDeno((k) => ({ UPSTREAM_BASE: "https://u", PUBLIC_BASE: "https://p" } as Record<string, string>)[k]).clientIPSecret, undefined);
+});
