@@ -944,7 +944,13 @@ Kept so nobody rebuilds them blind.
   ChatGPT session that deploys. **Live since 2026-11-11**: old routes and
   totals checked read-only against the backup, the ambassador routes
   answer. What is left is the app side: a build of this branch on a phone
-  and a first sign-in.
+  and a first sign-in. The same day, at Olisa's asks: codes that start
+  with the school; a "posters" section in the app (gallery, dashboard
+  link, "send a poster idea" with a photo picker); the matching buttons,
+  posters grid and upload card on the ambassador web page; and that
+  website restyled to look like Smooth. Server half built, reviewed and
+  handed over as one zip, not yet deployed; app half on `v12`, not yet on
+  a phone.
 - **2026-11-07 (16:39 EST).** 3.4.1 (20) archived from `c3a4feb` and
   uploaded, superseding builds 18 and 19. Marco attaches 20 and submits.
 - **2026-11-07 (evening).** The megaphone lists every post the phone keeps

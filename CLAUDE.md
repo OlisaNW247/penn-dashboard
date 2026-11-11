@@ -1173,7 +1173,22 @@ Keep this current. It is the fastest way for a new session to know what exists.
      **daily reminder** (every day / weekdays / off, a time picker, default
      7 pm), the onboarding checklist, the other messages and posting tips
      behind disclosures, a feedback field, "my page" (Safari), pause for
-     4 weeks, sign out. The server is the ambassador Worker in
+     4 weeks, sign out. **Since 2026-11-11 (Olisa: "clear where they can
+     access all posters and view the dashboard", "a clear option to upload
+     poster ideas") a "posters" section sits right after today's post**:
+     "all posters" opens an in-app gallery of the school's designs as a
+     sheet (`AmbassadorPostersView`: two columns, scan counts, tap for
+     full size with "share or save"); "scan dashboard ↗" opens the public
+     live counts for their school in Safari; "send a poster idea" opens
+     `PosterIdeaSheet` (a `PhotosPicker`, a note, send). A row that leaves
+     the app carries the arrow, and "my page" became "my web page ↗" for
+     the same reason. A chosen picture is rebuilt from its pixels by
+     `PosterIdeaImage.prepared` (Kit, ImageIO: at most 1280 px and
+     600,000 bytes, no source metadata copied) and sent only on "send"
+     (`POST /a/{code}/idea`; 5 a day and 30 in all, enforced by the
+     server). The plan's three new keys (`posters`, `dashboard`, `ideas`)
+     are optional, so the rows hide themselves against an older server.
+     The server is the ambassador Worker in
      `smooth-ambassadors/` (the poster-scan tracker's domain), not
      Supabase; what leaves the phone is in `docs/PRIVACY.md` →
      "Ambassador mode". **The reminder is local notifications**
@@ -1440,6 +1455,14 @@ in both, the Test and Build steps passed and only the log upload after
 them failed ("Failed to CreateArtifact"), on a day GitHub's artifact
 store and Mac queue were struggling. Read the steps, not the badge.
 Nothing from the merge has been on a phone.
+
+**After it, the same day: 3857 tests / 376 suites, all green, on the
+runner at `e0388f7` (manual run 43102375957, the unsigned iOS build green
+in the same run).** +16 tests and +3 suites over 3841 / 373 (the
+school-prefix test, run 43101097847 at `00a5a6b`): poster-plan decoding,
+`PosterIdeaImageTests`, the idea client against a `URLProtocol` stub, and
+the model's idea paths. It took two runs: the first stopped on `if let
+previewImage` shadowing the state its own "remove" button assigns to.
 
 Before the merge: **on `v12` (2026-11-11, the semester table): 3814 tests / 367
 suites, all green, `swift test --no-parallel` on the GitHub macOS runner in
@@ -2779,6 +2802,19 @@ itself.
 
 ## Traps that have already bitten
 
+- **A count and then an insert is not a limit.** Poster ideas
+  (2026-11-11) were capped at five a day per ambassador by reading the
+  count and inserting if it was under five. The verifier sent twenty at
+  once from one code and seventeen were stored: every request read the
+  same count before any of them wrote. With pictures near 600 KB each that
+  is how one leaked code fills a small database. The limit now lives
+  inside the insert (`INSERT ... SELECT ... WHERE (SELECT COUNT(*) ...) <
+  5`, `addIdea` in `smooth-ambassadors/worker/data.js`), which D1 runs as
+  one statement, and the handler answers 429 when it wrote nothing. The
+  count is still read first, but only to pick the right words. The wrong
+  fix is a lock or a retry loop in the Worker: there is no shared memory
+  between isolates to lock. The same shape is why the facts budget in
+  `claim_fact_extraction` is documented as able to overshoot.
 - **A private page link reused as the base of public links is not
   private.** The ambassador system (2026-11-09) gave each ambassador one
   unguessable token: `/a/{token}` was the private page and the app's
@@ -3844,7 +3880,7 @@ it holds work that exists nowhere else.
 |---|---|
 | `v12` | **Current line (2026-11-09 onward).** `v10` at `4c136b2` plus the degree-progress research (`docs/DEGREE_PROGRESS_RESEARCH_2026-11-09.md`) and the degree feature. Built on 2026-11-09 against a guessed Degree Works host; rewritten on 2026-11-10 against what Olisa captured from his own Path@Penn session: `Degree/` in the Kit (`PathAuditDecoder`, `PathBridge`, `PathDegree`, `PathWhatIf`), `PathPortal`, `AppState+Degree`, `DegreeProgressView`, `DegreeWhatIfSheet`, `FeatureFlags.degreeProgress`. Green on the `tests` workflow, which runs on pushes to it, and built for iOS with `xcodebuild` on Olisa's Mac (Xcode 27.2) on 2026-11-10 (Test baseline); the Debug build of `d2f37a0` read a real audit on Olisa's iPhone 17 the same day (Known gaps). It does **not** contain `v11` (next row), which branched from the same `v10` commit; the two have to be merged before either ships with the other's work. **Since 2026-11-11 it also carries ambassador mode and `smooth-ambassadors/`** (the `claude/new-session-b3ylkg` row below; What the app does → Profile → 8). |
 | `v11` | **Marco's line since 2026-11-07, found on the remote on 2026-11-10** (this file said "there is no `v11`" until then, which was wrong). Off `v10` at `4c136b2`, the same commit `v12` started from, and 46 commits on by 2026-11-10 (`06250d0`): the "agent connection" (an `agent-auth` / `mcp` / `agent-snapshot` backend, a connector front on Vercel, the phone's opt-in, approve sheet and snapshot upload) and a DEBUG Canvas submit spike; its own notes say "`v11` is the line". Read only from the commit subjects and a file list here, not reviewed. It and `v12` both edit `CLAUDE.md`, `ROADMAP.md`, `docs/PRIVACY.md`, `AppState.swift`, `ContentView.swift` and `FeatureFlags.swift`; none of the degree files is touched by it. Nobody has merged the two or decided which is the base. |
-| `claude/new-session-b3ylkg` | **2026-11-09, `v10` `4c136b2` plus two commits, meant to become `v11`.** (1) `smooth-ambassadors/`: the poster-scan tracker plus the campus ambassador system as a Cloudflare Worker + D1 (private pages per ambassador, tracked links, a founder view with a digest generator, 17 Miniflare tests), drafted here to move to a private repo. (2) **Ambassador mode in the app** (What the app does → Profile → 8): a code-based sign-in in Profile, today's post, a daily local reminder, the planner carve-out. 3697/357 green on the GitHub runner at `85d4234` and the unsigned iOS `xcodebuild` green at `674b89b` (2026-11-10, Test baseline); never on a phone, server not deployed. The Worker's legacy routes were matched to the live site the same day (dashboard byte-identical, `/api/stats` rows identical). Olisa or Marco creates `v11` from it. **2026-11-10, later:** the Sites source arrived as an archive; `scripts/build-sites.mjs` folds the ambassador system into the real single-file Worker (two edits to its `fetch`, a generated section, images byte-identical), `test/sites.test.mjs` runs the original and the edited artifact side by side (14 of 14; `npm test` 28 pass), and the public `/r/{ref}` links replaced the token-bearing ones (Traps). A zip went to Olisa for the ChatGPT session that deploys Sites. **2026-11-11:** deployed to the live Sites project by that session; existing routes and totals checked from here (Known gaps). **Merged into `v12` on 2026-11-11** ("do this in v12", Olisa): `v12` was merged into this branch first (two conflicts, both "each side added a line here": the `DashRoute` cases and these notes), the merged tree was run on the runner, and only then was `v12` moved to it. The "meant to become `v11`" above is history: `v11` is Marco's line and none of this is in it. |
+| `claude/new-session-b3ylkg` | **2026-11-09, `v10` `4c136b2` plus two commits, meant to become `v11`.** (1) `smooth-ambassadors/`: the poster-scan tracker plus the campus ambassador system as a Cloudflare Worker + D1 (private pages per ambassador, tracked links, a founder view with a digest generator, 17 Miniflare tests), drafted here to move to a private repo. (2) **Ambassador mode in the app** (What the app does → Profile → 8): a code-based sign-in in Profile, today's post, a daily local reminder, the planner carve-out. 3697/357 green on the GitHub runner at `85d4234` and the unsigned iOS `xcodebuild` green at `674b89b` (2026-11-10, Test baseline); never on a phone, server not deployed. The Worker's legacy routes were matched to the live site the same day (dashboard byte-identical, `/api/stats` rows identical). Olisa or Marco creates `v11` from it. **2026-11-10, later:** the Sites source arrived as an archive; `scripts/build-sites.mjs` folds the ambassador system into the real single-file Worker (two edits to its `fetch`, a generated section, images byte-identical), `test/sites.test.mjs` runs the original and the edited artifact side by side (14 of 14; `npm test` 28 pass), and the public `/r/{ref}` links replaced the token-bearing ones (Traps). A zip went to Olisa for the ChatGPT session that deploys Sites. **2026-11-11:** deployed to the live Sites project by that session; existing routes and totals checked from here (Known gaps). **Merged into `v12` on 2026-11-11** ("do this in v12", Olisa): `v12` was merged into this branch first (two conflicts, both "each side added a line here": the `DashRoute` cases and these notes), the merged tree was run on the runner, and only then was `v12` moved to it. The "meant to become `v11`" above is history: `v11` is Marco's line and none of this is in it. **Later on 2026-11-11:** school-prefixed codes, then posters, the dashboard link, poster-idea uploads and the Smooth restyle of the ambassador website, all landed on `v12` once compiled (Test baseline). `scripts/build-to-phone.sh` came from the same day. |
 | `v10` | **Current line (2026-11-03 onward).** `v9` (the no-banner sign-in, the onboarding polish, the composed-day research) plus `origin/v8` `7e004c5` (the tree's recency and follow-up work) plus `phase0/extract-facts-bench`. The merge's Swift run is recorded under Test baseline. |
 | `phase0/extract-facts-bench` | 2026-11-03, off `v9`: the extract-facts bench, prompt, schema and parser; the model decision (Haiku 5.5, `docs/EXTRACT_FACTS_BENCH_2026-11-03.md`). In `v10`. |
 | `v9` | 2026-11-01 to 11-03: the no-banner sign-in and keepalive, proven on Marco's phone; the onboarding polish merged; the composed-day research. In `v10`. |
@@ -3911,7 +3947,21 @@ none is a ship line.
   (2026-11-11) are built and tested but not yet live**: a second zip went
   to Olisa for the same ChatGPT session; until it deploys, the founder
   page still makes bare codes. It is one changed line in the deployed
-  file, no schema or variable change. The review notes need a test code once a roster exists.
+  file, no schema or variable change. **Superseded the same day by a
+  third zip that also carries poster ideas, the posters section and the
+  restyled pages** (the ambassador, sticker and founder pages in Smooth's
+  colours with Familjen Grotesk, Inter and Space Mono served from the
+  site itself; the public dashboard at `/` left exactly as it was). Until
+  that zip is deployed the live pages are the old plain ones, the app's
+  three poster rows stay hidden or answer 404 on send, and nothing here
+  has been seen with real poster pictures: the screenshots used
+  placeholders. The app's gallery, photo picker and idea sheet compiled
+  and passed on the runner and have not been on a phone. The upload route
+  was reviewed for stored-content, authorisation and limits before it
+  went out; what the review left as notes: the type check reads only a
+  file's first bytes (safe because the image is served with `nosniff` and
+  a sandboxing CSP), and the founder page's image links hold the founder
+  secret in their path, as the page's own address does. The review notes need a test code once a roster exists.
 - **Degree progress (`v12`) has read one real audit on one phone, and
   which degree it shows first is unsettled.** On 2026-11-10 at 12:07 local
   the Debug build of `d2f37a0` (installed with `devicectl` over the store

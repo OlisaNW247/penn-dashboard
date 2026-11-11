@@ -257,4 +257,47 @@ export function ideaTests({ test, skip, req, founder, db, label = "" }) {
     const onDisk = readdirSync(join(root, "worker/fonts")).filter((f) => f.endsWith(".woff2")).reduce((s, f) => s + statSync(join(root, "worker/fonts", f)).size, 0);
     assert.equal(onDisk, total);
   });
+  // From the review of 2026-11-11.
+  t("ideas: twenty at once still store only the day's five", async () => {
+    await add("race", "Idea Race", "clark");
+    const results = await Promise.all(
+      Array.from({ length: 20 }, (_, n) => asJSON(`/a/${amb.race.token}/idea`, { note: `race ${n}` }).then((r) => r.status)),
+    );
+    assert.equal(results.filter((x) => x === 200).length, 5, results.join(","));
+    assert.equal(results.filter((x) => x === 429).length, 15);
+    assert.equal((await plan("race")).ideas.sent, 5);
+  });
+
+  t("ideas: a founder action needs a plain numeric id, or it touches nothing", async () => {
+    const before = await ideasOf();
+    assert.ok(before.length > 0);
+    for (const id of ["-1", "0", "1e3", "0x10", "01", "1.0", "abc", "99999999999", ""]) {
+      for (const action of ["idea-delete", "idea-seen"]) {
+        const r = await asForm(`${F}/${action}`, { id });
+        assert.equal(r.status, 400, `${action} id=${JSON.stringify(id)}`);
+      }
+    }
+    assert.deepEqual(await ideasOf(), before, "nothing was deleted or marked seen");
+  });
+
+  t("ideas: a body sent in chunks with no declared length is cut off, not buffered", async () => {
+    const chunk = new TextEncoder().encode("a".repeat(65536));
+    let sent = 0;
+    const body = new ReadableStream({
+      pull(controller) {
+        if (sent >= 60) return controller.close(); // about 3.9 MB in all
+        sent += 1;
+        controller.enqueue(chunk);
+      },
+    });
+    const r = await req(`/a/${amb.a.token}/idea`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body,
+      duplex: "half",
+    });
+    assert.equal(r.status, 413);
+    await r.arrayBuffer();
+  });
+
 }

@@ -151,16 +151,49 @@ const tooLarge = () => new Response("payload too large", { status: 413, headers:
 // numbers and booleans survive; objects and arrays are treated as missing),
 // or { error } holding the Response to send. The null prototype keeps a
 // "__proto__" key from meaning anything.
+// Reads a body as text, giving up as soon as it passes `maxBytes`. A body sent
+// in chunks declares no length, so the content-length check in form() never
+// sees it, and request.text() would buffer whatever arrived, megabytes of it,
+// before the size was looked at. Returns null for "too large". The byte cap is
+// twice the character cap because a character can take more than one byte.
+async function readCapped(request, maxBytes) {
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const chunks = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      try {
+        await reader.cancel();
+      } catch {
+        // already closed: nothing to release
+      }
+      return null;
+    }
+    chunks.push(value);
+  }
+  const all = new Uint8Array(size);
+  let at = 0;
+  for (const c of chunks) {
+    all.set(c, at);
+    at += c.byteLength;
+  }
+  return new TextDecoder().decode(all);
+}
+
 async function form(request, max = MAX_BODY) {
   const declared = Number(request.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > max) return { error: tooLarge() };
   let text;
   try {
-    text = await request.text();
+    text = await readCapped(request, max * 2);
   } catch {
     return { error: badRequest() };
   }
-  if (text.length > max) return { error: tooLarge() };
+  if (text === null || text.length > max) return { error: tooLarge() };
   if (!text.trim()) return { error: badRequest() };
   const ct = (request.headers.get("content-type") || "").toLowerCase();
   const raw = Object.create(null);
@@ -264,7 +297,11 @@ async function handleIdea(request, env, amb, base) {
   if (counts.today >= IDEA_DAILY_LIMIT) return ideaError(request, 429, `that's ${IDEA_DAILY_LIMIT} for today. try again tomorrow.`);
   if (counts.total >= IDEA_TOTAL_LIMIT) return ideaError(request, 429, `we're holding ${IDEA_TOTAL_LIMIT} of yours already. thank you.`);
 
-  await addIdea(env, amb, { note, mime, image: image || null });
+  // The counts above only choose the right words for the common case. This
+  // insert is what enforces the limits (see addIdea): if it wrote nothing,
+  // another request got there first.
+  const stored = await addIdea(env, amb, { note, mime, image: image || null });
+  if (!stored) return ideaError(request, 429, `that's ${IDEA_DAILY_LIMIT} for today. try again tomorrow.`);
   return redirectBack(base + "#idea", "sent. thank you.", request);
 }
 
@@ -460,7 +497,11 @@ async function founderRoutes(request, env, parts, url) {
     const parsed = await form(request);
     if (parsed.error) return parsed.error;
     const f = parsed.f;
-    const id = intField(f, "id", 1, 2 ** 31, 0);
+    // An id is digits and nothing else. parseInt would read "1e3" and "0x10"
+    // as 1 and 0, and a clamp would turn "-1" into 1, so a mistyped or hostile
+    // id would quietly act on the first row: for idea-delete, the wrong idea.
+    const idText = field(f, "id", 12);
+    const id = /^[1-9][0-9]{0,9}$/.test(idText) ? Number(idText) : 0;
     if (action !== "add" && !id) return badRequest();
     switch (action) {
       case "add": {

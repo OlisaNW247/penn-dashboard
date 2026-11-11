@@ -160,12 +160,24 @@ export async function ideaCounts(env, amb) {
   return { total: row?.total ?? 0, today: row?.today ?? 0 };
 }
 
+// Returns false when the ambassador is at a limit. The limits are checked
+// inside the insert itself, not by a count beforehand: a count and then an
+// insert are two statements, and twenty requests sent at once all read the same
+// count before any of them writes (the review ran exactly that and stored 17
+// in a day meant to hold 5). D1 runs one statement at a time, so a single
+// conditional insert cannot be raced, and with images near the size cap that
+// is what keeps one leaked code from filling the database.
 export async function addIdea(env, amb, { note, mime, image }) {
-  await env.DB.prepare(
-    "INSERT INTO poster_ideas (ambassador_id, note, mime, image) VALUES (?1, ?2, ?3, ?4)",
+  const dayStart = new Date().toISOString().slice(0, 10) + "T00:00:00.000Z"; // the UTC day
+  const r = await env.DB.prepare(
+    `INSERT INTO poster_ideas (ambassador_id, note, mime, image)
+     SELECT ?1, ?2, ?3, ?4
+     WHERE (SELECT COUNT(*) FROM poster_ideas WHERE ambassador_id = ?1 AND ts >= ?5) < ?6
+       AND (SELECT COUNT(*) FROM poster_ideas WHERE ambassador_id = ?1) < ?7`,
   )
-    .bind(amb.id, note, mime, image)
+    .bind(amb.id, note, mime, image, dayStart, IDEA_DAILY_LIMIT, IDEA_TOTAL_LIMIT)
     .run();
+  return (r.meta?.changes ?? 0) > 0;
 }
 
 // Founder only. Never selects the image itself: the list stays small, and the
