@@ -501,6 +501,34 @@ final class AppState: ObservableObject {
         SharedDefaults.isTestRunner ? nil : AppliedFactStore.makeDefault() {
         didSet { appliedFactsCache = nil; factsLastEffects = nil }
     }
+
+    // Degree progress (`AppState+Degree.swift`); stored here because an
+    // extension cannot hold stored properties. The store is a scratch
+    // directory under the test runner so a test's `clearDegreeData()` can
+    // never delete a developer's real `degree-audit.json`.
+    @Published var degree: DegreeSnapshot = .empty
+    @Published var degreeStatus: DegreeStatus = .idle
+    var degreeStore: DegreeAuditStore = SharedDefaults.isTestRunner
+        ? DegreeAuditStore(directory: FileManager.default.temporaryDirectory
+            .appendingPathComponent("degree-\(UUID().uuidString)", isDirectory: true))
+        : .default()
+    /// The student's own sample course load (`DegreePlanView`). Their own work,
+    /// not Penn's, so it has a file and a loaded flag of its own; the scratch
+    /// directory under the test runner is distinct from the audit's for the
+    /// same reason as above.
+    @Published var degreePlan: DegreePlan = .empty
+    var degreePlanStore: DegreePlanStore = SharedDefaults.isTestRunner
+        ? DegreePlanStore(directory: FileManager.default.temporaryDirectory
+            .appendingPathComponent("degree-plan-\(UUID().uuidString)", isDirectory: true))
+        : .default()
+    var degreePlanLoaded = false
+    /// The one hidden WebView on Penn's advising page (`PathPortal`).
+    let degreePortal = PathPortal()
+    var degreeRefreshTask: Task<Void, Never>?
+    /// Bumped by `clearDegreeData()`. A read in flight captured the number it
+    /// started under and stops writing (tokens, file, snapshot, status) once it
+    /// changes, so a disconnect cannot be undone by a read that finishes after.
+    var degreeGeneration: Int = 0
     /// Holds the facts cursor (`factsCursorV1`).
     var factsDefaults: UserDefaults? = SharedDefaults.isTestRunner ? nil : .lhf
     /// The stored facts as snapshots, read once and dropped whenever the store
@@ -1220,6 +1248,12 @@ final class AppState: ObservableObject {
         // stored property already has a value by this point, so the instance
         // call is legal.
         normalizeStoredCourseNames()
+
+        // The saved degree audit, read back so the Profile row and the degree
+        // page have the last read from the first frame instead of `.empty`
+        // until a network read lands. Network-free; every stored property has
+        // a value here, so the instance call is legal.
+        if FeatureFlags.degreeProgress { loadDegreeSnapshotAtLaunch() }
 
         // The sign-up backlog: classify an existing install now, while the
         // ledger is exactly as the previous launch left it. Before the
@@ -4935,6 +4969,10 @@ final class AppState: ObservableObject {
     func selectCanvasInstallation(_ installation: CanvasInstallation) {
         guard installation != canvasInstallation || !hasChosenCanvasInstallation else { return }
         invalidateSessionProbe()
+        // The hidden Path@Penn WebView and the saved audit belong to the old
+        // school's login; a disconnect below clears them too, but a switch from
+        // an unconnected state would otherwise leave the portal standing.
+        if installation != canvasInstallation { clearDegreeData() }
         if installation != canvasInstallation,
            (isCanvasConnected || !SessionCookieStore.load(service: .canvas).isEmpty) {
             disconnectCanvas(keepingStudentWork: false)
@@ -5035,6 +5073,7 @@ final class AppState: ObservableObject {
         // `.canvas` but is a session-death rehearsal, not a sign-out.
         SessionCookieStore.remove(service: .ed)
         EdDiscussionCoordinator.clearCaches()
+        clearDegreeData()
         edDiscussionCoordinator.resetThrottle()
         edDiscussionStatus = nil
         // Best-effort revoke BEFORE the local clear, not after: the revoke
@@ -9951,5 +9990,42 @@ final class AppState: ObservableObject {
 
     private static func byDueDate(_ a: Assignment, _ b: Assignment) -> Bool {
         Assignment.isOrderedByDueDate(a, b)
+    }
+}
+
+// MARK: - Degree portal: the shared PennKey budget
+
+/// The degree portal (`PathPortal`) types the same saved PennKey the silent
+/// Canvas renewer does, so it reads and stamps the renewer's own records
+/// instead of keeping a second budget. These live here, not in
+/// `AppState+Degree.swift`, only because the records' keys and the failed
+/// clock's setter are `private` to this file. Nothing here carries a
+/// credential: dates and one latch.
+extension AppState {
+    /// What the renewer's budget says now: the last submission (persisted by
+    /// whoever made it, the renewer or the portal), the failed-submission
+    /// clock (this instance's copy or the persisted one, the later), and the
+    /// two latches.
+    func pathCredentialBudget() -> PathPortal.CredentialBudget {
+        let failed = [failedCredentialSubmissionAt, Self.persistedFailedCredentialSubmissionAt()]
+            .compactMap { $0 }.max()
+        return PathPortal.CredentialBudget(
+            lastSubmission: Self.persistedCredentialSubmissionAt(),
+            lastFailedSubmission: failed,
+            passwordRejected: autoLoginDisabledReason != nil,
+            autoLoginEnabled: stayLoggedInEnabled && PennKeyCredentialStore.hasCredentials
+        )
+    }
+
+    /// The portal filled the form: stamp the renewer's submission record
+    /// (`onCredentialSubmission` writes the same key).
+    func notePathCredentialSubmitted(at date: Date) {
+        UserDefaults.lhf.set(date.timeIntervalSince1970, forKey: Self.lastCredentialSubmissionAtKey)
+    }
+
+    /// A portal attempt that filled the form ended without a token: the
+    /// renewer's failed-submission record, the one its 60-minute wait reads.
+    func notePathCredentialFailed(at date: Date) {
+        setFailedSubmissionClock(date)
     }
 }

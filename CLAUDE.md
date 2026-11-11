@@ -79,7 +79,16 @@ model on the server for course-level "facts"; they belong to the class,
 carry no user id, and a student's AI-assist switch does not stop them
 (`docs/PRIVACY.md` says so). The phone also reads Canvas's own structured
 endpoints (Planner, module completion, section dates) with the student's
-session and keeps the results on the phone. There is no analytics, tracking,
+session and keeps the results on the phone. Since 2026-11-10 (`v12`; first read on a device the same day, Olisa's iPhone 17, a Debug build of `d2f37a0`) a
+Penn install can show the student's degree audit by running Penn's own
+Path@Penn page in a hidden WebView (`PathPortal`), signed in with the same
+saved PennKey, and asking that page for the audit through allowlisted
+scripts. The audit is kept on the phone (`degree-audit.json`); nothing is
+stored in the Keychain for it. The page's sign-in token, Penn's id for the
+student, the name, the pronoun, the rendered audit and any sentence about a
+GPA or grades never cross from the page into the app, and nothing about the
+degree goes to the server, the laptop or the tree (`docs/PRIVACY.md` →
+"Degree progress"). There is no analytics, tracking,
 or third-party SDK. Don't say "everything is on-device" (untrue since
 `assistant-ui`) or "no server" (untrue since the backend). `docs/PRIVACY.md`
 is the student-facing version and must change in the same commit as any
@@ -823,6 +832,95 @@ Keep this current. It is the fastest way for a new session to know what exists.
   working perfectly"). Owner's ask of 2026-10-22: "voice mode for the tree AI";
   dictate-then-send was the agreed first version, hands-free with spoken
   answers set aside (`ROADMAP.md` → Next).
+- **Degree** (`DegreeProgressView`, `v12`, behind
+  `FeatureFlags.degreeProgress`; rewritten 2026-11-10 against the real
+  Path@Penn after Olisa's capture; green on the GitHub runner, built for
+  iOS on Olisa's Mac and read on his iPhone 17 the same day: the ring and
+  the requirement cards drew from his real audit, Known gaps has what is
+  still unchecked). Olisa's ask: "see your degree progress, see what
+  would hypothetically be your course of action if you switched degrees",
+  no course recommendations. Reached from the first row of Profile →
+  classes ("degree", with "31 of 40 cu", a percent, or the status line) and
+  `DashRoute.degree` (`-LHFShowDegree` in a DEBUG build); Penn only; preview
+  and demo show `SampleData.degreeSnapshot()`. Three tabs on a
+  `SmoothSegmentPicker`, **progress · what if · plan**.
+  - **Progress.** A student in two degrees gets a chip per degree above the
+    ring (`AppState.selectDegree`, `degreeSelectedIDV1`); the degrees come
+    from the student's record, so nobody is asked to pick one. A teal ring
+    at Penn's own percent for the degree, with "x of y cu" taken from Penn's
+    sentence in the degree block (`PathAuditDecoder.creditTotals`), then one
+    card per audit block ("Major in …", "General Electives", …) with a bar
+    in teal / marigold / rule-grey for met / in progress / open, expanding
+    to its rules: taken and registered courses as class-coloured chips
+    ("· now" while registered), options still open as ghost chips, Penn's
+    notes as quiet lines. Penn's empty synthetic blocks are skipped. Footer:
+    "path@penn's reading · official audit ↗".
+  - **What if.** One searchable list of Penn's public programs (1,049 on
+    2026-11-10). Picking one shows a button per change Penn's own rules
+    allow, `PathWhatIf` mirroring the page's script: "switch to", "add
+    major", "add minor", "add concentration"; the result is the same block
+    list under a grape "what if" tag with one summary line. The last four
+    are kept as chips.
+  - **Plan** (2026-11-10, Olisa from his phone: "a table feature where you
+    can build a sample course load for the next semester or rest of your
+    time at Penn"; written the same hour, green on the runner at `78c4a77`,
+    not yet through `xcodebuild` or on a phone). `DegreePlanView`: one 168pt column per
+    semester, scrolling sideways, starting at the semester after this one,
+    fall and spring only, "+ semester" up to ten. A column lists what the
+    audit shows as registered for that term (fixed chips), then the
+    student's own courses, each removable, with "fits · <requirement>" under
+    one that Penn lists among the options of a requirement still open
+    (`DegreePlanMath.coverage`, first match, Penn's order). "+ course" opens
+    a sheet: type a code, or pick from "still open on your audit", Penn's
+    list untouched except for what is already planned or taken. The word is
+    "fits", never "satisfies", and nothing is ranked: no recommendations is
+    still the rule. The plan is the student's own work, so it has its own
+    file (`degree-plan.json`, `DegreePlanStore`), is backed up with the
+    phone where the audit is not, and is deleted with the rest on
+    disconnect. It never reaches Penn: Penn's audit request carries the
+    record's own `plan`, which this is not. Not built: course search by
+    title, summer columns, and running Penn's audit with the plan.
+  - **The semester table, in every tab** (2026-11-11, Olisa after seeing
+    his two real degrees: "a table in every tab with each potential semester
+    and classes you take. and you be able to drag and switch classes
+    around"; see Test baseline for whether it has compiled).
+    `DegreeSemesterTable` is the plan tab's table made into one view and
+    placed under the ring in progress and what if as well, given the audit
+    its host is drawing so "fits" follows a what-if. Columns come from
+    `DegreeTimeline.columns` (Kit, pure): past semesters and the current
+    one hold what was taken (fixed chips, "· now" for the current), future
+    ones hold what is registered (fixed) and then the student's planned
+    courses, and it opens scrolled to the current semester. A planned chip
+    drags (`.draggable` with its code as a string) onto another future
+    column, or onto a planned row to go before it
+    (`DegreePlanMath.moving`); nothing else moves, because a taken or
+    registered course is Penn's fact and not the student's sketch.
+    **The past and current columns are empty on a real phone so far.**
+    Penn's audit carries no term for a course (`AuditCourse.termCode` is
+    always nil from `PathAuditDecoder`, which is also why the plan tab's
+    "registered" rows never showed). The term comes from
+    `DegreeSnapshot.history` (term code -> course codes), which only the
+    sample data fills: reading it from the record's `hist` and `reg` waits
+    on seeing their string format, asked of Olisa as a masked console
+    snippet the same day, and on the privacy text changing with it
+    (`docs/PRIVACY.md` says the list of past courses never leaves Penn's
+    page).
+  - **How it reads.** `PathPortal` keeps one hidden `WKWebView` on
+    `https://courses.upenn.edu/` for the app run, on the Canvas login data
+    store so the PennKey session and Duo trust carry over. The page opens
+    its own sign-in popup (a child WebView built from the configuration
+    WebKit passes in, or `window.opener` is nil and the token cannot be
+    handed back); the saved PennKey is filled on Penn's form under the same
+    submission budget as the silent Canvas renewer. Then `PathScripts`
+    (Kit, pure strings) run in the page and return allowlisted JSON:
+    readiness (the token only as a boolean), the degrees from the record,
+    the audit rebuilt field by field, the program list, one program's codes,
+    the code-to-name tables. `docs/DEGREE_PROGRESS_V12_BUILD_SPEC.md` holds
+    the capture and the contract.
+  - Status words: "reading path@penn…", "approve the duo push on this
+    phone", "sign in to canvas", "couldn't read path@penn · retry", "read
+    today". Code decides nothing here: the audit is Penn's and the screen
+    only draws it.
 - **Profile** (`SettingsPage`; `ProfileView` is only a wrapper), in order:
   1. your name
   2. accounts (Canvas and Gradescope connect/disconnect; "update password"
@@ -1044,7 +1142,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
      dashboard, items with nothing to submit, the announcement "ai assist"
      opt-out)
   7. sync (iCloud sync, off by default; on macOS, open at login)
-  8. ambassador (2026-11-09, `claude/new-session-b3ylkg`, for `v11`;
+  8. ambassador (2026-11-09, written on `claude/new-session-b3ylkg`,
+     merged into `v12` on 2026-11-11 at Olisa's word, not `v11`;
      compiled and tested green on the GitHub runner 2026-11-10, the
      unsigned iOS build included, Test baseline; never on a phone): one row, "ambassador mode", with
      "sign in" or "maya · uva", that pushes `AmbassadorPage`
@@ -1314,7 +1413,83 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**`claude/new-session-b3ylkg` at `85d4234` (2026-11-10): 3697 tests / 357
+**Current on `v12` (2026-11-10, afternoon, after the first phone run): 3791
+tests / 366 suites, all green, `swift test --no-parallel` on the GitHub macOS
+runner in 122 s (the `tests` workflow, run 42865218965 at `3a4822c`, second
+attempt: the first sat in the queue for 15 minutes without a Mac and was
+cancelled before any step ran, which is the runner pool and not the code);
+Deno and the extension's suite green on the same run. +27 tests / +2 suites
+over the run below, in four pushes that each compiled at the first attempt:
+`00ceaf6` (the catalog pin, `DegreeGoals.chipTitles`, the colour key),
+`255df7b` (a degree named by its code), `78c4a77` (the plan tab: 3790 / 366,
+with the suites "Degree plan" and "Degree plan store" and the tab, fixture
+and clearing tests in `DegreeAppStateTests`) and `3a4822c` (the history rule
+for `cur`: the `end_term` pins in `PathBridgeTests` and
+`AppState.degreeSelection`'s table). The `degrees` page script was also run
+in Node against a record of the observed shape with synthetic codes. None
+of the four has been through `xcodebuild` or onto a phone yet; the build on
+Olisa's phone is still `d2f37a0`.**
+
+Before it: **on `v12` (2026-11-10, the Path@Penn rewrite after its review): 3764
+tests / 364 suites, all green, `swift test --no-parallel` on the GitHub macOS
+runner in 115 s (the `tests` workflow, run 42847761794 at `736c96b`); Deno
+and the extension's suite green on the same run. **The iOS Debug build of
+`155c840` (the same tree plus notes; `xcodebuild`, `generic/platform=iOS`,
+`CODE_SIGNING_ALLOWED=NO`, widget and App Intents metadata included)
+succeeded on Olisa's Mac at 11:36 local on 2026-11-10 with Xcode 27.2
+(27B52, the iOS 27.2 SDK), the first build of this project on Xcode 27.**
+`swift test` has not been run on that Mac, and nothing is on a phone.
++11 tests / +1 suite over the run below: `PathPortalBudgetRuleTests`
+(the credential-fill truth table, its parity with the renewer's rule, the
+retry-once rule, the status a what-if may restore), four source pins on
+`PathPortal.swift` and the grade-text guard pin in `PathBridgeTests`. They
+came from an independent read of the rewrite, which found nine things; the
+commit message of `736c96b` lists them.**
+
+Before it: **on `v12` (2026-11-10, the Path@Penn rewrite): 3753 tests / 363
+suites, all green, `swift test --no-parallel` on the GitHub macOS runner in
+92 s (the `tests` workflow, run 42846226886 at `0dba617`); Deno and the
+extension's suite green on the same run. No Mac, no `xcodebuild`, no phone.
+The steps that day: `6e42641` 3752 / 365 (`PathAuditDecoderTests`, +14);
+`4e2a44f` 3778 / 367 (`PathWhatIfTests` and `PathBridgeTests`, +26 / +2);
+`07eefee`, the rewire, compiled at the first attempt and ran 3753 / 363 with
+one red (the snapshot round trip in `DegreeWiringTests`, stamped with
+`Date()` where the store's ISO 8601 dates drop the fraction; the fixture now
+uses a whole second, `0dba617`). **-25 tests / -4 suites against `4e2a44f`
+on purpose:** the five test files of the deleted Degree Works code went with
+it (`DegreeWorksAuditDecoderTests`, `DegreeWorksRequestsTests`,
+`DegreeWorksTokensTests`, `DegreeGoalCatalogTests`,
+`StudentSelfReaderTests`), and `DegreeWiringTests`, `DegreeCopyTests`,
+`DegreeStructureTests` and `DegreeAuditStoreTests` were rewritten for the
+new API. Not in the suite: the page scripts were also run in Node against a
+fake Path@Penn page seeded with marker secrets, none of which appeared in
+any script's output.**
+
+Before it: **on `v12` (2026-11-10, earlier, the Path@Penn audit decoder): 3752
+tests / 365 suites, all green, `swift test --no-parallel` on the GitHub macOS
+runner in 109 s (run 42837454207 at `6e42641`). +14 tests / +1 suite:
+`PathAuditDecoderTests`, the decoder for the audit shape Olisa captured from
+his own Path@Penn session that day (`docs/DEGREE_PROGRESS_V12_BUILD_SPEC.md`
+→ "Observed on 2026-11-10"). The old Degree Works reader and client are
+still the ones wired in, and they target a host the student never reaches,
+so the feature cannot work on a phone until they are replaced.**
+
+Before it: **on `v12` (2026-11-10, the degree-progress feature): 3738 tests /
+364 suites, all green, `swift test --no-parallel` on the GitHub macOS runner
+in 103 s (the `tests` workflow, run 42826422108 at `d5d5a79`; no Mac, no
+phone). Before it, run 42644725170 at `7f01843` (the first push, 3737 / 364)
+was green and run 42653623893 at `e33a467` (the review's fixes) was
+3738 / 364 with one red, `DegreeCopyTests` "no verdict words", because a doc
+comment in `DegreeWhatIfSheet.swift` said "undergraduate" and the test
+forbids "graduate" as a substring; the comment was reworded in `d5d5a79`,
+nothing loosened. +64 tests / +13 suites over `v10`'s 3674 / 351: the seven Kit
+suites under `Degree/` (decoder, tokens, requests, goal catalog, student
+reader, what-if, store) and `DegreeWiringTests`, `DegreeCopyTests`,
+`DegreeStructureTests` in the UI tests. Deno and the extension's suite green
+on the same runs. The iOS `xcodebuild` is not covered by the runner, so the
+widget and the iOS-only files of this tree are not yet compiled.**
+
+The ambassador branch, before it was merged into `v12` (its own runs, kept for the trail): **`claude/new-session-b3ylkg` at `85d4234` (2026-11-10): 3697 tests / 357
 suites, all green, `swift test --no-parallel` on the GitHub macOS runner in
 106 s (the `tests` workflow, run 42827059990; Deno and the extension suite
 green in the same run).** +23 tests and +6 suites over `v10`'s 3674 / 351,
@@ -1334,7 +1509,7 @@ the unsigned iOS build), after two fixture strings in
 `AmbassadorTests.swift` moved to the public `/r/{ref}` link shape. The
 count was not read off that run; no test was added or removed.
 
-**Current on `v10` (2026-11-07, evening, every post listed, the 3-day grace):
+Before it: **on `v10` (2026-11-07, evening, every post listed, the 3-day grace):
 3674 tests / 351 suites, all green, `swift test --no-parallel` on Marco's Mac
 (85 s); the signed iOS Debug device build (3.4.1 (20)) is on his phone and
 launched.** -26 over 3700 / 351 on purpose: 31 tests that pinned the 7-day
@@ -2576,6 +2751,45 @@ itself.
   share the link, when sharing it is the job. The rule: before a
   credential goes into a URL, list every place that URL is shown, and if
   one of them is public, it needs its own id.
+- **`cur` on the Path@Penn record is a history, not the student's current
+  degrees** (2026-11-10, the first build on a phone). The capture that
+  designed the rewrite printed only the *shape* of `cur` (key names and
+  string lengths of the first entry), so nobody saw that every term's holder
+  repeats every curriculum the student has ever had: the owner's latest term
+  held a pre-college non-degree entry, the major he was admitted to (twice,
+  with two different end terms), the major he switched to, a fragment with
+  no major carrying only a concentration code, and a second school's
+  program. An entry that is over carries `end_term`; a live one has none.
+  The script took all of them, in Penn's order, so the screen opened on a
+  major he had left and offered a "non degree" chip that could only fail.
+  The tells: more chips than the student has degrees, the same major twice,
+  and a chip that answers "couldn't read path@penn". The wrong fixes are
+  filters on names (drop "non degree", prefer the entry that says computer
+  science); the rule is the end term. The lesson about captures: a shape
+  with the values hidden hides the counts too, so print how many entries
+  there are and which keys are sometimes absent, even when the values must
+  stay private.
+- **Someone else's client is not the system: the degree feature was built
+  against a host no Penn student's browser ever reaches** (2026-11-09 to
+  11-10). The first build read Penn Labs' open-source Degree Works client and
+  another school's command-line tool and took their host, JWT cookies and
+  `/api/audit` shapes as Penn's. They compiled, passed 64 tests and described
+  nothing a student sees: Olisa's capture of his own session showed that
+  `courses.upenn.edu` serves the advising page and proxies the audit
+  (`page=dgw-server`), that sign-in is a 32-character token held in the
+  page's memory and sent in each POST body, and that the response is
+  CourseLeaf's own translation of the audit, not Degree Works' JSON. The
+  tell was in the first screenshot: the request's `Cookie` header held only
+  analytics and Cloudflare cookies. The wrong fix would have been correcting
+  the constants; the design was wrong, so the Degree Works reader, client,
+  token store and decoder were deleted, and the app now runs Penn's page and
+  calls the page's own functions. Two lessons: capture the real traffic
+  before writing a client (twenty minutes in a browser's developer tools
+  settled what a day of reading could not), and a recorder injected after
+  the page has loaded sees nothing when the page reuses what it already
+  fetched, so read the page's script and the Network tab instead of hooking
+  `XMLHttpRequest`.
+
 - **"Unextracted" in SQL is not "pending", and the index's cap must look at
   now, not at the oldest date** (2026-11-05). After the round-4 deploy a
   count of PHYS 0151 documents with no `course_fact_extractions` row at
@@ -3561,7 +3775,8 @@ itself.
 
 ## Branches
 
-`v10` is the line (2026-11-03): `v9` plus `origin/v8` `7e004c5` plus
+`v12` is the line (2026-11-09): `v10` plus the degree-progress feature
+(below). Before it, `v10` (2026-11-03): `v9` plus `origin/v8` `7e004c5` plus
 `phase0/extract-facts-bench`. Start at `docs/HANDOFF_V10_2026-11-04.md`
 (it replaces the 2026-11-03 one). The 2026-11-04 composed-day work
 (Phases 1-3) is committed on `v10`.
@@ -3579,7 +3794,9 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
-| `claude/new-session-b3ylkg` | **2026-11-09, `v10` `4c136b2` plus two commits, meant to become `v11`.** (1) `smooth-ambassadors/`: the poster-scan tracker plus the campus ambassador system as a Cloudflare Worker + D1 (private pages per ambassador, tracked links, a founder view with a digest generator, 17 Miniflare tests), drafted here to move to a private repo. (2) **Ambassador mode in the app** (What the app does → Profile → 8): a code-based sign-in in Profile, today's post, a daily local reminder, the planner carve-out. 3697/357 green on the GitHub runner at `85d4234` and the unsigned iOS `xcodebuild` green at `674b89b` (2026-11-10, Test baseline); never on a phone, server not deployed. The Worker's legacy routes were matched to the live site the same day (dashboard byte-identical, `/api/stats` rows identical). Olisa or Marco creates `v11` from it. **2026-11-10, later:** the Sites source arrived as an archive; `scripts/build-sites.mjs` folds the ambassador system into the real single-file Worker (two edits to its `fetch`, a generated section, images byte-identical), `test/sites.test.mjs` runs the original and the edited artifact side by side (14 of 14; `npm test` 28 pass), and the public `/r/{ref}` links replaced the token-bearing ones (Traps). A zip went to Olisa for the ChatGPT session that deploys Sites. **2026-11-11:** deployed to the live Sites project by that session; existing routes and totals checked from here (Known gaps). |
+| `v12` | **Current line (2026-11-09 onward).** `v10` at `4c136b2` plus the degree-progress research (`docs/DEGREE_PROGRESS_RESEARCH_2026-11-09.md`) and the degree feature. Built on 2026-11-09 against a guessed Degree Works host; rewritten on 2026-11-10 against what Olisa captured from his own Path@Penn session: `Degree/` in the Kit (`PathAuditDecoder`, `PathBridge`, `PathDegree`, `PathWhatIf`), `PathPortal`, `AppState+Degree`, `DegreeProgressView`, `DegreeWhatIfSheet`, `FeatureFlags.degreeProgress`. Green on the `tests` workflow, which runs on pushes to it, and built for iOS with `xcodebuild` on Olisa's Mac (Xcode 27.2) on 2026-11-10 (Test baseline); the Debug build of `d2f37a0` read a real audit on Olisa's iPhone 17 the same day (Known gaps). It does **not** contain `v11` (next row), which branched from the same `v10` commit; the two have to be merged before either ships with the other's work. **Since 2026-11-11 it also carries ambassador mode and `smooth-ambassadors/`** (the `claude/new-session-b3ylkg` row below; What the app does → Profile → 8). |
+| `v11` | **Marco's line since 2026-11-07, found on the remote on 2026-11-10** (this file said "there is no `v11`" until then, which was wrong). Off `v10` at `4c136b2`, the same commit `v12` started from, and 46 commits on by 2026-11-10 (`06250d0`): the "agent connection" (an `agent-auth` / `mcp` / `agent-snapshot` backend, a connector front on Vercel, the phone's opt-in, approve sheet and snapshot upload) and a DEBUG Canvas submit spike; its own notes say "`v11` is the line". Read only from the commit subjects and a file list here, not reviewed. It and `v12` both edit `CLAUDE.md`, `ROADMAP.md`, `docs/PRIVACY.md`, `AppState.swift`, `ContentView.swift` and `FeatureFlags.swift`; none of the degree files is touched by it. Nobody has merged the two or decided which is the base. |
+| `claude/new-session-b3ylkg` | **2026-11-09, `v10` `4c136b2` plus two commits, meant to become `v11`.** (1) `smooth-ambassadors/`: the poster-scan tracker plus the campus ambassador system as a Cloudflare Worker + D1 (private pages per ambassador, tracked links, a founder view with a digest generator, 17 Miniflare tests), drafted here to move to a private repo. (2) **Ambassador mode in the app** (What the app does → Profile → 8): a code-based sign-in in Profile, today's post, a daily local reminder, the planner carve-out. 3697/357 green on the GitHub runner at `85d4234` and the unsigned iOS `xcodebuild` green at `674b89b` (2026-11-10, Test baseline); never on a phone, server not deployed. The Worker's legacy routes were matched to the live site the same day (dashboard byte-identical, `/api/stats` rows identical). Olisa or Marco creates `v11` from it. **2026-11-10, later:** the Sites source arrived as an archive; `scripts/build-sites.mjs` folds the ambassador system into the real single-file Worker (two edits to its `fetch`, a generated section, images byte-identical), `test/sites.test.mjs` runs the original and the edited artifact side by side (14 of 14; `npm test` 28 pass), and the public `/r/{ref}` links replaced the token-bearing ones (Traps). A zip went to Olisa for the ChatGPT session that deploys Sites. **2026-11-11:** deployed to the live Sites project by that session; existing routes and totals checked from here (Known gaps). **Merged into `v12` on 2026-11-11** ("do this in v12", Olisa): `v12` was merged into this branch first (two conflicts, both "each side added a line here": the `DashRoute` cases and these notes), the merged tree was run on the runner, and only then was `v12` moved to it. The "meant to become `v11`" above is history: `v11` is Marco's line and none of this is in it. |
 | `v10` | **Current line (2026-11-03 onward).** `v9` (the no-banner sign-in, the onboarding polish, the composed-day research) plus `origin/v8` `7e004c5` (the tree's recency and follow-up work) plus `phase0/extract-facts-bench`. The merge's Swift run is recorded under Test baseline. |
 | `phase0/extract-facts-bench` | 2026-11-03, off `v9`: the extract-facts bench, prompt, schema and parser; the model decision (Haiku 5.5, `docs/EXTRACT_FACTS_BENCH_2026-11-03.md`). In `v10`. |
 | `v9` | 2026-11-01 to 11-03: the no-banner sign-in and keepalive, proven on Marco's phone; the onboarding polish merged; the composed-day research. In `v10`. |
@@ -3643,6 +3860,62 @@ none is a ship line.
   file said an undeployed server made sign-in say "couldn't reach
   smooth"; it was "that code didn't work", a 404 read as an unknown code.
   The backup of `scans` stays out of git. The review notes need a test code once a roster exists.
+- **Degree progress (`v12`) has read one real audit on one phone, and
+  which degree it shows first is unsettled.** On 2026-11-10 at 12:07 local
+  the Debug build of `d2f37a0` (installed with `devicectl` over the store
+  copy on Olisa's iPhone 17, launched with `-LHFShowDegree`) showed "read
+  today", a 53% ring and Penn's requirement cards (major, general electives,
+  SEAS writing, free electives, elective coursework, everything else). So the
+  three things only a device could settle all passed, at least once:
+  Cloudflare let the hidden WebView through, WebKit kept `window.opener`
+  across Penn's SSO hosts so the popup handed the token back, and Penn
+  accepted a curriculum entry from the record as `degreeInfo`. Whether a Duo
+  push was needed is not recorded. What that run did **not** check: the
+  numbers against Path@Penn's own page, the second degree's audit, any
+  what-if, and a second read after the 24-hour token lapses.
+  **Found from that run, and fixed the same afternoon** (green on the
+  runner at `3a4822c`; not yet back on the phone): the
+  screen opened on Artificial Intelligence, then showed a "no major, non
+  degree" chip whose audit failed, a second Artificial Intelligence chip and
+  a Wharton one; Olisa's major is Computer Science. `cur` is a history (the
+  trap "`cur` on the Path@Penn record is a history"). `PathScripts.degrees`
+  now keeps only the entries with no `end_term`, or one later than the
+  latest term, folds a major-less fragment's `conc` into its degree and
+  drops duplicates; `AppState.degreeSelection` opens on the first degree
+  when the record's list changed, so the corrected build does not open on
+  whichever stale chip was tapped last. Also changed from his screenshots:
+  the "· catalog 202430" suffix beside the ring is gone ("tacky"), a degree
+  is named by its code ("computer science, bse", not "bachelor of sci in
+  engineering"), a chip shows the major alone (`DegreeGoals.chipTitles`),
+  and a three-word key (`DegreeLegend`: done, in progress, left) sits under
+  the ring because he asked what orange against green meant. Still open:
+  Penn's own function for this, `foseStudentDataUtils.currentDegrees({
+  verboseTitles, selectedTerm })`, has never been run and captured; when it
+  has, it should replace the rule. His record lists a second live program
+  in another school with no end term; whether that is a real second degree
+  or a leftover is his to say, and the app shows it because Penn's record
+  does. The ring read "53%" rather than "x of y cu" on both audits, so
+  `PathAuditDecoder.creditTotals` did not find Penn's credit sentence in his
+  DEGREE block; not looked at yet.
+  Not captured either: a record with a concentration or a minor (the `conc`
+  / `minor` field names on a curriculum entry are inferred from the page's
+  what-if rules), any program whose `prog_type` is not `major`, and a
+  what-if run end to end. Known limits: the token lives 24 hours in the
+  page, so the first read after that signs in again; a student whose saved
+  PennKey Penn has rejected gets no degree read until the password is
+  updated in Profile, because the portal types the PennKey under the silent
+  Canvas renewer's own budget (`AppState.pathCredentialBudget`: never after
+  a rejection, ten minutes between submissions by either, an hour after a
+  failed one), and a rejection seen during a degree sign-in disables
+  auto-login for Canvas too, as it should for one account; a page call that
+  does not answer in 30 seconds (90 for the audit) is abandoned; the what-if
+  for "add minor" appends the entry's major
+  code as the minor, because that is what Penn's script does. Policy, still
+  open from 2026-11-09: Apple 5.2.2 authorisation for reading a second Penn
+  system with the saved PennKey
+  (`docs/research/degree-progress/04-privacy-and-app-store.md`) and whether
+  Penn ISC has a position; the privacy label and `REVIEW_NOTES.md` need a
+  degree section before any upload.
 - **A finished item whose completion is Canvas's alone has no swipe back
   in prev** (since 2026-11-06, `AppState.completionIsLockedByCanvas`,
   `DashItem.canMarkActive`). Before that the swipe was offered, did nothing

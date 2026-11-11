@@ -1,6 +1,6 @@
 # Privacy Policy — Low Hanging Fruit (LHF)
 
-_Last updated: 2026-11-05_
+_Last updated: 2026-11-10_
 
 Low Hanging Fruit ("LHF", "the app") is a personal academic dashboard that shows
 your Canvas assignments and deadlines in one place. This policy explains what
@@ -140,6 +140,46 @@ no separate "stay signed in" choice or second password entry.
 - **SSO and other schools:** if a login succeeds without submitting a PennKey
   password, Smooth can retain the session but cannot manufacture a saved
   password. Other institutions continue using their existing session handling.
+
+## Degree progress (Penn, since v12)
+
+Smooth can show where you stand in your degree, and where you would stand in
+another program. It does this by opening Penn's own Path@Penn page inside the
+app, out of sight, signed in as you the same way it reconnects to Canvas (the
+PennKey saved on this phone, typed only into Penn's own sign-in page, and your
+Duo approval when Penn asks for one), and asking that page for your degree
+audit.
+
+- **What is read:** the degrees on your record (the codes for level, degree,
+  college, program, major, concentration, minor and catalog term) and Penn's
+  audit of the one you select: its requirement blocks, how complete each is,
+  the courses that count toward each (code, title, credits, whether you are
+  registered for it now) and the options still open. For a "what if", the
+  same for a program you pick from Penn's public list of programs, run by
+  Penn's audit against your own record.
+- **What Penn's page sends to Penn:** what it sends when you use Path@Penn in a
+  browser, which includes your registered, cart and planned courses so the
+  audit can count them. That exchange is between Penn's page and Penn. Smooth
+  adds nothing to it and sends none of it anywhere else.
+- **What never leaves Penn's page:** the sign-in token, Penn's id for you,
+  your name, your pronoun, your list of past courses as such, and the audit
+  as Penn draws it, which is the one place a grade could appear. Smooth takes
+  out only the fields listed above, so your grades and GPA are never read.
+  Nothing is saved in the Keychain for this.
+- **Where it stays:** on this phone, in a file in the app's own storage.
+  Nothing about your degree goes to our server, to a paired laptop, to iCloud
+  or to "the tree".
+- **It is Penn's reading, shown Smooth's way.** Smooth does not decide what
+  counts; Penn's audit does. Substitutions and advisor exceptions appear only
+  as the audit reports them, and the screen always links to Path@Penn.
+- **Your plan:** the "plan" tab is a table of semesters you fill in yourself,
+  by typing a course code or picking from the options your audit still lists
+  as open. It is kept in its own file on this phone. Smooth sends it nowhere:
+  not to Penn, our server, a paired laptop or "the tree". Because you wrote
+  it and Penn cannot give it back, it is included in this phone's ordinary
+  backup if you back the phone up (the audit itself is not).
+- **How to remove it:** disconnect Canvas. That deletes the audit file, your
+  plan and your what-if choices from this phone and closes Penn's page.
 
 ## What is sent to our server (and why)
 

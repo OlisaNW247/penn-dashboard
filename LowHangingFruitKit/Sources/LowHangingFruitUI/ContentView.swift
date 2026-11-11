@@ -73,6 +73,7 @@ struct ContentView: View {
         case grades
         case report(courseID: String, courseName: String)
         case assistant
+        case degree
         /// Profile → ambassador mode (2026-11-09). A route of its own so a
         /// reminder tap can land on it (`path = [.profile, .ambassador]`)
         /// with Profile underneath for the back button.
@@ -211,6 +212,9 @@ struct ContentView: View {
                 case .grades:
                     GradeWatcherView(store: state.gradeWatcher)
                         .environmentObject(state)
+                case .degree:
+                    DegreeProgressView()
+                        .environmentObject(state)
                 case let .report(courseID, courseName):
                     GradeReportView(store: state.gradeWatcher, courseID: courseID, courseName: courseName)
                         .environmentObject(state)
@@ -264,6 +268,7 @@ struct ContentView: View {
                 if args.contains("-LHFShowProfile") { path = [.profile] }
                 if args.contains("-LHFShowGrades") { path = [.grades] }
                 if args.contains("-LHFShowAssistant") { path = [.assistant] }
+                if args.contains("-LHFShowDegree") { path = [.degree] }
                 if args.contains("-LHFShowReport") {
                     // Deepest screenshot target: Grades → the full report for
                     // the richest fixture course.

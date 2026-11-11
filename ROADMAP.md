@@ -7,7 +7,7 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
+Last updated 2026-11-10 on `v12` (degree progress rewritten against the real Path@Penn; the Now entry). Before that, 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
 backend half went live 2026-11-05 01:20-01:45 UTC, the evening of 2026-11-04
 US Eastern). Before that, 2026-10-28 on `release/3.4.0` (the 3.4.0 release,
 renamed from 3.3.1 that afternoon when PR #16 was folded in). Before
@@ -48,6 +48,41 @@ These block shipping, or would make shipping risky. The launch-prep
 work of 2026-10-09/10 is summarised, with the order to take these in,
 in `docs/LAUNCH_PREP_HANDOFF.md`.
 
+- **v12 degree progress: a Mac build, then a phone** (Olisa's decision
+  2026-11-09: use the Path@Penn login; build progress and what-if, no course
+  recommendations; "make this extremely smooth"). Built on 2026-11-09 against
+  a guessed Degree Works host, then rewritten on 2026-11-10 after Olisa
+  captured his own Path@Penn session in Chrome
+  (`docs/DEGREE_PROGRESS_V12_BUILD_SPEC.md` → "Observed on 2026-11-10" and
+  "The rewrite contract"): the app runs Penn's page in a hidden WebView and
+  asks the page for the audit. Done: the capture, the decoder, the models
+  and what-if rules, the portal, the screens, the privacy text, all green on
+  the runner. In order now: (1) ~~`xcodebuild` on a Mac~~ done 2026-11-10 on
+  Olisa's Mac, Xcode 27.2: BUILD SUCCEEDED for `generic/platform=iOS`,
+  widget included; (2) a DEBUG
+  build on Olisa's phone with `-LHFShowDegree`: **first read done
+  2026-11-10** (Debug build of `d2f37a0` on his iPhone 17: the page loaded
+  past Cloudflare, the popup handed the token back, a real audit drew).
+  The wrong first degree (Artificial Intelligence, where his major is
+  Computer Science) was the record being a history; fixed the same
+  afternoon from a console read of it (CLAUDE.md → Traps). Still to do
+  there: see the fix on the phone, capture Penn's own
+  `foseStudentDataUtils.currentDegrees(...)` output, compare each degree's
+  numbers with Path@Penn, run one "switch to" and one "add minor", and
+  reinstall for the catalog-suffix, chip and colour-key changes and the
+  new "plan" tab (the semester table he asked for the same day; on the
+  phone, check that registered spring courses appear in the first column
+  and that "fits" shows for a course picked from the open options);
+  **2026-11-11:** he confirmed the build shows his two real degrees, and
+  asked for the semester table in every tab with drag and drop; written the
+  same day (CLAUDE.md → Degree). Its past and current columns need the term
+  of each course, which the audit does not carry: next is reading `hist`
+  and `reg` from the record once their format is seen, with the privacy
+  text changed in the same commit;
+  (3) capture
+  what was not seen: a record with a concentration or minor, and the page's
+  own `currentStudentDegrees`; (4) the privacy label and `REVIEW_NOTES.md`,
+  and the Apple 5.2.2 / Penn ISC question, before any upload. Not for 3.4.1.
 - **Facts deploy: re-run 2026-11-06 18:56 UTC from `bd9d20c` (`finish_fact_extraction` applied, `sync` v22, `extract-facts` v6; `docs/DEPLOY_FACTS_2026-11-04.md` → Run 3); first done 2026-11-05 (01:20-01:45 UTC)**
   (`docs/DEPLOY_FACTS_2026-11-04.md` is the runbook and now ends with the run
   record; `backend/scripts/deploy-facts.mjs` runs it). Done, with Olisa's go
@@ -401,6 +436,35 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   build is actually downloadable.
 
 ## Next: features
+
+- **Degree progress: pick a degree, see progress, try a what-if** (Olisa's
+  ask, 2026-11-09; researched that morning, then **decided and built blind the
+  same day on `v12`**: see Now. Olisa chose the Path@Penn-login route the
+  report had parked, so the recommendation below is history).
+  `docs/DEGREE_PROGRESS_RESEARCH_2026-11-09.md` is the report, its labelled
+  source notes are in `docs/research/degree-progress/`, and a phone mockup of
+  two concepts was published beside it. The recommendation: build it Penn
+  first with no Path@Penn login. Requirement templates come from the public
+  `courses.upenn.edu` endpoints Penn Labs' Degree Plan already reads (a
+  Degree Works audit XML per program, dummy student, no credentials; read in
+  Penn Labs' MIT-licensed source, live behaviour untested from the container),
+  pooled like `catalog_courses`; the student's record is courses they mark
+  (current classes prefilled from Canvas), kept on-device in its own store
+  file, never the ledger; code decides, a model may only extract and explain;
+  every screen names Path@Penn as the official audit and never says "on
+  track". Phases: 0 settle the unknowns (confirm the endpoints from a Mac,
+  ask Penn Labs and ISC about terms, one phone pass on Path@Penn), 1
+  progress on-device for three programs behind `FeatureFlags.degreeProgress`
+  (about 30 to 40 hours, +80 to +110 Swift tests), 2 pooled templates for
+  every program (a migration and a small function, owner's go), 3 the
+  what-if planner with prerequisites and offerings, 4 the richer record
+  (Canvas past courses, an audit PDF, the tree's `# DEGREE` block with a
+  PRIVACY.md change, and Path@Penn reading only with Penn's written
+  position). The one finding that would change the plan: Penn or Penn Labs
+  saying the public endpoints are not for third-party use. Seven questions
+  for the owners are at the end of the report. Every Penn host was blocked
+  from the research container; a `penn-dashboard` cloud environment with
+  those hosts allowed now exists for the next session.
 
 - **Megaphone: the model sorts posts into todo and prev** (Marco,
   2026-11-07: "prev being either from way before or unapplicable, need
