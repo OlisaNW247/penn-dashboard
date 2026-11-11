@@ -1,6 +1,6 @@
 # Privacy Policy — Low Hanging Fruit (LHF)
 
-_Last updated: 2026-11-08_
+_Last updated: 2026-11-11_
 
 Low Hanging Fruit ("LHF", "the app") is a personal academic dashboard that shows
 your Canvas assignments and deadlines in one place. This policy explains what
@@ -12,7 +12,7 @@ below: a summary of it, including which items are done, goes with each
 question you ask "the tree"; if you pair the Smooth Chrome extension, it
 travels end-to-end encrypted between your own phone and your own laptop,
 where we cannot read it; and if you turn on iCloud sync, it goes to your own
-iCloud. If you turn on "connect an agent", your list of work (never grades,
+iCloud. If you turn on "connected agent", your list of work (never grades,
 never your name) is kept readable on our server so an AI assistant you
 connect, such as Claude, can read it; it is off by default. Course materials — syllabi, course pages, assignment descriptions,
 files the instructor attached to assignments (PDFs only), announcements — are pooled with classmates in the same Canvas course, so
@@ -351,7 +351,7 @@ nothing until you pair it with your phone.
 
 ## Connecting an AI assistant (optional, Penn, off by default)
 
-- **What it is.** From Profile → accounts → connect an agent, you can let an
+- **What it is.** From Profile → accounts → connected agent, you can let an
   AI assistant you already use read your classes through Smooth, and propose
   drafts: Claude at claude.ai or in the Claude apps, or ChatGPT where its
   plan allows custom connectors. Nothing happens until you turn it on and
@@ -471,7 +471,7 @@ and API access.
   encrypted copy per device, replaced each time that device syncs, deleted
   when you unpair or disconnect Canvas. We hold no key to them.
 - **Agent connection records, your work list and drafts**, only if you turned
-  on "connect an agent": the readable work list (replaced on each upload),
+  on "connected agent": the readable work list (replaced on each upload),
   one record per connected assistant, and the drafts it proposed. They are
   deleted when you revoke the connection (its record), turn the feature off,
   disconnect Canvas or delete your account (all of them), and a draft is

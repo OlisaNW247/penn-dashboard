@@ -46,7 +46,7 @@ export function landingPage(env: FrontEnv): Response {
   const body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Smooth</title>
 <style>body{font:17px/1.5 -apple-system,system-ui,sans-serif;margin:0;padding:48px 24px;max-width:560px;color:#111;background:#fff}code{display:block;margin:16px 0;padding:12px 14px;background:#f3f3f3;border-radius:10px;word-break:break-all;font-size:15px}p{margin:0 0 12px}</style></head>
 <body><p><strong>Smooth</strong> · the connector an AI assistant uses to read your classes.</p>
-<p>There is nothing to see here. In Claude, add a custom connector with this URL, then approve it in Smooth on your phone (Profile → accounts → connect an agent):</p>
+<p>There is nothing to see here. In Claude, add a custom connector with this URL, then approve it in Smooth on your phone (Profile → accounts → connected agent):</p>
 <code>${mcp}</code>
 <p><a href="https://github.com/OlisaNW247/penn-dashboard/blob/v10/docs/PRIVACY.md">What is shared, and how to turn it off</a>.</p></body></html>`;
   return new Response(body, {

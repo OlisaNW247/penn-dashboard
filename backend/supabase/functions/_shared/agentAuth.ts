@@ -424,7 +424,7 @@ export function authorizePage(view: AuthorizePageView): string {
 <div class="label">code</div><div class="code">${escapeHTML(formatUserCode(view.userCode))}</div>
 <div class="label">Smooth will ask you to pick this number</div><div class="num">${view.matchNumber}</div>
 <a class="btn" role="button" href="${escapeHTML(deepLink)}">Open Smooth</a>
-<p class="small">On another device: open Smooth → Profile → connect an agent and type the code</p>
+<p class="small">On another device: open Smooth → Profile → accounts → connected agent and type the code</p>
 ${dev}
 <p class="small" id="status">waiting for approval</p>
 </div>

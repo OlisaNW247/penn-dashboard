@@ -912,6 +912,28 @@ Keep this current. It is the fastest way for a new session to know what exists.
      facts stay readable off the phone from the App Group plist
      (Commands). A Release build never showed any of it. The
      strings and `SignInHealthTests` remain.
+     **Connected agent (2026-11-11, Marco: "under accounts, in profile, it
+     should have connected agent with a toggle and then list what is
+     connected to your agent").** After the laptop row, behind
+     `canUseAgentConnection`, `ProfileAgentRows` (`ProfileAgentRows.swift`)
+     puts the agent connection in the accounts section itself, replacing
+     the "connect an agent · on/off" row and the `AgentConnectionsView`
+     screen it pushed (deleted): a plain `Toggle` "connected agent"; one
+     muted line "shares your classes and work list with the agent's provider
+     · privacy policy" (naming the recipient, for App Review 5.1.2(i); the
+     last two words link to `AgentConnectionCopy.privacyURL`; the long
+     disclosure lives in `docs/PRIVACY.md` → "Connecting an AI assistant",
+     which `AgentConnectionWiringTests` checks still says what is shared,
+     the never list, who receives it and what off does); then, while on,
+     one row per agent (its name, muted "last used 2h ago" / "never used",
+     a trailing muted "disconnect" and chevron, the whole row a button
+     behind a "disconnect claude?" alert, as the laptop row's "unpair"
+     is), or a muted "none yet"; and "have a code?", which opens
+     `AgentCodeSheet` (the code field and "connect", then the approve
+     sheet over it). Turning it off asks once, "disconnect every agent?"
+     with "disconnect" / "cancel" and no message (added 2026-11-11; before,
+     no confirmation), because it deletes the list and disconnects every
+     agent. Pinned by `AgentConnectionWiringTests`.
   3. appearance (light / dark; there is no "system" option and the
      default is light, whatever this file said before 2026-10-10)
   4. reminders (on/off; 10 minutes, 1 hour, 3 hours, 1 day, 2 days;
@@ -1160,17 +1182,18 @@ Keep this current. It is the fastest way for a new session to know what exists.
   alive (`LHFScenes.swift`) and open-at-login.
 - **Connect an agent** (2026-11-08, `agent/connection-v11`, compiled, never
   on a phone; behind `FeatureFlags.agentConnection`, Penn installs past
-  onboarding with a backend only). Profile → accounts gains a "connect an
-  agent" row (on / off) opening `AgentConnectionsView`: the opt-in switch,
-  the disclosure (the exact fields shared, the recipients by name, that
-  turning it off deletes the list and disconnects every agent, the privacy
-  policy link), the connected agents with "last used" and "disconnect",
-  and a "have a code?" field for the typed 8-letter code. A
+  onboarding with a backend only). Profile → accounts holds the
+  "connected agent" switch and the connected agents (since 2026-11-11 in
+  the section itself, see Profile above; before, a pushed
+  `AgentConnectionsView` with the whole disclosure on screen). A
   `smooth://link?c=…` URL (the "Open Smooth" button on the agent's sign-in
-  page) or a typed code looks the pending request up and shows
-  `AgentLinkApproveSheet`: "connect Claude?", what it reads, "did you just
-  start this?", three numbers to pick from (a wrong one denies the request
-  on the server), "not now". Approving turns the opt-in on if it was off.
+  page) or a typed code ("have a code?") looks the pending request up and
+  shows `AgentLinkApproveSheet`, trimmed 2026-11-11: "connect claude?",
+  the agent's host in muted type, one line "reads your classes and work,
+  proposes drafts" (", proposes drafts" only with the draft scope), "pick
+  the number the page shows", three numbers (a wrong one denies the
+  request on the server), "not now"; "did you just start this?" is gone.
+  Approving turns the opt-in on if it was off.
   With it on, `agentSnapshotPass` uploads the work list
   (`AgentSnapshotBuilder` over `syncWorkList()`, courses, own tasks; no
   grades, no name) right after `deviceSyncPass` in `ContentView.refresh()`
@@ -1235,21 +1258,27 @@ Keep this current. It is the fastest way for a new session to know what exists.
     unchanged). `CanvasAcceptance.derive` turns the four fields into text /
     link / file (with extensions) / nothing online / locked;
     `DraftSubmitPlan.make` turns (draft kind × that) into the routes on
-    offer, the default, or a block. Top to bottom: the class code in its
-    accent ink, the title (Familjen 24), "drafted by claude" in grape, the
-    agent's note behind a grape rule; the draft full width (the text in
-    Inter 16, selectable; or the rendered pdf pages inline in a PDFKit view
-    with "<title>.pdf · n pages"; a link as a ruled 56pt row that opens it;
-    a file as a row with name, size and "preview", QuickLook); one line,
-    "canvas takes a pdf or docx here" / "canvas takes text here" / "this one
-    can't be submitted online" / "canvas has this one locked" (and, under
-    it, a refusal for this draft: "canvas doesn't take .zip here · ask for a
-    pdf file", "canvas doesn't take a link here"); the `SmoothSegmentPicker`
-    "send as text" / "send as pdf" only when both go; then, pinned at the
-    bottom on paper, "this goes in under your name; read it", a filled grape
-    48pt squircle "submit to canvas" (confirmation names the kind: "send
-    problem set 7 as a pdf?") and a plain "decline". Blocked, "open in
-    canvas" (a text link to the Canvas app) takes the submit's place.
+    offer, the default, or a block. Top to bottom (trimmed 2026-11-11,
+    Marco: "a lot of needless text in the submission"): the class code in
+    its accent ink and the title (Familjen 24), one header; "drafted by
+    claude" in grape; the agent's note as one muted line when under 80
+    characters with no line break (`noteFitsOnALine`), else behind a
+    collapsed "note" disclosure; the draft full width (the text in Inter
+    16, selectable; or the rendered pdf pages inline in a PDFKit view, no
+    caption; a link as a ruled 56pt row that opens it; a file as a row with
+    name, size and "preview", QuickLook); **one status line**
+    (`DraftReviewStatus.resolve`, pinned by `DraftReviewStatusTests`): a
+    small spinner, no words, while Canvas is asked; then "canvas takes a
+    pdf or docx here" / "canvas takes text here" / "this one can't be
+    submitted online" / "canvas has this one locked", or in its place a
+    refusal for this draft ("canvas doesn't take .zip here · ask for a pdf
+    file", "couldn't make a pdf") or the outcome of the last tap (which
+    always wins), never two; the `SmoothSegmentPicker` "send as text" /
+    "send as pdf" only when both go; then, pinned at the bottom on paper, a
+    filled grape 48pt squircle "submit to canvas" (confirmation names the
+    kind, "send problem set 7 as a pdf?", with "goes in under your name" as
+    its message) and a plain "decline". Blocked, "open in canvas" (a text
+    link to the Canvas app) takes the submit's place.
     Choice rules: a text draft on a file-only assignment goes as a pdf
     (**any** text draft, plain or markdown: `DraftDocumentRenderer`
     renders plain text too, paragraphs on blank lines, single breaks kept,
@@ -1260,10 +1289,12 @@ Keep this current. It is the fastest way for a new session to know what exists.
     submit's preflight decides. Results in plain words with the next step:
     "no connection · try again", "sign in to canvas in profile, then try
     again", "canvas has this one locked" + open in canvas, "it may have gone
-    in · check canvas" + open in canvas, "couldn't reach canvas · try
+    in · check canvas" + open in canvas + done, "couldn't reach canvas · try
     again"; submitted is a full-sheet state (teal tick, "submitted to
-    canvas", "in at 9:41 pm" when verified, else "check canvas to be sure",
-    done). Every string in `AgentConnectionCopy`, pinned by
+    canvas", done) only when the read-back verified it; unverified, the
+    sheet stays with "submitted · check canvas to be sure" as its one
+    status line, open in canvas and done (the "in at 9:41 pm" line was
+    taken out 2026-11-11). Every string in `AgentConnectionCopy`, pinned by
     `AgentConnectionCopyTests`; the table and choices by
     `DraftSubmitPlanTests`.
   - **Submitting** (`CanvasSubmissionClient`, promoted from the spike, and
@@ -1302,8 +1333,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
     ordinary file path, same attempt record, same never-twice rule. A render
     failure drops the pdf route with "couldn't make a pdf".
   - **Connected.** After the right number is picked the approve sheet
-    becomes a confirmation ("connected to claude", "go back to claude to
-    finish", done) instead of closing itself a second later; and a
+    becomes a confirmation ("connected", done; "go back to claude to
+    finish" taken out 2026-11-11) instead of closing itself a second later; and a
     connection that appears in the list while the app is open (the
     connection row is created when Claude trades the code, after the
     approval) raises a one-line "connected to claude" under the status
@@ -1460,6 +1491,12 @@ account signed into Xcode. Submitting for review is a separate, manual
 step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
+
+**2026-11-11, the agent UI trim (on `v11-master` `ee653d9` plus the trim,
+uncommitted when measured): 3866 tests / 374 suites, all green, `swift test
+--no-parallel` (was 3855 / 373); the follow-up decisions the same day added
+one test (`DraftReviewStatusTests`), full run not repeated here.** The
+paragraph below is the older record.
 
 **Current on `agent/connection-v11` at the merge of 2026-11-10 (about 06:45
 UTC, 01:45 US Eastern): 3819 tests / 369 suites, all green, `swift test

@@ -4,42 +4,42 @@ import LowHangingFruitKit
 /// Every word the agent connection screens print, in one place so a test can
 /// pin them (copy rule: lowercase, short, no raw errors).
 enum AgentConnectionCopy {
-    // Approve sheet
-    static func heading(_ name: String) -> String { "connect \(name)?" }
+    // Approve sheet (trimmed 2026-11-11: no "did you just start this?", no
+    // "go back to claude"; the numbers' prompt says it)
+    static func heading(_ name: String) -> String { "connect \(name.lowercased())?" }
     static let reads = "reads your classes and work"
-    static let drafts = ", proposes drafts for you to review"
-    static let question = "did you just start this?"
+    static let drafts = ", proposes drafts"
+    /// The one line under the heading: what the agent asked to do.
+    static func scopeLine(drafts withDrafts: Bool) -> String { reads + (withDrafts ? drafts : "") }
     static let pick = "pick the number the page shows"
     static let notNow = "not now"
-    static func connectedHeading(_ name: String) -> String { "connected to \(name.lowercased())" }
-    static func connectedNext(_ name: String) -> String { "go back to \(name.lowercased()) to finish" }
+    static let connected = "connected"
     static let done = "done"
     static let mismatch = "didn't match"
     static let failure = "couldn't connect"
 
-    // Connections screen
-    static let rowLabel = "connect an agent"
-    static let on = "on"
-    static let off = "off"
-    static let switchLabel = "connect an agent"
-    static let disclosureIntro = "shared with an agent you connect, and kept on smooth's server while this is on:"
-    static let disclosureItems = [
-        "your work list: class, title, kind, due date, done or not, whether there is anything to submit, the canvas link",
-        "your classes: code, name, canvas id",
-        "your own tasks",
-        "course material already pooled for your classes",
-    ]
-    static let never = "never: grades, your name, passwords or sessions"
-    static let recipients = "who receives it: the agent provider you connect (anthropic for claude, openai for chatgpt) and smooth's server"
-    static let offEffect = "turning this off deletes the list and disconnects every agent"
+    // Profile -> accounts (2026-11-11: the rows live in the accounts section;
+    // the full disclosure is docs/PRIVACY.md -> "Connecting an AI assistant")
+    static let switchLabel = "connected agent"
+    /// Names the recipient (App Review, 5.1.2(i)); the policy says the rest.
+    static let shares = "shares your classes and work list with the agent's provider"
     static let privacyPolicy = "privacy policy"
     static let privacyURL = "https://github.com/OlisaNW247/penn-dashboard/blob/v10/docs/PRIVACY.md"
-    static let connectedHeader = "connected"
     static let none = "none yet"
     static let neverUsed = "never used"
     static func lastUsed(_ relative: String) -> String { "last used \(relative)" }
+    /// "just now", "5m ago", "2h ago", "3d ago": short enough for a row.
+    static func ago(_ seconds: TimeInterval) -> String {
+        let s = max(0, Int(seconds))
+        if s < 60 { return "just now" }
+        if s < 3600 { return "\(s / 60)m ago" }
+        if s < 86_400 { return "\(s / 3600)h ago" }
+        return "\(s / 86_400)d ago"
+    }
     static let disconnect = "disconnect"
-    static func disconnectTitle(_ name: String) -> String { "disconnect \(name)?" }
+    /// Turning "connected agent" off asks once; the title is the whole of it.
+    static let offTitle = "disconnect every agent?"
+    static func disconnectTitle(_ name: String) -> String { "disconnect \(name.lowercased())?" }
     static let cancel = "cancel"
     static let disconnectFailure = "couldn't disconnect"
     static let codeHeader = "have a code?"
@@ -60,7 +60,12 @@ enum AgentConnectionCopy {
     // Drafts: the review sheet (2026-11-11 redesign: what canvas takes, then
     // the one choice there is, then submit or decline)
     static func noteFrom(_ name: String) -> String { "\(name.lowercased())'s note" }
-    static let integrity = "this goes in under your name; read it"
+    /// The agent's note behind this, when it is too long for one line.
+    static let note = "note"
+    /// The note shows as a line only under this many characters.
+    static let noteLineLimit = 80
+    /// The confirmation's message, not a line on the sheet.
+    static let integrity = "goes in under your name"
     static let submit = "submit to canvas"
     static let send = "send"
     static let sendAsText = "send as text"
@@ -68,8 +73,6 @@ enum AgentConnectionCopy {
     static let pdfFailed = "couldn't make a pdf"
     static let decline = "decline"
     static let sending = "sending to canvas"
-    static let checking = "checking canvas"
-    static func pages(_ count: Int) -> String { count == 1 ? "1 page" : "\(count) pages" }
 
     /// "send problem set 7 as a pdf?": the confirmation names the kind.
     static func confirmSend(_ title: String, as route: DraftSubmitRoute, fileName: String? = nil) -> String {
@@ -120,8 +123,8 @@ enum AgentConnectionCopy {
 
     // Results
     static let submitted = "submitted to canvas"
-    static func submittedAt(_ time: String) -> String { "in at \(time.lowercased())" }
-    static let submittedUnverified = "check canvas to be sure"
+    /// Canvas answered the submit with an id, but the read-back did not.
+    static let submittedUnverified = "submitted \u{00B7} check canvas to be sure"
     static let failed = "canvas didn't take it \u{00B7} ask for a new draft"
     static let mayHaveGoneIn = "it may have gone in \u{00B7} check canvas"
     static let signInFirst = "sign in to canvas in profile, then try again"
@@ -165,8 +168,7 @@ struct AgentLinkApproveSheet: View {
                             .font(.lhfSecondary(12))
                             .foregroundStyle(Color.smoothMuted)
                     }
-                    Text(AgentConnectionCopy.reads + (lookup.scopes.contains("draft") ? AgentConnectionCopy.drafts : ""))
-                    Text(AgentConnectionCopy.question)
+                    Text(AgentConnectionCopy.scopeLine(drafts: lookup.scopes.contains("draft")))
                     Text(AgentConnectionCopy.pick)
                         .foregroundStyle(Color.smoothMuted)
                     HStack(spacing: 12) {
@@ -232,11 +234,8 @@ struct AgentLinkApproveSheet: View {
                 .font(.system(size: 48, weight: .semibold))
                 .foregroundStyle(Color.smoothTeal)
                 .accessibilityHidden(true)
-            Text(AgentConnectionCopy.connectedHeading(lookup.clientName))
+            Text(AgentConnectionCopy.connected)
                 .font(.lhfSecondary(22, weight: .semibold))
-            Text(AgentConnectionCopy.connectedNext(lookup.clientName))
-                .font(.lhfSecondary(14))
-                .foregroundStyle(Color.smoothMuted)
             Button(AgentConnectionCopy.done) { dismiss() }
                 .buttonStyle(.borderedProminent)
                 .tint(Color.smoothTeal)

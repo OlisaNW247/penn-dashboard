@@ -59,14 +59,89 @@ struct AgentConnectionWiringTests {
         #expect(fn.contains("agentConnectionEnabledKey"))
     }
 
-    @Test("the Profile row is gated on canUseAgentConnection")
+    @Test("the accounts section holds the agent rows, gated on canUseAgentConnection, after the laptop row")
     func rowGated() throws {
         let src = try uiSource("SettingsPage.swift")
         guard !src.isEmpty else { return }
-        let gate = try #require(src.range(of: "if state.canUseAgentConnection {"))
-        let sheet = try #require(src.range(of: "AgentConnectionCopy.rowLabel"))
-        #expect(gate.upperBound <= sheet.lowerBound)
-        #expect(sheet.lowerBound.utf16Offset(in: src) - gate.upperBound.utf16Offset(in: src) < 300)
+        let bodyStart = try #require(src.range(of: "var body: some View"))
+        let bodyEnd = try #require(src.range(of: ".formStyle(.grouped)", range: bodyStart.upperBound..<src.endIndex))
+        let body = String(src[bodyStart.lowerBound..<bodyEnd.upperBound])
+        let gate = try #require(body.range(of: "if state.canUseAgentConnection {"))
+        let rows = try #require(body.range(of: "ProfileAgentRows()"))
+        let laptop = try #require(body.range(of: "ProfileLaptopRow()"))
+        let accounts = try #require(body.range(of: "SmoothSectionHeader(\"accounts\""))
+        let appearance = try #require(body.range(of: "SmoothSectionHeader(\"appearance\""))
+        #expect(gate.upperBound <= rows.lowerBound)
+        #expect(rows.lowerBound.utf16Offset(in: body) - gate.upperBound.utf16Offset(in: body) < 120)
+        // Inside the accounts section: the header closure follows its rows.
+        #expect(laptop.lowerBound < rows.lowerBound && rows.lowerBound < accounts.lowerBound)
+        #expect(accounts.lowerBound < appearance.lowerBound)
+        // No pushed screen any more.
+        #expect(!src.contains("AgentConnectionsView"))
+        #expect(try uiSource("AgentConnectionsView.swift").isEmpty)
+    }
+
+    @Test("the agent rows: the switch, one line, the agents or none yet, have a code?")
+    func agentRowsShape() throws {
+        let src = try uiSource("ProfileAgentRows.swift")
+        guard !src.isEmpty else { return }
+        let start = try #require(src.range(of: "struct ProfileAgentRows: View {"))
+        let end = try #require(src.range(of: "struct AgentCodeSheet: View {"))
+        let rows = String(src[start.upperBound..<end.lowerBound])
+        let toggle = try #require(rows.range(of: "Toggle(AgentConnectionCopy.switchLabel"))
+        let line = try #require(rows.range(of: "Text(Self.sharesLine)"))
+        let onGate = try #require(rows.range(of: "if state.agentConnectionEnabled {"))
+        let none = try #require(rows.range(of: "Text(AgentConnectionCopy.none)"))
+        let each = try #require(rows.range(of: "ForEach(connections)"))
+        let code = try #require(rows.range(of: "Text(AgentConnectionCopy.codeHeader)"))
+        #expect(toggle.lowerBound < line.lowerBound && line.lowerBound < onGate.lowerBound)
+        #expect(onGate.upperBound <= none.lowerBound && none.lowerBound < each.lowerBound && each.lowerBound < code.lowerBound)
+        // Each agent: its name, when it was last used, a trailing disconnect
+        // behind a confirmation, like the laptop row's unpair.
+        #expect(rows.contains("Text(item.clientName.lowercased())"))
+        #expect(rows.contains("Text(Self.usedText(item.lastUsedAt))"))
+        #expect(rows.contains("Text(AgentConnectionCopy.disconnect)"))
+        #expect(rows.contains("Button(AgentConnectionCopy.disconnect, role: .destructive)"))
+        #expect(rows.contains("AgentCodeSheet()"))
+        // Turning it off asks once: a title, disconnect / cancel, no message.
+        #expect(rows.contains("if on { setEnabled(true) } else { confirmingOff = true }"))
+        let off = try #require(rows.range(of: ".alert(AgentConnectionCopy.offTitle, isPresented: $confirmingOff) {"))
+        let offAlert = String(rows[off.upperBound...].prefix(260))
+        #expect(offAlert.contains("Button(AgentConnectionCopy.disconnect, role: .destructive) { setEnabled(false) }"))
+        #expect(offAlert.contains("Button(AgentConnectionCopy.cancel, role: .cancel) {}"))
+        #expect(!offAlert.contains("message:"))
+        // The long disclosure is the privacy policy's now, not the screen's.
+        #expect(!src.contains("disclosure" + "Items") && !src.contains("offEffect") && !src.contains("recipients"))
+        // The code sheet holds the field and the connect button, then the approve sheet.
+        let sheet = String(src[end.lowerBound...])
+        #expect(sheet.contains("TextField(AgentConnectionCopy.codePlaceholder"))
+        #expect(sheet.contains("Text(AgentConnectionCopy.connect)"))
+        #expect(sheet.contains("AgentLinkApproveSheet(lookup: shown.lookup)"))
+    }
+
+    @Test("the privacy policy still says everything the old screen said")
+    func privacyPolicyCarriesTheDisclosure() throws {
+        let root = packageRoot().deletingLastPathComponent()
+        let policy = try String(contentsOf: root.appendingPathComponent("docs/PRIVACY.md"), encoding: .utf8)
+        let a = try #require(policy.range(of: "## Connecting an AI assistant"))
+        let b = try #require(policy.range(of: "\n## ", range: a.upperBound..<policy.endIndex))
+        let section = String(policy[a.upperBound..<b.lowerBound])
+        // What is shared: the work list fields, the classes, own tasks, course material.
+        for phrase in ["the class code, the title, the kind", "due date", "whether it is done",
+                       "whether there\n    is anything to submit", "Canvas page address",
+                       "The list of your classes: code, name and Canvas course id",
+                       "Your own tasks", "course material already pooled",
+                       // Kept on the server while on.
+                       "What our server keeps for this",
+                       // Never.
+                       "Grades or scores; your name; any\n  password, cookie or session",
+                       // Who receives it.
+                       "Anthropic", "OpenAI", "our own server (Supabase)",
+                       // What off does.
+                       "Turn\n  the feature off, which deletes the stored work list and revokes every\n  connection"] {
+            #expect(section.contains(phrase), "\(phrase)")
+        }
+        #expect(section.contains("Profile → accounts → connected agent"))
     }
 
     @Test("onOpenURL hands the url to pendingAgentLink(from:)")

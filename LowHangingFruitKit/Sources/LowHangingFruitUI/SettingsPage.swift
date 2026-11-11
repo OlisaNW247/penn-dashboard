@@ -26,7 +26,6 @@ struct SettingsPage: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.feedbackFormURL) private var feedbackFormURL
     @State private var showRecurring = false
-    @State private var showAgentConnections = false
     /// Which service the "are you sure" confirmation is up for, if any.
     /// Disconnecting throws away a login the user can only get back by passing
     /// SSO again, so it asks first.
@@ -170,20 +169,11 @@ struct SettingsPage: View {
                     // Only while a pairing key is held; pairing starts from
                     // the laptop's QR code.
                     ProfileLaptopRow()
+                    // "connected agent": the switch, one line, the agents
+                    // and "have a code?" (2026-11-11, in place of a pushed
+                    // screen).
                     if state.canUseAgentConnection {
-                        Button { showAgentConnections = true } label: {
-                            HStack {
-                                Text(AgentConnectionCopy.rowLabel).foregroundStyle(Color.smoothInk)
-                                Spacer()
-                                Text(state.agentConnectionEnabled ? AgentConnectionCopy.on : AgentConnectionCopy.off)
-                                    .font(.lhfSecondary(12, weight: .medium))
-                                    .foregroundStyle(Color.smoothMuted)
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(Color.smoothMuted)
-                            }
-                        }
-                        .buttonStyle(.plain)
+                        ProfileAgentRows()
                     }
                     if let backendDataDeletionError {
                         Label(backendDataDeletionError, systemImage: "exclamationmark.triangle")
@@ -271,9 +261,6 @@ struct SettingsPage: View {
 #endif
         .sheet(isPresented: $showRecurring) {
             RecurringTaskSheet().environmentObject(state)
-        }
-        .sheet(isPresented: $showAgentConnections) {
-            AgentConnectionsView().environmentObject(state)
         }
         .sheet(isPresented: $showStayLoggedInSheet) {
             PennKeyCredentialsSheet().environmentObject(state)
