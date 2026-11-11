@@ -291,6 +291,59 @@ public enum PathScripts {
     }
     """
 
+    /// Which semester each course belongs to: course codes per term, and
+    /// nothing else.
+    ///
+    /// Penn's audit names the courses but not their terms, so a semester table
+    /// cannot be drawn from it. The terms are on the student's record, in two
+    /// maps keyed by term code whose rows are strings joined with "|" (format
+    /// read on 2026-11-11 with every letter and digit masked): the completed
+    /// record puts the course code first, the registration record puts it
+    /// second, after the section number. A registration row exists per
+    /// section, so a course with a lecture and a recitation appears twice;
+    /// each code is sent once per term.
+    ///
+    /// Only the course code crosses. The other fields of a row (the section
+    /// number, the credit, the two status fields and the row's proof string)
+    /// are never copied out, and the code itself has to look like one
+    /// ("CIS 1200") or the row is skipped, so a row whose layout changed
+    /// cannot leak a field this was not written for.
+    public static let history: String = """
+    if (typeof sam === "undefined" || typeof fose === "undefined" || typeof foseStudentDataUtils === "undefined") { return JSON.stringify({ error: "page not ready" }); }
+    try {
+      if (!sam.user.getProperty("pers")) { await sam.user.fetch(); }
+      var record = foseStudentDataUtils.samRecordSource();
+      if (!record || typeof record.getProperty !== "function") { return JSON.stringify({ error: "no record" }); }
+      var isTerm = /^[0-9]{6}$/;
+      var isCourse = /^[A-Z]{2,5} [0-9]{3,4}[A-Z]?$/;
+      var codesOf = function (map, index) {
+        var out = {};
+        if (!map || typeof map !== "object") { return out; }
+        for (var term in map) {
+          var rows = map[term];
+          if (!isTerm.test(term) || !Array.isArray(rows)) { continue; }
+          var list = [];
+          var seen = {};
+          for (var i = 0; i < rows.length; i++) {
+            if (typeof rows[i] !== "string") { continue; }
+            var code = String(rows[i].split("|")[index] || "").trim();
+            if (!isCourse.test(code) || seen[code]) { continue; }
+            seen[code] = true;
+            list.push(code);
+          }
+          if (list.length > 0) { out[term] = list; }
+        }
+        return out;
+      };
+      return JSON.stringify({
+        completed: codesOf(record.getProperty("hist"), 0),
+        registered: codesOf(record.getProperty("reg"), 1)
+      });
+    } catch (e) {
+      return JSON.stringify({ error: String((e && e.message) || e).slice(0, 120) });
+    }
+    """
+
     /// The page's five code-to-name maps, string entries only.
     public static let dictionaries: String = """
     if (typeof sam === "undefined" || typeof fose === "undefined") { return JSON.stringify({ error: "page not ready" }); }
@@ -319,7 +372,7 @@ public enum PathScripts {
 
     /// Every script, for tests that must hold for all of them.
     public static var all: [String] {
-        [readiness, openSignIn, degrees, audit, programs, programInfo, dictionaries]
+        [readiness, openSignIn, degrees, audit, programs, programInfo, dictionaries, history]
     }
 }
 
@@ -426,6 +479,27 @@ public enum PathBridgeDecoder {
             sisProgram: field("sis_prog_code"),
             minorSisPrograms: PathText.list(field("minor_sis_prog_codes"))
         )
+    }
+
+    /// The two term maps of `PathScripts.history`. A term whose key is not six
+    /// digits, or whose list is not strings, is dropped here as well as in the
+    /// page: the page is Penn's and can change under the app.
+    public static func history(_ json: String) -> PathHistory? {
+        guard let root = object(json), root["error"] == nil else { return nil }
+        func termMap(_ value: Any?) -> [String: [String]] {
+            var out: [String: [String]] = [:]
+            guard let dict = value as? [String: Any] else { return out }
+            for (term, entry) in dict {
+                guard term.count == 6, term.allSatisfy({ $0.isNumber }), let list = entry as? [Any] else { continue }
+                var codes: [String] = []
+                for item in list {
+                    if let code = item as? String, !code.isEmpty { codes.append(code) }
+                }
+                if !codes.isEmpty { out[term] = codes }
+            }
+            return out
+        }
+        return PathHistory(completed: termMap(root["completed"]), registered: termMap(root["registered"]))
     }
 
     public static func dictionaries(_ json: String) -> PathDictionaries? {

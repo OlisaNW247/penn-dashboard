@@ -78,6 +78,35 @@ public struct StudentDegree: Codable, Sendable, Hashable, Identifiable {
     }
 }
 
+/// Which term each course belongs to, as the student's record has it: the
+/// completed record and the registration record, each a map from term code to
+/// course codes (`PathScripts.history`).
+///
+/// They are kept apart until `timeline()` because they do not mean the same
+/// thing. The completed record is what Penn counts for a term that is over.
+/// The registration record has a row per section and may still hold a course
+/// the student later dropped, so it is used only for a term the completed
+/// record does not have yet: the one in progress, and any ahead. Merging the
+/// two for every term would put a dropped course back into a finished
+/// semester.
+public struct PathHistory: Sendable, Equatable {
+    public var completed: [String: [String]]
+    public var registered: [String: [String]]
+
+    public init(completed: [String: [String]] = [:], registered: [String: [String]] = [:]) {
+        self.completed = completed
+        self.registered = registered
+    }
+
+    /// Term code -> course codes, for `DegreeSnapshot.history`.
+    public func timeline() -> [String: [String]] {
+        var out: [String: [String]] = [:]
+        for (term, codes) in registered where !codes.isEmpty { out[term] = codes }
+        for (term, codes) in completed where !codes.isEmpty { out[term] = codes }
+        return out
+    }
+}
+
 /// One line of Penn's program catalogue ("programs-v2-list").
 public struct PathProgramListing: Codable, Sendable, Hashable, Identifiable {
     public let code: String

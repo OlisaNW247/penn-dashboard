@@ -350,6 +350,21 @@ extension AppState {
         persistDegree()
         degreeStatus = .read(now)
 
+        // Which semester each course belongs to, for the semester table. The
+        // audit does not say, so it is a second read of the record. A failed
+        // read keeps the last map: an empty table for a network blip would be
+        // worse than a slightly stale one, and the map only ever grows by a
+        // term at a time.
+        let terms = await portal.history()
+        guard generation == degreeGeneration else { return }
+        if let terms {
+            let map = terms.timeline()
+            if !map.isEmpty, map != degree.history {
+                degree.history = map
+                persistDegree()
+            }
+        }
+
         // Penn's code-to-name maps are fetched once; a failure only means
         // codes show as themselves.
         if degree.dictionaries == nil {
