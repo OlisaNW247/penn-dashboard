@@ -167,7 +167,18 @@ listed once in `get_assignment`); then **`agent-auth` v8, `mcp` v7, `agent-snaps
 20:40 UTC with migration `20261110090000_agent_uploads.sql`** (files from an
 agent in checksummed 16 KB chunks or by one signed PUT, after claude.ai
 refused to transcribe a 57,000-character base64 PDF; the probe's upload leg
-passed on production with 100 KB chunked, one chunk resent, and 50 KB PUT) (`node backend/scripts/deploy-agent.mjs --public-base
+passed on production with 100 KB chunked, one chunk resent, and 50 KB PUT) ; then, after the v11 test sessions, **`agent-auth` v12, `mcp` v11,
+`agent-snapshot` v8 and `delete-account` v15 on 2026-11-11 about 23:05 UTC at
+Marco's "Yes, deploy"** (the three serious findings of
+`docs/V11_TEST_BACKEND_2026-11-11.md`: account deletion now removes draft
+files and uploads, stray staged objects are swept, file names and mime types
+checked), with the front redeployed carrying `CLIENT_IP_SECRET` and the
+matching `LHF_FRONT_CLIENT_IP_SECRET` set on Supabase (the value is in
+`~/lhf-bench/front-client-ip.secret`, mode 600, never printed), so the
+sign-in rate limits are per student address again; proven by a bucket keyed
+by the dev Mac's own address filling to 64 from the test session's 61-hit
+probe plus the deploy checks, which is why the probe's authorize step read
+429 from this Mac until the hour was up (`node backend/scripts/deploy-agent.mjs --public-base
 https://smooth-agent.vercel.app/functions/v1`): `agent-auth` (our own OAuth
 authorization server, the phone approves each connection), `mcp` (the
 remote MCP server Claude connects to) and `agent-snapshot` (the opted-in
