@@ -883,7 +883,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
   - **The semester table, in every tab** (2026-11-11, Olisa after seeing
     his two real degrees: "a table in every tab with each potential semester
     and classes you take. and you be able to drag and switch classes
-    around"; see Test baseline for whether it has compiled).
+    around"; green on the runner at `20485d0`, not yet through `xcodebuild`
+    or on a phone).
     `DegreeSemesterTable` is the plan tab's table made into one view and
     placed under the ring in progress and what if as well, given the audit
     its host is drawing so "fits" follows a what-if. Columns come from
@@ -1364,7 +1365,27 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v12` (2026-11-10, afternoon, after the first phone run): 3791
+**Current on `v12` (2026-11-11, the semester table): 3814 tests / 367
+suites, all green, `swift test --no-parallel` on the GitHub macOS runner in
+106 s (the `tests` workflow, run 43093250932 at `20485d0`), compiled at the
+first attempt. +23 tests / +1 suite over the run below: the suite "Degree
+timeline" (13), six in `DegreePlanTests` (the five `moving` tests and
+`addableHistory`), one in `DegreeAuditStoreTests`, three in
+`DegreeAppStateTests`; `DegreePlanTests.credits` lost its
+`registered(in:)` / `termCredits` assertions with those functions, which
+read a term the audit never carries. **The commit after it, `76d34bd` (the
+reader for which semester a course belongs to; three new tests in
+`PathBridgeTests` and the forbidden-word test rewritten to allow one
+script to name the term maps), passed the runner's Test step (run
+43094033711, 20:10:56 to 20:18:07 UTC, exit 0 under `pipefail`), but its
+count was not read: the log-upload step after it failed after ten minutes
+and GitHub left the run "in progress", refusing both a cancel and a re-run.
+The next push's run is the place to read the number.** Its page script was
+also run in Node against rows of the captured shape with a marker secret in
+every field that must not cross. Neither commit has been through
+`xcodebuild` or onto a phone.
+
+Before it: **on `v12` (2026-11-10, afternoon, after the first phone run): 3791
 tests / 366 suites, all green, `swift test --no-parallel` on the GitHub macOS
 runner in 122 s (the `tests` workflow, run 42865218965 at `3a4822c`, second
 attempt: the first sat in the queue for 15 minutes without a Mac and was
