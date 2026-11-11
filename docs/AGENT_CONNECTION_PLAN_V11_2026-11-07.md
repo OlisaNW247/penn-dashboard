@@ -213,6 +213,12 @@ Detailed, with files and acceptance tests, in the session brief.
    `seen` when he opened the review sheet. The same evening the upload tools
    went live after claude.ai refused to transcribe a 57,000-character
    base64 PDF; the phone's "submit as pdf" choice is installed, untried.
+   **Later the same night (03:45 UTC 2026-11-11):** the redesigned review
+   sheet (`b72066d`: Canvas's accepted types read first, any text draft
+   offered as a phone-rendered PDF, every outcome in plain words) was
+   installed, opened on the same draft, and Marco's verdict was "looks
+   right"; Decline reached the server (`declined`, 22:45 ET). Phase 3 is
+   done but for the Submit POST, which has never touched Canvas.
 4. **Submit**: `CanvasSubmissionClient`, the attempt store, text and file
    submissions on a sandbox, then one low-stakes Penn assignment Marco
    picks. Done when the verify GET agrees and a repeat is refused.

@@ -1477,7 +1477,8 @@ this tree went on Marco's phone that night; at its first open (13:15 US
 Eastern, 2026-11-10) the held sync and the PDF pass both worked for the first
 time (Traps, the `.task` entry). The Phase 3 phone half ran for real on 2026-11-11 02:06 UTC: a draft
 from Claude showed on the Problem Set 7 card and the review sheet marked it
-`seen`; the submit has still not touched Canvas.**
+`seen`; the redesigned sheet was approved on the phone the same night and
+Decline reached the server; only the Submit POST has never touched Canvas.**
 
 **Current on `claude/v11-phone-c7aaf2` (2026-11-10, off `agent/connection-v11`
 `2503a3b`): 3797 tests / 367 suites, all green, `swift test --no-parallel`
