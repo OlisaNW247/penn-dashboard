@@ -459,6 +459,13 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   2026-11-10: hardening, drafts backend and the assignment-context fix
   deployed; open decision: pool the PDFs linked from open assignments so
   Claude can read a problem set (privacy text and Olisa's sync).
+  **2026-11-11 (03:52 UTC): v11 complete end to end on Marco's phone.**
+  Claude read Problem Set 7 through the connection (the PDF pooled by the
+  phone's new pass), drafted the solutions, the phone rendered the PDF,
+  Marco reviewed on the redesigned sheet and submitted: Canvas submission
+  357257138. Left: the directory listings (a session is on it), ChatGPT as
+  a client, the `smooth://link` tap from the Claude iPhone app, telling
+  Olisa about the sync changes, and the ship (version, notes, upload).
   2026-11-10 later, on `claude/v11-backend-645aa0` (off `agent/connection-v11`,
   nothing deployed): the sign-in page now shows "Connected to Smooth /
   Returning to <agent>…" with a tick for 1.5 s before handing back (Marco's
