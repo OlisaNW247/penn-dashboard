@@ -18,6 +18,9 @@ protocol AmbassadorService: Sendable {
     func plan(code: String, anonApp: AmbassadorAnonApp, tzOffsetMinutes: Int) async throws -> AmbassadorPlan
     /// `POST /a/{code}/{action}` with a JSON body; the server answers JSON.
     func send(code: String, action: String, body: [String: String]) async throws
+    /// `POST /a/{code}/idea`: a poster idea, a note and/or one JPEG. The only
+    /// call that carries a picture off the phone, and only on "send".
+    func sendIdea(code: String, note: String, imageJPEG: Data?) async throws
 }
 
 enum AmbassadorClientError: Error, Equatable {
@@ -26,6 +29,10 @@ enum AmbassadorClientError: Error, Equatable {
     case unknownCode
     case badResponse(Int)
     case network
+    /// 413: the picture is over the server's limit (600,000 decoded bytes).
+    case tooLarge
+    /// 429: the daily or the total idea limit is used up.
+    case limitReached
 }
 
 struct AmbassadorClient: AmbassadorService {
@@ -65,11 +72,42 @@ struct AmbassadorClient: AmbassadorService {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.timeoutInterval = 20
         request.httpBody = try JSONEncoder().encode(body)
+        try await deliver(request)
+    }
+
+    func sendIdea(code: String, note: String, imageJPEG: Data?) async throws {
+        var request = URLRequest(url: baseURL.appendingPathComponent("a/\(code)/idea"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        // A picture takes longer to upload than a tick does.
+        request.timeoutInterval = 60
+        request.httpBody = try JSONEncoder().encode(Self.ideaBody(note: note, imageJPEG: imageJPEG))
+        try await deliver(request)
+    }
+
+    /// The idea's JSON: `note` always (possibly empty), and `image` (base64)
+    /// with `type` only when there is a picture. Pure, for the test.
+    nonisolated static func ideaBody(note: String, imageJPEG: Data?) -> [String: String] {
+        var body = ["note": note]
+        if let imageJPEG {
+            body["image"] = imageJPEG.base64EncodedString()
+            body["type"] = "image/jpeg"
+        }
+        return body
+    }
+
+    /// The POST path's status mapping, shared by `send` and `sendIdea`. The
+    /// 413 and 429 words live here and not in `plan`, which a GET never
+    /// earns them on.
+    private func deliver(_ request: URLRequest) async throws {
         let (_, response) = try await perform(request)
         guard let http = response as? HTTPURLResponse else { throw AmbassadorClientError.network }
         switch http.statusCode {
         case 200...299: return
         case 404: throw AmbassadorClientError.unknownCode
+        case 413: throw AmbassadorClientError.tooLarge
+        case 429: throw AmbassadorClientError.limitReached
         default: throw AmbassadorClientError.badResponse(http.statusCode)
         }
     }

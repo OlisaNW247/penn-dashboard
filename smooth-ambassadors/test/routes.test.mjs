@@ -17,7 +17,7 @@ before(async () => {
   const out = join(root, ".wrangler/test/worker.js");
   execFileSync(
     join(root, "node_modules/.bin/esbuild"),
-    [join(root, "worker/index.js"), "--bundle", "--format=esm", "--platform=browser", `--outfile=${out}`],
+    [join(root, "worker/index.js"), "--bundle", "--format=esm", "--platform=browser", "--loader:.woff2=base64", `--outfile=${out}`],
     { stdio: "pipe" },
   );
   mf = new Miniflare({
@@ -37,7 +37,7 @@ before(async () => {
     },
   });
   const db = await mf.getD1Database("DB");
-  const sql = readFileSync(join(root, "migrations/0001_ambassadors.sql"), "utf8");
+  const sql = ["0001_ambassadors.sql", "0002_poster_ideas.sql"].map((f) => readFileSync(join(root, "migrations", f), "utf8")).join("\n");
   const clean = sql.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n");
   for (const stmt of clean.split(";").map((s) => s.trim()).filter(Boolean)) {
     await db.prepare(stmt).run();

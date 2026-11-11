@@ -31,6 +31,8 @@ struct AmbassadorPage: View {
     @State private var feedbackSent = false
     @State private var showMessages = false
     @State private var showTips = false
+    @State private var showPosters = false
+    @State private var showIdea = false
 
     var body: some View {
         Form {
@@ -43,6 +45,7 @@ struct AmbassadorPage: View {
 
             if model.isSignedIn {
                 todaySection
+                postersSection
                 numbersSection
                 remindersSection
                 checklistSection
@@ -62,6 +65,14 @@ struct AmbassadorPage: View {
         .navigationBarTitleDisplayMode(.inline)
 #endif
         .task { await model.refreshIfStale() }
+        .sheet(isPresented: $showPosters) {
+            if let plan = model.plan {
+                AmbassadorPostersView(posters: plan.posters ?? [], schoolLabel: plan.schoolLabel)
+            }
+        }
+        .sheet(isPresented: $showIdea) {
+            PosterIdeaSheet()
+        }
         .lhfSheetTheme()
         .frame(minWidth: 360, minHeight: 420)
     }
@@ -190,6 +201,65 @@ struct AmbassadorPage: View {
             try? await Task.sleep(for: .seconds(1.5))
             copied = false
         }
+    }
+
+    // MARK: Posters
+
+    /// Where the posters, the live dashboard and the idea box are. Each row
+    /// says by its trailing mark whether it stays in the app (a chevron, or a
+    /// count) or leaves it (the arrow, and the label says so too).
+    private var postersSection: some View {
+        Section {
+            if let posters = model.plan?.posters, !posters.isEmpty {
+                posterRow("all posters", symbol: "photo.on.rectangle.angled", trailing: "\(posters.count)", leaves: false) {
+                    showPosters = true
+                }
+            }
+            if let dashboard = model.plan?.dashboardURL {
+                posterRow("scan dashboard \u{2197}", symbol: "chart.bar", trailing: nil, leaves: true) {
+                    openURL(dashboard)
+                }
+            }
+            posterRow("send a poster idea", symbol: "lightbulb", trailing: ideasCount, leaves: false) {
+                model.clearError()
+                showIdea = true
+            }
+        } header: {
+            SmoothSectionHeader("posters", accent: .smoothCobalt)
+        }
+        .smoothSectionBackground(.smoothMarigold)
+    }
+
+    /// "3 of 30", or just the count when the server gives no limit, or nil.
+    private var ideasCount: String? {
+        guard let ideas = model.plan?.ideas else { return nil }
+        if let limit = ideas.limit { return "\(ideas.sent) of \(limit)" }
+        return "\(ideas.sent)"
+    }
+
+    private func posterRow(_ label: String, symbol: String, trailing: String?, leaves: Bool,
+                           action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: symbol)
+                    .frame(width: 22)
+                    .foregroundStyle(Color.smoothInk)
+                Text(label)
+                Spacer()
+                if let trailing {
+                    Text(trailing)
+                        .font(.lhfMono(13, weight: .medium))
+                        .foregroundStyle(Color.v2DateText)
+                }
+                if !leaves {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.v2DateText)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: Numbers
@@ -382,10 +452,8 @@ struct AmbassadorPage: View {
                     openURL(url)
                 } label: {
                     HStack {
-                        Text("my page")
+                        Text("my web page \u{2197}")
                         Spacer()
-                        Image(systemName: "arrow.up.right")
-                            .foregroundStyle(Color.v2DateText)
                     }
                     .contentShape(Rectangle())
                 }

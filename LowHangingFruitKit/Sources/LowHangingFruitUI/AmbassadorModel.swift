@@ -320,6 +320,60 @@ final class AmbassadorModel: ObservableObject {
         }
     }
 
+    /// Sends a poster idea: a note, a picture, or both. This is the one place
+    /// a picture leaves the phone, and only here, on the student's tap. The
+    /// picture is shrunk and re-encoded first (`PosterIdeaImage`: a phone
+    /// photo is several megabytes, the server refuses over 600 KB, and the
+    /// new JPEG carries no GPS or other metadata). The shrinking runs off the
+    /// main actor because decoding and re-encoding a camera photo takes long
+    /// enough to drop frames; `Data` is Sendable, so nothing unsafe crosses.
+    /// On success the plan is fetched again so "3 of 30" moves.
+    @discardableResult
+    func sendPosterIdea(note: String, imageData: Data?) async -> Bool {
+        let text = String(note.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500))
+        guard text.isEmpty == false || imageData != nil else {
+            lastError = "add a picture or a note"
+            return false
+        }
+        guard let code else { return false }
+        isWorking = true
+        defer { isWorking = false }
+        lastError = nil
+        var jpeg: Data?
+        if let imageData {
+            jpeg = await Task.detached(priority: .userInitiated) {
+                PosterIdeaImage.prepared(from: imageData)
+            }.value
+            guard jpeg != nil else {
+                lastError = "couldn\u{2019}t read that picture"
+                return false
+            }
+        }
+        do {
+            try await client.sendIdea(code: code, note: text, imageJPEG: jpeg)
+        } catch AmbassadorClientError.unknownCode {
+            lastError = "this code no longer works"
+            return false
+        } catch AmbassadorClientError.tooLarge {
+            lastError = "that picture is too big"
+            return false
+        } catch AmbassadorClientError.limitReached {
+            lastError = "that\u{2019}s the limit for today"
+            return false
+        } catch {
+            lastError = "couldn\u{2019}t reach smooth"
+            return false
+        }
+        await refresh()
+        lastError = nil
+        return true
+    }
+
+    /// Clears a line left by an earlier action, for a sheet that opens fresh.
+    func clearError() {
+        lastError = nil
+    }
+
     /// Pauses for `weeks` (0 resumes) on the server, which stops the
     /// founders' texts, and switches the local reminders off (or back to
     /// daily on resume): a pause means every nudge, not just the texted one.

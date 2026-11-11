@@ -1,4 +1,6 @@
+import CoreGraphics
 import Foundation
+import ImageIO
 import Testing
 import UserNotifications
 @testable import LowHangingFruitKit
@@ -196,6 +198,15 @@ final class FakeAmbassadorService: AmbassadorService, @unchecked Sendable {
     var offline = false
     var sent: [(code: String, action: String, body: [String: String])] = []
     var planRequests: [(code: String, anon: AmbassadorAnonApp, tz: Int)] = []
+    var ideas: [(code: String, note: String, image: Data?)] = []
+    var ideaError: AmbassadorClientError?
+
+    func sendIdea(code: String, note: String, imageJPEG: Data?) async throws {
+        if offline { throw AmbassadorClientError.network }
+        if let ideaError { throw ideaError }
+        guard plans[code] != nil else { throw AmbassadorClientError.unknownCode }
+        ideas.append((code, note, imageJPEG))
+    }
 
     func plan(code: String, anonApp: AmbassadorAnonApp, tzOffsetMinutes: Int) async throws -> AmbassadorPlan {
         planRequests.append((code, anonApp, tzOffsetMinutes))
@@ -417,6 +428,284 @@ struct AmbassadorModelTests {
         #expect(model.cadence == .weekdays)
         #expect(NotificationScheduler.reservedForeignSlots == 5)
     }
+
+    @Test("an idea with nothing in it is refused in words and sends no request")
+    func emptyIdea() async {
+        await withModel { model, service, _, _ in
+            await model.signIn(Self.code)
+            let before = service.planRequests.count
+            #expect(await model.sendPosterIdea(note: "  \n ", imageData: nil) == false)
+            #expect(model.lastError == "add a picture or a note")
+            #expect(service.ideas.isEmpty)
+            #expect(service.planRequests.count == before)
+        }
+    }
+
+    @Test("a note-only idea is sent trimmed and the plan is fetched again")
+    func noteIdea() async {
+        await withModel { model, service, _, _ in
+            await model.signIn(Self.code)
+            let before = service.planRequests.count
+            #expect(await model.sendPosterIdea(note: "  a funnel poster  ", imageData: nil))
+            #expect(service.ideas.count == 1)
+            #expect(service.ideas.first?.code == Self.code)
+            #expect(service.ideas.first?.note == "a funnel poster")
+            #expect(service.ideas.first?.image == nil)
+            #expect(service.planRequests.count == before + 1)
+            #expect(model.lastError == nil)
+        }
+    }
+
+    @Test("a picture that is not an image is refused before anything is sent")
+    func unreadablePicture() async {
+        await withModel { model, service, _, _ in
+            await model.signIn(Self.code)
+            #expect(await model.sendPosterIdea(note: "", imageData: Data([1, 2, 3, 4])) == false)
+            #expect(model.lastError == "couldn\u{2019}t read that picture")
+            #expect(service.ideas.isEmpty)
+        }
+    }
+
+    @Test("a real picture is sent as a prepared JPEG")
+    func pictureIdea() async throws {
+        let png = try #require(PosterImageFixtures.png(width: 3000, height: 2000))
+        try await withModel { model, service, _, _ in
+            await model.signIn(Self.code)
+            #expect(await model.sendPosterIdea(note: "", imageData: png))
+            let sent = try #require(service.ideas.first?.image)
+            #expect(Array(sent.prefix(3)) == [0xFF, 0xD8, 0xFF])
+            #expect(sent.count <= 600_000)
+        }
+    }
+
+    @Test("the server's refusals become short lowercase lines")
+    func ideaErrors() async {
+        await withModel { model, service, _, _ in
+            await model.signIn(Self.code)
+            service.ideaError = .limitReached
+            #expect(await model.sendPosterIdea(note: "x", imageData: nil) == false)
+            #expect(model.lastError == "that\u{2019}s the limit for today")
+            service.ideaError = .tooLarge
+            #expect(await model.sendPosterIdea(note: "x", imageData: nil) == false)
+            #expect(model.lastError == "that picture is too big")
+            service.ideaError = .unknownCode
+            #expect(await model.sendPosterIdea(note: "x", imageData: nil) == false)
+            #expect(model.lastError == "this code no longer works")
+            service.ideaError = .badResponse(500)
+            #expect(await model.sendPosterIdea(note: "x", imageData: nil) == false)
+            #expect(model.lastError == "couldn\u{2019}t reach smooth")
+        }
+    }
+}
+
+// MARK: - Poster gallery and idea box
+
+enum PosterImageFixtures {
+    /// An opaque RGB picture, PNG-encoded, for the image tests.
+    static func png(width: Int, height: Int) -> Data? {
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+        context.setFillColor(CGColor(red: 0.9, green: 0.3, blue: 0.2, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.setFillColor(CGColor(red: 0.1, green: 0.4, blue: 0.8, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width / 2, height: height / 3))
+        guard let image = context.makeImage() else { return nil }
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(output, "public.png" as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return output as Data
+    }
+
+    /// The pixel size of encoded image data.
+    static func size(of data: Data) -> (width: Int, height: Int)? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let w = props[kCGImagePropertyPixelWidth] as? Int,
+              let h = props[kCGImagePropertyPixelHeight] as? Int else { return nil }
+        return (w, h)
+    }
+}
+
+@Suite("Ambassador posters in the plan")
+struct AmbassadorPosterPlanTests {
+    static let base = #"{"name":"Maya","school":"uva""#
+
+    @Test("the three new fields decode when present")
+    func present() throws {
+        let json = Self.base + #"""
+        ,"posters":[{"key":"ib","name":"Funneled into IB","image":"https://example.test/posters/uva/ib.jpg","scans":12},
+                    {"key":"cs","name":"CS","image":"https://example.test/posters/uva/cs.jpg"}],
+         "dashboard":"https://example.test/?school=uva",
+         "ideas":{"sent":3,"limit":30,"dailyLimit":5}}
+        """#
+        let plan = try AmbassadorPlan.decode(Data(json.utf8))
+        #expect(plan.posters?.count == 2)
+        #expect(plan.posters?.first?.scans == 12)
+        #expect(plan.posters?.last?.scans == nil)
+        #expect(plan.dashboardURL?.absoluteString == "https://example.test/?school=uva")
+        #expect(plan.ideas == AmbassadorPlan.Ideas(sent: 3, limit: 30, dailyLimit: 5))
+        #expect(plan.posters?.first?.imageURL?.host == "example.test")
+        let again = try AmbassadorPlan.decode(plan.encoded())
+        #expect(again == plan)
+    }
+
+    @Test("an older server omits them and the plan still decodes")
+    func absent() throws {
+        let plan = try AmbassadorPlan.decode(Data((Self.base + "}").utf8))
+        #expect(plan.posters == nil)
+        #expect(plan.dashboard == nil)
+        #expect(plan.dashboardURL == nil)
+        #expect(plan.ideas == nil)
+    }
+
+    @Test("one malformed poster is dropped and the rest survive")
+    func lossy() throws {
+        let json = Self.base + #"""
+        ,"posters":[{"key":"a","name":"A","image":"https://example.test/a.jpg"},
+                    {"key":"broken","name":"no image"},
+                    {"key":7,"name":"wrong type","image":"https://example.test/x.jpg"},
+                    {"key":"b","name":"B","image":"https://example.test/b.jpg","scans":2}]}
+        """#
+        let plan = try AmbassadorPlan.decode(Data(json.utf8))
+        #expect(plan.posters?.map(\.key) == ["a", "b"])
+    }
+
+    @Test("a wrongly shaped ideas or dashboard reads as absent, not as a failed plan")
+    func wrongShapes() throws {
+        let plan = try AmbassadorPlan.decode(Data((Self.base + #","ideas":"many","dashboard":5}"#).utf8))
+        #expect(plan.ideas == nil)
+        #expect(plan.dashboard == nil)
+        #expect(plan.name == "Maya")
+    }
+
+    @Test("only https links are ever used")
+    func httpsOnly() {
+        #expect(AmbassadorPlan(name: "a", school: "b", dashboard: "http://example.test/").dashboardURL == nil)
+        #expect(AmbassadorPlan(name: "a", school: "b", dashboard: "javascript:alert(1)").dashboardURL == nil)
+        #expect(AmbassadorPlan(name: "a", school: "b", dashboard: "https://example.test/").dashboardURL != nil)
+        #expect(AmbassadorPlan.Poster(key: "k", name: "n", image: "http://example.test/a.jpg").imageURL == nil)
+        #expect(AmbassadorPlan.Poster(key: "k", name: "n", image: "file:///etc/passwd").imageURL == nil)
+        #expect(AmbassadorPlan.Poster(key: "k", name: "n", image: "https://example.test/a.jpg").imageURL != nil)
+    }
+}
+
+@Suite("Poster idea picture")
+struct PosterIdeaImageTests {
+    @Test("a large photo becomes a small JPEG with no more than 1280 on its long side")
+    func shrinks() throws {
+        let png = try #require(PosterImageFixtures.png(width: 3000, height: 2000))
+        let jpeg = try #require(PosterIdeaImage.prepared(from: png))
+        #expect(Array(jpeg.prefix(3)) == [0xFF, 0xD8, 0xFF])
+        #expect(jpeg.count <= 600_000)
+        let size = try #require(PosterImageFixtures.size(of: jpeg))
+        #expect(max(size.width, size.height) <= 1280)
+        #expect(max(size.width, size.height) > 1000)
+    }
+
+    @Test("a small picture is not made bigger")
+    func neverUpsizes() throws {
+        let png = try #require(PosterImageFixtures.png(width: 200, height: 100))
+        let jpeg = try #require(PosterIdeaImage.prepared(from: png))
+        let size = try #require(PosterImageFixtures.size(of: jpeg))
+        #expect(size.width == 200)
+        #expect(size.height == 100)
+    }
+
+    @Test("bytes that are not an image, and no bytes, give nothing")
+    func notAnImage() {
+        #expect(PosterIdeaImage.prepared(from: Data((0..<2000).map { _ in UInt8.random(in: 0...255) })) == nil)
+        #expect(PosterIdeaImage.prepared(from: Data()) == nil)
+    }
+}
+
+/// Answers every request with a canned status and keeps the last request, so
+/// the client's POSTs can be read without a network. `.serialized` on the
+/// suite: the handler and capture are process-wide.
+final class IdeaStubProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var status = 200
+    nonisolated(unsafe) static var lastRequest: URLRequest?
+    nonisolated(unsafe) static var lastBody: Data?
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        Self.lastRequest = request
+        if let body = request.httpBody {
+            Self.lastBody = body
+        } else if let stream = request.httpBodyStream {
+            stream.open()
+            var data = Data()
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            while stream.hasBytesAvailable {
+                let n = stream.read(&buffer, maxLength: buffer.count)
+                if n <= 0 { break }
+                data.append(buffer, count: n)
+            }
+            stream.close()
+            Self.lastBody = data
+        }
+        let response = HTTPURLResponse(url: request.url!, statusCode: Self.status, httpVersion: nil, headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(#"{"ok":true}"#.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+@Suite("Ambassador client: ideas", .serialized)
+struct AmbassadorIdeaClientTests {
+    private func client() -> AmbassadorClient {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [IdeaStubProtocol.self]
+        return AmbassadorClient(baseURL: URL(string: "https://example.test")!, session: URLSession(configuration: config))
+    }
+
+    private func sentJSON() throws -> [String: String] {
+        let body = try #require(IdeaStubProtocol.lastBody)
+        return try #require(try JSONSerialization.jsonObject(with: body) as? [String: String])
+    }
+
+    @Test("an idea POSTs to /a/{code}/idea with note, image and type")
+    func request() async throws {
+        IdeaStubProtocol.status = 200
+        try await client().sendIdea(code: "abc123code", note: "hi", imageJPEG: Data([0xFF, 0xD8, 0xFF]))
+        let request = try #require(IdeaStubProtocol.lastRequest)
+        #expect(request.httpMethod == "POST")
+        #expect(request.url?.path == "/a/abc123code/idea")
+        #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json")
+        let json = try sentJSON()
+        #expect(json["note"] == "hi")
+        #expect(json["type"] == "image/jpeg")
+        #expect(json["image"] == Data([0xFF, 0xD8, 0xFF]).base64EncodedString())
+    }
+
+    @Test("a note-only idea omits image and type")
+    func noteOnly() async throws {
+        IdeaStubProtocol.status = 200
+        try await client().sendIdea(code: "abc123code", note: "just words", imageJPEG: nil)
+        let json = try sentJSON()
+        #expect(json == ["note": "just words"])
+    }
+
+    @Test("413, 429 and 404 each have their own error; another status is a bad response")
+    func statuses() async {
+        let cases: [(Int, AmbassadorClientError)] = [(413, .tooLarge), (429, .limitReached),
+                                                     (404, .unknownCode), (500, .badResponse(500))]
+        for (status, expected) in cases {
+            IdeaStubProtocol.status = status
+            do {
+                try await client().sendIdea(code: "abc123code", note: "x", imageJPEG: nil)
+                Issue.record("status \(status) did not throw")
+            } catch {
+                #expect(error as? AmbassadorClientError == expected, "\(status)")
+            }
+        }
+    }
 }
 
 /// The wiring that `swift test` cannot exercise as behaviour, pinned as
@@ -447,7 +736,8 @@ struct AmbassadorWiringTests {
 
     @Test("ambassador mode never mentions ratings or reviews")
     func noReviews() throws {
-        for file in ["AmbassadorPage.swift", "AmbassadorModel.swift", "AmbassadorReminders.swift"] {
+        for file in ["AmbassadorPage.swift", "AmbassadorModel.swift", "AmbassadorReminders.swift",
+                     "AmbassadorPostersView.swift", "PosterIdeaSheet.swift"] {
             let source = try uiSource(file).lowercased()
             #expect(!source.contains("5 star") && !source.contains("five star") && !source.contains("rate the app"), "\(file)")
         }

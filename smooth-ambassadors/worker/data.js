@@ -145,6 +145,73 @@ export async function addFeedback(env, amb, body) {
     .run();
 }
 
+// ---- poster ideas. Private to the founders: an ambassador can add and count
+// their own, and nothing here returns another ambassador's row to them.
+export const IDEA_DAILY_LIMIT = 5;
+export const IDEA_TOTAL_LIMIT = 30;
+
+export async function ideaCounts(env, amb) {
+  const dayStart = new Date().toISOString().slice(0, 10) + "T00:00:00.000Z"; // the UTC day
+  const row = await env.DB.prepare(
+    "SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN ts >= ?2 THEN 1 ELSE 0 END), 0) AS today FROM poster_ideas WHERE ambassador_id = ?1",
+  )
+    .bind(amb.id, dayStart)
+    .first();
+  return { total: row?.total ?? 0, today: row?.today ?? 0 };
+}
+
+export async function addIdea(env, amb, { note, mime, image }) {
+  await env.DB.prepare(
+    "INSERT INTO poster_ideas (ambassador_id, note, mime, image) VALUES (?1, ?2, ?3, ?4)",
+  )
+    .bind(amb.id, note, mime, image)
+    .run();
+}
+
+// Founder only. Never selects the image itself: the list stays small, and the
+// bytes are fetched one at a time through the image route.
+export async function listIdeas(env) {
+  const { results } = await env.DB.prepare(
+    "SELECT i.id, i.ambassador_id, i.ts, i.note, i.mime, (i.image IS NOT NULL) AS has_image, i.seen_at, b.name, b.school FROM poster_ideas i JOIN ambassadors b ON b.id = i.ambassador_id ORDER BY i.ts DESC, i.id DESC LIMIT 200",
+  ).all();
+  return results.map((r) => ({
+    id: r.id,
+    ambassadorId: r.ambassador_id,
+    ambassador: r.name,
+    school: r.school,
+    ts: r.ts,
+    note: r.note,
+    mime: r.mime,
+    hasImage: !!r.has_image,
+    seenAt: r.seen_at,
+  }));
+}
+
+export async function ideaImage(env, id) {
+  return env.DB.prepare("SELECT mime, image FROM poster_ideas WHERE id = ?1 AND image IS NOT NULL").bind(id).first();
+}
+
+export async function markIdeaSeen(env, id) {
+  await env.DB.prepare("UPDATE poster_ideas SET seen_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?1 AND seen_at IS NULL")
+    .bind(id)
+    .run();
+}
+
+export async function deleteIdea(env, id) {
+  await env.DB.prepare("DELETE FROM poster_ideas WHERE id = ?1").bind(id).run();
+}
+
+// scans.total per poster key for one school, so a page or the app can show
+// how often each design was scanned there.
+export async function schoolDesignScans(env, school) {
+  const { results } = await env.DB.prepare(
+    "SELECT poster, total FROM scans WHERE poster LIKE ?1 OR (?2 = 'upenn' AND poster NOT LIKE '%/%')",
+  )
+    .bind(`${school}/%`, school)
+    .all();
+  return Object.fromEntries(results.map((r) => [r.poster, r.total]));
+}
+
 // Everything one ambassador is allowed to see: their own numbers only.
 export async function ambassadorStats(env, amb, days = 14) {
   const since = sinceIso(days);
@@ -291,6 +358,7 @@ export async function founderStats(env, days = 14) {
     ambassadors,
     activity: acts.results,
     feedback: fb.results,
+    ideas: await listIdeas(env),
     designs,
     leaderboard: await schoolLeaderboard(env, days),
   };

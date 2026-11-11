@@ -105,7 +105,7 @@ const result = await build({
   minify: false,
   write: false,
   legalComments: "inline",
-  loader: { ".sql": "text" },
+  loader: { ".sql": "text", ".woff2": "base64" },
   plugins: [alias],
   logLevel: "silent",
 });
@@ -121,7 +121,9 @@ text += START + "\n" + host + bundle + (bundle.endsWith("\n") ? "" : "\n") + END
 
 writeFileSync(target, text);
 mkdirSync(join(repo, "migrations"), { recursive: true });
-copyFileSync(join(root, "migrations/0001_ambassadors.sql"), join(repo, "migrations/0001_ambassadors.sql"));
+for (const file of ["0001_ambassadors.sql", "0002_poster_ideas.sql"]) {
+  copyFileSync(join(root, "migrations", file), join(repo, "migrations", file));
+}
 
 // The repository's own account of the change. The platform build copies only
 // worker/index.js and the hosting manifest, so these files never reach the Worker;

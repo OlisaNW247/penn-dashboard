@@ -87,6 +87,43 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
         }
     }
 
+    /// One of the ambassador's school's poster designs, in the server's
+    /// display order. `image` is an https URL to a picture the student can
+    /// share or print; `scans` is how many times that design's QR code has
+    /// been scanned, when the server says.
+    public struct Poster: Codable, Equatable, Sendable, Identifiable {
+        public var key: String
+        public var name: String
+        public var image: String
+        public var scans: Int?
+        public var id: String { key }
+
+        public init(key: String, name: String, image: String, scans: Int? = nil) {
+            self.key = key
+            self.name = name
+            self.image = image
+            self.scans = scans
+        }
+
+        /// https only: a plain-http or custom-scheme URL from a server is
+        /// never loaded or handed to the share sheet.
+        public var imageURL: URL? { AmbassadorPlan.httpsURL(image) }
+    }
+
+    /// How many poster ideas this ambassador has sent, against the server's
+    /// two limits (a daily one and a total one), when it reports them.
+    public struct Ideas: Codable, Equatable, Sendable {
+        public var sent: Int
+        public var limit: Int?
+        public var dailyLimit: Int?
+
+        public init(sent: Int, limit: Int? = nil, dailyLimit: Int? = nil) {
+            self.sent = sent
+            self.limit = limit
+            self.dailyLimit = dailyLimit
+        }
+    }
+
     public var name: String
     public var school: String
     public var schoolName: String?
@@ -101,12 +138,21 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
     public var checklist: [ChecklistStep]?
     public var tips: [String]?
     public var generatedAt: String?
+    /// The three fields below arrived with the poster gallery; an older server
+    /// omits them and the page hides what it cannot show.
+    public var posters: [Poster]?
+    public var dashboard: String?
+    public var ideas: Ideas?
 
     public init(name: String, school: String, schoolName: String? = nil, title: String? = nil,
                 status: String? = nil, pausedUntil: String? = nil, page: String? = nil,
                 appStore: String? = nil, numbers: Numbers? = nil, today: Today? = nil,
                 messages: [Message]? = nil, checklist: [ChecklistStep]? = nil,
-                tips: [String]? = nil, generatedAt: String? = nil) {
+                tips: [String]? = nil, generatedAt: String? = nil,
+                posters: [Poster]? = nil, dashboard: String? = nil, ideas: Ideas? = nil) {
+        self.posters = posters
+        self.dashboard = dashboard
+        self.ideas = ideas
         self.name = name
         self.school = school
         self.schoolName = schoolName
@@ -121,6 +167,57 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
         self.checklist = checklist
         self.tips = tips
         self.generatedAt = generatedAt
+    }
+
+    /// Decoded by hand only so that one malformed poster entry (a missing
+    /// image, a number where a name should be) drops that poster and not the
+    /// whole plan: the plan is the page's one source, and a gallery typo on
+    /// the server must not sign anyone out of today's post. Every other field
+    /// decodes exactly as the synthesized version did (`encode(to:)` is still
+    /// synthesized from the same keys). The new `ideas` and `dashboard` fields
+    /// are read with `try?`, so a wrongly shaped one reads as absent.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        school = try c.decode(String.self, forKey: .school)
+        schoolName = try c.decodeIfPresent(String.self, forKey: .schoolName)
+        title = try c.decodeIfPresent(String.self, forKey: .title)
+        status = try c.decodeIfPresent(String.self, forKey: .status)
+        pausedUntil = try c.decodeIfPresent(String.self, forKey: .pausedUntil)
+        page = try c.decodeIfPresent(String.self, forKey: .page)
+        appStore = try c.decodeIfPresent(String.self, forKey: .appStore)
+        numbers = try c.decodeIfPresent(Numbers.self, forKey: .numbers)
+        today = try c.decodeIfPresent(Today.self, forKey: .today)
+        messages = try c.decodeIfPresent([Message].self, forKey: .messages)
+        checklist = try c.decodeIfPresent([ChecklistStep].self, forKey: .checklist)
+        tips = try c.decodeIfPresent([String].self, forKey: .tips)
+        generatedAt = try c.decodeIfPresent(String.self, forKey: .generatedAt)
+        if let boxes = try? c.decodeIfPresent([LossyElement<Poster>].self, forKey: .posters) {
+            posters = boxes.compactMap(\.value)
+        } else {
+            posters = nil
+        }
+        dashboard = (try? c.decodeIfPresent(String.self, forKey: .dashboard)) ?? nil
+        ideas = (try? c.decodeIfPresent(Ideas.self, forKey: .ideas)) ?? nil
+    }
+
+    /// An element that decodes to nil instead of throwing.
+    private struct LossyElement<T: Decodable>: Decodable {
+        let value: T?
+        init(from decoder: Decoder) throws {
+            value = try? T(from: decoder)
+        }
+    }
+
+    fileprivate static func httpsURL(_ string: String) -> URL? {
+        guard let url = URL(string: string.trimmingCharacters(in: .whitespacesAndNewlines)),
+              url.scheme?.lowercased() == "https", url.host?.isEmpty == false else { return nil }
+        return url
+    }
+
+    /// The public live scan dashboard for this school, https only.
+    public var dashboardURL: URL? {
+        dashboard.flatMap(AmbassadorPlan.httpsURL)
     }
 
     /// The first name, for "hey maya".

@@ -2,17 +2,21 @@
 // (scripts/build-sites.mjs). The host file calls handle() first on every request
 // and logScan() after a legacy scan.
 import { handleAmbassadors } from "../worker/ambassadors.js";
-import migration from "../migrations/0001_ambassadors.sql";
+import migration1 from "../migrations/0001_ambassadors.sql";
+import migration2 from "../migrations/0002_poster_ideas.sql";
 
 // The platform has no migration step we can rely on, and the existing Worker
 // already creates its table lazily with CREATE TABLE IF NOT EXISTS, so the
-// ambassador tables are created the same way. Every statement in the migration
-// is CREATE ... IF NOT EXISTS, so running it on each cold isolate is idempotent.
+// ambassador tables are created the same way. Every statement in both migration
+// files (0001 the roster, 0002 poster ideas) is CREATE ... IF NOT EXISTS, so
+// running them on each cold isolate is idempotent, and an existing deployment gets
+// the 0002 table on its first request with no manual step.
 let schemaReady = null;
 
 function ensureSchema(db) {
   if (!schemaReady) {
-    const statements = migration
+    const statements = [migration1, migration2]
+      .join("\n")
       .split("\n")
       .filter((line) => !line.trim().startsWith("--"))
       .join("\n")
