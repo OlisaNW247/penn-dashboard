@@ -37,7 +37,8 @@ UPenn-only poster also needs adding to `SMOOTH_HOST.upennOnly`.
 An ambassador is a row in D1 with two ids, both generated with
 `crypto.getRandomValues` and independent of each other:
 
-- the **code** (14 characters from a 31-letter alphabet, about 69 bits) is
+- the **code** (the school, a hyphen, then 14 random characters from a
+  31-letter alphabet, about 69 bits: `uva-7k3m9x2p4q8w`) is
   the whole credential. It travels in the path of the private page link the
   founders text to each ambassador: `https://<this site>/a/{code}`. It is
   shown only to the ambassador and the founders, never in anything posted

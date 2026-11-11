@@ -54,7 +54,16 @@ export async function createAmbassador(env, { name, school, contact, notes }) {
   if (typeof school !== "string" || !Object.hasOwn(SCHOOLS, school)) throw new Error("unknown school");
   name = (name || "").trim().slice(0, 80);
   if (!name) throw new Error("name required");
-  const token = newToken();
+  // The code starts with the school (`uva-7k3m9x2p4q8w`), so a founder reading a
+  // list of codes, or an ambassador reading their own, can tell which campus it
+  // belongs to. The prefix is a label and no part of the secret: the fourteen
+  // random characters after it are the whole credential, exactly as before, and
+  // codes made before 2026-11-11 have no prefix and keep working, because a code
+  // is only ever looked up whole. Moving someone to another school later does
+  // not change their code (it would sign them out), so the prefix records where
+  // they started. The public `ref` stays bare: it goes into every posted link,
+  // where shorter is better.
+  const token = `${school}-${newToken()}`;
   const ref = newToken(10); // independent of the token: see the migration
   await env.DB.prepare(
     "INSERT INTO ambassadors (token, ref, name, school, contact, notes) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",

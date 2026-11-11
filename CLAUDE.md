@@ -1158,7 +1158,10 @@ Keep this current. It is the fastest way for a new session to know what exists.
      the link, or opened from the page's "open in the smooth app" button
      (`smooth://ambassador?code=…`, `RootView.onOpenURL`). Parsed by
      `AmbassadorCode` (Kit), checked against the server
-     (`GET /a/{code}/plan.json`), kept in the Keychain
+     (`GET /a/{code}/plan.json`; since 2026-11-11 a new code starts with
+     its school, `uva-7k3m9x2p4q8w`, a label in front of the same 14
+     random characters, at Olisa's ask, and older bare codes keep
+     working), kept in the Keychain
      (`AmbassadorCodeStore`, Tier 3, inert under tests). Signed in, the
      page shows **today's post** (written by the server from a bank of
      daily variants, filled with the ambassador's own tracked link and
@@ -3904,7 +3907,11 @@ none is a ship line.
   because no released version has ambassador mode. Until 2026-11-10 this
   file said an undeployed server made sign-in say "couldn't reach
   smooth"; it was "that code didn't work", a 404 read as an unknown code.
-  The backup of `scans` stays out of git. The review notes need a test code once a roster exists.
+  The backup of `scans` stays out of git. **School-prefixed codes
+  (2026-11-11) are built and tested but not yet live**: a second zip went
+  to Olisa for the same ChatGPT session; until it deploys, the founder
+  page still makes bare codes. It is one changed line in the deployed
+  file, no schema or variable change. The review notes need a test code once a roster exists.
 - **Degree progress (`v12`) has read one real audit on one phone, and
   which degree it shows first is unsettled.** On 2026-11-10 at 12:07 local
   the Debug build of `d2f37a0` (installed with `devicectl` over the store

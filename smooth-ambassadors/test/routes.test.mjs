@@ -140,6 +140,7 @@ test("founder adds an ambassador and gets a private link", async () => {
   assert.equal(r.status, 303);
   token = new URL(r.headers.get("location"), "https://x").searchParams.get("created");
   assert.ok(token && token.length >= 14);
+  assert.match(token, /^uva-[a-z0-9]{14}$/, "a new code starts with its school");
   const page = await (await get(`/f/${FOUNDER}?created=${token}`)).text();
   assert.match(page, new RegExp(`/a/${token}`));
   assert.match(page, /sms:\+15550102020&body=/);
@@ -402,4 +403,37 @@ test("a left ambassador's code stops working, their stickers still count the sch
   assert.equal(await hits(), h); // no ambassador credit
   const after = (await (await get(`/f/${FOUNDER}/export.json`)).json()).ambassadors.find((a) => a.token === token);
   assert.equal(after.status, "left");
+});
+
+// Codes carry their school as a readable prefix (2026-11-11). The prefix is a
+// label: every school gets its own, the random part is still the secret, and a
+// code handed out before the prefix existed is looked up whole and still works.
+test("a code starts with its school, at every school, and old bare codes still sign in", async () => {
+  const db = await mf.getD1Database("DB");
+  const seen = new Set();
+  for (const school of ["upenn", "umiami", "uva", "case-western", "clark"]) {
+    const r = await post(`/f/${FOUNDER}/add`, { name: `Prefix ${school}`, school, contact: "", notes: "" });
+    assert.equal(r.status, 303);
+    const code = new URL(r.headers.get("location"), "https://x").searchParams.get("created");
+    assert.match(code, new RegExp(`^${school}-[a-z0-9]{14}$`));
+    assert.ok(code.length <= 40, "fits the app's 40-character limit");
+    const plan = await (await get(`/a/${code}/plan.json`)).json();
+    assert.equal(plan.school, school);
+    // The public id in posted links stays short and bare, and is not the code.
+    const row = await db.prepare("SELECT ref FROM ambassadors WHERE token = ?1").bind(code).first();
+    assert.match(row.ref, /^[a-z0-9]{10}$/);
+    assert.ok(!code.includes(row.ref));
+    seen.add(code.slice(school.length + 1));
+    // The prefix alone, or the random part alone, opens nothing.
+    assert.equal((await get(`/a/${code.slice(school.length + 1)}/plan.json`)).status, 404);
+    assert.equal((await get(`/a/${school}-aaaaaaaaaaaaaa/plan.json`)).status, 404);
+  }
+  assert.equal(seen.size, 5, "the random part is drawn afresh for each code");
+
+  await db
+    .prepare("INSERT INTO ambassadors (token, ref, name, school) VALUES ('oldbarecode1234', 'oldref1234', 'Old Code', 'umiami')")
+    .run();
+  const old = await get("/a/oldbarecode1234/plan.json");
+  assert.equal(old.status, 200);
+  assert.equal((await old.json()).school, "umiami");
 });

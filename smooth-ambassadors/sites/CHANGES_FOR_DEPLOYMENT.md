@@ -4,6 +4,38 @@ For the ChatGPT session that deploys project
 `appgprj_6aebbfcc56e48191a690c176014ceddf`. Base commit:
 `3770608515c285cc1e034f8be04e8d5e4c335640`.
 
+## Update, 2026-11-11: codes that start with the school
+
+This archive is the second one. The first was deployed on 2026-11-11 and
+is live. The only behaviour change since it:
+
+- A new ambassador's code now starts with their school, for example
+  `uva-7k3m9x2p4q8w` or `case-western-4hd82kq9zt3mxa`. One code per person,
+  as before. The prefix is a readable label. The 14 random characters after
+  it are still the whole secret.
+- Codes created before this deploy have no prefix and keep working. Nothing
+  rewrites them.
+- The public id in share and sticker links (`/r/{ref}/...`) is unchanged.
+
+What that means for the deploy:
+
+- Only `worker/index.js` changes, and inside it only the generated section
+  between `// >>> smooth-ambassadors` and `// <<< smooth-ambassadors`.
+  `AMBASSADORS.md` has one sentence updated.
+- No schema change, no new runtime variable, no migration, no data change.
+  `FOUNDER_TOKEN` stays as it is.
+- This archive was built on the same base as the first one. If the Sites
+  repository was changed during or after the first deploy, keep those
+  changes and take only the generated section from this `worker/index.js`.
+
+Check after deploying: add an ambassador at UVA in the founder page and
+confirm the new code starts with `uva-`; open
+`/a/{that code}/plan.json` and confirm 200; confirm the ambassador created
+during the first deploy still opens with their old code. No scan link needs
+opening for this update.
+
+The rest of this file is the first archive's notes, still accurate.
+
 ## The finding
 
 The app is not sending a sign-in request to an auth endpoint, because the

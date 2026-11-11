@@ -23,6 +23,22 @@ struct AmbassadorCodeTests {
         #expect(AmbassadorCode.parse("smooth://ambassador?code=\(code)") == code)
     }
 
+    /// Since 2026-11-11 the server puts the school in front of a new code
+    /// (`uva-7k3m9x2p4q8w`). The app needed no change for it, and this pins
+    /// why: a code is letters, digits and hyphens up to forty characters, so
+    /// the longest school, `case-western`, still fits with room to spare.
+    @Test("a code that starts with its school parses whole, in every shape, for every school")
+    func schoolPrefixedCodes() {
+        for school in ["upenn", "umiami", "uva", "case-western", "clark"] {
+            let code = "\(school)-7k3m9x2p4q8wab"
+            #expect(code.count <= AmbassadorCode.maximumLength)
+            #expect(AmbassadorCode.parse(code) == code)
+            #expect(AmbassadorCode.parse(code.uppercased()) == code)
+            #expect(AmbassadorCode.parse("https://smooth-poster-scans.jazzysmile20.chatgpt.site/a/\(code)") == code)
+            #expect(AmbassadorCode.parse("smooth://ambassador?code=\(code)") == code)
+        }
+    }
+
     @Test("what can never be a code is refused")
     func refusals() {
         #expect(AmbassadorCode.parse("") == nil)

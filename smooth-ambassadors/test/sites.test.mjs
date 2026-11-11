@@ -129,6 +129,7 @@ test("unknown code and founder secret", { skip }, async () => {
   assert.equal(r.status, 303);
   token = new URL(r.headers.get("location"), "https://x").searchParams.get("created");
   assert.ok(token && token.length >= 14);
+  assert.match(token, /^uva-[a-z0-9]{14}$/, "a new code starts with its school");
   const ex = await (await req(edited, `/f/${FOUNDER}/export.json`)).json();
   ref = ex.ambassadors.find((a) => a.token === token).ref;
   assert.match(ref, /^[a-z2-9]{10}$/);
