@@ -877,7 +877,10 @@ Kept so nobody rebuilds them blind.
   routes compared byte for byte against the original, 14 of 14), the
   share and sticker links moved to a public id so the private code is
   never posted (CLAUDE.md → Traps), and the zip went to Olisa for the
-  ChatGPT session that deploys.
+  ChatGPT session that deploys. **Live since 2026-11-11**: old routes and
+  totals checked read-only against the backup, the ambassador routes
+  answer. What is left is the app side: a build of this branch on a phone
+  and a first sign-in.
 - **2026-11-07 (16:39 EST).** 3.4.1 (20) archived from `c3a4feb` and
   uploaded, superseding builds 18 and 19. Marco attaches 20 and submits.
 - **2026-11-07 (evening).** The megaphone lists every post the phone keeps

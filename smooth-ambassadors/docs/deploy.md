@@ -28,6 +28,11 @@ this repository's job is to produce that one file.
 own code serves the old routes, untouched, and the ambassador system is
 folded in beside it.
 
+**First deploy: 2026-11-11**, by that session, from the zip built here.
+Checked afterwards from outside, read-only: dashboard, `/api/stats`
+against the backup (nothing lower), posters, the 404s and 405, the
+leaderboard, and an unknown code refused.
+
 ## Step by step
 
 1. **Get the current Sites source** (the archive ChatGPT exports, with

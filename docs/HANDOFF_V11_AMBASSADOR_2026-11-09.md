@@ -41,8 +41,9 @@ Profile → 8 has the full description):
    real single-file Worker with the ambassador system folded in by
    `scripts/build-sites.mjs`. Olisa has the zip; the ChatGPT session that
    owns the Sites project backs up `scans`, sets `FOUNDER_TOKEN`, deploys
-   and re-tests. Until then the app's sign-in says "that code didn't
-   work" for every code (the live Worker answers 404).
+   and re-tests. **Done 2026-11-11**: the server is live and its old
+   routes and totals were checked against the backup (CLAUDE.md → Known
+   gaps). An ambassador can already use their page in a browser.
 3. **Add one ambassador in the founder view** and put their code in the
    review notes (`docs/appstore/REVIEW_NOTES.md`, the new paragraph).
 4. **On a phone:** sign in with the code; set the reminder to a minute
