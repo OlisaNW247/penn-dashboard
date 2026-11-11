@@ -1290,7 +1290,10 @@ Keep this current. It is the fastest way for a new session to know what exists.
     `canvas_submission_id` and `attempt`, or `failed` with a short
     `error_class`). Disconnecting Canvas and turning the opt-in off clear
     the drafts, the cache, the notice memory, the known-connection ids and
-    the attempt records.
+    the attempt records. Since 2026-11-11 disconnecting Canvas also clears
+    the assignment-PDF pass's memory (`attachmentAttemptsV1`,
+    `lastAttachmentSyncSummaryV1`) and the in-memory Canvas submission
+    rules the review sheet reads first.
   - **Text as a PDF** (2026-11-10 for markdown; 2026-11-11 for every text
     draft; compiled and tested, never on a phone). claude.ai will not emit a
     144,000-character base64 PDF, so a document travels as source text and

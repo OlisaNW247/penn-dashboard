@@ -5161,6 +5161,14 @@ final class AppState: ObservableObject {
         // The server deletes the drafts with the snapshot; the phone's copies,
         // its notice memory and its attempt records go with them.
         clearAgentDraftsLocally()
+        // The assignment-PDF pass's memory is Canvas-account state too: file
+        // ids and when each was last tried (a scan waits a week). Kept, a
+        // reconnect would skip files for days, and a switch to another
+        // school would read the old school's numeric ids. The rules the
+        // review sheet reads first are the same kind of state, in memory.
+        UserDefaults.lhf.removeObject(forKey: Self.attachmentAttemptsKey)
+        UserDefaults.lhf.removeObject(forKey: Self.lastAttachmentSyncSummaryKey)
+        canvasSubmissionRulesByAssignmentID = [:]
         CanvasAccessTokenStore.clear()
         forcedCanvasAccessTokenForTesting = nil
         updateCanvasICSURL("")
