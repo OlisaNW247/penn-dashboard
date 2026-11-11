@@ -1190,7 +1190,11 @@ Keep this current. It is the fastest way for a new session to know what exists.
   `AppState.agentDrafts` (memory) and `agentDraftsCacheV1` (the same drafts
   with no body, link, note or signed URL, so a relaunch draws the chips
   before the first poll). A draft matches a card by equality: its
-  `assignment_id` is the snapshot item id, which is `Assignment.id`.
+  `assignment_id` is the snapshot item id, which is `Assignment.id`. The
+  list decodes one draft at a time (`AgentDraftList`, 2026-11-11): a draft
+  with no id or a non-object is skipped, never the whole list. The card's
+  preview reads only the body's head, and the cache clips the agent's name
+  to the 40 characters the card prints.
   - **The card.** "drafted by claude" in the collapsed card's caveat line
     beside cancelled / moved / changed, the chip in grape (`smoothGrapeInk`,
     the agent's and ask's colour; the exam card's secondary colour on its
@@ -2784,6 +2788,16 @@ itself.
   wait ten minutes between hidden-login tests.
 
 ## Traps that have already bitten
+
+- **Field-by-field leniency is undone one level up by a plain array**
+  (found 2026-11-11 by the v11 test pass, `docs/V11_TEST_PHONE_2026-11-11.md`).
+  `AgentDraft` decodes every optional field with `try?`, but the drafts
+  list decoded as `[AgentDraft]`, so one element with no `id` (or an id that
+  is a number, or a value that is not an object) threw for the whole array,
+  the pass's `try?` turned that into "no drafts", and the outcome reports
+  the pass re-sends were skipped too. Nothing on the phone said why. Now
+  `AgentDraftList` decodes element by element. The wrong fix is making `id`
+  optional: a draft with no id cannot be matched to an attempt record.
 
 - **A view's `.task` cancelling the course-material sync read as "manifest
   failed"** (2026-11-10, diagnosed by the backend session, blind fix). The

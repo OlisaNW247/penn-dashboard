@@ -143,8 +143,9 @@ struct AgentConnectionClient: Sendable {
     /// draft's `fileURL` is good for 120 seconds.
     func listDrafts() async throws -> [AgentDraft] {
         struct Request: Encodable { let action = "drafts" }
-        struct Response: Decodable { let drafts: [AgentDraft] }
-        let response: Response = try await call("agent-snapshot", Request())
+        // Lossy, one draft at a time (`AgentDraftList`): one malformed draft
+        // must not hide the rest.
+        let response: AgentDraftList = try await call("agent-snapshot", Request())
         return response.drafts
     }
 
