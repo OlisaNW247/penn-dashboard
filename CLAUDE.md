@@ -1413,7 +1413,16 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v12` (2026-11-10, afternoon, after the first phone run): 3791
+**Current on `v12` (2026-11-11, with ambassador mode merged in): 3837 tests
+/ 373 suites, all green, `swift test --no-parallel` on the GitHub macOS
+runner in 101.7 s (the `tests` workflow, manual run 43093704027 at
+`3bf86d8`, the merge commit; Deno, the extension suite and the unsigned
+iOS `xcodebuild` green in the same run).** It is `v12` at `20485d0` plus
+the ambassador branch's 23 tests and 6 suites (`AmbassadorTests.swift`).
+`v12`'s own tip was not counted separately, so 3814 / 367 for `20485d0`
+is arithmetic, not a reading. Nothing from the merge has been on a phone.
+
+Before it: **on `v12` (2026-11-10, afternoon, after the first phone run): 3791
 tests / 366 suites, all green, `swift test --no-parallel` on the GitHub macOS
 runner in 122 s (the `tests` workflow, run 42865218965 at `3a4822c`, second
 attempt: the first sat in the queue for 15 minutes without a Mac and was
