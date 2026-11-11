@@ -398,14 +398,22 @@ is separate from the server described above and shares nothing with it.
 What it sends, and only while signed in: the code; which anonymous campus
 app the ambassador picked and the phone's time-zone offset (so "today's
 post" is their today); and what they tap on that page: "i posted it", a
-checklist tick, a pause, and the feedback they type. It never sends
+checklist tick, a pause, and the feedback they type. Since 2026-11-11 an
+ambassador can also send a **poster idea**: a picture they choose, a note,
+or both, and only when they tap "send". The picture is rebuilt from its
+pixels on the phone first, at no more than 1280 pixels and 600 KB, so
+nothing the camera attached to it (location, device, time) goes with it.
+Only the founders can see a poster idea; it is stored with the
+ambassador's roster row until a founder deletes it. Opening "all posters"
+loads that school's poster pictures from the same server. It never sends
 anything about classes, Canvas, Gradescope, Ed, or the rest of the app, and
 no name or contact detail beyond what the founder already typed into the
 ambassador roster. The daily reminder is a local notification scheduled on
 the phone, not a push from a server. "Sign out" removes the code from the
 Keychain, the cached page from the phone, and the reminders. The server
 keeps the ambassador's roster row, their link-open counts, their logged
-posts and their feedback until the founders remove them. Students who are
+posts, their poster ideas and their feedback until the founders remove
+them. Students who are
 not ambassadors never trigger any of this; the row in Profile does
 nothing until a code is entered.
 

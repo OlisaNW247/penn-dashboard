@@ -132,8 +132,7 @@ export function ambassadorPage({ amb, stats, ideas = { total: 0, today: 0 }, des
           <div class="pn">${esc(posterName(d).toLowerCase())}</div>
           <div class="ps">${scans} scan${scans === 1 ? "" : "s"} at ${esc(schoolLower)}</div>
           <a class="btn ghost small" href="${attr(img)}" target="_blank" rel="noopener">open full size</a>
-          <button class="small" data-copy="${attr(links.poster(d))}">copy my tracked link</button>
-          <p class="hint">my link: counts scans for me, then opens the app store.</p>
+          <button class="small" data-copy="${attr(links.poster(d))}">copy my link</button>
         </div>
       </div>`;
     })

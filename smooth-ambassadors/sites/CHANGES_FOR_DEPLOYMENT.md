@@ -4,35 +4,60 @@ For the ChatGPT session that deploys project
 `appgprj_6aebbfcc56e48191a690c176014ceddf`. Base commit:
 `3770608515c285cc1e034f8be04e8d5e4c335640`.
 
-## Update, 2026-11-11: codes that start with the school
+## Update, 2026-11-11
 
-This archive is the second one. The first was deployed on 2026-11-11 and
-is live. The only behaviour change since it:
+This archive is the third one. The first was deployed on 2026-11-11 and is
+live. Since it:
 
-- A new ambassador's code now starts with their school, for example
-  `uva-7k3m9x2p4q8w` or `case-western-4hd82kq9zt3mxa`. One code per person,
-  as before. The prefix is a readable label. The 14 random characters after
-  it are still the whole secret.
-- Codes created before this deploy have no prefix and keep working. Nothing
-  rewrites them.
-- The public id in share and sticker links (`/r/{ref}/...`) is unchanged.
+- **Codes start with the school.** A new ambassador's code now starts with
+  their school, for example `uva-7k3m9x2p4q8w` or
+  `case-western-4hd82kq9zt3mxa`. One code per person, as before. The prefix
+  is a readable label. The 14 random characters after it are still the whole
+  secret. Codes created before this deploy have no prefix and keep working.
+  The public id in share and sticker links (`/r/{ref}/...`) is unchanged.
+- **Poster ideas.** An ambassador can send an image, a note, or both, from
+  their page or the app (`POST /a/{code}/idea`). New table `poster_ideas`,
+  created lazily by the Worker like the others: no manual migration and no
+  new runtime variable. Images are base64 text, at most 600,000 bytes, typed
+  by sniffing JPEG, PNG or WebP bytes; 5 a day and 30 in total per
+  ambassador. The founder page lists them (seen, delete, image at
+  `/f/{FOUNDER_TOKEN}/idea/{id}`). `plan.json` gains three additive keys
+  (`posters`, `dashboard`, `ideas`); every existing key is unchanged.
+- **Restyled pages.** The ambassador page, the stickers page and the founder
+  page now use Smooth's look (white paper, accents, dark mode, lowercase),
+  with three big buttons under the header (all posters, scan dashboard,
+  poster idea), a posters section with an explicit "open full size" and
+  "copy my link" on each design, and a "send a poster idea" card
+  (the browser shrinks the picture first). The public dashboard at `/` is
+  untouched, byte for byte.
+- **Fonts route.** `GET /a/_fonts/{name}.woff2` serves four subsetted woff2
+  files (about 54 KB, SIL OFL), embedded in the generated section, so the
+  pages load nothing from any other host.
 
 What that means for the deploy:
 
-- Only `worker/index.js` changes, and inside it only the generated section
-  between `// >>> smooth-ambassadors` and `// <<< smooth-ambassadors`.
-  `AMBASSADORS.md` has one sentence updated.
-- No schema change, no new runtime variable, no migration, no data change.
-  `FOUNDER_TOKEN` stays as it is.
+- Only `worker/index.js` changes, inside the generated section between
+  `// >>> smooth-ambassadors` and `// <<< smooth-ambassadors`. The file grows
+  by about the size of the fonts. `AMBASSADORS.md` is updated and
+  `migrations/0002_poster_ideas.sql` is new (a reference copy).
+- No new runtime variable. `FOUNDER_TOKEN` stays as it is. The first
+  ambassador request after the deploy creates `poster_ideas` by itself.
 - This archive was built on the same base as the first one. If the Sites
   repository was changed during or after the first deploy, keep those
   changes and take only the generated section from this `worker/index.js`.
 
-Check after deploying: add an ambassador at UVA in the founder page and
-confirm the new code starts with `uva-`; open
-`/a/{that code}/plan.json` and confirm 200; confirm the ambassador created
-during the first deploy still opens with their old code. No scan link needs
-opening for this update.
+Check after deploying (no `/scan/...` link needs opening):
+
+1. `GET /` and `GET /api/stats` look as before.
+2. `GET /a/_fonts/inter.woff2` is 200 `font/woff2`; `GET /a/_fonts/nope.woff2`
+   is the plain 404.
+3. Add an ambassador at UVA in the founder page: the code starts with
+   `uva-`; `/a/{code}/plan.json` is 200 and has `posters` (12 for UVA, 14 for
+   UPenn), `dashboard` and `ideas`; the ambassador created during the first
+   deploy still opens with their old code.
+4. Open `/a/{code}`: three big buttons under the header, the posters grid,
+   the "send a poster idea" card. Send a note-only idea, then see it under
+   "poster ideas" at the top of the founder page, and delete it.
 
 The rest of this file is the first archive's notes, still accurate.
 

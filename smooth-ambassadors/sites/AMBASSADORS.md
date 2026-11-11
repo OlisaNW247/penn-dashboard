@@ -65,11 +65,12 @@ The app (JSON):
 
 | Request | Answer |
 |---|---|
-| `GET /a/{code}/plan.json?anon={fizz\|sidechat\|yikyak}&tz={minutes west of UTC}` | 200, the plan: `name`, `school`, `schoolName`, `title`, `status`, `pausedUntil`, `page`, `appStore`, `numbers`, `today`, `messages`, `checklist`, `tips`, `channels`, `generatedAt`. 404 for an unknown code. |
+| `GET /a/{code}/plan.json?anon={fizz\|sidechat\|yikyak}&tz={minutes west of UTC}` | 200, the plan: `name`, `school`, `schoolName`, `title`, `status`, `pausedUntil`, `page`, `appStore`, `numbers`, `today`, `messages`, `checklist`, `tips`, `channels`, `generatedAt`, and since 2026-11-11 three additive keys: `posters` (`[{key, name, image, scans}]` for their school, `image` an absolute URL, `scans` that design's total there), `dashboard` (absolute `/?school={school}`) and `ideas` (`{sent, limit: 30, dailyLimit: 5}`). 404 for an unknown code. |
 | `POST /a/{code}/post` `{"channel": "...", "place": "daily"}` | 200 `{"ok": true, "message": "..."}`. 400 for an unknown channel. |
 | `POST /a/{code}/check` `{"step": "...", "done": "1"\|"0"}` | 200 `{"ok": true}` |
 | `POST /a/{code}/feedback` `{"body": "..."}` | 200 `{"ok": true}` |
 | `POST /a/{code}/pause` `{"weeks": "4"\|"0"}` | 200 `{"ok": true}` |
+| `POST /a/{code}/idea` `{"note": "...", "image": "<base64>", "type": "..."}` | 200 `{"ok": true, "message": "sent. thank you."}`. At least one of note and image, else 400. Note is trimmed and cut at 500 characters. Image is base64 only (a `data:...;base64,` prefix and whitespace are stripped), at most 600,000 bytes decoded (413), and its type is decided from its first bytes (JPEG, PNG or WebP, else 400): the `type` field is ignored. Limits per ambassador: 5 a UTC day and 30 stored (429). Errors are `{"ok": false, "message"}` for JSON requests, plain text otherwise. This route alone accepts a body up to 900,000 characters; every other route keeps 16 KB. |
 
 A POST answers JSON when `Accept` or `Content-Type` is `application/json`.
 The same routes take form posts from the web page and answer a 303 back to it.
@@ -81,6 +82,7 @@ The ambassador's own web page and links:
 | `GET /a/{code}` | their private page |
 | `GET /a/{code}/stickers`, `GET /a/{code}/me.json` | sticker sheet, their numbers |
 | `POST /a/{code}/drop` | log a poster drop |
+| `GET /a/_fonts/{name}.woff2` | the page fonts (`familjen-grotesk`, `inter`, `space-mono`, `space-mono-bold`), public, `immutable` for a year, about 54 KB in all, served by the Worker so the pages call no other host. Anything else under `/a/_fonts/` is the plain 404. Handled before the code lookup. |
 
 The public links (the ref, never the code; GET only, 405 otherwise):
 
@@ -94,8 +96,9 @@ The founders:
 | Request | Answer |
 |---|---|
 | `GET /f/{FOUNDER_TOKEN}` | roster, numbers, feedback, the weekly digest generator. This is where an ambassador is added and where their code comes from. |
-| `POST /f/{FOUNDER_TOKEN}/add\|update\|reminder\|replied\|feedback-seen` | roster actions |
-| `GET /f/{FOUNDER_TOKEN}/export.json` | everything, for a backup |
+| `POST /f/{FOUNDER_TOKEN}/add\|update\|reminder\|replied\|feedback-seen\|idea-seen\|idea-delete` | roster and idea actions |
+| `GET /f/{FOUNDER_TOKEN}/idea/{id}` | a poster idea's image bytes with the sniffed type, `nosniff`, `private, no-store`, `Content-Security-Policy: default-src 'none'; sandbox`, `inline`. 404 for an id with no image. Ambassadors cannot reach it. |
+| `GET /f/{FOUNDER_TOKEN}/export.json` | everything, for a backup (poster ideas without their image data: id, ambassador, ts, note, mime, hasImage) |
 
 Public: `GET /api/leaderboard?days=14` gives counts per school. No names,
 contacts or codes.
@@ -112,10 +115,11 @@ The code reads them as `env.FOUNDER_TOKEN` and so on, next to `env.DB`.
 
 ## Schema
 
-`migrations/0001_ambassadors.sql`, a reference copy of what the Worker
+`migrations/0001_ambassadors.sql` and `migrations/0002_poster_ideas.sql` (the
+`poster_ideas` table, image kept as base64 TEXT, with an index), reference copies of what the Worker
 creates by itself. Every statement is `CREATE TABLE IF NOT EXISTS` or
 `CREATE INDEX IF NOT EXISTS`: `ambassadors` (with `token` and `ref`), `amb_hits`, `scan_events`,
-`activity`, `checklist`, `feedback`, `reminders`. The Worker runs them once
+`activity`, `checklist`, `feedback`, `reminders`, and `poster_ideas`. The Worker runs both files once
 per isolate on the first ambassador request or the first scan, the same way
 the tracker has always created `scans`. Nothing alters, drops or rewrites
 `scans` or any of its rows. Applying the file as a migration first is

@@ -29,7 +29,7 @@ export const CSS = `
 --tomato-ink:#B63B23;--marigold-ink:#985700;--lemon-ink:#746400;--teal-ink:#176D65;--cobalt-ink:#345EA8;--grape-ink:#7044A6;
 --display:"Familjen Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
 --body:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
---mono:"Space Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+--mono:"Space Mono",ui-monospace,SFMono-Regular,Menlo,monospace;--c:var(--teal);--ci:var(--teal-ink)}
 @media(prefers-color-scheme:dark){:root{--paper:#0B1020;--surface:#171D31;--rule:#303A59;--ink:#F8F1E5;--muted:#AEB8CF;
 --tomato-ink:#F59A85;--marigold-ink:#FBCB75;--lemon-ink:#F9E889;--teal-ink:#76D4C9;--cobalt-ink:#A8C4F5;--grape-ink:#D0B2F7}}
 .t-tomato{--c:var(--tomato);--ci:var(--tomato-ink)}.t-marigold{--c:var(--marigold);--ci:var(--marigold-ink)}
@@ -50,7 +50,7 @@ a{color:var(--ink);text-underline-offset:3px}
 .mark{display:inline-block;font:700 30px/1 var(--display);letter-spacing:-.03em}
 .mark svg{display:block;width:76px;height:9px;margin-top:3px;overflow:visible}
 .who{font:400 12px var(--mono);color:var(--muted);padding-bottom:4px}
-.sec{--c:var(--teal);--ci:var(--teal-ink);border-radius:22px;padding:18px 16px;margin:16px 0;background:var(--surface);border:1px solid var(--rule)}
+.sec{border-radius:22px;padding:18px 16px;margin:16px 0;background:var(--surface);border:1px solid var(--rule)}
 @supports (background:color-mix(in srgb,red 10%,white)){.sec{background:color-mix(in srgb,var(--c) 14%,var(--paper));border-color:color-mix(in srgb,var(--c) 32%,var(--paper))}}
 .sec>h2,.sh{font:700 12px/1.3 var(--mono);letter-spacing:.06em;color:var(--ci);margin:0 0 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .sec>h2::before{content:"";width:10px;height:10px;border-radius:50%;background:var(--c);flex:none}
@@ -61,7 +61,7 @@ details.card>summary{list-style:none}
 details.card>summary::-webkit-details-marker{display:none}
 table{width:100%;border-collapse:collapse}
 td,th{padding:7px 4px;text-align:left;border-bottom:1px solid var(--rule);vertical-align:top}
-th{font:700 11px var(--mono);color:var(--muted)}
+th{font:700 11px var(--mono);color:var(--muted);white-space:nowrap}
 td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 tr:last-child td{border-bottom:0}
 button,.btn{appearance:none;border:0;background:var(--c,var(--tomato));color:var(--on);border-radius:999px;padding:10px 18px;font:600 15px/1.2 var(--body);cursor:pointer;min-height:44px;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:6px}

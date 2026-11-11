@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { Miniflare } from "miniflare";
+import { ideaTests } from "./ideas-suite.mjs";
 
 const { SITES_ORIGINAL, SITES_EDITED } = process.env;
 const skip = SITES_ORIGINAL && SITES_EDITED ? false : "set SITES_ORIGINAL and SITES_EDITED to run";
@@ -295,4 +296,33 @@ test("a left ambassador's code stops working, their stickers still count the sch
   assert.equal((await req(edited, `/r/${ref}/p/ib`)).status, 302);
   assert.equal(await total(edited, "uva/ib"), school + 1);
   assert.equal(await dbCount("amb_hits"), hits);
+});
+
+// The same idea, plan.json, page and font checks as test/routes.test.mjs, now
+// against the built single file next to the untouched host code.
+ideaTests({
+  test,
+  skip,
+  label: "built file: ",
+  founder: FOUNDER,
+  db: () => edited.getD1Database("DB"),
+  req: (path, init) => req(edited, path, init),
+});
+
+test("a brand-new database: poster ideas work after a founder add (the lazy schema covers 0002)", { skip }, async () => {
+  const add = await req(fresh, `/f/${FOUNDER}/add`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ name: "Fresh Friend", school: "clark", contact: "", notes: "" }).toString(),
+  });
+  assert.equal(add.status, 303);
+  const code = new URL(add.headers.get("location"), "https://x").searchParams.get("created");
+  const r = await json(fresh, `/a/${code}/idea`, "POST", { note: "first idea on a new database" });
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { ok: true, message: "sent. thank you." });
+  const plan = await (await req(fresh, `/a/${code}/plan.json`)).json();
+  assert.deepEqual(plan.ideas, { sent: 1, limit: 30, dailyLimit: 5 });
+  const ex = await (await req(fresh, `/f/${FOUNDER}/export.json`)).json();
+  assert.equal(ex.ideas.length, 1);
+  assert.equal((await req(fresh, "/a/_fonts/inter.woff2")).status, 200);
 });

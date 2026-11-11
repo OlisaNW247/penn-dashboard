@@ -7,6 +7,7 @@ import { readFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Miniflare } from "miniflare";
+import { ideaTests } from "./ideas-suite.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FOUNDER = "test-founder-token-0123456789";
@@ -198,7 +199,7 @@ test("two-tap drop log, post log, checklist, feedback, pause", async () => {
 
 test("stickers page renders a QR per design", async () => {
   const t = await (await get(`/a/${token}/stickers`)).text();
-  assert.equal((t.match(/<svg /g) || []).length, 12);
+  assert.equal((t.match(/<svg class="qr"/g) || []).length, 12);
   assert.doesNotMatch(t, new RegExp(token));
 });
 
@@ -436,4 +437,13 @@ test("a code starts with its school, at every school, and old bare codes still s
   const old = await get("/a/oldbarecode1234/plan.json");
   assert.equal(old.status, 200);
   assert.equal((await old.json()).school, "umiami");
+});
+
+// Poster ideas, the extended plan.json, the restyled pages and the font route.
+ideaTests({
+  test,
+  skip: false,
+  founder: FOUNDER,
+  db: () => mf.getD1Database("DB"),
+  req: (path, init) => mf.dispatchFetch("https://example.test" + path, { redirect: "manual", ...init }),
 });
