@@ -1478,7 +1478,11 @@ Eastern, 2026-11-10) the held sync and the PDF pass both worked for the first
 time (Traps, the `.task` entry). The Phase 3 phone half ran for real on 2026-11-11 02:06 UTC: a draft
 from Claude showed on the Problem Set 7 card and the review sheet marked it
 `seen`; the redesigned sheet was approved on the phone the same night and
-Decline reached the server; only the Submit POST has never touched Canvas.**
+Decline reached the server; and at 22:52 ET 2026-11-10 the first real
+Submit went through: Problem Set 7, drafted by Claude from the pooled PDF,
+rendered on the phone, submitted from the review sheet, Canvas submission
+id 357257138, attempt 1. Every phase of v11 has now run end to end on
+Marco's phone.**
 
 **Current on `claude/v11-phone-c7aaf2` (2026-11-10, off `agent/connection-v11`
 `2503a3b`): 3797 tests / 367 suites, all green, `swift test --no-parallel`

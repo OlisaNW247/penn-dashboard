@@ -219,7 +219,17 @@ Detailed, with files and acceptance tests, in the session brief.
    installed, opened on the same draft, and Marco's verdict was "looks
    right"; Decline reached the server (`declined`, 22:45 ET). Phase 3 is
    done but for the Submit POST, which has never touched Canvas.
-4. **Submit**: `CanvasSubmissionClient`, the attempt store, text and file
+   **03:52 UTC 2026-11-11 (22:52 ET 2026-11-10): the first real submit.**
+   Marco asked for Problem Set 7 itself. A Claude session on his account
+   read the problem set through `get_assignment` (the PDF pooled by the
+   phone that afternoon), drafted ten worked solutions as markdown with the
+   assumed geometry stated for the figure-based problems, the phone
+   rendered the PDF, Marco reviewed it on the new sheet and tapped Submit:
+   attempt recorded first, one POST, Canvas answered submission id
+   357257138, attempt 1, and the draft row moved to `submitted` with its
+   file deleted. Phase 4's "done when the verify GET agrees" is met on a
+   real Penn assignment; "a repeat is refused" is pinned by tests and the
+   attempt record, not yet tried by hand.4. **Submit**: `CanvasSubmissionClient`, the attempt store, text and file
    submissions on a sandbox, then one low-stakes Penn assignment Marco
    picks. Done when the verify GET agrees and a repeat is refused.
 5. **Ship**: PROTOCOL, PRIVACY, review notes, CLAUDE.md, the directory
