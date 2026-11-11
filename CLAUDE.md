@@ -1185,7 +1185,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
   (`AppState+AgentDrafts.swift`) runs right after `agentSnapshotPass` in
   `ContentView.refresh()` and the launch task, with the same gates (Penn,
   backend, opt-in on, foreground only), at most every 5 minutes, failures
-  silent. It also refreshes the connection list (for the line below),
+  silent (both passes' gates and throttles: `AgentPassRules.shouldStart`).
+  It also refreshes the connection list (for the line below),
   re-sends any outcome report the server never acknowledged, and replaces
   `AppState.agentDrafts` (memory) and `agentDraftsCacheV1` (the same drafts
   with no body, link, note or signed URL, so a relaunch draws the chips
@@ -2788,6 +2789,21 @@ itself.
   wait ten minutes between hidden-login tests.
 
 ## Traps that have already bitten
+
+- **A switch-off that races a network call in flight** (found 2026-11-11 by
+  the v11 test pass, read from the code, never seen on a phone). Turning
+  the agent connection off (or disconnecting Canvas) sends `delete` while a
+  snapshot `put` may still be in flight; a put replaces the server's row
+  whole, so if it lands second the work list is back on the server after
+  the student was told it was deleted (the agents are revoked either way).
+  Likewise the drafts pass re-checked the opt-in only after `listDrafts`,
+  then awaited the outcome reports and applied the list, which could put
+  back drafts, the cache and notices the opt-out had just cleared. Now the
+  snapshot pass deletes again when it finds the opt-in off after its put,
+  and the drafts pass checks again right before applying. Both passes'
+  gates are one pure rule, `AgentPassRules.shouldStart`, pinned with a fixed
+  clock. The wrong fix is making the switch wait for the pass: it must
+  answer at once.
 
 - **Field-by-field leniency is undone one level up by a plain array**
   (found 2026-11-11 by the v11 test pass, `docs/V11_TEST_PHONE_2026-11-11.md`).

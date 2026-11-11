@@ -38,9 +38,11 @@ extension AppState {
     // MARK: The pass
 
     func agentDraftsPass(force: Bool = false, now: Date = Date()) async {
-        guard canUseAgentConnection, agentConnectionEnabled, !isUsingFixtureData,
-              renewalContext != .background, !isAgentDraftsRunning,
-              force || lastAgentDraftsAt.map({ now < $0 || now.timeIntervalSince($0) >= Self.agentDraftsThrottle }) ?? true,
+        guard AgentPassRules.shouldStart(
+                  isAvailable: canUseAgentConnection, isEnabled: agentConnectionEnabled,
+                  isFixtureData: isUsingFixtureData, isBackground: renewalContext == .background,
+                  isRunning: isAgentDraftsRunning, lastRun: lastAgentDraftsAt, now: now,
+                  throttle: Self.agentDraftsThrottle, force: force),
               let api = agentAPI
         else { return }
         isAgentDraftsRunning = true
@@ -64,6 +66,12 @@ extension AppState {
                 acknowledged.insert(draft.id)
             }
         }
+        // The reports above awaited the network; an opt-out or a Canvas
+        // disconnect in that window cleared the drafts, the cache and the
+        // notice memory, and applying this list now would put back drafts
+        // the server has just deleted (and announce them). Checked again
+        // here, not only after `listDrafts`.
+        guard agentConnectionEnabled else { return }
         applyAgentDrafts(list.filter { !acknowledged.contains($0.id) })
     }
 
