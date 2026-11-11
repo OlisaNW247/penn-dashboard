@@ -107,9 +107,11 @@ extension AppState {
     /// switched on, in a background wake, inside the throttle (unless forced),
     /// or while another pass runs.
     func agentSnapshotPass(force: Bool = false, now: Date = Date()) async {
-        guard canUseAgentConnection, agentConnectionEnabled,
-              renewalContext != .background, !isAgentSnapshotRunning,
-              force || lastAgentSnapshotAt.map({ now < $0 || now.timeIntervalSince($0) >= Self.agentSnapshotThrottle }) ?? true,
+        guard AgentPassRules.shouldStart(
+                  isAvailable: canUseAgentConnection, isEnabled: agentConnectionEnabled,
+                  isFixtureData: isUsingFixtureData, isBackground: renewalContext == .background,
+                  isRunning: isAgentSnapshotRunning, lastRun: lastAgentSnapshotAt, now: now,
+                  throttle: Self.agentSnapshotThrottle, force: force),
               let api = agentAPI
         else { return }
 
@@ -122,6 +124,14 @@ extension AppState {
         // The student may have switched it off while this was building.
         guard agentConnectionEnabled else { return }
         _ = try? await api.putSnapshot(snapshot)
+        // The student switched it off (or disconnected Canvas) while the put
+        // was in flight. The opt-out's `delete` may have reached the server
+        // first, and a put replaces the row whole, so the work list would be
+        // back on the server after the student was told it was deleted. The
+        // agents are revoked either way; the list must go too. The wrong fix
+        // is making the opt-out wait for this pass: the switch must answer at
+        // once, and a pass can be slow.
+        if !agentConnectionEnabled { _ = try? await api.deleteSnapshot() }
     }
 
     func buildAgentSnapshot(now: Date) -> AgentSnapshot {
@@ -153,5 +163,26 @@ extension AppState {
             noSubmission: { id in byID[id].map { self.requiresNoSubmission($0) } ?? false },
             manual: manual,
             courseIDByCode: { [codes = canvasCourseIDsByCode] in codes[$0] })
+    }
+}
+
+/// When an agent pass (the snapshot upload, the drafts poll) may start. Pure,
+/// so the gates and the throttle are tests with a fixed clock rather than a
+/// reading of two guard statements that had drifted apart (the snapshot
+/// pass leaned on `canUseAgentConnection` for preview and demo, the drafts
+/// pass checked it twice). Every gate is a "never": a feature that is not
+/// available (not Penn, no backend, onboarding), the opt-in off, preview or
+/// demo data, a background wake (CLAUDE.md, Traps: background wakes have
+/// never run real work), or a pass already in flight. `force` skips only the
+/// throttle. A clock that moved back (`now < lastRun`) does not freeze the
+/// pass until it catches up.
+enum AgentPassRules {
+    nonisolated static func shouldStart(isAvailable: Bool, isEnabled: Bool, isFixtureData: Bool,
+                                        isBackground: Bool, isRunning: Bool, lastRun: Date?,
+                                        now: Date, throttle: TimeInterval, force: Bool) -> Bool {
+        guard isAvailable, isEnabled, !isFixtureData, !isBackground, !isRunning else { return false }
+        if force { return true }
+        guard let lastRun else { return true }
+        return now < lastRun || now.timeIntervalSince(lastRun) >= throttle
     }
 }

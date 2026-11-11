@@ -184,8 +184,10 @@ struct AgentConnectionWiringTests {
         let src = try uiSource("AppState+AgentDrafts.swift")
         guard !src.isEmpty else { return }
         let pass = try #require(body(of: src, from: "func agentDraftsPass(", to: "func applyAgentDrafts("))
-        for gate in ["canUseAgentConnection", "agentConnectionEnabled", "renewalContext != .background",
-                     "!isUsingFixtureData", "agentDraftsThrottle"] {
+        // Since 2026-11-11 both passes go through `AgentPassRules.shouldStart`
+        // (its gates are pinned with a fixed clock in `V11PhoneStateTests`).
+        for gate in ["AgentPassRules.shouldStart(", "canUseAgentConnection", "agentConnectionEnabled",
+                     "renewalContext == .background", "isFixtureData: isUsingFixtureData", "agentDraftsThrottle"] {
             #expect(pass.contains(gate), "\(gate)")
         }
     }

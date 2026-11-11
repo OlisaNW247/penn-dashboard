@@ -1208,12 +1208,17 @@ Keep this current. It is the fastest way for a new session to know what exists.
   (`AppState+AgentDrafts.swift`) runs right after `agentSnapshotPass` in
   `ContentView.refresh()` and the launch task, with the same gates (Penn,
   backend, opt-in on, foreground only), at most every 5 minutes, failures
-  silent. It also refreshes the connection list (for the line below),
+  silent (both passes' gates and throttles: `AgentPassRules.shouldStart`).
+  It also refreshes the connection list (for the line below),
   re-sends any outcome report the server never acknowledged, and replaces
   `AppState.agentDrafts` (memory) and `agentDraftsCacheV1` (the same drafts
   with no body, link, note or signed URL, so a relaunch draws the chips
   before the first poll). A draft matches a card by equality: its
-  `assignment_id` is the snapshot item id, which is `Assignment.id`.
+  `assignment_id` is the snapshot item id, which is `Assignment.id`. The
+  list decodes one draft at a time (`AgentDraftList`, 2026-11-11): a draft
+  with no id or a non-object is skipped, never the whole list. The card's
+  preview reads only the body's head, and the cache clips the agent's name
+  to the 40 characters the card prints.
   - **The card.** "drafted by claude" in the collapsed card's caveat line
     beside cancelled / moved / changed, the chip in grape (`smoothGrapeInk`,
     the agent's and ask's colour; the exam card's secondary colour on its
@@ -1316,7 +1321,10 @@ Keep this current. It is the fastest way for a new session to know what exists.
     `canvas_submission_id` and `attempt`, or `failed` with a short
     `error_class`). Disconnecting Canvas and turning the opt-in off clear
     the drafts, the cache, the notice memory, the known-connection ids and
-    the attempt records.
+    the attempt records. Since 2026-11-11 disconnecting Canvas also clears
+    the assignment-PDF pass's memory (`attachmentAttemptsV1`,
+    `lastAttachmentSyncSummaryV1`) and the in-memory Canvas submission
+    rules the review sheet reads first.
   - **Text as a PDF** (2026-11-10 for markdown; 2026-11-11 for every text
     draft; compiled and tested, never on a phone). claude.ai will not emit a
     144,000-character base64 PDF, so a document travels as source text and
@@ -1502,6 +1510,17 @@ paragraph below is the older record.
 sweep, the file-name and mime-type checks), `deno task check` clean, `node
 --test backend/scripts/*.test.mjs` 51, `backend/scripts/sql-check.sh` green
 (OrbStack). No Swift touched.**
+**Current on `claude/v11-test-phone-e16828` (2026-11-11, off `v11` `ee653d9`):
+3910 tests / 376 suites, all green, `swift test --no-parallel` alone on
+Marco's Mac (99 s), +55 / +3 over `v11`'s 3855 / 373, nothing removed: the
+v11 phone test pass (`V11SubmitRulesTests` with `V11ProblemSet7Tests`,
+`V11HostileInputTests`, `V11PhoneStateTests`; the report is
+`docs/V11_TEST_PHONE_2026-11-11.md`). One existing scan,
+`AgentConnectionWiringTests` "the drafts pass keeps the snapshot pass's
+gates", now reads the `AgentPassRules.shouldStart` spelling. iOS Debug
+build green. The PDF-only cases ran on an iPhone 17e Simulator
+(`xcodebuild test -scheme LowHangingFruitKit-Package`, 37 / 3 green), the
+first time the paginator itself has been under test.**
 
 **Current on `agent/connection-v11` at the merge of 2026-11-10 (about 06:45
 UTC, 01:45 US Eastern): 3819 tests / 369 suites, all green, `swift test
@@ -2856,6 +2875,31 @@ itself.
   versions (`GET /v1/projects/<ref>/functions`) against the dates of the
   shared code they import before trusting a claim that production does
   something.
+- **A switch-off that races a network call in flight** (found 2026-11-11 by
+  the v11 test pass, read from the code, never seen on a phone). Turning
+  the agent connection off (or disconnecting Canvas) sends `delete` while a
+  snapshot `put` may still be in flight; a put replaces the server's row
+  whole, so if it lands second the work list is back on the server after
+  the student was told it was deleted (the agents are revoked either way).
+  Likewise the drafts pass re-checked the opt-in only after `listDrafts`,
+  then awaited the outcome reports and applied the list, which could put
+  back drafts, the cache and notices the opt-out had just cleared. Now the
+  snapshot pass deletes again when it finds the opt-in off after its put,
+  and the drafts pass checks again right before applying. Both passes'
+  gates are one pure rule, `AgentPassRules.shouldStart`, pinned with a fixed
+  clock. The wrong fix is making the switch wait for the pass: it must
+  answer at once.
+
+- **Field-by-field leniency is undone one level up by a plain array**
+  (found 2026-11-11 by the v11 test pass, `docs/V11_TEST_PHONE_2026-11-11.md`).
+  `AgentDraft` decodes every optional field with `try?`, but the drafts
+  list decoded as `[AgentDraft]`, so one element with no `id` (or an id that
+  is a number, or a value that is not an object) threw for the whole array,
+  the pass's `try?` turned that into "no drafts", and the outcome reports
+  the pass re-sends were skipped too. Nothing on the phone said why. Now
+  `AgentDraftList` decodes element by element. The wrong fix is making `id`
+  optional: a draft with no id cannot be matched to an attempt record.
+
 - **A view's `.task` cancelling the course-material sync read as "manifest
   failed"** (2026-11-10, diagnosed by the backend session, blind fix). The
   server logged Marco's manifest calls as 200 in 4.4 s; the phone recorded

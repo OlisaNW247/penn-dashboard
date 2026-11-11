@@ -119,9 +119,14 @@ public struct AgentDraft: Codable, Equatable, Sendable, Identifiable {
     /// name and the file's name and size; the body, the link, the note and the
     /// signed URL wait for the next poll, so none of them sits in defaults.
     public var strippedForCache: AgentDraft {
-        AgentDraft(id: id, assignmentID: assignmentID, kind: kind, fileName: fileName,
-                   mimeType: mimeType, fileBytes: fileBytes, clientName: clientName,
-                   status: status, createdAt: createdAt)
+        // The name is clipped the way `agentName` prints it: a client's
+        // self-declared name is the agent's text too, and the server's cap on
+        // it is not this file's to rely on (the v11 test pass found a
+        // 10,000-character name stored whole in defaults, fifty times over).
+        AgentDraft(id: id, assignmentID: assignmentID, kind: kind, fileName: fileName.map { String($0.prefix(200)) },
+                   mimeType: mimeType.map { String($0.prefix(100)) }, fileBytes: fileBytes,
+                   clientName: clientName.map { String($0.prefix(40)) },
+                   status: status, createdAt: createdAt.map { String($0.prefix(40)) })
     }
 
     /// The opened card's few lines: the body's first lines, the link, or the
@@ -130,8 +135,15 @@ public struct AgentDraft: Codable, Equatable, Sendable, Identifiable {
     public func preview(maxLines: Int = 3, maxCharacters: Int = 240) -> String? {
         switch kind {
         case .text:
-            guard let body, !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-            let lines = body.split(whereSeparator: \.isNewline)
+            // Only the head of the body is read: the preview is drawn on every
+            // dashboard rebuild, and splitting a whole 100,000-character body
+            // (the server's cap; 10 MB took 3.4 s on a Mac) to keep three
+            // lines is work thrown away. A head of blank lines longer than
+            // this shows no preview, which the card already allows.
+            guard let whole = body else { return nil }
+            let head = whole.prefix(maxCharacters * 8 + 4_096)
+            guard !head.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            let lines = head.split(whereSeparator: \.isNewline)
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }
                 .prefix(maxLines)
@@ -220,5 +232,36 @@ public enum AgentDraftNotices {
         }
         if remembered.count > maxRemembered { remembered = Array(remembered.suffix(maxRemembered)) }
         return (notices, remembered)
+    }
+}
+
+/// The `drafts` action's answer, `{ "drafts": [...] }`, decoded one draft at
+/// a time. A draft that cannot be read (no id, an id that is a number, a
+/// value that is not an object) is skipped, not fatal.
+///
+/// Why (the v11 test pass, 2026-11-11): the list used to decode as a plain
+/// `[AgentDraft]`, so one malformed element threw for the whole array, the
+/// pass's `try?` swallowed it, and the student saw no drafts at all, and the
+/// pass also skipped re-sending the outcome reports it owes the server. The
+/// per-field leniency of `AgentDraft` itself was undone one level up. The
+/// wrong fix would be making `id` optional: a draft with no id cannot be
+/// matched to an attempt record, so it must never reach the submitter.
+public struct AgentDraftList: Decodable, Sendable {
+    public var drafts: [AgentDraft]
+
+    public init(drafts: [AgentDraft]) { self.drafts = drafts }
+
+    /// Always decodes, so the unkeyed container always advances: the draft,
+    /// or nil for anything that is not one.
+    private struct Element: Decodable {
+        let draft: AgentDraft?
+        init(from decoder: Decoder) throws { draft = try? AgentDraft(from: decoder) }
+    }
+    enum CodingKeys: String, CodingKey { case drafts }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let out = try c.decode([Element].self, forKey: .drafts).compactMap(\.draft)
+        drafts = out
     }
 }
