@@ -594,6 +594,17 @@ build to the phone, apply the migration and deploy `sync`, `pair`,
   (`collectProgressV1`: phase, course i/n, request count; never a title
   or URL) so the next stall says where it is. 542 tests. Where the
   17:03 pass stuck is not known; the marker will say next time.
+- 2026-11-11: **the first complete pass on a store install**, on the
+  owner's new laptop (0.1.3; the 0.1.2 hang was on the old loaner, whose
+  stuck pass was never diagnosed): 16 courses, 1513 documents, 402 PDFs
+  extracted with none failed, 641 uploaded in 4 batches, 1528 requests,
+  no errors, no rate limit, about 15 minutes; the server gained 565 rows
+  from it (328 `file`, 227 `assignment`, 7 `announcement`, 3 `page`).
+  `ed: none`: the owner opened Ed while the pass was running, the token's
+  forced run got the running pass back and was lost. 0.1.4 queues a
+  forced run behind an in-flight pass and starts it when that pass ends
+  (`queuedForce` in `collectRun`; 543 tests). Ed on real Ed is still
+  unproven.
 - 2026-11-05, later: **the popup lost its dashboard** (owner's decision:
   the extension is not a product, it exists to gather data for the phone).
   Unpaired it is the pairing flow as before; paired it is the header, one

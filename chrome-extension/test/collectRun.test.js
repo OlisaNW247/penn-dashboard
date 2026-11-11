@@ -247,3 +247,19 @@ test("the upload phase is always written, even inside the 2 s throttle", async (
   assert.equal(phases.at(-1), "done");
   assert.ok(phases.length < 8);
 });
+
+test("a forced run during a pass is queued and runs once that pass ends, not dropped", async () => {
+  const storage = paired(), b = backend();
+  let open;
+  const gate = new Promise((r) => { open = r; });
+  const first = run({ fetch: canvas({ gate }).fetch, callFunction: b.callFunction, storage });
+  // The Ed token arrives mid-pass: the forced call gets the running pass back...
+  const again = run({ fetch: canvas().fetch, callFunction: b.callFunction, storage, now: () => T0 + 1000, force: true });
+  assert.equal(again, first);
+  open();
+  assert.equal((await first).status, "ok");
+  // ...and a second pass starts on its own afterwards, stamped with the forced call's clock.
+  for (let i = 0; i < 50 && storage.data[KEYS.lastRun] !== T0 + 1000; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(storage.data[KEYS.lastRun], T0 + 1000);
+  assert.equal(b.calls.filter((c) => c.name === "sync" && c.body.action === "manifest").length, 2);
+});
