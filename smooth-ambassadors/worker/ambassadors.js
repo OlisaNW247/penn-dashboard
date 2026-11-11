@@ -7,17 +7,20 @@
 //   /a/{token}/stickers         printable QR sheet of their poster codes
 //   /a/{token}/me.json          their own numbers
 //   /a/{token}/plan.json        the app's plan
-//   POST /a/{token}/drop|post|check|feedback|pause
+//   POST /a/{token}/drop|post|check|feedback|pause|idea
+//   /a/_fonts/{name}.woff2      the page fonts, served from here (no third-party host)
 //   /r/{ref}/s/{channel}        PUBLIC share link (group chat, fizz, ...) → App Store
 //   /r/{ref}/p/{design}         PUBLIC poster/sticker code → App Store
 //                               (also increments the school/design counter)
 //                               both keep working after the ambassador leaves
-//   /f/{FOUNDER_TOKEN}          founder view (+ POST add|update|reminder|replied|feedback-seen)
+//   /f/{FOUNDER_TOKEN}          founder view (+ POST add|update|reminder|replied|feedback-seen|idea-seen|idea-delete)
+//   /f/{FOUNDER_TOKEN}/idea/{id}  a poster idea's image bytes (founders only)
 //   /f/{FOUNDER_TOKEN}/export.json
 //   /api/leaderboard            public, school level only
 
 import qrcode from "qrcode-generator";
-import { CHANNELS, SCHOOLS, isValidCombo, scanKey } from "./catalog.js";
+import { CHANNELS, SCHOOLS, designsFor, isValidCombo, posterName, scanKey } from "./catalog.js";
+import { fontResponse } from "./fonts.js";
 import messages from "./templates/messages.json";
 import checklist from "./templates/checklist.json";
 import { ambassadorLinks } from "./digest.js";
@@ -39,6 +42,14 @@ import {
   recordReminder,
   markReplied,
   markFeedbackSeen,
+  IDEA_DAILY_LIMIT,
+  IDEA_TOTAL_LIMIT,
+  addIdea,
+  deleteIdea,
+  ideaCounts,
+  ideaImage,
+  markIdeaSeen,
+  schoolDesignScans,
 } from "./data.js";
 import { recordScan, appStoreRedirect, notFound } from "./legacy.js";
 import { ambassadorPage, stickersPage, founderPage } from "./pages.js";
@@ -72,6 +83,8 @@ function redirectBack(path, flash, request) {
 // link in it, the checklist, the tips. Never anyone else's data.
 async function planPayload(env, amb, url, pub) {
   const stats = await ambassadorStats(env, amb);
+  const ideas = await ideaCounts(env, amb);
+  const designScans = await schoolDesignScans(env, amb.school);
   const links = ambassadorLinks(pub, amb);
   const anonParam = url.searchParams.get("anon");
   const anonApp = ANON_APPS.includes(anonParam) ? anonParam : "fizz";
@@ -113,6 +126,15 @@ async function planPayload(env, amb, url, pub) {
     tips: messages.posting_tips,
     channels: CHANNELS,
     generatedAt: new Date().toISOString(),
+    // Added 2026-11-11, additive: the app ignores keys it does not know.
+    posters: designsFor(amb.school).map((key) => ({
+      key,
+      name: posterName(key),
+      image: `${pub}/posters/${amb.school}/${key}.jpg`,
+      scans: designScans[scanKey(amb.school, key)] ?? 0,
+    })),
+    dashboard: `${pub}/?school=${amb.school}`,
+    ideas: { sent: ideas.total, limit: IDEA_TOTAL_LIMIT, dailyLimit: IDEA_DAILY_LIMIT },
   };
 }
 
@@ -129,16 +151,16 @@ const tooLarge = () => new Response("payload too large", { status: 413, headers:
 // numbers and booleans survive; objects and arrays are treated as missing),
 // or { error } holding the Response to send. The null prototype keeps a
 // "__proto__" key from meaning anything.
-async function form(request) {
+async function form(request, max = MAX_BODY) {
   const declared = Number(request.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_BODY) return { error: tooLarge() };
+  if (Number.isFinite(declared) && declared > max) return { error: tooLarge() };
   let text;
   try {
     text = await request.text();
   } catch {
     return { error: badRequest() };
   }
-  if (text.length > MAX_BODY) return { error: tooLarge() };
+  if (text.length > max) return { error: tooLarge() };
   if (!text.trim()) return { error: badRequest() };
   const ct = (request.headers.get("content-type") || "").toLowerCase();
   const raw = Object.create(null);
@@ -166,7 +188,7 @@ async function form(request) {
   const f = Object.create(null);
   for (const k of Object.keys(raw)) {
     const v = raw[k];
-    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") f[k] = String(v).trim().slice(0, MAX_BODY);
+    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") f[k] = String(v).trim().slice(0, max);
   }
   return { f };
 }
@@ -181,6 +203,77 @@ function field(f, key, max = 200) {
 function intField(f, key, lo, hi, dflt) {
   const n = parseInt(field(f, key, 40), 10);
   return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : dflt;
+}
+
+// ---- poster ideas. This one route takes a larger body than the rest because an
+// image rides in it as base64: 600,000 bytes decoded is 800,000 characters.
+const IDEA_BODY_MAX = 900000;
+const IDEA_IMAGE_MAX_BYTES = 600000;
+const IDEA_NOTE_MAX = 500;
+
+// The type comes from the bytes and never from what the client said it was, so
+// a file named .jpg that is really SVG or HTML is refused. `head` holds the
+// first 12 decoded bytes.
+function sniffImage(head) {
+  const at = (i, ...b) => b.every((v, k) => head[i + k] === v);
+  if (at(0, 0xff, 0xd8, 0xff)) return "image/jpeg";
+  if (at(0, 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) return "image/png";
+  if (at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50)) return "image/webp";
+  return null;
+}
+
+// JSON for the app and the page's script, plain text for anything else.
+function ideaError(request, status, message) {
+  if (wantsJSON(request)) return Response.json({ ok: false, message }, { status });
+  return new Response(message, { status, headers: { "content-type": "text/plain;charset=UTF-8" } });
+}
+
+async function handleIdea(request, env, amb, base) {
+  const parsed = await form(request, IDEA_BODY_MAX);
+  if (parsed.error) {
+    const status = parsed.error.status;
+    return ideaError(request, status, status === 413 ? "that is too big. try a smaller image." : "bad request");
+  }
+  const f = parsed.f;
+  const note = field(f, "note", IDEA_NOTE_MAX * 4).trim().slice(0, IDEA_NOTE_MAX);
+  let image = field(f, "image", IDEA_BODY_MAX);
+  image = image.replace(/^data:[^,]{0,100};base64,/i, "").replace(/\s+/g, "");
+  if (!note && !image) return ideaError(request, 400, "add a picture or a note.");
+
+  let mime = null;
+  if (image) {
+    // One regex for the whole payload, and only the first 16 characters are decoded.
+    if (image.length < 16 || image.length % 4 === 1 || !/^[A-Za-z0-9+/]+={0,2}$/.test(image)) {
+      return ideaError(request, 400, "that isn't a picture we can use. jpeg, png or webp.");
+    }
+    const pad = image.endsWith("==") ? 2 : image.endsWith("=") ? 1 : 0;
+    const bytes = Math.floor((image.length * 3) / 4) - pad;
+    if (bytes > IDEA_IMAGE_MAX_BYTES) return ideaError(request, 413, "that is too big. try a smaller image.");
+    let head;
+    try {
+      const bin = atob(image.slice(0, 16));
+      head = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+    } catch {
+      return ideaError(request, 400, "that isn't a picture we can use. jpeg, png or webp.");
+    }
+    mime = sniffImage(head);
+    if (!mime) return ideaError(request, 400, "that isn't a picture we can use. jpeg, png or webp.");
+  }
+
+  const counts = await ideaCounts(env, amb);
+  if (counts.today >= IDEA_DAILY_LIMIT) return ideaError(request, 429, `that's ${IDEA_DAILY_LIMIT} for today. try again tomorrow.`);
+  if (counts.total >= IDEA_TOTAL_LIMIT) return ideaError(request, 429, `we're holding ${IDEA_TOTAL_LIMIT} of yours already. thank you.`);
+
+  await addIdea(env, amb, { note, mime, image: image || null });
+  return redirectBack(base + "#idea", "sent. thank you.", request);
+}
+
+function decodeBase64(b64) {
+  if (typeof Uint8Array.fromBase64 === "function") return Uint8Array.fromBase64(b64);
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
 }
 
 function qrSvg(text) {
@@ -238,10 +331,18 @@ async function publicRoutes(request, env, parts) {
   return notFound();
 }
 
-const AMBASSADOR_POSTS = ["drop", "post", "check", "feedback", "pause"];
+const AMBASSADOR_POSTS = ["drop", "post", "check", "feedback", "pause", "idea"];
 
 async function ambassadorRoutes(request, env, parts, url) {
   const [token, action, arg] = parts;
+  // The fonts are public files that live under /a/ so they sit beside the pages
+  // that use them. Handled before the code lookup: "_fonts" is never a code
+  // (codes are lowercase letters and digits, with hyphens), and the lookup
+  // would cost a query.
+  if (token === "_fonts") {
+    if (request.method !== "GET") return new Response("method not allowed", { status: 405 });
+    return (arg === undefined && fontResponse(action)) || notFound();
+  }
   const amb = await ambassadorByToken(env, token);
   // A departed ambassador's code stops working: the founder marking them left
   // is how access is ended.
@@ -252,8 +353,12 @@ async function ambassadorRoutes(request, env, parts, url) {
   if (request.method === "GET") {
     if (arg !== undefined) return notFound();
     if (!action) {
-      const stats = await ambassadorStats(env, amb);
-      return html(ambassadorPage({ amb, stats, origin: pub, flash: url.searchParams.get("ok") }));
+      const [stats, ideas, designScans] = await Promise.all([
+        ambassadorStats(env, amb),
+        ideaCounts(env, amb),
+        schoolDesignScans(env, amb.school),
+      ]);
+      return html(ambassadorPage({ amb, stats, ideas, designScans, origin: pub, flash: url.searchParams.get("ok") }));
     }
     if (action === "stickers") return html(stickersPage({ amb, origin: pub, qrSvg }));
     if (action === "plan.json") {
@@ -268,6 +373,7 @@ async function ambassadorRoutes(request, env, parts, url) {
 
   if (request.method === "POST") {
     if (arg !== undefined || !AMBASSADOR_POSTS.includes(action)) return notFound();
+    if (action === "idea") return handleIdea(request, env, amb, base);
     const parsed = await form(request);
     if (parsed.error) return parsed.error;
     const f = parsed.f;
@@ -309,7 +415,7 @@ async function ambassadorRoutes(request, env, parts, url) {
 }
 
 async function founderRoutes(request, env, parts, url) {
-  const [secret, action] = parts;
+  const [secret, action, arg] = parts;
   if (!env.FOUNDER_TOKEN || env.FOUNDER_TOKEN.length < 16 || !safeEqual(secret, env.FOUNDER_TOKEN)) {
     return notFound();
   }
@@ -317,6 +423,24 @@ async function founderRoutes(request, env, parts, url) {
   const pub = origin(request, env);
 
   if (request.method === "GET") {
+    if (action === "idea") {
+      // The image bytes, for founders only. Served as an inert, sandboxed file:
+      // the type is the sniffed one stored with it, and nothing here can run.
+      const id = /^\d{1,10}$/.test(arg || "") ? parseInt(arg, 10) : 0;
+      const row = id && parts.length === 3 ? await ideaImage(env, id) : null;
+      if (!row) return notFound();
+      return new Response(decodeBase64(row.image), {
+        headers: {
+          "content-type": row.mime,
+          "x-content-type-options": "nosniff",
+          "cache-control": "private, no-store",
+          "content-security-policy": "default-src 'none'; sandbox",
+          "content-disposition": "inline",
+          "referrer-policy": "no-referrer",
+        },
+      });
+    }
+    if (arg !== undefined) return notFound();
     if (!action) {
       const days = Math.min(90, Math.max(1, parseInt(url.searchParams.get("days") || "14", 10) || 14));
       const stats = await founderStats(env, days);
@@ -332,7 +456,7 @@ async function founderRoutes(request, env, parts, url) {
   }
 
   if (request.method === "POST") {
-    if (!["add", "update", "reminder", "replied", "feedback-seen"].includes(action)) return notFound();
+    if (!["add", "update", "reminder", "replied", "feedback-seen", "idea-seen", "idea-delete"].includes(action)) return notFound();
     const parsed = await form(request);
     if (parsed.error) return parsed.error;
     const f = parsed.f;
@@ -359,6 +483,12 @@ async function founderRoutes(request, env, parts, url) {
       case "feedback-seen":
         await markFeedbackSeen(env, id);
         return redirectBack(base + "#feedback");
+      case "idea-seen":
+        await markIdeaSeen(env, id);
+        return redirectBack(base + "#ideas");
+      case "idea-delete":
+        await deleteIdea(env, id);
+        return redirectBack(base + "#ideas", "deleted.");
       default:
         return notFound();
     }

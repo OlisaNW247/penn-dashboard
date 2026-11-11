@@ -49,9 +49,13 @@ struct PosterIdeaSheet: View {
                         Label("choose a picture", systemImage: "photo")
                     }
 #endif
-                    if let previewImage {
+                    // Bound under another name on purpose: "remove" below
+                    // assigns to the state, and `if let previewImage` would
+                    // shadow it with a constant (the runner's first compile
+                    // of this file stopped exactly there).
+                    if let shown = previewImage {
                         HStack {
-                            Image(decorative: previewImage, scale: 1)
+                            Image(decorative: shown, scale: 1)
                                 .resizable()
                                 .scaledToFit()
                                 .frame(maxHeight: 160)
