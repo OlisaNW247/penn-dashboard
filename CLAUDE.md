@@ -880,6 +880,31 @@ Keep this current. It is the fastest way for a new session to know what exists.
     disconnect. It never reaches Penn: Penn's audit request carries the
     record's own `plan`, which this is not. Not built: course search by
     title, summer columns, and running Penn's audit with the plan.
+  - **The semester table, in every tab** (2026-11-11, Olisa after seeing
+    his two real degrees: "a table in every tab with each potential semester
+    and classes you take. and you be able to drag and switch classes
+    around"; see Test baseline for whether it has compiled).
+    `DegreeSemesterTable` is the plan tab's table made into one view and
+    placed under the ring in progress and what if as well, given the audit
+    its host is drawing so "fits" follows a what-if. Columns come from
+    `DegreeTimeline.columns` (Kit, pure): past semesters and the current
+    one hold what was taken (fixed chips, "· now" for the current), future
+    ones hold what is registered (fixed) and then the student's planned
+    courses, and it opens scrolled to the current semester. A planned chip
+    drags (`.draggable` with its code as a string) onto another future
+    column, or onto a planned row to go before it
+    (`DegreePlanMath.moving`); nothing else moves, because a taken or
+    registered course is Penn's fact and not the student's sketch.
+    **The past and current columns are empty on a real phone so far.**
+    Penn's audit carries no term for a course (`AuditCourse.termCode` is
+    always nil from `PathAuditDecoder`, which is also why the plan tab's
+    "registered" rows never showed). The term comes from
+    `DegreeSnapshot.history` (term code -> course codes), which only the
+    sample data fills: reading it from the record's `hist` and `reg` waits
+    on seeing their string format, asked of Olisa as a masked console
+    snippet the same day, and on the privacy text changing with it
+    (`docs/PRIVACY.md` says the list of past courses never leaves Penn's
+    page).
   - **How it reads.** `PathPortal` keeps one hidden `WKWebView` on
     `https://courses.upenn.edu/` for the app run, on the Canvas login data
     store so the PennKey session and Duo trust carry over. The page opens

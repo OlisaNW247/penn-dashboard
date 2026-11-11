@@ -326,6 +326,7 @@ struct DegreeProgressView: View {
         if list.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 switchButton
+                DegreeSemesterTable(audit: state.degree.current)
             }
             .padding(.top, 8)
         } else {
@@ -417,6 +418,7 @@ struct DegreeProgressView: View {
                 Spacer(minLength: 0)
             }
             DegreeLegend()
+            DegreeSemesterTable(audit: audit)
             ForEach(DegreeProgressMath.orderedBlocks(audit.blocks).filter(DegreeProgressMath.isShown)) { block in
                 DegreeBlockRow(block: block, isExpanded: expanded.contains(prefix + block.id)) {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {

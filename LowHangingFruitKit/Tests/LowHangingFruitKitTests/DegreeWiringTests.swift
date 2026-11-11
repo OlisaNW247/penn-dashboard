@@ -417,6 +417,51 @@ struct DegreeAppStateTests {
         #expect(state.degreePlanStore.load() == .empty)
     }
 
+    @Test("fixture mode carries a term history for the timeline")
+    func fixtureHistory() throws {
+        let state = try makeState()
+        state.forceFixtureDataForTesting(true)
+        state.loadDegreeSnapshotAtLaunch()
+        #expect(!state.degree.history.isEmpty)
+        #expect(state.degree.history.count >= 4)
+        // No course is both in the history and in the sample plan.
+        let held = Set(state.degree.history.values.flatMap { $0 }.map { DegreePlanMath.normalizedCode($0) })
+        let plan = SampleData.degreePlan()
+        for term in plan.terms {
+            for course in term.courses { #expect(!held.contains(DegreePlanMath.normalizedCode(course.code))) }
+        }
+    }
+
+    @Test("a planned course moves between the fixture plan's two terms, in memory")
+    func fixtureMove() throws {
+        let state = try makeState()
+        state.forceFixtureDataForTesting(true)
+        state.loadDegreePlanIfNeeded()
+        let first = try #require(state.degreePlan.terms.first)
+        let last = try #require(state.degreePlan.terms.last)
+        #expect(first.termCode != last.termCode)
+        let course = try #require(first.courses.first)
+        state.movePlannedCourse(code: course.code, to: last.termCode, before: nil)
+        #expect(state.degreePlan.terms.first?.courses.contains { $0.code == course.code } == false)
+        #expect(state.degreePlan.terms.last?.courses.last?.code == course.code)
+        state.movePlannedCourse(code: course.code, to: first.termCode, before: first.courses.dropFirst().first?.code)
+        #expect(state.degreePlan.terms.first?.courses.map(\.code) == first.courses.map(\.code))
+        #expect(state.degreePlanStore.load() == .empty)
+    }
+
+    @Test("the three tabs host one semester table")
+    func tableIsShared() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/LowHangingFruitUI")
+        let progress = try String(contentsOf: root.appendingPathComponent("DegreeProgressView.swift"), encoding: .utf8)
+        let plan = try String(contentsOf: root.appendingPathComponent("DegreePlanView.swift"), encoding: .utf8)
+        #expect(progress.contains("DegreeSemesterTable("))
+        #expect(plan.contains("DegreeSemesterTable("))
+    }
+
     @Test("clearing the degree data clears the plan and lets it load again")
     func clearingPlan() throws {
         let state = try makeState()

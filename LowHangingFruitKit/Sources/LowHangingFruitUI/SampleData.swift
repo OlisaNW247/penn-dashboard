@@ -438,9 +438,37 @@ enum SampleData {
             colleges: ["EU": "Engineering", "WU": "Wharton"],
             programs: ["EU_BSE": "Engineering, BSE", "WU_BS": "Wharton, BS"])
 
+        // The timeline table's past and current columns. Laid out from `now`
+        // so the demo always has three semesters behind it, the one the
+        // student is in and one registered ahead; the codes are the audit's own
+        // taken and in-progress courses, spread over the terms, plus two
+        // invented registrations for the semester ahead. None of them is in
+        // `degreePlan(now:)`.
+        let nowTerm = Term(date: now)
+        let behind1 = previousTermCode(before: nowTerm)
+        let behind2 = previousTermCode(before: Term(code: behind1) ?? nowTerm)
+        let behind3 = previousTermCode(before: Term(code: behind2) ?? nowTerm)
+        let ahead = DegreePlanMath.nextTermCode(after: nowTerm.code) ?? nowTerm.code
+        let history: [String: [String]] = [
+            behind3: ["WRIT 0020", "MEAM 1010"],
+            behind2: ["MATH 1400", "CIS 1200"],
+            behind1: ["MATH 1410", "ECON 1", "MGMT 1010", "CIS 1600", "CIS 2400"],
+            nowTerm.code: ["MATH 2400", "MATH 2410", "CIS 1210", "CIS 2620", "PSYC 1"],
+            ahead: ["OIDD 1010", "MKTG 1010"],
+        ]
+
         return DegreeSnapshot(
             current: current, whatIfs: [whatIf], degrees: degrees, selectedDegreeID: degrees[0].id,
-            programs: programs, dictionaries: dictionaries, lastShape: [])
+            programs: programs, dictionaries: dictionaries, lastShape: [], history: history)
+    }
+
+    /// The fall or spring before `term` (a summer steps back to spring), as a
+    /// term code. Only the sample history uses it.
+    private static func previousTermCode(before term: Term) -> String {
+        switch term.season {
+        case .fall, .summer: return Term(year: term.year, season: .spring).code
+        case .spring: return Term(year: term.year - 1, season: .fall).code
+        }
     }
 
     /// Invented, like the audit above: two semesters of a sample course load

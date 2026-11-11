@@ -566,6 +566,14 @@ extension AppState {
         commitDegreePlan(DegreePlanMath.removing(courseCode: code, from: termCode, in: degreePlan))
     }
 
+    /// A drag of a planned course onto another semester, or onto another
+    /// planned course (it lands before that one). The rules, including every
+    /// refusal, are `DegreePlanMath.moving`.
+    func movePlannedCourse(code: String, to termCode: String, before anchorCode: String?) {
+        commitDegreePlan(DegreePlanMath.moving(
+            courseCode: code, to: termCode, before: anchorCode, in: degreePlan))
+    }
+
     func addPlanTerm(now: Date = Date()) {
         commitDegreePlan(DegreePlanMath.withTermAdded(degreePlan, now: now))
     }

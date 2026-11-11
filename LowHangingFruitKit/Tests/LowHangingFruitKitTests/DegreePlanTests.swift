@@ -155,25 +155,73 @@ struct DegreePlanTests {
         #expect(Math.removing(courseCode: "CIS 5200", from: "209910", in: base) == base)
     }
 
+    // MARK: Moving
+
+    private func titled(_ code: String, _ title: String, _ credits: Double) -> PlannedCourse {
+        PlannedCourse(code: code, title: title, credits: credits)
+    }
+
+    @Test("a course moves to the end of another term")
+    func movesToEnd() {
+        let base = plan(("202710", ["CIS 3200", "CIS 4500"]), ("202730", ["CIS 5200"]))
+        let out = Math.moving(courseCode: "cis 3200", to: "202730", before: nil, in: base)
+        #expect(out.terms[0].courses.map(\.code) == ["CIS 4500"])
+        #expect(out.terms[1].courses.map(\.code) == ["CIS 5200", "CIS 3200"])
+    }
+
+    @Test("a course moves before an anchor in another term, and falls to the end for an unknown anchor")
+    func movesBefore() {
+        let base = plan(("202710", ["CIS 3200"]), ("202730", ["CIS 5200", "CIS 4500"]))
+        let out = Math.moving(courseCode: "CIS 3200", to: "202730", before: "cis4500", in: base)
+        #expect(out.terms[1].courses.map(\.code) == ["CIS 5200", "CIS 3200", "CIS 4500"])
+        let unknown = Math.moving(courseCode: "CIS 3200", to: "202730", before: "PHIL 1010", in: base)
+        #expect(unknown.terms[1].courses.map(\.code) == ["CIS 5200", "CIS 4500", "CIS 3200"])
+    }
+
+    @Test("moving inside one term reorders it")
+    func reorders() {
+        let base = plan(("202710", ["CIS 3200", "CIS 4500", "CIS 5200"]))
+        let up = Math.moving(courseCode: "CIS 5200", to: "202710", before: "CIS 3200", in: base)
+        #expect(up.terms[0].courses.map(\.code) == ["CIS 5200", "CIS 3200", "CIS 4500"])
+        let toEnd = Math.moving(courseCode: "CIS 3200", to: "202710", before: nil, in: base)
+        #expect(toEnd.terms[0].courses.map(\.code) == ["CIS 4500", "CIS 5200", "CIS 3200"])
+    }
+
+    @Test("moving refuses an unknown course, an unknown term, itself as anchor and a full other term")
+    func movingRefusals() {
+        let base = plan(("202710", ["CIS 3200"]), ("202730", ["CIS 5200"]))
+        #expect(Math.moving(courseCode: "PHIL 1010", to: "202730", before: nil, in: base) == base)
+        #expect(Math.moving(courseCode: "CIS 3200", to: "209910", before: nil, in: base) == base)
+        #expect(Math.moving(courseCode: "CIS 3200", to: "202710", before: "cis3200", in: base) == base)
+        let full = plan(("202710", ["CIS 3200"]),
+                        ("202730", (0..<Math.maxCoursesPerTerm).map { "CIS 10\($0)" }))
+        #expect(Math.moving(courseCode: "CIS 3200", to: "202730", before: nil, in: full) == full)
+        // The same term is never "full": reordering takes nothing in.
+        let packed = plan(("202710", (0..<Math.maxCoursesPerTerm).map { "CIS 10\($0)" }))
+        let reordered = Math.moving(courseCode: "CIS 107", to: "202710", before: "CIS 100", in: packed)
+        #expect(reordered.terms[0].courses.first?.code == "CIS 107")
+        #expect(reordered.terms[0].courses.count == Math.maxCoursesPerTerm)
+    }
+
+    @Test("a moved course keeps its title and credits")
+    func movingKeepsDetails() {
+        let base = DegreePlan(terms: [
+            PlannedTerm(termCode: "202710", courses: [titled("CIS 3200", "algorithms", 0.5)]),
+            PlannedTerm(termCode: "202730"),
+        ])
+        let out = Math.moving(courseCode: "CIS 3200", to: "202730", before: nil, in: base)
+        #expect(out.terms[1].courses == [titled("CIS 3200", "algorithms", 0.5)])
+        #expect(out.terms[0].courses.isEmpty)
+    }
+
     // MARK: Credits
 
-    @Test("credits add up, registered ones included")
+    @Test("credits add up across terms")
     func credits() {
         let term = PlannedTerm(termCode: "202710", courses: [course("CIS 3200", credits: 1), course("CIS 4500", credits: 0.5)])
         #expect(Math.plannedCredits(term) == 1.5)
         let other = PlannedTerm(termCode: "202730", courses: [course("CIS 5200", credits: 1)])
         #expect(Math.totalPlannedCredits(DegreePlan(terms: [term, other])) == 2.5)
-        let held = audit(blocks: [], courses: [
-            audited("MATH 2400", "202710", credits: 1, inProgress: true),
-            audited("MATH 2400", "202710", credits: 1, inProgress: true),
-            audited("PHYS 0150", "202710", credits: nil, inProgress: true),
-            audited("CIS 1200", "202710", credits: 1, inProgress: false),
-            audited("ECON 0001", "202730", credits: 1, inProgress: true),
-        ])
-        #expect(Math.registered(in: "202710", audit: held).map(\.code) == ["MATH 2400", "PHYS 0150"])
-        #expect(Math.registered(in: "202710", audit: nil).isEmpty)
-        #expect(Math.termCredits(term, audit: held) == 2.5)
-        #expect(Math.termCredits(term, audit: nil) == 1.5)
     }
 
     // MARK: Open requirements
@@ -245,6 +293,14 @@ struct DegreePlanTests {
         let some = Math.addable(Math.openRequirements(in: trimmedAudit), plan: .empty, audit: trimmedAudit)
         #expect(some.map(\.id) == ["B1|r1", "B2|r5"])
         #expect(some[0].options.map(\.code) == ["CIS 3200"])
+    }
+
+    @Test("addable also drops every code the history names")
+    func addableHistory() {
+        let list = Math.addable(Math.openRequirements(in: sampleAudit), plan: .empty, audit: sampleAudit,
+                                history: ["202610": ["cis3200"], "202630": ["STAT 4300"]])
+        #expect(list.map(\.id) == ["B1|r1", "B1|c1"])
+        #expect(list[0].options.map(\.code) == ["CIS 4500"])
     }
 }
 

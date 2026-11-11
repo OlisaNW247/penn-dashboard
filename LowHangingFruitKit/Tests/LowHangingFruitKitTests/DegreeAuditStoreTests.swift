@@ -41,6 +41,19 @@ struct DegreeAuditStoreTests {
         #expect(store.load() == snapshot)
     }
 
+    @Test("history round-trips, and a snapshot without the key decodes with none")
+    func history() throws {
+        let directory = scratch()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = DegreeAuditStore(directory: directory)
+        let snapshot = DegreeSnapshot(history: ["202610": ["CIS 1200", "MATH 1400"], "202630": ["CIS 1210"]])
+        try store.save(snapshot)
+        #expect(store.load().history == snapshot.history)
+        let decoder = JSONDecoder()
+        let bare = try decoder.decode(DegreeSnapshot.self, from: Data(#"{"whatIfs":[]}"#.utf8))
+        #expect(bare.history.isEmpty)
+    }
+
     @Test("a file written before the Path@Penn rewrite still decodes")
     func oldFormat() throws {
         let directory = scratch()

@@ -1,23 +1,18 @@
 import SwiftUI
 import LowHangingFruitKit
 
-/// The degree screen's "plan" tab: one column per semester, side by side, that
-/// the student fills with a sample course load. It is their sketch and nothing
-/// else. The audit only contributes two things, laid beside the table and never
-/// merged into it: the courses Penn already shows as registered for a term (fixed
-/// chips), and a muted "fits" line under a planned course that Penn lists among
-/// the options of a requirement it still has open. The screen never says a
-/// requirement is satisfied by a plan, and never orders or suggests a course:
-/// whether a course counts is Penn's decision when it is taken.
+/// The degree screen's "plan" tab: a summary line over the semester table
+/// (`DegreeSemesterTable`, which the progress and what-if tabs host too). The
+/// plan is the student's sketch and nothing else. The audit contributes only a
+/// muted "fits" line under a planned course that Penn lists among the options
+/// of a requirement it still has open. The screen never says a requirement is
+/// satisfied by a plan, and never orders or suggests a course: whether a course
+/// counts is Penn's decision when it is taken.
 ///
 /// Reads `state.degreePlan` and `state.degree.current`; edits go through
 /// `AppState+Degree.swift`, which saves them on the phone and nowhere else.
 struct DegreePlanView: View {
     @EnvironmentObject var state: AppState
-
-    @State private var sheetTarget: PlanSheetTarget?
-
-    private static let columnWidth: CGFloat = 168
 
     private var audit: DegreeAudit? { state.degree.current }
     private var plan: DegreePlan { state.degreePlan }
@@ -25,11 +20,7 @@ struct DegreePlanView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             summary
-            table
-        }
-        .sheet(item: $sheetTarget) { target in
-            DegreePlanAddSheet(termCode: target.termCode)
-                .environmentObject(state)
+            DegreeSemesterTable(audit: audit)
         }
     }
 
@@ -55,146 +46,6 @@ struct DegreePlanView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
-
-    // MARK: Table
-
-    private var table: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 10) {
-                ForEach(plan.terms) { term in
-                    column(term)
-                }
-                addTermButton
-            }
-        }
-    }
-
-    private func column(_ term: PlannedTerm) -> some View {
-        let coverage = DegreePlanMath.coverage(plan: plan, audit: audit)
-        return VStack(alignment: .leading, spacing: 10) {
-            header(term)
-            ForEach(DegreePlanMath.registered(in: term.termCode, audit: audit)) { course in
-                registeredRow(course)
-            }
-            ForEach(term.courses) { course in
-                plannedRow(course, termCode: term.termCode,
-                           fit: coverage[DegreePlanMath.normalizedCode(course.code)])
-            }
-            addCourseButton(term)
-        }
-        .padding(12)
-        .frame(width: Self.columnWidth, alignment: .topLeading)
-        .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.smoothRule, lineWidth: 1) }
-    }
-
-    private func header(_ term: PlannedTerm) -> some View {
-        let isLast = term.id == plan.terms.last?.id
-        let canRemove = isLast && term.courses.isEmpty && plan.terms.count > 1
-        let credits = DegreePlanMath.termCredits(term, audit: audit)
-        return VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(DegreePlanMath.termLabel(term.termCode))
-                    .font(.lhfSans(14, weight: .semibold))
-                    .foregroundStyle(Color.smoothInk)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                Spacer(minLength: 0)
-                if canRemove {
-                    Button { state.removeLastPlanTermIfEmpty() } label: {
-                        Text("remove")
-                            .font(.lhfSans(11))
-                            .foregroundStyle(Color.smoothMuted)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            Text("\(DegreeProgressMath.credits(credits)) cu")
-                .font(.lhfMono(12))
-                .foregroundStyle(Color.smoothMuted)
-        }
-    }
-
-    // MARK: Rows
-
-    private func chip(code: String, label: String) -> some View {
-        Text(code)
-            .font(.lhfMono(11))
-            .foregroundStyle(courseAccentInk(for: code))
-            .padding(.horizontal, 9)
-            .padding(.vertical, 4)
-            .background(courseAccent(for: code).opacity(0.28), in: Capsule())
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(label)
-    }
-
-    private func creditsWord(_ value: Double) -> String {
-        "\(DegreeProgressMath.credits(value)) credits"
-    }
-
-    private func registeredRow(_ course: AuditCourse) -> some View {
-        HStack(spacing: 6) {
-            chip(code: course.code,
-                 label: "\(course.code), \(creditsWord(course.credits ?? 0)), registered")
-            Text("· registered")
-                .font(.lhfSans(10))
-                .foregroundStyle(Color.smoothMuted)
-                .lineLimit(1)
-                .accessibilityHidden(true)
-        }
-    }
-
-    private func plannedRow(_ course: PlannedCourse, termCode: String, fit: String?) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 4) {
-                chip(code: course.code, label: "\(course.code), \(creditsWord(course.credits))")
-                Spacer(minLength: 0)
-                Button { state.removePlannedCourse(code: course.code, from: termCode) } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Color.smoothMuted)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("remove \(course.code)")
-            }
-            if let fit {
-                Text("fits · \(fit.lowercased())")
-                    .font(.lhfSans(11))
-                    .foregroundStyle(Color.smoothMuted)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    private func addCourseButton(_ term: PlannedTerm) -> some View {
-        Button { sheetTarget = PlanSheetTarget(termCode: term.termCode) } label: {
-            Text("+ course")
-                .font(.lhfSans(13, weight: .semibold))
-                .foregroundStyle(Color.smoothTealInk)
-                .padding(.vertical, 4)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var addTermButton: some View {
-        Button { state.addPlanTerm() } label: {
-            Text("+ semester")
-                .font(.lhfSans(13, weight: .semibold))
-                .foregroundStyle(Color.smoothInk)
-                .frame(width: 96, height: 56)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(Color.smoothRule, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                }
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(plan.terms.count >= DegreePlanMath.maxTerms)
-    }
 }
 
 /// What the add sheet is open for: the semester it will add to.
@@ -212,11 +63,13 @@ struct DegreePlanAddSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let termCode: String
+    /// The audit the table behind the sheet is drawn against, so a what-if's
+    /// open requirements are the ones offered while a what-if is showing.
+    let audit: DegreeAudit?
 
     @State private var typed = ""
     @State private var credits = 1.0
 
-    private var audit: DegreeAudit? { state.degree.current }
     private var plan: DegreePlan { state.degreePlan }
 
     private var trimmed: String { typed.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -231,7 +84,8 @@ struct DegreePlanAddSheet: View {
     }
 
     private var requirements: [DegreePlanMath.OpenRequirement] {
-        DegreePlanMath.addable(DegreePlanMath.openRequirements(in: audit), plan: plan, audit: audit)
+        DegreePlanMath.addable(DegreePlanMath.openRequirements(in: audit), plan: plan, audit: audit,
+                               history: state.degree.history)
     }
 
     var body: some View {

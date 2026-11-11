@@ -177,6 +177,42 @@ public enum DegreePlanMath {
         return out
     }
 
+    /// Moves a planned course to another semester, or to another place in its
+    /// own, putting it before the course `anchorCode` names or at the end when
+    /// that is nil or not in the target. A no-op (the plan comes back as it
+    /// was) when the course is not planned, the target semester is not in the
+    /// plan, the anchor is the course itself, or a different, full semester is
+    /// the target. The course keeps its title and credits.
+    public static func moving(
+        courseCode: String, to termCode: String, before anchorCode: String?, in plan: DegreePlan
+    ) -> DegreePlan {
+        let wanted = normalizedCode(courseCode)
+        guard !wanted.isEmpty else { return plan }
+        let anchor: String? = anchorCode.map { normalizedCode($0) }
+        if let anchor, anchor == wanted { return plan }
+        var fromIndex: Int?
+        var courseIndex = 0
+        for (termIndex, term) in plan.terms.enumerated() {
+            if let found = term.courses.firstIndex(where: { normalizedCode($0.code) == wanted }) {
+                fromIndex = termIndex
+                courseIndex = found
+                break
+            }
+        }
+        guard let from = fromIndex else { return plan }
+        guard let to = plan.terms.firstIndex(where: { $0.termCode == termCode }) else { return plan }
+        if from != to, plan.terms[to].courses.count >= maxCoursesPerTerm { return plan }
+        var out = plan
+        let moved = out.terms[from].courses.remove(at: courseIndex)
+        if let anchor,
+           let at = out.terms[to].courses.firstIndex(where: { normalizedCode($0.code) == anchor }) {
+            out.terms[to].courses.insert(moved, at: at)
+        } else {
+            out.terms[to].courses.append(moved)
+        }
+        return out
+    }
+
     public static func removing(courseCode: String, from termCode: String, in plan: DegreePlan) -> DegreePlan {
         guard let index = plan.terms.firstIndex(where: { $0.termCode == termCode }) else { return plan }
         let wanted = normalizedCode(courseCode)
@@ -205,23 +241,10 @@ public enum DegreePlanMath {
         plan.terms.reduce(0) { $0 + plannedCredits($1) }
     }
 
-    /// The courses Penn's audit already shows as registered for this term, in
-    /// the audit's order, each code once.
-    public static func registered(in termCode: String, audit: DegreeAudit?) -> [AuditCourse] {
-        guard let audit else { return [] }
-        var seen = Set<String>()
-        var out: [AuditCourse] = []
-        for course in audit.courses where course.isInProgress && course.termCode == termCode {
-            if seen.insert(normalizedCode(course.code)).inserted { out.append(course) }
-        }
-        return out
-    }
-
-    /// Planned plus registered credits for one column.
-    public static func termCredits(_ term: PlannedTerm, audit: DegreeAudit?) -> Double {
-        let held = registered(in: term.termCode, audit: audit).reduce(0) { $0 + ($1.credits ?? 0) }
-        return plannedCredits(term) + held
-    }
+    // The audit's own course list used to supply the "registered" chips of a
+    // column here (`registered(in:audit:)`, `termCredits`). Penn's audit never
+    // says which term a course belongs to, so those read nothing on a real
+    // audit; `DegreeTimeline` takes the term from a separate history map instead.
 
     // MARK: Laying the plan beside Penn's open requirements
 
@@ -282,11 +305,17 @@ public enum DegreePlanMath {
     /// the codes already planned, taken or registered removed, and requirements
     /// left with nothing dropped. Order untouched.
     public static func addable(
-        _ requirements: [OpenRequirement], plan: DegreePlan, audit: DegreeAudit?
+        _ requirements: [OpenRequirement], plan: DegreePlan, audit: DegreeAudit?,
+        history: [String: [String]] = [:]
     ) -> [OpenRequirement] {
         var excluded = Set(plannedCodes(plan))
         if let audit {
             for course in audit.courses { excluded.insert(normalizedCode(course.code)) }
+        }
+        // A course the term history lists is taken or registered, whether or
+        // not the audit's course list carries it.
+        for codes in history.values {
+            for code in codes { excluded.insert(normalizedCode(code)) }
         }
         var out: [OpenRequirement] = []
         for requirement in requirements {

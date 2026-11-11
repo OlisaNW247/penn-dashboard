@@ -19,6 +19,11 @@ public struct DegreeSnapshot: Codable, Sendable, Equatable {
     public var dictionaries: PathDictionaries?
     /// DEBUG key shape of the last audit: key names only, never values.
     public var lastShape: [String]
+    /// Term code ("202630") -> the course codes taken, being taken or
+    /// registered in that term, in Penn's order. Penn's audit names no term for
+    /// a course, so the timeline table reads its past and current columns from
+    /// here. Empty until something fills it.
+    public var history: [String: [String]]
 
     public init(
         current: DegreeAudit? = nil,
@@ -27,7 +32,8 @@ public struct DegreeSnapshot: Codable, Sendable, Equatable {
         selectedDegreeID: String? = nil,
         programs: [PathProgramListing] = [],
         dictionaries: PathDictionaries? = nil,
-        lastShape: [String] = []
+        lastShape: [String] = [],
+        history: [String: [String]] = [:]
     ) {
         self.current = current
         self.whatIfs = whatIfs
@@ -36,12 +42,13 @@ public struct DegreeSnapshot: Codable, Sendable, Equatable {
         self.programs = programs
         self.dictionaries = dictionaries
         self.lastShape = lastShape
+        self.history = history
     }
 
     public static let empty = DegreeSnapshot()
 
     private enum CodingKeys: String, CodingKey {
-        case current, whatIfs, degrees, selectedDegreeID, programs, dictionaries, lastShape
+        case current, whatIfs, degrees, selectedDegreeID, programs, dictionaries, lastShape, history
     }
 
     /// Lenient on purpose: a file written before the Path@Penn rewrite has a
@@ -57,6 +64,7 @@ public struct DegreeSnapshot: Codable, Sendable, Equatable {
         self.programs = try container.decodeIfPresent([PathProgramListing].self, forKey: .programs) ?? []
         self.dictionaries = try container.decodeIfPresent(PathDictionaries.self, forKey: .dictionaries)
         self.lastShape = try container.decodeIfPresent([String].self, forKey: .lastShape) ?? []
+        self.history = try container.decodeIfPresent([String: [String]].self, forKey: .history) ?? [:]
     }
 }
 

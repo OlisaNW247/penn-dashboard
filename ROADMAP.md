@@ -73,6 +73,12 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   new "plan" tab (the semester table he asked for the same day; on the
   phone, check that registered spring courses appear in the first column
   and that "fits" shows for a course picked from the open options);
+  **2026-11-11:** he confirmed the build shows his two real degrees, and
+  asked for the semester table in every tab with drag and drop; written the
+  same day (CLAUDE.md → Degree). Its past and current columns need the term
+  of each course, which the audit does not carry: next is reading `hist`
+  and `reg` from the record once their format is seen, with the privacy
+  text changed in the same commit;
   (3) capture
   what was not seen: a record with a concentration or minor, and the page's
   own `currentStudentDegrees`; (4) the privacy label and `REVIEW_NOTES.md`,
