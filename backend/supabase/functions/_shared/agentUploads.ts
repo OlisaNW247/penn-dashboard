@@ -96,8 +96,12 @@ export interface UploadStore {
   removeStaged(path: string): Promise<void>;
   /** The row, its chunks and its staged object. */
   remove(row: UploadRow): Promise<void>;
-  /** Every upload of the student (opt-out). Returns the row count. */
+  /** Every upload of the student (opt-out), and every staged object under
+   *  the student's `uploads/` prefix. Returns the row count. */
   deleteAll(userId: string): Promise<number>;
+  /** Removes staged objects under `<user>/uploads/<id>/` whose upload row is
+   *  gone (see `UploadService.sweepStrays`). Returns how many objects went. */
+  removeStrayStaged(userId: string): Promise<number>;
 }
 
 export interface BeganUpload {
@@ -149,6 +153,7 @@ export class UploadService {
       expiresAt: new Date(created.getTime() + UPLOAD_TTL_MS).toISOString(),
     };
     await this.store.replaceForConnection(row);
+    await this.sweepStrays(userId);
     let uploadUrl: string | null = null;
     try {
       uploadUrl = await this.store.signedUploadUrl(stagingPath(userId, row.id, row.fileName));
@@ -227,7 +232,29 @@ export class UploadService {
     }
     const made = await create(row, bytes);
     await this.store.remove(row);
+    await this.sweepStrays(userId);
     return { ...made, fromStaged };
+  }
+
+  /** Found 2026-11-11 against production (docs/V11_TEST_BACKEND_2026-11-11.md):
+   *  Supabase's signed upload URL lives about two hours and cannot be
+   *  revoked, while the upload behind it ends at finish, at a replacing
+   *  begin, or after 30 minutes. A PUT after that (a retried curl, a
+   *  confused agent) answers 200 and stores the file again under the old
+   *  upload id, which no row names any more: nothing removed it, not the
+   *  opt-out (which went by rows) and not the sweeper (rows only), so the
+   *  student's file outlived both. Every begin and finish therefore removes
+   *  the student's staged objects that have no upload row, and the opt-out
+   *  removes all of them. The wrong fix is a shorter URL: supabase-js fixes
+   *  its validity, and any length leaves the same window. A stray made after
+   *  the student's last upload waits for the next upload, the opt-out or
+   *  account deletion. Best effort: a sweep failure never fails the call. */
+  private async sweepStrays(userId: string): Promise<void> {
+    try {
+      await this.store.removeStrayStaged(userId);
+    } catch {
+      console.error("agent-uploads: stray sweep failed (open)");
+    }
   }
 }
 
@@ -352,7 +379,37 @@ export class PostgrestUploadStore implements UploadStore {
     if (error) throw error;
     const rows = (data ?? []) as Array<{ id: string; user_id: string; file_name: string }>;
     if (rows.length > 0) await this.removeObjects(rows.map((r) => stagingPath(r.user_id, r.id, r.file_name)));
+    // With every row gone, every staged object is a stray: this also takes
+    // the ones a late PUT left under an upload that had already ended.
+    try {
+      await this.removeStrayStaged(userId);
+    } catch {
+      console.error("agent-uploads: stray sweep failed (open)");
+    }
     return rows.length;
+  }
+
+  async removeStrayStaged(userId: string): Promise<number> {
+    const bucket = this.client.storage.from(DRAFT_BUCKET);
+    // Folders first, rows second: a folder can only exist after its row was
+    // inserted (begin inserts before it hands out the URL), so a row read
+    // after the listing can only be missing because the upload ended.
+    const folders = await bucket.list(`${userId}/uploads`, { limit: 1000 });
+    if (folders.error) throw folders.error;
+    const ids = (folders.data ?? []).filter((f) => f.id === null).map((f) => f.name);
+    if (ids.length === 0) return 0;
+    const { data, error } = await this.client.from("agent_uploads").select("id").eq("user_id", userId).in("id", ids);
+    if (error) throw error;
+    const live = new Set(((data ?? []) as Array<{ id: string }>).map((r) => r.id));
+    const paths: string[] = [];
+    for (const id of ids) {
+      if (live.has(id)) continue;
+      const files = await bucket.list(`${userId}/uploads/${id}`, { limit: 100 });
+      if (files.error) throw files.error;
+      for (const f of files.data ?? []) paths.push(`${userId}/uploads/${id}/${f.name}`);
+    }
+    await this.removeObjects(paths);
+    return paths.length;
   }
 
   /** Best effort: a missing staged object is the normal case. */
@@ -427,6 +484,19 @@ export class MemoryUploadStore implements UploadStore {
       if (row.userId !== userId) continue;
       this.drop(row);
       n++;
+    }
+    void this.removeStrayStaged(userId);
+    return Promise.resolve(n);
+  }
+
+  removeStrayStaged(userId: string): Promise<number> {
+    let n = 0;
+    for (const path of [...this.staged.keys()]) {
+      const m = new RegExp(`^${userId}/uploads/([^/]+)/`).exec(path);
+      if (m && !this.rows.has(m[1])) {
+        this.staged.delete(path);
+        n++;
+      }
     }
     return Promise.resolve(n);
   }

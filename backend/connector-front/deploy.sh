@@ -49,4 +49,8 @@ run "$VERCEL" link --yes --project "$PROJECT"
 setenv UPSTREAM_BASE "$UPSTREAM_BASE"
 setenv PUBLIC_BASE "$PUBLIC_BASE"
 [ -n "${UPSTREAM_APIKEY:-}" ] && setenv UPSTREAM_APIKEY "$UPSTREAM_APIKEY"
+# The same value as agent-auth's LHF_FRONT_CLIENT_IP_SECRET: lets agent-auth
+# rate-limit /authorize and /register per student instead of per Vercel
+# egress address (docs/V11_TEST_BACKEND_2026-11-11.md). Left as is when unset.
+[ -n "${CLIENT_IP_SECRET:-}" ] && setenv CLIENT_IP_SECRET "$CLIENT_IP_SECRET"
 run "$VERCEL" deploy --prod --yes

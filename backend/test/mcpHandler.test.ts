@@ -539,3 +539,25 @@ Deno.test("upload tools need the draft scope", async () => {
     assertEquals(toolText(r), "this connection cannot propose drafts");
   }
 });
+
+// Found 2026-11-11 against production (docs/V11_TEST_BACKEND_2026-11-11.md):
+// ".." was accepted as a file name and reached the phone; a CR/LF or a
+// 5,000-character mime_type failed inside Storage with its own message.
+Deno.test("file_name and mime_type: plain names and type/subtype only, for propose and begin", async () => {
+  const { store, deps } = makeDeps();
+  const { token } = await seed(store);
+  const file = { assignment_id: "asg-phys-hw4", kind: "file", file_name: "hw4.pdf", mime_type: "application/pdf", file_base64: "aGVsbG8=" };
+  for (const name of ["..", ".", "  ", "a\nb.pdf", "a\u0000.pdf"]) {
+    assertStringIncludes(toolText(await call(deps, token, "propose_submission", { ...file, file_name: name })), "plain file name", JSON.stringify(name));
+    assertStringIncludes(toolText(await begin(deps, token, randomFile(10), { file_name: name })), "plain file name", JSON.stringify(name));
+  }
+  for (const mime of ["text/html\r\nX-Evil: 1", "m".repeat(5000), "pdf", "/pdf", "application/", "a/b/c", "a b/c"]) {
+    assertStringIncludes(toolText(await call(deps, token, "propose_submission", { ...file, mime_type: mime })), "type/subtype", JSON.stringify(mime));
+    assertStringIncludes(toolText(await begin(deps, token, randomFile(10), { mime_type: mime })), "type/subtype", JSON.stringify(mime));
+  }
+  // Ordinary names and types still go through.
+  for (const [name, mime] of [["Problem Set 7.pdf", "application/pdf"], [".hidden.txt", "text/plain"], ["essay.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]]) {
+    const ok = await call(deps, token, "propose_submission", { ...file, file_name: name, mime_type: mime });
+    assert(!ok.result.isError, toolText(ok));
+  }
+});

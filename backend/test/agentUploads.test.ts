@@ -12,6 +12,7 @@ import {
   toBytea,
   type UploadRow,
   UploadService,
+  MemoryUploadStore,
 } from "../supabase/functions/_shared/agentUploads.ts";
 import { removeUserDraftObjects } from "../supabase/functions/_shared/agentDrafts.ts";
 
@@ -175,4 +176,95 @@ Deno.test("removeUserDraftObjects also reaches objects staged under uploads/<id>
       assert.ok(rm.body.includes("u1/uploads/smu_a/x.pdf"), rm.body);
     },
   );
+});
+
+// Found 2026-11-11 against production (docs/V11_TEST_BACKEND_2026-11-11.md):
+// the signed upload URL outlives the upload, so a PUT after finish stored
+// the file again under an id no row names, and it survived the opt-out.
+Deno.test("removeStrayStaged removes staged folders with no upload row, keeps live ones", async () => {
+  await withStore(
+    (c) => {
+      if (c.method === "GET" && c.path === "/rest/v1/agent_uploads") return json([{ id: "smu_live" }]);
+      if (c.path !== "/storage/v1/object/list/agent-drafts") return c.path.startsWith("/storage/v1/object/agent-drafts") ? json([]) : null;
+      const prefix = JSON.parse(c.body).prefix;
+      if (prefix === "u1/uploads") return json([{ name: "smu_live", id: null }, { name: "smu_gone", id: null }]);
+      if (prefix === "u1/uploads/smu_gone") return json([{ name: "p.pdf", id: "7" }]);
+      return json([]);
+    },
+    async (store, calls) => {
+      assert.strictEqual(await store.removeStrayStaged("u1"), 1);
+      const rows = calls.find((c) => c.method === "GET" && c.path === "/rest/v1/agent_uploads")!;
+      assert.strictEqual(rows.q.get("user_id"), "eq.u1");
+      const rm = calls.find((c) => c.method === "DELETE" && c.path.startsWith("/storage/"))!;
+      assert.ok(rm.body.includes("u1/uploads/smu_gone/p.pdf"), rm.body);
+      assert.ok(!rm.body.includes("smu_live"), rm.body);
+      // The listing comes before the row read (see the comment in the store).
+      const listAt = calls.findIndex((c) => c.path === "/storage/v1/object/list/agent-drafts");
+      assert.ok(listAt < calls.indexOf(rows));
+    },
+  );
+  // Nothing staged: one listing, no row read, nothing removed.
+  await withStore(() => null, async (store, calls) => {
+    assert.strictEqual(await store.removeStrayStaged("u1"), 0);
+    assert.ok(!calls.some((c) => c.path === "/rest/v1/agent_uploads" || c.method === "DELETE"));
+  });
+});
+
+Deno.test("deleteAll (opt-out) also removes a staged object whose upload had already ended", async () => {
+  await withStore(
+    (c) => {
+      if (c.method === "DELETE" && c.path === "/rest/v1/agent_uploads") return json([]);
+      if (c.path !== "/storage/v1/object/list/agent-drafts") return c.path.startsWith("/storage/v1/object/agent-drafts") ? json([]) : null;
+      const prefix = JSON.parse(c.body).prefix;
+      if (prefix === "u1/uploads") return json([{ name: "smu_late", id: null }]);
+      if (prefix === "u1/uploads/smu_late") return json([{ name: "p.pdf", id: "7" }]);
+      return json([]);
+    },
+    async (store, calls) => {
+      assert.strictEqual(await store.deleteAll("u1"), 0);
+      const rm = calls.find((c) => c.method === "DELETE" && c.path.startsWith("/storage/"));
+      assert.ok(rm && rm.body.includes("u1/uploads/smu_late/p.pdf"), rm?.body);
+    },
+  );
+});
+
+Deno.test("a PUT after finish leaves a stray that the next begin, finish or opt-out removes; live uploads are kept", async () => {
+  const store = new MemoryUploadStore();
+  let n = 0;
+  const service = new UploadService(store, () => new Date("2026-11-10T12:00:00Z"), () => `smu_${n++}`);
+  const bytes = new Uint8Array(100).fill(7);
+  const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))).map((b) => b.toString(16).padStart(2, "0")).join("");
+  const input = { assignmentId: "asg", fileName: "p.pdf", mimeType: "application/pdf", totalBytes: 100, sha256: hash };
+  const make = () => Promise.resolve({ id: "d", bytes: 100, decodeMs: 0 });
+
+  const first = await service.begin("u1", "c1", input);
+  store.staged.set(stagingPath("u1", first.uploadId, "p.pdf"), bytes);
+  await service.finish("u1", first.uploadId, make);
+  // The late PUT: the URL still answers, the row is gone.
+  store.staged.set(stagingPath("u1", first.uploadId, "p.pdf"), bytes);
+  // Another connection's live upload with its object, and another student's stray.
+  const other = await service.begin("u1", "c2", input);
+  store.staged.set(stagingPath("u1", other.uploadId, "p.pdf"), bytes);
+  store.staged.set("u2/uploads/smu_x/p.pdf", bytes);
+  const next = await service.begin("u1", "c1", input);
+  assert.ok(!store.staged.has(stagingPath("u1", first.uploadId, "p.pdf")), "the stray outlived the next begin");
+  assert.ok(store.staged.has(stagingPath("u1", other.uploadId, "p.pdf")), "a live upload's object was removed");
+  assert.ok(store.staged.has("u2/uploads/smu_x/p.pdf"), "another student's object was touched");
+
+  // Finish sweeps too, and the opt-out takes every staged object of the student.
+  store.staged.set(stagingPath("u1", "smu_old", "p.pdf"), bytes);
+  store.staged.set(stagingPath("u1", next.uploadId, "p.pdf"), bytes);
+  await service.finish("u1", next.uploadId, make);
+  assert.ok(!store.staged.has(stagingPath("u1", "smu_old", "p.pdf")));
+  store.staged.set(stagingPath("u1", next.uploadId, "p.pdf"), bytes);
+  await store.deleteAll("u1");
+  assert.deepStrictEqual([...store.staged.keys()], ["u2/uploads/smu_x/p.pdf"]);
+});
+
+Deno.test("a failing stray sweep never fails begin or finish", async () => {
+  const store = new MemoryUploadStore();
+  store.removeStrayStaged = () => Promise.reject(new Error("storage down"));
+  const service = new UploadService(store, () => new Date("2026-11-10T12:00:00Z"));
+  const began = await service.begin("u1", "c1", { assignmentId: "a", fileName: "f.pdf", mimeType: "application/pdf", totalBytes: 10, sha256: "a".repeat(64) });
+  assert.ok(began.uploadId.startsWith("smu_"));
 });

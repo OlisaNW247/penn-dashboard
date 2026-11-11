@@ -48,6 +48,18 @@ These block shipping, or would make shipping risky. The launch-prep
 work of 2026-10-09/10 is summarised, with the order to take these in,
 in `docs/LAUNCH_PREP_HANDOFF.md`.
 
+- **v11 backend test findings, 2026-11-11 (`docs/V11_TEST_BACKEND_2026-11-11.md`;
+  branch `claude/v11-test-backend-3b1f1b`, nothing deployed).** In order:
+  (1) production `delete-account` is v13 of 2026-10-22, older than the agent
+  connection, so account deletion and Canvas disconnect leave every open
+  draft's file in Storage, which breaks a `docs/PRIVACY.md` promise: deploy it
+  (read the `_shared/db.ts` diff since 2026-10-22 first; `deploy-agent.mjs` now
+  includes it). (2) Behind the Vercel front every student shares one
+  `/authorize` rate-limit bucket (60 an hour for the school): set one secret as
+  `LHF_FRONT_CLIENT_IP_SECRET` and the front's `CLIENT_IP_SECRET`, then deploy
+  `agent-auth` and the front. (3) The stray-upload sweep and the file-name and
+  mime-type checks ride along with the next `deploy-agent.mjs` run. Each needs
+  Marco's word.
 - **Facts deploy: re-run 2026-11-06 18:56 UTC from `bd9d20c` (`finish_fact_extraction` applied, `sync` v22, `extract-facts` v6; `docs/DEPLOY_FACTS_2026-11-04.md` → Run 3); first done 2026-11-05 (01:20-01:45 UTC)**
   (`docs/DEPLOY_FACTS_2026-11-04.md` is the runbook and now ends with the run
   record; `backend/scripts/deploy-facts.mjs` runs it). Done, with Olisa's go

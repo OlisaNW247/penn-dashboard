@@ -1497,6 +1497,11 @@ uncommitted when measured): 3866 tests / 374 suites, all green, `swift test
 --no-parallel` (was 3855 / 373); the follow-up decisions the same day added
 one test (`DraftReviewStatusTests`), full run not repeated here.** The
 paragraph below is the older record.
+**Deno on `claude/v11-test-backend-3b1f1b` (2026-11-11, off `v11` `ee653d9`):
+898 passed (889 + 9: the front's client-address header, the stray staged-object
+sweep, the file-name and mime-type checks), `deno task check` clean, `node
+--test backend/scripts/*.test.mjs` 51, `backend/scripts/sql-check.sh` green
+(OrbStack). No Swift touched.**
 
 **Current on `agent/connection-v11` at the merge of 2026-11-10 (about 06:45
 UTC, 01:45 US Eastern): 3819 tests / 369 suites, all green, `swift test
@@ -2822,6 +2827,35 @@ itself.
 
 ## Traps that have already bitten
 
+- **Supabase's gateway rewrites `x-forwarded-for`, so behind a proxy every
+  caller is the proxy** (2026-11-11, `docs/V11_TEST_BACKEND_2026-11-11.md`).
+  `agent-auth` limits `/authorize` and `/register` "per ip" from the first
+  `x-forwarded-for` entry, and the connector front copies the header
+  through, which looked like per student. Measured: a spoofed value sent
+  straight to `supabase.co` is replaced by the caller's real address (good),
+  and every request through the front lands in one bucket keyed by Vercel's
+  egress address, whatever the client sent. So the school shared 60 sign-ins
+  an hour. The fix is a header of our own with a shared secret
+  (`x-smooth-client-ip`, `x-smooth-front-secret`, `LHF_FRONT_CLIENT_IP_SECRET`).
+  The wrong fix is trusting any client-visible header without the secret:
+  a direct caller of `supabase.co` would pick a fresh bucket per request. To
+  check which address a limit counts, hash the address and look for
+  `<route>:<sha256>` in `agent_rate_limits`.
+- **A Storage signed upload URL outlives what it was for** (2026-11-11). It
+  lives about two hours and cannot be revoked; the upload behind it ends at
+  finish, at a replacing begin or after 30 minutes. A late PUT answered 200
+  and left `<user>/uploads/<id>/<name>` with no row, and the opt-out, which
+  removed staged objects by row, never saw it. Clean a prefix by listing
+  it, never by the rows that should name it. A shorter URL is not a fix
+  (supabase-js fixes its validity, and any length leaves a window).
+- **A function that bundles `_shared/` code is stale until it is deployed
+  itself** (2026-11-11). The agent half of account deletion lives in
+  `_shared/db.ts` and `_shared/agentDrafts.ts`, but `deploy-agent.mjs`
+  deployed only the three agent functions, so production `delete-account`
+  stayed at v13 of 2026-10-22 and deleted no draft file. Read the functions'
+  versions (`GET /v1/projects/<ref>/functions`) against the dates of the
+  shared code they import before trusting a claim that production does
+  something.
 - **A view's `.task` cancelling the course-material sync read as "manifest
   failed"** (2026-11-10, diagnosed by the backend session, blind fix). The
   server logged Marco's manifest calls as 200 in 4.4 s; the phone recorded
@@ -3914,6 +3948,7 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
+| `claude/v11-test-backend-3b1f1b` | **2026-11-11, off `v11` `ee653d9`, local, not pushed, not merged.** The hostile test of the v11 backend (`docs/V11_TEST_BACKEND_2026-11-11.md`) and its fixes: the front's client-address header, the stray upload sweep, file-name and mime-type checks, `delete-account` in the agent runbook. Deno 898 green. Nothing deployed. The session that started it merges. |
 | `claude/v11-phone-c7aaf2` | **2026-11-10, off `agent/connection-v11` `2503a3b`, local, not pushed, not merged.** The phone halves of v11 Phases 3 and 4: drafts polled onto the card, the review sheet, `CanvasSubmissionClient` with the attempt store, the "connected" confirmation and dashboard line (What the app does → "Drafts from an agent"). Compiled and tested; never on a phone, never against Canvas. The session that started it merges. |
 | `v11` | **The line since 2026-11-10 (about 07:30 UTC, at Marco's "Yes, push to v11").** `origin/v11` was fast-forwarded from Marco's two commits (the Sweeper page, `CompletionSwipe.Axis`) to the merged tree `f8330ab`: all of `agent/connection-v11` (below) plus the night's three session branches. Marco's other thread pushes to it too; fetch before merging and never force-push. New work branches from here. |
 | `agent/connection-v11` | **2026-11-08, off `research/agent-connection-v11` (so off `v10` `4c136b2`); pushed to origin under its own name on 2026-11-10 and merged into `v11` the same morning (equal to it at `f8330ab`).** The build session's branch: the Canvas submit spike (`f5da516`), the Phase 1 backend (`7ca84a5`: `agent-auth`, `mcp`, `agent-snapshot`, migration `20261108090000_agent_connection.sql`, the `AgentStore` contract with PostgREST and memory implementations, `scripts/serve-agent.ts`), the docs. A Claude Code sign-in completed end to end against the dev tunnel the same day (research §8). Never push to or merge into `v10` without Marco's approval. |
@@ -3957,6 +3992,26 @@ none is a ship line.
 
 ## Known gaps
 
+- **v11 backend, tested hostile on 2026-11-11, three deploys owed**
+  (`docs/V11_TEST_BACKEND_2026-11-11.md`; branch `claude/v11-test-backend-3b1f1b`,
+  nothing deployed). About 220 checks against production matched
+  `backend/PROTOCOL.md`; the exceptions: (1) production `delete-account` is
+  v13 of 2026-10-22, older than the agent connection, so account deletion
+  and Canvas disconnect leave every open draft's file and staged upload in
+  Storage (rows cascade; measured with a throwaway), against `docs/PRIVACY.md`;
+  (2) behind the Vercel front every student shares one `/authorize` and
+  `/register` rate-limit bucket (Supabase's gateway rewrites
+  `x-forwarded-for` to Vercel's egress), so 60 requests an hour from anyone
+  block every sign-in; (3) a PUT to the signed upload URL after the upload
+  ended stores an object no row names, which survived the opt-out. (3), and
+  `..` file names and unchecked `mime_type`, are fixed on the branch; (2) is
+  fixed in code but needs `LHF_FRONT_CLIENT_IP_SECRET` and the front's
+  `CLIENT_IP_SECRET` set; (1) needs only the deploy (`deploy-agent.mjs` now
+  includes `delete-account`). Left as design items: the 20-open-draft cap
+  overshoots under concurrency (70 at once made 25), `Retry-After: 60` on a
+  fixed-hour window, no rate limit on `mcp`, a replayed code does not revoke
+  the first redemption's tokens, and a lost refresh response costs the
+  connection.
 - **The agent connection is live and proven with one real client; the
   phone half of drafts, the submit itself and ChatGPT are not** (state on
   2026-11-10; `agent/connection-v11`, plus `claude/v11-backend-645aa0` on
