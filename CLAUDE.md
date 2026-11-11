@@ -1421,21 +1421,22 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v12` (2026-11-11, with ambassador mode merged in): 3837 tests
+**Current on `v12` (2026-11-11, with ambassador mode merged in): 3840 tests
 / 373 suites, all green, `swift test --no-parallel` on the GitHub macOS
-runner in 101.7 s (the `tests` workflow, manual run 43093704027 at
-`3bf86d8`; Deno, the extension suite and the unsigned iOS `xcodebuild`
-green in the same run).** That tree is `v12` at `20485d0` (3814 / 367,
-below) merged with the ambassador branch, whose 23 tests and 6 suites are
-all in `AmbassadorTests.swift`: 3814 + 23, 367 + 6, nothing lost. **What
-was pushed to `v12` is one step past the tree that ran**: it also holds
-`76d34bd` and `22718fc`, which landed on `v12` during the run and touch
-only the degree files, their tests and these notes. The run for that exact
-tree (43095095186 at `a68a594`) sat queued for forty minutes on the same
-day GitHub left `v12`'s own run stuck (next paragraph), so it was not
-waited for. Read the next green run on `v12` for the count of the whole
-tree; it should be 3837 plus `76d34bd`'s three. Nothing from the merge has
-been on a phone.
+runner in 90 s (the `tests` workflow, the push run 43098959640 at
+`4bd5c04`; Deno and the extension suite green in the same run).** That is
+`v12`'s 3814 / 367 at `20485d0` (below), plus the three tests of `76d34bd`,
+plus the ambassador branch's 23 tests and 6 suites
+(`AmbassadorTests.swift`): nothing lost. The merge itself first ran at
+`3bf86d8`, before `76d34bd` existed: 3837 / 373 with the unsigned iOS
+`xcodebuild` green (manual run 43093704027). **The iOS build of the tree
+with `76d34bd` in it also succeeded** (manual run 43095095186 at
+`a68a594`, Build step green; `4bd5c04` differs from it only in this
+file). That run is shown as failed, and so is `v12`'s own for `76d34bd`:
+in both, the Test and Build steps passed and only the log upload after
+them failed ("Failed to CreateArtifact"), on a day GitHub's artifact
+store and Mac queue were struggling. Read the steps, not the badge.
+Nothing from the merge has been on a phone.
 
 Before the merge: **on `v12` (2026-11-11, the semester table): 3814 tests / 367
 suites, all green, `swift test --no-parallel` on the GitHub macOS runner in
