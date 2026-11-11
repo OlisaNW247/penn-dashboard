@@ -1500,6 +1500,19 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
+**Merged on `v11-master` 2026-11-11 (the UI trim `5d7d7a5` plus the three
+test-session branches, `claude/v11-test-backend-3b1f1b`,
+`claude/v11-test-phone-e16828`, `claude/v11-extensions-ac4092`, merged at
+`a1c870e`): 3922 tests / 377 suites green after one merge fix (the phone pass's
+no-logs scan named `AgentConnectionsView.swift`, which the trim renamed to
+`ProfileAgentRows.swift`); the full run had that one red and nothing else;
+Deno 898, `deno task check` clean, Node 51.** Note on the trim's own run (`5d7d7a5`): 3867 / 374 with
+one red, the "Fuzz: very long announcement text" 60-second budget missed by
+0.33 s while three other sessions compiled (load average 59); the fuzz
+suites alone on the idle Mac at 18:40 UTC passed in 55.8 s, so the record
+in that commit message ("the suite alone is green") is true as of that
+re-run, not as of the commit.
+
 **2026-11-11, the agent UI trim (on `v11-master` `ee653d9` plus the trim,
 uncommitted when measured): 3866 tests / 374 suites, all green, `swift test
 --no-parallel` (was 3855 / 373); the follow-up decisions the same day added

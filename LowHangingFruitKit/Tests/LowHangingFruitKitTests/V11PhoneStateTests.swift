@@ -169,7 +169,7 @@ struct V11PhoneStateTests {
         // a clear path and to this list in the same commit.
         let files = ["LowHangingFruitUI/AppState+AgentDrafts.swift", "LowHangingFruitUI/AppState+AgentConnection.swift",
                      "LowHangingFruitUI/AppState+AssignmentAttachments.swift", "LowHangingFruitKit/Agent/AgentDraft.swift",
-                     "LowHangingFruitUI/AgentDraftReviewSheet.swift", "LowHangingFruitUI/AgentConnectionsView.swift",
+                     "LowHangingFruitUI/AgentDraftReviewSheet.swift", "LowHangingFruitUI/ProfileAgentRows.swift",
                      "LowHangingFruitUI/AgentLinkApproveSheet.swift"]
         let known: Set<String> = ["agentDraftsCacheV1", "agentDraftsNotifiedV1", "agentKnownConnectionIDsV1",
                                   "attachmentAttemptsV1", "lastAttachmentSyncSummaryV1"]
@@ -381,7 +381,7 @@ struct V11PhoneStateTests {
         // The `decidedText` trap: a `static func` on a SwiftUI View is
         // main-actor isolated, and Swift 6 kills a background caller.
         for file in ["LowHangingFruitUI/AgentDraftReviewSheet.swift", "LowHangingFruitUI/AgentLinkApproveSheet.swift",
-                     "LowHangingFruitUI/AgentConnectionsView.swift"] {
+                     "LowHangingFruitUI/ProfileAgentRows.swift"] {
             guard let text = try? Self.source(file) else { continue }
             for line in text.components(separatedBy: "\n") where line.contains("static func") {
                 let isolated = !line.contains("nonisolated")
@@ -417,7 +417,7 @@ struct V11PhoneStateTests {
             "LowHangingFruitUI/AppState+AgentConnection.swift", "LowHangingFruitUI/AppState+AgentDrafts.swift",
             "LowHangingFruitUI/AppState+AssignmentAttachments.swift", "LowHangingFruitUI/AgentConnectionClient.swift",
             "LowHangingFruitUI/AgentDraftReviewSheet.swift", "LowHangingFruitUI/AgentLinkApproveSheet.swift",
-            "LowHangingFruitUI/AgentConnectionsView.swift",
+            "LowHangingFruitUI/ProfileAgentRows.swift",
         ]
         let banned = ["print(", "os_log", "NSLog(", "Logger(", "debugRenewalLog", "debugPrint(", "dump(",
                       "FileHandle.standardError"]
