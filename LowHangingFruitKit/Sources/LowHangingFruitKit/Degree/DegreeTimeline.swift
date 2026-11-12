@@ -123,6 +123,40 @@ public enum DegreeTimeline {
         return held + sketched
     }
 
+    /// The narrowest a page-layout cell may be: a course chip plus its remove
+    /// button.
+    public static let minimumPageCellWidth: Double = 112
+
+    /// Column counts the full-page table tries, fewest first, so the cells are
+    /// as wide as they can be while everything still fits without scrolling.
+    /// From 2 up to what the width holds at the minimum cell width, never more
+    /// than 6, and never wider than the number of cells; always at least one
+    /// count (2, or 1 when there is one cell or none).
+    public static func pageColumnCounts(width: Double, cells: Int) -> [Int] {
+        let cap = max(cells, 1)
+        let fit = min(6, max(2, Int(max(width, 0) / minimumPageCellWidth)))
+        var out: [Int] = []
+        for count in 2...max(fit, 2) {
+            let capped = min(count, cap)
+            if !out.contains(capped) { out.append(capped) }
+        }
+        return out
+    }
+
+    /// Items cut into rows of `perRow`, in order; the last row may be short.
+    /// A `perRow` under 1 is treated as 1.
+    public static func rows<T>(_ items: [T], perRow: Int) -> [[T]] {
+        let size = max(perRow, 1)
+        var out: [[T]] = []
+        var index = 0
+        while index < items.count {
+            let end = min(index + size, items.count)
+            out.append(Array(items[index..<end]))
+            index = end
+        }
+        return out
+    }
+
     /// The column the table opens on: the current semester, else the first
     /// one ahead, else nothing.
     public static func leadingColumnID(_ columns: [TimelineColumn]) -> String? {
