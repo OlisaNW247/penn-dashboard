@@ -37,6 +37,7 @@ def rank(d):
     hw = d.get("hardwareProperties", {})
     conn = d.get("connectionProperties", {})
     return (
+        0 if conn.get("tunnelState") == "connected" else 1,
         0 if conn.get("transportType") == "wired" else 1,
         0 if hw.get("deviceType") == "iPhone" else 1,
     )
@@ -53,7 +54,10 @@ ios.sort(key=rank)
 if ios:
     d = ios[0]
     name = d.get("deviceProperties", {}).get("name", "iPhone")
-    print(d["hardwareProperties"]["udid"], d["identifier"], name, sep="\t")
+    conn = d.get("connectionProperties", {})
+    state = conn.get("tunnelState") or "unknown"
+    link = conn.get("transportType") or "none"
+    print(d["hardwareProperties"]["udid"], d["identifier"], state, link, name, sep="\t")
 PY
 )
 
@@ -63,27 +67,42 @@ if [ -z "$picked" ]; then
   exit 1
 fi
 
-IFS=$'\t' read -r udid device name <<<"$picked"
-echo "Phone: $name"
+IFS=$'\t' read -r udid device state link name <<<"$picked"
+echo "Phone: $name (connection: $state, link: $link)"
 echo "Building (a first build takes several minutes; the full log is $log)..."
 
+build_for() {
+  xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit -configuration Debug \
+    -destination "$1" -derivedDataPath build/dd -allowProvisioningUpdates build >"$log" 2>&1
+}
+
+# devicectl and xcodebuild find devices through different services, and they do
+# not always agree: on 2026-11-11 devicectl listed the phone while xcodebuild's
+# destination list held only the Mac and the simulators, not even the phone as
+# "ineligible". A build for "any iPhone" needs no device at all and produces the
+# same Debug-iphoneos/Smooth.app, so when xcodebuild cannot find the phone the
+# build is tried that way and devicectl does the install. The by-id build is
+# still tried first because it is the one that registers a phone this Mac has
+# never built for.
 set +e
-xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit -configuration Debug \
-  -destination "id=$udid" -derivedDataPath build/dd -allowProvisioningUpdates build >"$log" 2>&1
+build_for "id=$udid"
 status=$?
+if [ "$status" -ne 0 ] && grep -q "Unable to find a destination" "$log"; then
+  cp "$log" build/phone-build-first-try.log
+  echo "xcodebuild cannot see the phone itself. Building for any iPhone and installing after..."
+  build_for "generic/platform=iOS"
+  status=$?
+fi
 set -e
 if [ "$status" -ne 0 ] || ! grep -q "BUILD SUCCEEDED" "$log"; then
   echo "The build failed. The errors:" >&2
   grep -E "error:|BUILD FAILED" "$log" | sort -u | tail -30 >&2
-  # "Unable to find a destination" is not a compile error: xcodebuild knows the
-  # phone and will not use it yet, and the reason is on the lines after the
-  # error (a locked phone, a phone still being prepared, an iOS newer than this
-  # Xcode supports). The grep above drops those lines, which on 2026-11-11 left
-  # the error ending at its colon with nothing after it.
+  # "Unable to find a destination" is not a compile error, and what xcodebuild
+  # could build for is on the lines after it. The grep above drops those lines,
+  # which on 2026-11-11 left the error ending at its colon with nothing after it.
   if grep -q "Unable to find a destination" "$log"; then
-    echo "xcodebuild sees the phone but will not build for it yet. What it said:" >&2
+    echo "xcodebuild found no destination to build for. What it said:" >&2
     grep -A 25 "Unable to find a destination" "$log" | sed -n '2,26p' >&2
-    echo "Usual fix: unlock the phone, keep its screen on, wait ten seconds, run this again." >&2
   fi
   exit 1
 fi
@@ -92,7 +111,9 @@ echo "Built."
 app="build/dd/Build/Products/Debug-iphoneos/Smooth.app"
 echo "Installing..."
 xcrun devicectl device install app --device "$device" "$app" >>"$log" 2>&1 || {
-  echo "The install failed. Unlock the phone and run this again. Details are at the end of $log." >&2
+  echo "The install failed. What devicectl said:" >&2
+  grep -iE "error|not connected|unavailable|unlock|trust" "$log" | tail -8 >&2
+  echo "Unplug the phone and plug it back in, unlock it, tap Trust if it asks, then run this again." >&2
   exit 1
 }
 echo "Installed."
