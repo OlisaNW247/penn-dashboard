@@ -85,7 +85,16 @@ polls their agent's open drafts, keeps a content-free list of them in
 `UserDefaults.lhf` (`agentDraftsCacheV1`), tells the server when a draft
 was seen, declined, submitted or failed, and submits a draft to Canvas from
 the phone with their own session; the server never sees the session and
-the phone sends it only the outcome. There is no analytics, tracking,
+Since 2026-11-10 (`v12`; first read on a device the same day, Olisa's iPhone 17, a Debug build of `d2f37a0`; **switched off on 2026-11-12**, `FeatureFlags.degreeProgress = false`, so while it is off none of this runs) a
+Penn install can show the student's degree audit by running Penn's own
+Path@Penn page in a hidden WebView (`PathPortal`), signed in with the same
+saved PennKey, and asking that page for the audit through allowlisted
+scripts. The audit is kept on the phone (`degree-audit.json`); nothing is
+stored in the Keychain for it. The page's sign-in token, Penn's id for the
+student, the name, the pronoun, the rendered audit and any sentence about a
+GPA or grades never cross from the page into the app, and nothing about the
+degree goes to the server, the laptop or the tree (`docs/PRIVACY.md` →
+"Degree progress"). There is no analytics, tracking,
 or third-party SDK. Don't say "everything is on-device" (untrue since
 `assistant-ui`) or "no server" (untrue since the backend). `docs/PRIVACY.md`
 is the student-facing version and must change in the same commit as any
@@ -935,6 +944,144 @@ Keep this current. It is the fastest way for a new session to know what exists.
   working perfectly"). Owner's ask of 2026-10-22: "voice mode for the tree AI";
   dictate-then-send was the agreed first version, hands-free with spoken
   answers set aside (`ROADMAP.md` → Next).
+- **Degree** (**switched off on 2026-11-12**: `FeatureFlags.degreeProgress
+  = false`, at Olisa's word, "remove the degree progress thing temporarily
+  because I don't think it is ready", so `v12` could go to Marco without it.
+  No row in Profile, no read of Path@Penn, nothing deleted; a saved audit
+  stays on the phone, and the DEBUG `-LHFShowDegree` argument still opens
+  the screen, which reads nothing while the flag is false. Five fixture
+  tests in `DegreeAppStateTests` skip themselves while it is off and one,
+  `killSwitchOff`, runs only then, so turning it back on is the one
+  constant. Everything below describes it as built.)
+  (`DegreeProgressView`, `v12`, behind
+  `FeatureFlags.degreeProgress`; rewritten 2026-11-10 against the real
+  Path@Penn after Olisa's capture; green on the GitHub runner, built for
+  iOS on Olisa's Mac and read on his iPhone 17 the same day: the ring and
+  the requirement cards drew from his real audit, Known gaps has what is
+  still unchecked). Olisa's ask: "see your degree progress, see what
+  would hypothetically be your course of action if you switched degrees",
+  no course recommendations. Reached from the first row of Profile →
+  classes ("degree", with "31 of 40 cu", a percent, or the status line) and
+  `DashRoute.degree` (`-LHFShowDegree` in a DEBUG build); Penn only; preview
+  and demo show `SampleData.degreeSnapshot()`. Three tabs on a
+  `SmoothSegmentPicker`, **progress · what if · plan**.
+  - **Progress.** A student in two degrees gets a chip per degree above the
+    ring (`AppState.selectDegree`, `degreeSelectedIDV1`); the degrees come
+    from the student's record, so nobody is asked to pick one. A teal ring
+    at Penn's own percent for the degree, with "x of y cu" taken from Penn's
+    sentence in the degree block (`PathAuditDecoder.creditTotals`), then one
+    card per audit block ("Major in …", "General Electives", …) with a bar
+    in teal / marigold / rule-grey for met / in progress / open, expanding
+    to its rules: taken and registered courses as class-coloured chips
+    ("· now" while registered), options still open as ghost chips, Penn's
+    notes as quiet lines. Penn's empty synthetic blocks are skipped. Footer:
+    "path@penn's reading · official audit ↗".
+  - **What if.** One searchable list of Penn's public programs (1,049 on
+    2026-11-10). Picking one shows a button per change Penn's own rules
+    allow, `PathWhatIf` mirroring the page's script: "switch to", "add
+    major", "add minor", "add concentration"; the result is the same block
+    list under a grape "what if" tag with one summary line. The last eight
+    are kept as chips (four until 2026-11-12).
+    **Options row** (2026-11-12, Olisa, undeclared in Wharton: "the
+    hypotheticals should factor in the fact that I have to pick a
+    concentration … and allow me to look at different possibilities";
+    green on the runner at `906f9c6`, not on a phone). Above the chips, a row of the selected
+    degree's sibling programs, headed "concentrations" for college `WU` and
+    "majors" otherwise (`DegreeOptions`, Kit). His read of the public
+    catalogue that day showed a Wharton concentration is a *major* row in
+    Penn's data (`FNCS-BS` "Finance BS" and sixteen siblings), so a tap runs
+    the page's `new-program` change for that row through the row's own info
+    (`AppState.runDegreeOption`), never `add-conc`. The rows are chosen from
+    the catalogue code alone (`MAJR-DEGC[-CONC]` with the student's degree
+    code, minus their own program and a no-concentration twin); the code's
+    shape only decides what is shown. A tried chip carries its ring percent
+    ("finance · 58%"), from `DegreeSnapshot.optionScores`, a small score per
+    degree and program that outlives the audit leaving the recent list. Only
+    a switch records a score.
+  - **Plan** (2026-11-10, Olisa from his phone: "a table feature where you
+    can build a sample course load for the next semester or rest of your
+    time at Penn"; written the same hour, green on the runner at `78c4a77`,
+    not yet through `xcodebuild` or on a phone). `DegreePlanView`: one 168pt column per
+    semester, scrolling sideways, starting at the semester after this one,
+    fall and spring only, "+ semester" up to ten. A column lists what the
+    audit shows as registered for that term (fixed chips), then the
+    student's own courses, each removable, with "fits · <requirement>" under
+    one that Penn lists among the options of a requirement still open
+    (`DegreePlanMath.coverage`, first match, Penn's order). "+ course" opens
+    a sheet: type a code, or pick from "still open on your audit", Penn's
+    list untouched except for what is already planned or taken. The word is
+    "fits", never "satisfies", and nothing is ranked: no recommendations is
+    still the rule. The plan is the student's own work, so it has its own
+    file (`degree-plan.json`, `DegreePlanStore`), is backed up with the
+    phone where the audit is not, and is deleted with the rest on
+    disconnect. It never reaches Penn: Penn's audit request carries the
+    record's own `plan`, which this is not. Not built: course search by
+    title, summer columns, and running Penn's audit with the plan.
+  - **The semester table, in every tab** (2026-11-11, Olisa after seeing
+    his two real degrees: "a table in every tab with each potential semester
+    and classes you take. and you be able to drag and switch classes
+    around"; green on the runner at `20485d0`, not yet through `xcodebuild`
+    or on a phone).
+    `DegreeSemesterTable` is the plan tab's table made into one view and
+    placed under the ring in progress and what if as well, given the audit
+    its host is drawing so "fits" follows a what-if. Columns come from
+    `DegreeTimeline.columns` (Kit, pure): past semesters and the current
+    one hold what was taken (fixed chips, "· now" for the current), future
+    ones hold what is registered (fixed) and then the student's planned
+    courses, and it opens scrolled to the current semester. A planned chip
+    drags (`.draggable` with its code as a string) onto another future
+    column, or onto a planned row to go before it
+    (`DegreePlanMath.moving`); nothing else moves, because a taken or
+    registered course is Penn's fact and not the student's sketch.
+    **Where the past and current columns come from** (same day, after
+    Olisa's masked console read of the record): Penn's audit carries no term
+    for a course (`AuditCourse.termCode` is always nil from
+    `PathAuditDecoder`, which is also why the plan tab's "registered" rows
+    never showed), so `PathScripts.history` reads the record's two term maps
+    and sends course codes per term and nothing else; `PathHistory.timeline()`
+    takes a finished term from the completed record and a term that record
+    does not have yet (the one in progress, any ahead) from the registration
+    record; `refreshDegreeAudit` stores the result in
+    `DegreeSnapshot.history` and keeps the last one when the read fails.
+    `docs/PRIVACY.md` changed in the same commit: the course-per-semester
+    list is now read, and stays on the phone.
+    **Full view** (2026-11-12, Olisa: "fit the entire class table on one
+    page maybe with multiple rows. there should be a button"; green on the
+    runner, not on a phone). A "full view" button above the strip opens
+    `DegreeSemesterPage` (a full-screen cover on iOS, a sheet on the Mac):
+    the same cards in rows, `DegreeSemesterTable(layout: .page)`. It tries
+    the fewest columns first and adds columns until the whole table fits the
+    screen's height (`ViewThatFits` over plain rows,
+    `DegreeTimeline.pageColumnCounts`, cells never under 112 points), and
+    scrolls only when no count fits. Drag, remove, "+ course" and
+    "+ semester" are the strip's own code. The current semester has a "now"
+    tag on its header there in place of a word after every chip.
+  - **When it reads** (changed 2026-11-12, Olisa on the first build of the
+    table: "It should not need to re-read as often as it does. classes
+    selected do not change every couple of minutes"). Each degree's audit
+    and what-ifs are kept: the selected one in `current` / `whatIfs`, the
+    others on `DegreeSnapshot.shelved` by degree id, so a chip tap shows the
+    other degree at once (it used to clear the audit and run a 30-second
+    sign-in and read every time). Penn is asked only when a degree has
+    nothing kept, when its read is seven days old (`degreeStaleAfter`; it
+    was twelve hours, a hidden sign-in and possibly a Duo push twice a day),
+    or on pull to refresh. Green on the runner, not on a phone.
+  - **How it reads.** `PathPortal` keeps one hidden `WKWebView` on
+    `https://courses.upenn.edu/` for the app run, on the Canvas login data
+    store so the PennKey session and Duo trust carry over. The page opens
+    its own sign-in popup (a child WebView built from the configuration
+    WebKit passes in, or `window.opener` is nil and the token cannot be
+    handed back); the saved PennKey is filled on Penn's form under the same
+    submission budget as the silent Canvas renewer. Then `PathScripts`
+    (Kit, pure strings) run in the page and return allowlisted JSON:
+    readiness (the token only as a boolean), the degrees from the record,
+    the audit rebuilt field by field, the program list, one program's codes,
+    the code-to-name tables. `docs/DEGREE_PROGRESS_V12_BUILD_SPEC.md` holds
+    the capture and the contract.
+  - Status words: "reading path@penn…", "approve the duo push on this
+    phone", "sign in to canvas", "couldn't read path@penn · retry", "read
+    today". Code decides nothing here: the audit is Penn's and the screen
+    only draws it.
 - **Profile** (`SettingsPage`; `ProfileView` is only a wrapper), in order:
   1. your name
   2. accounts (Canvas and Gradescope connect/disconnect; "update password"
@@ -1201,7 +1348,105 @@ Keep this current. It is the fastest way for a new session to know what exists.
      dashboard, items with nothing to submit, the announcement "ai assist"
      opt-out)
   7. sync (iCloud sync, off by default; on macOS, open at login)
-  8. feedback (since 3.3.0, 2026-10-27): one "send feedback ↗" row that
+  8. ambassador (2026-11-09, written on `claude/new-session-b3ylkg`,
+     merged into `v12` on 2026-11-11 at Olisa's word, and into `v11` on
+     2026-11-12 with the rest of `v12`, so it ships in 3.5.0 (21);
+     compiled and tested green on the GitHub runner 2026-11-10, the
+     unsigned iOS build included, Test baseline; never on a phone): one row, "ambassador mode", with
+     "sign in" or "maya · uva", that pushes `AmbassadorPage`
+     (`DashRoute.ambassador`). The campus ambassador program's closed loop
+     inside the app, for the founders' friends at other schools; every
+     other student sees the one row. **Sign in is a code, not an
+     account**: the unguessable code from the ambassador's private page
+     link (`https://smooth-poster-scans…/a/{code}`), pasted as the code,
+     the link, or opened from the page's "open in the smooth app" button
+     (`smooth://ambassador?code=…`, `RootView.onOpenURL`). Parsed by
+     `AmbassadorCode` (Kit), checked against the server
+     (`GET /a/{code}/plan.json`; since 2026-11-11 a new code starts with
+     its school, `uva-7k3m9x2p4q8w`, a label in front of the same 14
+     random characters, at Olisa's ask, and older bare codes keep
+     working), kept in the Keychain
+     (`AmbassadorCodeStore`, Tier 3, inert under tests). Signed in, the
+     page shows **today's post** (written by the server from a bank of
+     daily variants, filled with the ambassador's own tracked link and
+     their chosen anonymous app: fizz, sidechat or yik yak; "rest day"
+     once a fortnight; since 2026-11-10 that link is `/r/{ref}/s/...`,
+     a public id that is not the code, see Traps), **copy** and **"i posted it"** (logs the post on
+     the server in that channel; remembered per server day), their
+     numbers (link opens, their school's poster scans, posts logged), the
+     **daily reminder** (every day / weekdays / off, a time picker, default
+     7 pm), the other messages and posting tips
+     behind disclosures, a feedback field, pause for
+     4 weeks, sign out. **Since 2026-11-12 the page opens on "the job"**
+     (Olisa, from the first build on his phone: the "getting started"
+     checklist told a signed-in ambassador to "download smooth and connect
+     canvas", so the whole list went; "make it clear that their job
+     revolves around spamming chats, putting up posters and getting smooth
+     in front of as many eyes as possible", and "put the web page higher
+     as that is the center piece"): one line, "get smooth in front of as
+     many eyes as you can.", "spam the chats. put up posters. post every
+     day. / bring back what people say and ideas for smooth." under it
+     (the last line from his next message: gathering feedback and new
+     ideas for the founders is part of the job, so the feedback box is
+     headed "feedback and ideas" and moved up to follow the posters), and
+     "open my web page ↗" as a filled button in the same section (the link
+     was the last section's first row). The website lost its checklist
+     section and gained the same line under the greeting; the server still
+     sends `checklist` in the plan and still answers `/check`, and nothing
+     shows either. The same day the anonymous posts were rewritten
+     (`smooth-ambassadors/worker/templates/messages.json`; Olisa: say more
+     than canvas and gradescope, "everywhere your professor posts info
+     about assignments and classes", the tree, the sweeper, "these can be
+     in different messages"): each fizz / sidechat / yik yak post leads
+     with one of the three, 220 to 320 characters before the link. Five
+     more are in a hype voice at his next ask ("smooth just saved my
+     life", "this new smooth app is crazy"), with a posting tip telling
+     the ambassador to post the story ones when they are true; the bank
+     is 19 entries, so the rest day is every 19 days, not a fortnight. Two
+     rules a test holds: the sweeper "rings" or is an "alarm", never
+     "calls you" (he said "call"; it is an alarm, and an anonymous app
+     would say so), and Ed is never named, because it is read at Penn
+     only while the rest is true at any school. Known and not fixed: Yik
+     Yak is reported to cap a post at 200 characters, which every post
+     exceeded with its link even before this. **Since 2026-11-11 (Olisa: "clear where they can
+     access all posters and view the dashboard", "a clear option to upload
+     poster ideas") a "posters" section sits right after today's post**:
+     "all posters" opens an in-app gallery of the school's designs as a
+     sheet (`AmbassadorPostersView`: two columns, scan counts, tap for
+     full size with "share or save"); "scan dashboard ↗" opens the public
+     live counts for their school in Safari; "send a poster idea" opens
+     `PosterIdeaSheet` (a `PhotosPicker`, a note, send). A row that leaves
+     the app carries the arrow, and "my page" became "my web page ↗" for
+     the same reason. A chosen picture is rebuilt from its pixels by
+     `PosterIdeaImage.prepared` (Kit, ImageIO: at most 1280 px and
+     600,000 bytes, no source metadata copied) and sent only on "send"
+     (`POST /a/{code}/idea`; 5 a day and 30 in all, enforced by the
+     server). The plan's three new keys (`posters`, `dashboard`, `ideas`)
+     are optional, so the rows hide themselves against an older server.
+     The server is the ambassador Worker in
+     `smooth-ambassadors/` (the poster-scan tracker's domain), not
+     Supabase; what leaves the phone is in `docs/PRIVACY.md` →
+     "Ambassador mode". **The reminder is local notifications**
+     (`AmbassadorReminders`): one repeating daily request, or five weekly
+     ones for weekdays, identifiers `ambassador:*`, fixed body ("today's
+     post is written, maya. tap to copy it."), because a request per day
+     with the day's words would blow the 64 cap. The due-date pass
+     spares that prefix (`applyNotifications`) and the slots are taken
+     out of its budget (`NotificationScheduler.reservedForeignSlots`,
+     zero for everyone else). `removeAllPending()` and the update wall
+     still clear them; `AmbassadorModel.sceneBecameActive()` puts them
+     back. A tap on one raises `AmbassadorModel.pendingOpen`
+     (`NotificationResponseRouter`, by identifier prefix) and the dashboard
+     sets `path = [.profile, .ambassador]`. State in
+     `AmbassadorModel.shared` (`ambassador.*` keys in `UserDefaults.lhf`:
+     the plan cache, cadence, time, anonymous app, posted day). Nothing
+     here mentions ratings or reviews, and a test keeps it that way
+     (`AmbassadorWiringTests`). Tests: `AmbassadorTests.swift` (code
+     shapes, plan decoding, requests, the pass sparing the prefix, the
+     model against fakes, the wiring). Never on a phone; the first thing
+     to see is that the reminder survives a reschedule and that a cold
+     launch from its tap lands on the page.
+  9. feedback (since 3.3.0, 2026-10-27): one "send feedback ↗" row that
      opens the Google feedback form in Safari (`FeedbackForm.defaultURL`,
      or the live notice's link when the manifest carries one)
 
@@ -1456,6 +1701,14 @@ xcodebuild -project LowHangingFruit.xcodeproj -scheme LowHangingFruit -configura
 xcrun devicectl device install app --device <CoreDevice id from `xcrun devicectl list devices`> <path>/Smooth.app
 xcrun devicectl device process launch --device <CoreDevice id> com.lhf.lowhangingfruit
 
+# The three lines above as one step, finding both ids of the plugged-in phone
+# itself (2026-11-11; ran end to end on Olisa's Mac that evening: built,
+# installed and launched `v12` `748ced7` on his iPhone 17. An earlier run the
+# same hour failed with "Unable to find a destination" while devicectl listed
+# the phone; replugging it cured that, and the script now falls back to a
+# generic/platform=iOS build when it recurs. The fallback itself has not run.):
+bash scripts/build-to-phone.sh
+
 # macOS build (the package; `swift test` also exercises this)
 cd LowHangingFruitKit && swift build
 
@@ -1468,8 +1721,11 @@ Since 2026-11-02 every push to `v8` also runs the three suites on GitHub's
 runners (`.github/workflows/tests.yml`: `swift test --no-parallel` on a
 macOS image with Xcode 26 selected, the Deno suite with `--no-check`, the
 extension's `npm test`). It is the compile gate when no Mac is at hand; it
-builds no app and signs nothing, so the iOS `xcodebuild`, the archive and
-the phone still need a Mac. Read a run with `gh api
+builds no app and signs nothing, so the archive and the phone still need a
+Mac. Since 2026-11-10 a manual run (`workflow_dispatch`) also runs
+`ios-build`: the unsigned iOS `xcodebuild` for a generic device, which is
+the compile check for the widget and `#if os(iOS)` code when no Mac is at
+hand. Read a run with `gh api
 repos/OlisaNW247/penn-dashboard/actions/workflows/tests.yml/runs`.
 
 `xcrun devicectl` launch fails with `FBSOpenApplicationServiceErrorDomain
@@ -1574,6 +1830,23 @@ account signed into Xcode. Submitting for review is a separate, manual
 step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
+
+**Merged on `v11` 2026-11-12 (`origin/v12` `4aadc3c`, Olisa's ambassador mode
+and the switched-off degree progress, merged into `v11-master` `2f49f8d` at
+the commit that carries this line): 4154 tests / 405 suites, all green,
+`swift test --no-parallel` alone on Marco's Mac (92 s), exactly the predicted
+sum (3948 + 206, 379 + 26: `v12`'s 3880 / 377 on the runner less the `v10`
+base 3674 / 351; `v11-master` was 3948, not the 3947 recorded below, because
+`2542c18`, the control row's 4pt lift, added one `DashboardSmallFixesTests`
+case after that record and nobody re-counted). Five of them are `DegreeAppStateTests` fixture tests that
+count and skip themselves while `FeatureFlags.degreeProgress` is false, as on
+`v12`. The first local run of any ambassador or degree code: `v12` had only
+ever compiled on the GitHub runner. The unsigned iOS Debug build
+(`generic/platform=iOS`, `CODE_SIGNING_ALLOWED=NO`) of the same tree
+succeeded, the first iOS compile of the two lines together. The ambassador Worker's own suite (`cd
+smooth-ambassadors && npm test`, Node 22): 45 passed, 31 skipped (the
+Sites-artifact comparisons need `SITES_ORIGINAL` and `SITES_EDITED`), none
+failed; never add it to the Swift or Deno counts.**
 
 **Merged on `v11-master` 2026-11-12 (the UI branch's phone-pass fixes and
 the class-code face, merged at the commit that carries this line): 3947 tests / 379 suites, all green, `swift test --no-parallel` alone on
@@ -1748,7 +2021,191 @@ squircle; it now pins 42pt drawn with a 44pt hit area, on purpose. The
 alongside; alone it passed 2/2. The signed iOS Debug device build of the
 same tree succeeded.
 
-Before that: Current on `v10` (2026-11-07, evening, every post listed, the 3-day grace):
+**Current on `v12` (2026-11-12, degree progress switched off): 3880 tests /
+377 suites, all green, `swift test --no-parallel` on the GitHub macOS runner
+in 116 s, with the unsigned iOS `xcodebuild`, Deno and the extension suite
+green in the same run (manual run 43287443467 at `1ed52b2`; the commits
+after it on `v12` change only notes).** +1 over 3879: `killSwitchOff` in
+`DegreeAppStateTests`, which runs only while the flag is false. Five tests in
+that suite are counted and **skipped** while it is false (`fixtureMode`,
+`fixtureWhatIfRuns`, `fixtureOptionRuns`, `fixtureSelectDegree`,
+`fixtureHistory`), because the sample audit they inspect is never loaded;
+nothing was deleted, and setting the flag back to `true` runs them again and
+skips the one. This is the tree handed to Marco that day.
+
+Before it, **after the degree changes below, the same day (the ambassador page's job-first layout): the
+ambassador commits ran on their own branch before the merge: 3864 tests /
+376 suites, all green, with the unsigned iOS build green, at `f7d5655`
+(manual run 43234340350, 112 s), which is `fb5d085` plus one new test,
+`AmbassadorWiringTests.jobFirst`. That tree did not hold `d8dbaf3` or
+`906f9c6`. The two were then merged with no conflict and no shared file, so
+the merged `v12` was predicted at 3879 / 377, and the push run for the
+merge read exactly that: 3879 tests / 377 suites, all green, 118 s (run
+43238067728 at `049710f`; Deno and the extension suite green; a push run
+skips the iOS build, so the merged tree's iOS slice rests on the two
+halves' own green builds).**
+
+Before it: **on `v12` (2026-11-12, the degree screen's three changes): 3878
+tests / 377 suites, all green, `swift test --no-parallel` on the GitHub macOS
+runner in 120 s (the `tests` workflow, push run 43234287131 at `906f9c6`;
+Deno and the extension suite green in the same run).** Three pushes that
+each compiled at the first attempt: `fb5d085` (each degree's audit kept on a
+shelf, a weekly read; +6 tests in `DegreeAuditStoreTests` and
+`DegreeWiringTests`, the staleness test re-pinned from 12 hours to 7 days),
+`d8dbaf3` (the full view of the semester table; +3 in `DegreeTimelineTests`
+and `DegreeCopyTests`; 3866 / 376 at that commit, run 43233237849) and
+`906f9c6` (the what-if options row; +12 tests and the suite "Degree
+options"; the two cap tests in `DegreeAuditStoreTests` re-pinned from five
+kept what-ifs to eight, and `fixtureWhatIfRuns` from `<= 5` to `<= 8`). The
+rest of the growth since 3840 / 373 is the ambassador posters work another
+session merged in between. `swift test` compiles the macOS slice only, so
+the full view's `fullScreenCover` (behind `#if os(iOS)`) was checked
+separately: **the unsigned iOS `xcodebuild` of `906f9c6` succeeded** (the
+manual run 43234403994, Build step green, all four jobs green). Unsigned and
+not installed: nothing from these three is on a phone.
+
+Before it: **on `v12` (2026-11-11, with ambassador mode merged in): 3840 tests
+/ 373 suites, all green, `swift test --no-parallel` on the GitHub macOS
+runner in 90 s (the `tests` workflow, the push run 43098959640 at
+`4bd5c04`; Deno and the extension suite green in the same run).** That is
+`v12`'s 3814 / 367 at `20485d0` (below), plus the three tests of `76d34bd`,
+plus the ambassador branch's 23 tests and 6 suites
+(`AmbassadorTests.swift`): nothing lost. The merge itself first ran at
+`3bf86d8`, before `76d34bd` existed: 3837 / 373 with the unsigned iOS
+`xcodebuild` green (manual run 43093704027). **The iOS build of the tree
+with `76d34bd` in it also succeeded** (manual run 43095095186 at
+`a68a594`, Build step green; `4bd5c04` differs from it only in this
+file). That run is shown as failed, and so is `v12`'s own for `76d34bd`:
+in both, the Test and Build steps passed and only the log upload after
+them failed ("Failed to CreateArtifact"), on a day GitHub's artifact
+store and Mac queue were struggling. Read the steps, not the badge.
+Nothing from the merge has been on a phone.
+
+**After it, the same day: 3857 tests / 376 suites, all green, on the
+runner at `e0388f7` (manual run 43102375957, the unsigned iOS build green
+in the same run).** +16 tests and +3 suites over 3841 / 373 (the
+school-prefix test, run 43101097847 at `00a5a6b`): poster-plan decoding,
+`PosterIdeaImageTests`, the idea client against a `URLProtocol` stub, and
+the model's idea paths. It took two runs: the first stopped on `if let
+previewImage` shadowing the state its own "remove" button assigns to.
+
+Before the merge: **on `v12` (2026-11-11, the semester table): 3814 tests / 367
+suites, all green, `swift test --no-parallel` on the GitHub macOS runner in
+106 s (the `tests` workflow, run 43093250932 at `20485d0`), compiled at the
+first attempt. +23 tests / +1 suite over the run below: the suite "Degree
+timeline" (13), six in `DegreePlanTests` (the five `moving` tests and
+`addableHistory`), one in `DegreeAuditStoreTests`, three in
+`DegreeAppStateTests`; `DegreePlanTests.credits` lost its
+`registered(in:)` / `termCredits` assertions with those functions, which
+read a term the audit never carries. **The commit after it, `76d34bd` (the
+reader for which semester a course belongs to; three new tests in
+`PathBridgeTests` and the forbidden-word test rewritten to allow one
+script to name the term maps), passed the runner's Test step (run
+43094033711, 20:10:56 to 20:18:07 UTC, exit 0 under `pipefail`), but its
+count was not read: the log-upload step after it failed after ten minutes
+and GitHub left the run "in progress", refusing both a cancel and a re-run.
+The next push's run is the place to read the number.** Its page script was
+also run in Node against rows of the captured shape with a marker secret in
+every field that must not cross. Neither commit has been through
+`xcodebuild` or onto a phone.
+
+Before it: **on `v12` (2026-11-10, afternoon, after the first phone run): 3791
+tests / 366 suites, all green, `swift test --no-parallel` on the GitHub macOS
+runner in 122 s (the `tests` workflow, run 42865218965 at `3a4822c`, second
+attempt: the first sat in the queue for 15 minutes without a Mac and was
+cancelled before any step ran, which is the runner pool and not the code);
+Deno and the extension's suite green on the same run. +27 tests / +2 suites
+over the run below, in four pushes that each compiled at the first attempt:
+`00ceaf6` (the catalog pin, `DegreeGoals.chipTitles`, the colour key),
+`255df7b` (a degree named by its code), `78c4a77` (the plan tab: 3790 / 366,
+with the suites "Degree plan" and "Degree plan store" and the tab, fixture
+and clearing tests in `DegreeAppStateTests`) and `3a4822c` (the history rule
+for `cur`: the `end_term` pins in `PathBridgeTests` and
+`AppState.degreeSelection`'s table). The `degrees` page script was also run
+in Node against a record of the observed shape with synthetic codes. None
+of the four has been through `xcodebuild` or onto a phone yet; the build on
+Olisa's phone is still `d2f37a0`.**
+
+Before it: **on `v12` (2026-11-10, the Path@Penn rewrite after its review): 3764
+tests / 364 suites, all green, `swift test --no-parallel` on the GitHub macOS
+runner in 115 s (the `tests` workflow, run 42847761794 at `736c96b`); Deno
+and the extension's suite green on the same run. **The iOS Debug build of
+`155c840` (the same tree plus notes; `xcodebuild`, `generic/platform=iOS`,
+`CODE_SIGNING_ALLOWED=NO`, widget and App Intents metadata included)
+succeeded on Olisa's Mac at 11:36 local on 2026-11-10 with Xcode 27.2
+(27B52, the iOS 27.2 SDK), the first build of this project on Xcode 27.**
+`swift test` has not been run on that Mac, and nothing is on a phone.
++11 tests / +1 suite over the run below: `PathPortalBudgetRuleTests`
+(the credential-fill truth table, its parity with the renewer's rule, the
+retry-once rule, the status a what-if may restore), four source pins on
+`PathPortal.swift` and the grade-text guard pin in `PathBridgeTests`. They
+came from an independent read of the rewrite, which found nine things; the
+commit message of `736c96b` lists them.**
+
+Before it: **on `v12` (2026-11-10, the Path@Penn rewrite): 3753 tests / 363
+suites, all green, `swift test --no-parallel` on the GitHub macOS runner in
+92 s (the `tests` workflow, run 42846226886 at `0dba617`); Deno and the
+extension's suite green on the same run. No Mac, no `xcodebuild`, no phone.
+The steps that day: `6e42641` 3752 / 365 (`PathAuditDecoderTests`, +14);
+`4e2a44f` 3778 / 367 (`PathWhatIfTests` and `PathBridgeTests`, +26 / +2);
+`07eefee`, the rewire, compiled at the first attempt and ran 3753 / 363 with
+one red (the snapshot round trip in `DegreeWiringTests`, stamped with
+`Date()` where the store's ISO 8601 dates drop the fraction; the fixture now
+uses a whole second, `0dba617`). **-25 tests / -4 suites against `4e2a44f`
+on purpose:** the five test files of the deleted Degree Works code went with
+it (`DegreeWorksAuditDecoderTests`, `DegreeWorksRequestsTests`,
+`DegreeWorksTokensTests`, `DegreeGoalCatalogTests`,
+`StudentSelfReaderTests`), and `DegreeWiringTests`, `DegreeCopyTests`,
+`DegreeStructureTests` and `DegreeAuditStoreTests` were rewritten for the
+new API. Not in the suite: the page scripts were also run in Node against a
+fake Path@Penn page seeded with marker secrets, none of which appeared in
+any script's output.**
+
+Before it: **on `v12` (2026-11-10, earlier, the Path@Penn audit decoder): 3752
+tests / 365 suites, all green, `swift test --no-parallel` on the GitHub macOS
+runner in 109 s (run 42837454207 at `6e42641`). +14 tests / +1 suite:
+`PathAuditDecoderTests`, the decoder for the audit shape Olisa captured from
+his own Path@Penn session that day (`docs/DEGREE_PROGRESS_V12_BUILD_SPEC.md`
+→ "Observed on 2026-11-10"). The old Degree Works reader and client are
+still the ones wired in, and they target a host the student never reaches,
+so the feature cannot work on a phone until they are replaced.**
+
+Before it: **on `v12` (2026-11-10, the degree-progress feature): 3738 tests /
+364 suites, all green, `swift test --no-parallel` on the GitHub macOS runner
+in 103 s (the `tests` workflow, run 42826422108 at `d5d5a79`; no Mac, no
+phone). Before it, run 42644725170 at `7f01843` (the first push, 3737 / 364)
+was green and run 42653623893 at `e33a467` (the review's fixes) was
+3738 / 364 with one red, `DegreeCopyTests` "no verdict words", because a doc
+comment in `DegreeWhatIfSheet.swift` said "undergraduate" and the test
+forbids "graduate" as a substring; the comment was reworded in `d5d5a79`,
+nothing loosened. +64 tests / +13 suites over `v10`'s 3674 / 351: the seven Kit
+suites under `Degree/` (decoder, tokens, requests, goal catalog, student
+reader, what-if, store) and `DegreeWiringTests`, `DegreeCopyTests`,
+`DegreeStructureTests` in the UI tests. Deno and the extension's suite green
+on the same runs. The iOS `xcodebuild` is not covered by the runner, so the
+widget and the iOS-only files of this tree are not yet compiled.**
+
+The ambassador branch, before it was merged into `v12` (its own runs, kept for the trail): **`claude/new-session-b3ylkg` at `85d4234` (2026-11-10): 3697 tests / 357
+suites, all green, `swift test --no-parallel` on the GitHub macOS runner in
+106 s (the `tests` workflow, run 42827059990; Deno and the extension suite
+green in the same run).** +23 tests and +6 suites over `v10`'s 3674 / 351,
+all in `AmbassadorTests.swift` (ambassador mode); nothing lost, and
+`VisualStructureTests` learned the new section marker. It took four runs:
+the first failed on a non-Sendable `UNNotificationRequest` handed to a
+nonisolated protocol method (the seam is `@MainActor` now, like
+`PendingNotificationSink`), the next two on the test target (a
+`UserDefaults` sent to a nonisolated closure; a `String` where `#expect`
+wants a `Comment`). **The iOS slice compiled too, at `674b89b`
+(2026-11-10, run 42842540993): the workflow's new manual job `ios-build`
+(`xcodebuild`, generic iOS device, Debug, `CODE_SIGNING_ALLOWED=NO`, widget
+included) ended BUILD SUCCEEDED.** Unsigned and never installed: nothing
+is on a phone. **Re-run at `f914d9e` (2026-11-10, run 42848811958,
+manual): all four jobs green** (Swift tests, Deno, the extension suite,
+the unsigned iOS build), after two fixture strings in
+`AmbassadorTests.swift` moved to the public `/r/{ref}` link shape. The
+count was not read off that run; no test was added or removed.
+
+Before it: **on `v10` (2026-11-07, evening, every post listed, the 3-day grace):
 3674 tests / 351 suites, all green, `swift test --no-parallel` on Marco's Mac
 (85 s); the signed iOS Debug device build (3.4.1 (20)) is on his phone and
 launched.** -26 over 3700 / 351 on purpose: 31 tests that pinned the 7-day
@@ -3128,6 +3585,78 @@ itself.
   (`CompletionSwipe.Axis`), so the scroll always gets the touch and a
   drifting scroll never moves the card. The wrong fix is a bigger
   `minimumDistance`: it only delays the theft and makes the swipe late.
+- **A count and then an insert is not a limit.** Poster ideas
+  (2026-11-11) were capped at five a day per ambassador by reading the
+  count and inserting if it was under five. The verifier sent twenty at
+  once from one code and seventeen were stored: every request read the
+  same count before any of them wrote. With pictures near 600 KB each that
+  is how one leaked code fills a small database. The limit now lives
+  inside the insert (`INSERT ... SELECT ... WHERE (SELECT COUNT(*) ...) <
+  5`, `addIdea` in `smooth-ambassadors/worker/data.js`), which D1 runs as
+  one statement, and the handler answers 429 when it wrote nothing. The
+  count is still read first, but only to pick the right words. The wrong
+  fix is a lock or a retry loop in the Worker: there is no shared memory
+  between isolates to lock. The same shape is why the facts budget in
+  `claim_fact_extraction` is documented as able to overshoot.
+- **A private page link reused as the base of public links is not
+  private.** The ambassador system (2026-11-09) gave each ambassador one
+  unguessable token: `/a/{token}` was the private page and the app's
+  sign-in code, and the share links (`/a/{token}/s/{channel}`, pasted into
+  fizz, sidechat and group chats) and the sticker QR codes
+  (`/a/{token}/p/{design}`) were built on the same token. Anyone who saw a
+  post or scanned a sticker could cut the path back to `/a/{token}` and
+  read the page, pull `plan.json`, send feedback as that person, pause
+  their reminders, or sign in to the app as them. Found on 2026-11-10 by
+  the verifier agent reading the built Sites artifact, before anything was
+  deployed or printed; my own tests had only ever asked whether an
+  unknown token was refused. Fixed with a second, public id: `ref` in the
+  `ambassadors` table, `/r/{ref}/s/...` and `/r/{ref}/p/...`, the two
+  `/a/{token}` link routes removed, and a test that the token appears in
+  no post text and on no sticker page. The wrong fixes: hashing the token
+  into the link (the page would then accept the hash or need a lookup,
+  which is a second id done badly), and a note telling ambassadors not to
+  share the link, when sharing it is the job. The rule: before a
+  credential goes into a URL, list every place that URL is shown, and if
+  one of them is public, it needs its own id.
+- **`cur` on the Path@Penn record is a history, not the student's current
+  degrees** (2026-11-10, the first build on a phone). The capture that
+  designed the rewrite printed only the *shape* of `cur` (key names and
+  string lengths of the first entry), so nobody saw that every term's holder
+  repeats every curriculum the student has ever had: the owner's latest term
+  held a pre-college non-degree entry, the major he was admitted to (twice,
+  with two different end terms), the major he switched to, a fragment with
+  no major carrying only a concentration code, and a second school's
+  program. An entry that is over carries `end_term`; a live one has none.
+  The script took all of them, in Penn's order, so the screen opened on a
+  major he had left and offered a "non degree" chip that could only fail.
+  The tells: more chips than the student has degrees, the same major twice,
+  and a chip that answers "couldn't read path@penn". The wrong fixes are
+  filters on names (drop "non degree", prefer the entry that says computer
+  science); the rule is the end term. The lesson about captures: a shape
+  with the values hidden hides the counts too, so print how many entries
+  there are and which keys are sometimes absent, even when the values must
+  stay private.
+- **Someone else's client is not the system: the degree feature was built
+  against a host no Penn student's browser ever reaches** (2026-11-09 to
+  11-10). The first build read Penn Labs' open-source Degree Works client and
+  another school's command-line tool and took their host, JWT cookies and
+  `/api/audit` shapes as Penn's. They compiled, passed 64 tests and described
+  nothing a student sees: Olisa's capture of his own session showed that
+  `courses.upenn.edu` serves the advising page and proxies the audit
+  (`page=dgw-server`), that sign-in is a 32-character token held in the
+  page's memory and sent in each POST body, and that the response is
+  CourseLeaf's own translation of the audit, not Degree Works' JSON. The
+  tell was in the first screenshot: the request's `Cookie` header held only
+  analytics and Cloudflare cookies. The wrong fix would have been correcting
+  the constants; the design was wrong, so the Degree Works reader, client,
+  token store and decoder were deleted, and the app now runs Penn's page and
+  calls the page's own functions. Two lessons: capture the real traffic
+  before writing a client (twenty minutes in a browser's developer tools
+  settled what a day of reading could not), and a recorder injected after
+  the page has loaded sees nothing when the page reuses what it already
+  fetched, so read the page's script and the Network tab instead of hooking
+  `XMLHttpRequest`.
+
 - **"Unextracted" in SQL is not "pending", and the index's cap must look at
   now, not at the oldest date** (2026-11-05). After the round-4 deploy a
   count of PHYS 0151 documents with no `course_fact_extractions` row at
@@ -4118,7 +4647,11 @@ per-class lead time and sound) and the scroll fix for cards
 (`CompletionSwipe.Axis`). Pushed at Marco's request; not merged into
 `v10`. The unpushed `agent/connection-v11` work is separate and has not
 been merged into it.
-`v10` is the line (2026-11-03): `v9` plus `origin/v8` `7e004c5` plus
+`v12` (2026-11-09 to 2026-11-12) was Olisa's line, `v10` plus the degree-progress
+feature (below), **which is switched off since 2026-11-12**, plus ambassador mode;
+on 2026-11-12 he handed it to Marco (`docs/HANDOFF_V12_MARCO_2026-11-12.md`)
+and it was merged into `v11` the same day (see the `v12` row). Before both, `v10`
+(2026-11-03): `v9` plus `origin/v8` `7e004c5` plus
 `phase0/extract-facts-bench`. Start at `docs/HANDOFF_V10_2026-11-04.md`
 (it replaces the 2026-11-03 one). The 2026-11-04 composed-day work
 (Phases 1-3) is committed on `v10`.
@@ -4143,6 +4676,8 @@ it holds work that exists nowhere else.
 | `v11` | **The line since 2026-11-10 (about 07:30 UTC, at Marco's "Yes, push to v11").** `origin/v11` was fast-forwarded from Marco's two commits (the Sweeper page, `CompletionSwipe.Axis`) to the merged tree `f8330ab`: all of `agent/connection-v11` (below) plus the night's three session branches. Marco's other thread pushes to it too; fetch before merging and never force-push. New work branches from here. |
 | `agent/connection-v11` | **2026-11-08, off `research/agent-connection-v11` (so off `v10` `4c136b2`); pushed to origin under its own name on 2026-11-10 and merged into `v11` the same morning (equal to it at `f8330ab`).** The build session's branch: the Canvas submit spike (`f5da516`), the Phase 1 backend (`7ca84a5`: `agent-auth`, `mcp`, `agent-snapshot`, migration `20261108090000_agent_connection.sql`, the `AgentStore` contract with PostgREST and memory implementations, `scripts/serve-agent.ts`), the docs. A Claude Code sign-in completed end to end against the dev tunnel the same day (research §8). Never push to or merge into `v10` without Marco's approval. |
 | `research/agent-connection-v11` | 2026-11-07/08, docs only, off `v10` `4c136b2`: the v11 agent-connection plan (`docs/AGENT_CONNECTION_PLAN_V11_2026-11-07.md`, revised to cloud-first and phone-submits on Marco's word), the research write-up (`docs/AGENT_CONNECTION_RESEARCH_2026-11-08.md`) and the brief for the build session (`docs/AGENT_CONNECTION_SESSION_PROMPT.md`). Supersedes `research/agent-canvas-via-smooth` (2026-10-30, also docs only). Nothing built. |
+| `v12` | **Olisa's line, 2026-11-09 to 2026-11-12; merged into `v11` on 2026-11-12 at `4aadc3c` (the merge commit carries this line), `v11` the base.** `v10` at `4c136b2` plus the degree-progress research (`docs/DEGREE_PROGRESS_RESEARCH_2026-11-09.md`) and the degree feature. Built on 2026-11-09 against a guessed Degree Works host; rewritten on 2026-11-10 against what Olisa captured from his own Path@Penn session: `Degree/` in the Kit (`PathAuditDecoder`, `PathBridge`, `PathDegree`, `PathWhatIf`), `PathPortal`, `AppState+Degree`, `DegreeProgressView`, `DegreeWhatIfSheet`, `FeatureFlags.degreeProgress`. Green on the `tests` workflow, which runs on pushes to it, and built for iOS with `xcodebuild` on Olisa's Mac (Xcode 27.2) on 2026-11-10 (Test baseline); the Debug build of `d2f37a0` read a real audit on Olisa's iPhone 17 the same day (Known gaps). It did not contain `v11`, which branched from the same `v10` commit; the merge of 2026-11-12 (five documented conflicts, keep both; six Swift files read around every hunk, nothing out of place) brought it into `v11`, and 3.5.0 (21) ships with it. **Since 2026-11-11 it also carries ambassador mode and `smooth-ambassadors/`** (the `claude/new-session-b3ylkg` row below; What the app does → Profile → 8). |
+| `claude/new-session-b3ylkg` | **2026-11-09, `v10` `4c136b2` plus two commits, meant to become `v11`.** (1) `smooth-ambassadors/`: the poster-scan tracker plus the campus ambassador system as a Cloudflare Worker + D1 (private pages per ambassador, tracked links, a founder view with a digest generator, 17 Miniflare tests), drafted here to move to a private repo. (2) **Ambassador mode in the app** (What the app does → Profile → 8): a code-based sign-in in Profile, today's post, a daily local reminder, the planner carve-out. 3697/357 green on the GitHub runner at `85d4234` and the unsigned iOS `xcodebuild` green at `674b89b` (2026-11-10, Test baseline); never on a phone, server not deployed. The Worker's legacy routes were matched to the live site the same day (dashboard byte-identical, `/api/stats` rows identical). Olisa or Marco creates `v11` from it. **2026-11-10, later:** the Sites source arrived as an archive; `scripts/build-sites.mjs` folds the ambassador system into the real single-file Worker (two edits to its `fetch`, a generated section, images byte-identical), `test/sites.test.mjs` runs the original and the edited artifact side by side (14 of 14; `npm test` 28 pass), and the public `/r/{ref}` links replaced the token-bearing ones (Traps). A zip went to Olisa for the ChatGPT session that deploys Sites. **2026-11-11:** deployed to the live Sites project by that session; existing routes and totals checked from here (Known gaps). **Merged into `v12` on 2026-11-11** ("do this in v12", Olisa): `v12` was merged into this branch first (two conflicts, both "each side added a line here": the `DashRoute` cases and these notes), the merged tree was run on the runner, and only then was `v12` moved to it. The "meant to become `v11`" above is history: `v11` is Marco's line and none of this is in it. **Later on 2026-11-11:** school-prefixed codes, then posters, the dashboard link, poster-idea uploads and the Smooth restyle of the ambassador website, all landed on `v12` once compiled (Test baseline). `scripts/build-to-phone.sh` came from the same day. **2026-11-12:** that update is live on the Sites project and was checked read-only from here (Known gaps). |
 | `v10` | **Current line (2026-11-03 onward).** `v9` (the no-banner sign-in, the onboarding polish, the composed-day research) plus `origin/v8` `7e004c5` (the tree's recency and follow-up work) plus `phase0/extract-facts-bench`. The merge's Swift run is recorded under Test baseline. |
 | `phase0/extract-facts-bench` | 2026-11-03, off `v9`: the extract-facts bench, prompt, schema and parser; the model decision (Haiku 5.5, `docs/EXTRACT_FACTS_BENCH_2026-11-03.md`). In `v10`. |
 | `v9` | 2026-11-01 to 11-03: the no-banner sign-in and keepalive, proven on Marco's phone; the onboarding polish merged; the composed-day research. In `v10`. |
@@ -4259,6 +4794,152 @@ none is a ship line.
   the newest draft per item shows; a draft for an item not on the dashboard
   has no card and no notice; a definite failure (a 422, a refused upload) ends
   the draft for good, and the student asks the agent for another.
+- **Ambassador mode (2026-11-09) has signed in on one phone, and little
+  else is checked.** The Debug build of `v12` `76bc6a0` went onto
+  Olisa's iPhone with `scripts/build-to-phone.sh` on 2026-11-12 (built,
+  installed, launched, per his terminal). His screenshot the same morning
+  shows the page signed in against the live server (the footer header
+  reads "app · upenn"; the reminder row, the anonymous-app picker, the
+  messages and feedback sections all drew), so a code is accepted and
+  `plan.json` decodes on a device. He reported nothing about the posters
+  section, the gallery or an idea upload. The job-first layout that
+  followed (checklist removed, web page on top) and its website twin
+  compiled on the runner and are not yet on the phone or deployed. Unseen:
+  the
+  daily notification firing and surviving the next reschedule pass (the
+  carve-out is unit-tested, the center is not), a cold launch from its
+  tap landing on Profile → ambassador, the `smooth://ambassador` link
+  from Safari, and the page in dark mode. The server half is **live since 2026-11-11** (Olisa
+  gave the zip to the ChatGPT session that owns the Sites project; it
+  reported the founder page, the ambassador API and post logging passing).
+  Read from here the same day at 20:01 UTC, read-only, no scan link
+  opened: the dashboard is the original page (apart from Cloudflare's
+  injected script, as before), `/api/stats` still lists 62 rows with no
+  total below the 2026-11-10 backup (two are one higher: `uva/ib`, the
+  deploy's deliberate test scan, and UPenn `jester`, a scan from before
+  the deploy since it has no timestamped row), posters serve, `POST /` is
+  still 405, and an unknown code is a 404 on `plan.json` and on a POST.
+  `/api/leaderboard` answers and shows UVA with one recent scan, so both
+  things that could not be checked locally hold: the Sites runtime passes
+  `waitUntil`, and (per the ChatGPT session) `FOUNDER_TOKEN` reaches
+  `env`. One ambassador row exists at UPenn. Not seen: the founder page
+  (the token is Olisa's and stays out of this repo and every chat), and a
+  sign-in from the app, which needs a build of this branch on a phone
+  because no released version has ambassador mode. Until 2026-11-10 this
+  file said an undeployed server made sign-in say "couldn't reach
+  smooth"; it was "that code didn't work", a 404 read as an unknown code.
+  The backup of `scans` stays out of git. **The second update is live since 2026-11-12** (one zip:
+  school-prefixed codes, poster ideas, the posters section, the restyled
+  ambassador, sticker and founder pages; the ChatGPT session reported its
+  own live checks passing and deleted its test idea). Read from here the
+  same day, read-only, no scan or `/r/` link opened: `/` and `/api/stats`
+  as before, with the same two totals above the 2026-11-10 backup and none
+  below; `POST /` still 405; the font route serves `font/woff2` and 404s
+  an unknown name; a test ambassador's code starts with `uva-`, its
+  `plan.json` carries 12 posters, the dashboard link and `ideas`, its
+  school total equals `/api/stats` for UVA, and no post text or sticker
+  page holds the code; the page names no host but its own and keeps
+  `noindex` and `no-referrer`. The page was also mirrored locally with
+  the real posters and looked at in light and dark, which the earlier
+  screenshots (placeholders) could not show. A test ambassador at UVA is
+  left on the roster for testing; its code is deliberately not written
+  here, because this repository is public. Not seen from here: the
+  founder page and its ideas list (Olisa's token), an upload from a real
+  browser or phone, and the app's poster rows against the live server.
+  The app's gallery, photo picker and idea sheet compiled and passed on
+  the runner; they are in the build on Olisa's phone since 2026-11-12 and
+  have not been reported on. What the upload review left as
+  notes: the type check reads only a file's first bytes (safe because the
+  image is served with `nosniff` and a sandboxing CSP), and the founder
+  page's image links hold the founder secret in their path, as the page's
+  own address does. The review notes need a test code once a roster exists.
+- **Degree progress (`v12`) is switched off (2026-11-12) with the list
+  below still open; it had read one real audit on one phone, and
+  which degree it shows first was unsettled.** Read this entry before
+  turning `FeatureFlags.degreeProgress` back on. On 2026-11-10 at 12:07 local
+  the Debug build of `d2f37a0` (installed with `devicectl` over the store
+  copy on Olisa's iPhone 17, launched with `-LHFShowDegree`) showed "read
+  today", a 53% ring and Penn's requirement cards (major, general electives,
+  SEAS writing, free electives, elective coursework, everything else). So the
+  three things only a device could settle all passed, at least once:
+  Cloudflare let the hidden WebView through, WebKit kept `window.opener`
+  across Penn's SSO hosts so the popup handed the token back, and Penn
+  accepted a curriculum entry from the record as `degreeInfo`. Whether a Duo
+  push was needed is not recorded. What that run did **not** check: the
+  numbers against Path@Penn's own page, the second degree's audit, any
+  what-if, and a second read after the 24-hour token lapses.
+  **Found from that run, and fixed the same afternoon** (green on the
+  runner at `3a4822c`; not yet back on the phone): the
+  screen opened on Artificial Intelligence, then showed a "no major, non
+  degree" chip whose audit failed, a second Artificial Intelligence chip and
+  a Wharton one; Olisa's major is Computer Science. `cur` is a history (the
+  trap "`cur` on the Path@Penn record is a history"). `PathScripts.degrees`
+  now keeps only the entries with no `end_term`, or one later than the
+  latest term, folds a major-less fragment's `conc` into its degree and
+  drops duplicates; `AppState.degreeSelection` opens on the first degree
+  when the record's list changed, so the corrected build does not open on
+  whichever stale chip was tapped last. Also changed from his screenshots:
+  the "· catalog 202430" suffix beside the ring is gone ("tacky"), a degree
+  is named by its code ("computer science, bse", not "bachelor of sci in
+  engineering"), a chip shows the major alone (`DegreeGoals.chipTitles`),
+  and a three-word key (`DegreeLegend`: done, in progress, left) sits under
+  the ring because he asked what orange against green meant. Still open:
+  Penn's own function for this, `foseStudentDataUtils.currentDegrees({
+  verboseTitles, selectedTerm })`, has never been run and captured; when it
+  has, it should replace the rule. His record lists a second live program
+  in another school with no end term; whether that is a real second degree
+  or a leftover is his to say, and the app shows it because Penn's record
+  does. The ring read "53%" rather than "x of y cu" on both audits, so
+  `PathAuditDecoder.creditTotals` did not find Penn's credit sentence in his
+  DEGREE block; not looked at yet.
+  **Three changes of 2026-11-12 are green on the runner and unseen on a
+  phone**: the shelf and weekly read, the full view, and the what-if options
+  row. What a phone will settle: that a chip tap between his two degrees
+  shows the other audit at once (the first tap after the update still reads,
+  because the old build kept one audit); that the full view picks a column
+  count that fits his semesters on one screen, and that a drag works there;
+  and the options row end to end, which is also **the first what-if ever
+  run on a device**. For the row specifically: the info of a `…-BS`
+  catalogue row has never been read, so whether Penn answers a `new-program`
+  audit for it under his Wharton entry is unknown; his own entry's program
+  code is an undeclared-specific one and the row's will differ. The few
+  catalogue rows that look like `MAJR-BS-CONC` specialisations will show as
+  chips with a parenthesis in the name if their titles follow the pattern
+  seen elsewhere. The highlighted chip is remembered only while the screen
+  is open; the percent on a chip is kept. A stale kept audit is replaced
+  only after seven days or by pull to refresh, so a student who registers
+  and opens the screen sees last week's audit until they pull.
+  **The semester table is installed on Olisa's iPhone 17 (the Debug build of
+  `v12` `748ced7`, 2026-11-11 evening, the first signed `xcodebuild` of the
+  table, the history reader and the merged ambassador code), and nobody has
+  reported what it shows yet.** Unknowns the first look will settle: whether the registration record still lists a course dropped
+  in the current term (then the current column shows a class he is not
+  taking; the fix is the row's two-letter field or a cross-check against the
+  audit, whichever the evidence supports), whether a cross-listed course
+  carries the same code in the record and in the audit (if not, its chip has
+  no credits), and whether drag works inside the sideways scroll on a real
+  touch screen. A planned semester that has since become the current one
+  keeps its planned courses in the file but the table no longer shows them.
+  Penn's own planner on his record holds five courses the app does not read.
+  Not captured either: a record with a concentration or a minor (the `conc`
+  / `minor` field names on a curriculum entry are inferred from the page's
+  what-if rules), any program whose `prog_type` is not `major`, and a
+  what-if run end to end. Known limits: the token lives 24 hours in the
+  page, so the first read after that signs in again; a student whose saved
+  PennKey Penn has rejected gets no degree read until the password is
+  updated in Profile, because the portal types the PennKey under the silent
+  Canvas renewer's own budget (`AppState.pathCredentialBudget`: never after
+  a rejection, ten minutes between submissions by either, an hour after a
+  failed one), and a rejection seen during a degree sign-in disables
+  auto-login for Canvas too, as it should for one account; a page call that
+  does not answer in 30 seconds (90 for the audit) is abandoned; the what-if
+  for "add minor" appends the entry's major
+  code as the minor, because that is what Penn's script does. Policy, still
+  open from 2026-11-09: Apple 5.2.2 authorisation for reading a second Penn
+  system with the saved PennKey
+  (`docs/research/degree-progress/04-privacy-and-app-store.md`) and whether
+  Penn ISC has a position; the privacy label and `REVIEW_NOTES.md` need a
+  degree section before any upload.
 - **A finished item whose completion is Canvas's alone has no swipe back
   in prev** (since 2026-11-06, `AppState.completionIsLockedByCanvas`,
   `DashItem.canMarkActive`). Before that the swipe was offered, did nothing

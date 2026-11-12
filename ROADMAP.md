@@ -7,7 +7,7 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
+Last updated 2026-11-12 on `v11` (`origin/v12` merged in: ambassador mode ships in 3.5.0 (21), degree progress stays off). Before that, 2026-11-12 on `v12` (degree: weekly reads, the full view, Wharton concentrations; the Now entry). Before that, 2026-11-10 on `v12` (degree progress rewritten against the real Path@Penn). Before that, 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
 backend half went live 2026-11-05 01:20-01:45 UTC, the evening of 2026-11-04
 US Eastern). Before that, 2026-10-28 on `release/3.4.0` (the 3.4.0 release,
 renamed from 3.3.1 that afternoon when PR #16 was folded in). Before
@@ -48,7 +48,8 @@ These block shipping, or would make shipping risky. The launch-prep
 work of 2026-10-09/10 is summarised, with the order to take these in,
 in `docs/LAUNCH_PREP_HANDOFF.md`.
 
-- **Ship 3.5.0 (21), the v11 release** (`docs/V11_RETURN_2026-11-11.md` is
+- **Ship 3.5.0 (21), the v11 release, now with ambassador mode** (`origin/v12`
+  merged into `v11` on 2026-11-12, degree progress off; `docs/V11_RETURN_2026-11-11.md` is
   the short checklist). The backend is fully deployed (2026-11-11: the three
   test-session findings went live as `agent-auth` v12, `mcp` v11,
   `agent-snapshot` v8, `delete-account` v15, with the front address secret).
@@ -60,6 +61,63 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   connection; archive, upload, submit; set the manifest `changes` list when
   it is live. Not in this release: ChatGPT (Marco, 2026-11-11: "no chat gpt
   for now"), the connector listing (needs icon, support and privacy URLs).
+- **`v12` is with Marco for the finishing touches on ambassador mode**
+  (handed over 2026-11-12, `docs/HANDOFF_V12_MARCO_2026-11-12.md`). Before
+  it ships: his pass on the ambassador page, the device checks nobody has
+  done (the job-first layout, the posters gallery, a poster idea from the
+  phone, the daily reminder and its tap, dark mode), the merge with `v11`
+  (five files conflict, six Swift files merge without a marker and need
+  reading), a test code and paragraph for App Review, a new build number,
+  and the third server zip if it is not deployed yet.
+- **Degree progress is switched off** (2026-11-12, Olisa: not ready;
+  `FeatureFlags.degreeProgress = false`, nothing deleted). The item below is
+  what turning it back on still needs.
+- **v12 degree progress: a Mac build, then a phone** (Olisa's decision
+  2026-11-09: use the Path@Penn login; build progress and what-if, no course
+  recommendations; "make this extremely smooth"). Built on 2026-11-09 against
+  a guessed Degree Works host, then rewritten on 2026-11-10 after Olisa
+  captured his own Path@Penn session in Chrome
+  (`docs/DEGREE_PROGRESS_V12_BUILD_SPEC.md` → "Observed on 2026-11-10" and
+  "The rewrite contract"): the app runs Penn's page in a hidden WebView and
+  asks the page for the audit. Done: the capture, the decoder, the models
+  and what-if rules, the portal, the screens, the privacy text, all green on
+  the runner. In order now: (1) ~~`xcodebuild` on a Mac~~ done 2026-11-10 on
+  Olisa's Mac, Xcode 27.2: BUILD SUCCEEDED for `generic/platform=iOS`,
+  widget included; (2) a DEBUG
+  build on Olisa's phone with `-LHFShowDegree`: **first read done
+  2026-11-10** (Debug build of `d2f37a0` on his iPhone 17: the page loaded
+  past Cloudflare, the popup handed the token back, a real audit drew).
+  The wrong first degree (Artificial Intelligence, where his major is
+  Computer Science) was the record being a history; fixed the same
+  afternoon from a console read of it (CLAUDE.md → Traps). Still to do
+  there: see the fix on the phone, capture Penn's own
+  `foseStudentDataUtils.currentDegrees(...)` output, compare each degree's
+  numbers with Path@Penn, run one "switch to" and one "add minor", and
+  reinstall for the catalog-suffix, chip and colour-key changes and the
+  new "plan" tab (the semester table he asked for the same day; on the
+  phone, check that registered spring courses appear in the first column
+  and that "fits" shows for a course picked from the open options);
+  **2026-11-11:** he confirmed the build shows his two real degrees, and
+  asked for the semester table in every tab with drag and drop; written the
+  same day (CLAUDE.md → Degree). Its past and current columns need the term
+  of each course, which the audit does not carry: next is reading `hist`
+  and `reg` from the record once their format is seen, with the privacy
+  text changed in the same commit (done 2026-11-11, `76d34bd`);
+  **2026-11-12:** the table build (`748ced7`) went onto his phone with
+  `scripts/build-to-phone.sh`, and he asked for three things, all written
+  and green on the runner the same day (3878 / 377 at `906f9c6`), none on a
+  phone yet: read Penn less often (each degree's audit is kept, a weekly
+  read), a full view of the table on one page, and Wharton concentrations
+  in the what-if (an options row; a concentration is a major row in Penn's
+  catalogue). Next on the phone: switching degree chips is instant, "full
+  view" fits his semesters on one screen and drag works there, and one
+  concentration what-if runs end to end, which is also the first what-if
+  ever run on a device. He has not yet said what the semester table itself
+  showed (past terms, a dropped class in the current column);
+  (3) capture
+  what was not seen: a record with a concentration or minor, and the page's
+  own `currentStudentDegrees`; (4) the privacy label and `REVIEW_NOTES.md`,
+  and the Apple 5.2.2 / Penn ISC question, before any upload. Not for 3.4.1.
 - **Facts deploy: re-run 2026-11-06 18:56 UTC from `bd9d20c` (`finish_fact_extraction` applied, `sync` v22, `extract-facts` v6; `docs/DEPLOY_FACTS_2026-11-04.md` → Run 3); first done 2026-11-05 (01:20-01:45 UTC)**
   (`docs/DEPLOY_FACTS_2026-11-04.md` is the runbook and now ends with the run
   record; `backend/scripts/deploy-facts.mjs` runs it). Done, with Olisa's go
@@ -511,6 +569,35 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   a ChatGPT trial by Marco, and math rendering (Unicode guidance now, a
   KaTeX spike later). Set aside with reasons: Gradescope drafts, pooled
   agent notes, student Ed threads, a blocking course opt-out.
+- **Degree progress: pick a degree, see progress, try a what-if** (Olisa's
+  ask, 2026-11-09; researched that morning, then **decided and built blind the
+  same day on `v12`**: see Now. Olisa chose the Path@Penn-login route the
+  report had parked, so the recommendation below is history).
+  `docs/DEGREE_PROGRESS_RESEARCH_2026-11-09.md` is the report, its labelled
+  source notes are in `docs/research/degree-progress/`, and a phone mockup of
+  two concepts was published beside it. The recommendation: build it Penn
+  first with no Path@Penn login. Requirement templates come from the public
+  `courses.upenn.edu` endpoints Penn Labs' Degree Plan already reads (a
+  Degree Works audit XML per program, dummy student, no credentials; read in
+  Penn Labs' MIT-licensed source, live behaviour untested from the container),
+  pooled like `catalog_courses`; the student's record is courses they mark
+  (current classes prefilled from Canvas), kept on-device in its own store
+  file, never the ledger; code decides, a model may only extract and explain;
+  every screen names Path@Penn as the official audit and never says "on
+  track". Phases: 0 settle the unknowns (confirm the endpoints from a Mac,
+  ask Penn Labs and ISC about terms, one phone pass on Path@Penn), 1
+  progress on-device for three programs behind `FeatureFlags.degreeProgress`
+  (about 30 to 40 hours, +80 to +110 Swift tests), 2 pooled templates for
+  every program (a migration and a small function, owner's go), 3 the
+  what-if planner with prerequisites and offerings, 4 the richer record
+  (Canvas past courses, an audit PDF, the tree's `# DEGREE` block with a
+  PRIVACY.md change, and Path@Penn reading only with Penn's written
+  position). The one finding that would change the plan: Penn or Penn Labs
+  saying the public endpoints are not for third-party use. Seven questions
+  for the owners are at the end of the report. Every Penn host was blocked
+  from the research container; a `penn-dashboard` cloud environment with
+  those hosts allowed now exists for the next session.
+
 - **Megaphone: the model sorts posts into todo and prev** (Marco,
   2026-11-07: "prev being either from way before or unapplicable, need
   [the model] to sort based on text"). What ships first is the rule half
@@ -971,6 +1058,13 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-12.** Ambassador mode after its first look on a phone: the
+  "getting started" checklist is gone, the page opens on the job and a
+  filled "open my web page" button, feedback is "feedback and ideas" and
+  sits after the posters, and the anonymous posts say what the app does
+  (everywhere a professor posts, the tree, the sweeper) with five in a hype
+  voice. Degree progress switched off behind its flag, and `v12` handed to
+  Marco.
 - **2026-11-10.** A no-submission card says "in class" only when Canvas says
   on paper, it is an event, or its title names a quiz or exam; otherwise
   "off canvas" (`NothingToSubmitLabel`, CIS 3990 Project 2). Not on a phone.
@@ -979,6 +1073,34 @@ Kept so nobody rebuilds them blind.
   alarm, defaults, and per-class on/off, lead time and sound. The Profile
   section is gone. Scrolling that starts on a card no longer sticks
   (`CompletionSwipe.Axis`).
+- **2026-11-09.** Ambassador mode in the app (Profile → ambassador, for
+  `v11`): sign in with the code from your ambassador page, today's post
+  written and ready to copy, "i posted it", your numbers, a daily local
+  reminder (or weekdays, or off) at a chosen time, checklist, feedback,
+  pause, sign out. Server side in `smooth-ambassadors/` (`plan.json`, JSON
+  answers for the app, a 14-entry daily post bank, "open in the smooth
+  app" on the web page). 3697/357 green on the GitHub runner and the
+  unsigned iOS build green (2026-11-10, the workflow's new manual
+  `ios-build` job); never on a phone, server not deployed. The Worker's
+  legacy routes now mirror the live tracker (read 2026-11-10). Later that
+  day the Sites source arrived: `scripts/build-sites.mjs` builds the one
+  file Sites deploys (the real tracker plus the ambassador system, old
+  routes compared byte for byte against the original, 14 of 14), the
+  share and sticker links moved to a public id so the private code is
+  never posted (CLAUDE.md → Traps), and the zip went to Olisa for the
+  ChatGPT session that deploys. **Live since 2026-11-11**: old routes and
+  totals checked read-only against the backup, the ambassador routes
+  answer. What is left is the app side: a build of this branch on a phone
+  and a first sign-in. The same day, at Olisa's asks: codes that start
+  with the school; a "posters" section in the app (gallery, dashboard
+  link, "send a poster idea" with a photo picker); the matching buttons,
+  posters grid and upload card on the ambassador web page; and that
+  website restyled to look like Smooth. Server half live since 2026-11-12 and checked read-only against
+  the backup; app half on `v12`, on Olisa's phone since 2026-11-12, where
+  it signed in. From that first look: the "getting started" checklist is
+  gone from the app and the website, and both open on the job ("get smooth
+  in front of as many eyes as you can") with the web page as the app's top
+  link. The website half is a fourth zip waiting for a deploy.
 - **2026-11-07 (16:39 EST).** 3.4.1 (20) archived from `c3a4feb` and
   uploaded, superseding builds 18 and 19. Marco attaches 20 and submits.
 - **2026-11-07 (evening).** The megaphone lists every post the phone keeps

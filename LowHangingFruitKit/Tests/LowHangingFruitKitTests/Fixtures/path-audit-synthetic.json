@@ -1,0 +1,156 @@
+{
+  "blocks": [
+    {
+      "id": "RA000001",
+      "type": "DEGREE",
+      "title": "Degree in Example Studies",
+      "completionPercent": 60,
+      "actionsMap": { "x": "ACTION-SENTINEL" },
+      "blockhtml": "<div>Grade: GRADE-SENTINEL-A+</div>",
+      "courseReqCopy": {
+        "decisions": [],
+        "members": [
+          {
+            "id": "T1",
+            "type": "term",
+            "label": "Degree wrapper",
+            "blockId": "RA000001",
+            "explanations": ["junk trail 1", "junk trail 2"],
+            "members": [
+              {
+                "id": "H1",
+                "type": "header",
+                "label": "Core Requirements",
+                "completionPercent": 50,
+                "explanations": ["header junk"],
+                "members": [
+                  {
+                    "id": "S1",
+                    "type": "sublist",
+                    "label": "Choose 2 of the following",
+                    "membersNeeded": 2,
+                    "hoursNeeded": "2",
+                    "completionIconName": "partial",
+                    "completionPercent": 50,
+                    "infoText": "  Pick any two.  ",
+                    "members": [
+                      { "id": "S1a", "type": "course", "courseCode": "EXMP 1010", "title": "Intro to Examples", "hours": "1", "hoursCalculated": "1", "completionIconName": "completed", "auditRef": "ref-1" },
+                      { "id": "S1b", "type": "course", "courseCode": "EXMP 2020", "title": "Further Examples", "hours": "1.5 CU", "hoursCalculated": "1.5", "completionIconName": "registered" },
+                      { "id": "S1c", "type": "course", "courseCode": "DEMO 1100", "titleLong": "Demonstration One", "hoursCalculated": "1" },
+                      { "id": "S1d", "type": "course", "courseCode": "DEMO 1200", "titleShort": "Demo Two", "hours": "1" },
+                      { "id": "S1e", "type": "course", "courseCode": "DEMO 1100", "titleLong": "Demonstration One again", "hoursCalculated": "1" },
+                      { "id": "S1f", "type": "course", "title": "No code here" }
+                    ]
+                  },
+                  {
+                    "id": "DUP",
+                    "type": "sublist",
+                    "label": "Electives",
+                    "completionIconName": "partial",
+                    "members": [
+                      { "id": "S2a", "type": "course", "courseCode": "EXMP 3030", "title": "Applied Examples", "hours": "1", "completionIconName": "completed" },
+                      { "id": "S2b", "type": "course", "courseCode": "DEMO 1300", "titleLong": "Demonstration Three", "hoursCalculated": "1" }
+                    ]
+                  },
+                  {
+                    "id": "S3",
+                    "type": "sublist",
+                    "label": "Capstone",
+                    "completionIconName": "completed",
+                    "members": [
+                      { "id": "S3a", "type": "course", "courseCode": "EXMP 4040", "title": "Capstone Examples", "hours": 1, "completionIconName": "completed" }
+                    ]
+                  },
+                  {
+                    "id": "S4",
+                    "type": "sublist",
+                    "label": "Studio",
+                    "completionIconName": "registered",
+                    "members": [
+                      { "id": "S4a", "type": "course", "courseCode": "DEMO 2000", "title": "Studio Demo", "hours": "0.5", "completionIconName": "registered" }
+                    ]
+                  }
+                ]
+              },
+              { "id": "C1", "type": "comment", "label": "See the major block", "seeBlockId": "RA000002", "explanations": null },
+              { "id": "C2", "type": "comment", "label": "A bare note" },
+              { "id": "DUP", "type": "comment", "label": "40 CU are required. You currently have 24. You still need 16 more.", "completionPercent": 60 }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "RA000002",
+      "type": "MAJOR",
+      "title": "Major in Example Studies",
+      "completionPercent": 50,
+      "actionsMap": {},
+      "blockhtml": "<p>nothing</p>",
+      "courseReqCopy": {
+        "members": [
+          {
+            "id": "MT",
+            "type": "term",
+            "members": [
+              {
+                "id": "MH",
+                "type": "header",
+                "label": "Major Core",
+                "members": [
+                  {
+                    "id": "MS1",
+                    "type": "sublist",
+                    "label": "Introductory courses",
+                    "coursesNeeded": 2,
+                    "completionPercent": 100,
+                    "members": [
+                      { "id": "MS1a", "type": "course", "courseCode": "EXMP 1010", "title": "Intro to Examples", "hours": "1", "completionIconName": "completed" },
+                      { "id": "MS1b", "type": "course", "courseCode": "EXMP 2020", "title": "Further Examples", "hours": "1", "completionIconName": "completed" }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "RA000003",
+      "type": "OTHER",
+      "title": "General Electives",
+      "completionPercent": 100,
+      "courseReqCopy": {
+        "members": [
+          {
+            "id": "OT",
+            "type": "term",
+            "members": [
+              { "id": "O1", "type": "course", "courseCode": "DEMO 1100", "title": "Demonstration One", "hours": "1", "completionIconName": "completed" },
+              { "id": "O2", "type": "course", "courseCode": "DEMO 2000", "title": "Studio Demo", "hours": "0.5", "completionIconName": "completed" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "synthetic",
+      "type": "CL_SYNTHETIC_BLOCK",
+      "title": "Unassigned",
+      "completionPercent": 0,
+      "courseReqCopy": { "members": [] }
+    }
+  ],
+  "legendHtml": "<span>legend GRADE-SENTINEL-A+</span>",
+  "degreeInfo": {
+    "level": "UG",
+    "degree": "BS",
+    "program": "EXAMPLE",
+    "term": "2024",
+    "major": "EXST",
+    "minor": "",
+    "college": "COL",
+    "conc": "NCON"
+  }
+}

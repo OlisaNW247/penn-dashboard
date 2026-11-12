@@ -300,7 +300,12 @@ extension NotificationScheduler {
         var result = NotificationApplyResult()
         let plannedIDs = Set(planned.map(\.identifier))
         if let pending = await Deadline.run(after: pendingReadDeadline, { await sink.pendingIdentifiers() }) {
-            let stale = pending.filter { !plannedIDs.contains($0) }
+            // Ambassador mode's reminders (`ambassador:*`) are never in this
+            // plan and must not be taken as stale: without the carve-out the
+            // first pass after they were scheduled would remove them. They
+            // reserve their slots out of the budget instead
+            // (`NotificationScheduler.reservedForeignSlots`).
+            let stale = pending.filter { !plannedIDs.contains($0) && !AmbassadorReminders.isAmbassadorIdentifier($0) }
             if !stale.isEmpty {
                 sink.removePending(identifiers: stale)
                 result.staleRemoved = stale.count

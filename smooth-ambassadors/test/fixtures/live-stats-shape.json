@@ -1,0 +1,377 @@
+{
+ "_note": "Rows of the live /api/stats as read on 2026-11-10, in order, totals removed. The Worker must list exactly these.",
+ "rows": [
+  {
+   "school": "upenn",
+   "schoolName": "UPenn",
+   "poster": "best-actor",
+   "name": "Vote Here for Best Actor"
+  },
+  {
+   "school": "upenn",
+   "schoolName": "UPenn",
+   "poster": "regista",
+   "name": "The Regista"
+  },
+  {
+   "school": "upenn",
+   "schoolName": "UPenn",
+   "poster": "jester",
+   "name": "The Jester"
+  },
+  {
+   "school": "upenn",
+   "schoolName": "UPenn",
+   "poster": "ib",
+   "name": "Funneled into IB"
+  },
+  {
+   "school": "upenn",
+   "schoolName": "UPenn",
+   "poster": "kylie",
+   "name": "Kylie Jenner"
+  },
+  {
+   "school": "upenn",
+   "schoolName": "UPenn",
+   "poster": "compute",
+   "name": "More Compute"
+  },
+  {
+   "school": "upenn",
+   "schoolName": "UPenn",
+   "poster": "these-two",
+   "name": "Have You Seen These Two?"
+  },
+  {
+   "school": "upenn",
+   "schoolName": "UPenn",
+   "poster": "soccer",
+   "name": "That Was Pretty Smooth — Soccer"
+  },
+  {
+   "school": "upenn",
+   "schoolName": "UPenn",
+   "poster": "grind",
+   "name": "Tired of the Grind?"
+  },
+  {
+   "school": "upenn",
+   "schoolName": "UPenn",
+   "poster": "ai-end",
+   "name": "AI Might Be the End"
+  },
+  {
+   "school": "upenn",
+   "schoolName": "UPenn",
+   "poster": "smoother",
+   "name": "What If We Made It Smoother"
+  },
+  {
+   "school": "upenn",
+   "schoolName": "UPenn",
+   "poster": "tabard",
+   "name": "Tabard Rush List"
+  },
+  {
+   "school": "upenn",
+   "schoolName": "UPenn",
+   "poster": "taylor",
+   "name": "Taylor Swift Wedding"
+  },
+  {
+   "school": "upenn",
+   "schoolName": "UPenn",
+   "poster": "venture",
+   "name": "Venture Backed — $300M"
+  },
+  {
+   "school": "umiami",
+   "schoolName": "UMiami",
+   "poster": "best-actor",
+   "name": "Vote Here for Best Actor"
+  },
+  {
+   "school": "umiami",
+   "schoolName": "UMiami",
+   "poster": "ib",
+   "name": "Funneled into IB"
+  },
+  {
+   "school": "umiami",
+   "schoolName": "UMiami",
+   "poster": "kylie",
+   "name": "Kylie Jenner"
+  },
+  {
+   "school": "umiami",
+   "schoolName": "UMiami",
+   "poster": "compute",
+   "name": "More Compute"
+  },
+  {
+   "school": "umiami",
+   "schoolName": "UMiami",
+   "poster": "these-two",
+   "name": "Have You Seen These Two?"
+  },
+  {
+   "school": "umiami",
+   "schoolName": "UMiami",
+   "poster": "soccer",
+   "name": "That Was Pretty Smooth — Soccer"
+  },
+  {
+   "school": "umiami",
+   "schoolName": "UMiami",
+   "poster": "grind",
+   "name": "Tired of the Grind?"
+  },
+  {
+   "school": "umiami",
+   "schoolName": "UMiami",
+   "poster": "ai-end",
+   "name": "AI Might Be the End"
+  },
+  {
+   "school": "umiami",
+   "schoolName": "UMiami",
+   "poster": "smoother",
+   "name": "What If We Made It Smoother"
+  },
+  {
+   "school": "umiami",
+   "schoolName": "UMiami",
+   "poster": "tabard",
+   "name": "Tabard Rush List"
+  },
+  {
+   "school": "umiami",
+   "schoolName": "UMiami",
+   "poster": "taylor",
+   "name": "Taylor Swift Wedding"
+  },
+  {
+   "school": "umiami",
+   "schoolName": "UMiami",
+   "poster": "venture",
+   "name": "Venture Backed — $300M"
+  },
+  {
+   "school": "uva",
+   "schoolName": "UVA",
+   "poster": "best-actor",
+   "name": "Vote Here for Best Actor"
+  },
+  {
+   "school": "uva",
+   "schoolName": "UVA",
+   "poster": "ib",
+   "name": "Funneled into IB"
+  },
+  {
+   "school": "uva",
+   "schoolName": "UVA",
+   "poster": "kylie",
+   "name": "Kylie Jenner"
+  },
+  {
+   "school": "uva",
+   "schoolName": "UVA",
+   "poster": "compute",
+   "name": "More Compute"
+  },
+  {
+   "school": "uva",
+   "schoolName": "UVA",
+   "poster": "these-two",
+   "name": "Have You Seen These Two?"
+  },
+  {
+   "school": "uva",
+   "schoolName": "UVA",
+   "poster": "soccer",
+   "name": "That Was Pretty Smooth — Soccer"
+  },
+  {
+   "school": "uva",
+   "schoolName": "UVA",
+   "poster": "grind",
+   "name": "Tired of the Grind?"
+  },
+  {
+   "school": "uva",
+   "schoolName": "UVA",
+   "poster": "ai-end",
+   "name": "AI Might Be the End"
+  },
+  {
+   "school": "uva",
+   "schoolName": "UVA",
+   "poster": "smoother",
+   "name": "What If We Made It Smoother"
+  },
+  {
+   "school": "uva",
+   "schoolName": "UVA",
+   "poster": "tabard",
+   "name": "Tabard Rush List"
+  },
+  {
+   "school": "uva",
+   "schoolName": "UVA",
+   "poster": "taylor",
+   "name": "Taylor Swift Wedding"
+  },
+  {
+   "school": "uva",
+   "schoolName": "UVA",
+   "poster": "venture",
+   "name": "Venture Backed — $300M"
+  },
+  {
+   "school": "case-western",
+   "schoolName": "Case Western",
+   "poster": "best-actor",
+   "name": "Vote Here for Best Actor"
+  },
+  {
+   "school": "case-western",
+   "schoolName": "Case Western",
+   "poster": "ib",
+   "name": "Funneled into IB"
+  },
+  {
+   "school": "case-western",
+   "schoolName": "Case Western",
+   "poster": "kylie",
+   "name": "Kylie Jenner"
+  },
+  {
+   "school": "case-western",
+   "schoolName": "Case Western",
+   "poster": "compute",
+   "name": "More Compute"
+  },
+  {
+   "school": "case-western",
+   "schoolName": "Case Western",
+   "poster": "these-two",
+   "name": "Have You Seen These Two?"
+  },
+  {
+   "school": "case-western",
+   "schoolName": "Case Western",
+   "poster": "soccer",
+   "name": "That Was Pretty Smooth — Soccer"
+  },
+  {
+   "school": "case-western",
+   "schoolName": "Case Western",
+   "poster": "grind",
+   "name": "Tired of the Grind?"
+  },
+  {
+   "school": "case-western",
+   "schoolName": "Case Western",
+   "poster": "ai-end",
+   "name": "AI Might Be the End"
+  },
+  {
+   "school": "case-western",
+   "schoolName": "Case Western",
+   "poster": "smoother",
+   "name": "What If We Made It Smoother"
+  },
+  {
+   "school": "case-western",
+   "schoolName": "Case Western",
+   "poster": "tabard",
+   "name": "Tabard Rush List"
+  },
+  {
+   "school": "case-western",
+   "schoolName": "Case Western",
+   "poster": "taylor",
+   "name": "Taylor Swift Wedding"
+  },
+  {
+   "school": "case-western",
+   "schoolName": "Case Western",
+   "poster": "venture",
+   "name": "Venture Backed — $300M"
+  },
+  {
+   "school": "clark",
+   "schoolName": "Clark University",
+   "poster": "best-actor",
+   "name": "Vote Here for Best Actor"
+  },
+  {
+   "school": "clark",
+   "schoolName": "Clark University",
+   "poster": "ib",
+   "name": "Funneled into IB"
+  },
+  {
+   "school": "clark",
+   "schoolName": "Clark University",
+   "poster": "kylie",
+   "name": "Kylie Jenner"
+  },
+  {
+   "school": "clark",
+   "schoolName": "Clark University",
+   "poster": "compute",
+   "name": "More Compute"
+  },
+  {
+   "school": "clark",
+   "schoolName": "Clark University",
+   "poster": "these-two",
+   "name": "Have You Seen These Two?"
+  },
+  {
+   "school": "clark",
+   "schoolName": "Clark University",
+   "poster": "soccer",
+   "name": "That Was Pretty Smooth — Soccer"
+  },
+  {
+   "school": "clark",
+   "schoolName": "Clark University",
+   "poster": "grind",
+   "name": "Tired of the Grind?"
+  },
+  {
+   "school": "clark",
+   "schoolName": "Clark University",
+   "poster": "ai-end",
+   "name": "AI Might Be the End"
+  },
+  {
+   "school": "clark",
+   "schoolName": "Clark University",
+   "poster": "smoother",
+   "name": "What If We Made It Smoother"
+  },
+  {
+   "school": "clark",
+   "schoolName": "Clark University",
+   "poster": "tabard",
+   "name": "Tabard Rush List"
+  },
+  {
+   "school": "clark",
+   "schoolName": "Clark University",
+   "poster": "taylor",
+   "name": "Taylor Swift Wedding"
+  },
+  {
+   "school": "clark",
+   "schoolName": "Clark University",
+   "poster": "venture",
+   "name": "Venture Backed — $300M"
+  }
+ ]
+}

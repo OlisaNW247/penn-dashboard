@@ -1,6 +1,6 @@
 # Privacy Policy — Low Hanging Fruit (LHF)
 
-_Last updated: 2026-11-11_
+_Last updated: 2026-11-12_
 
 Low Hanging Fruit ("LHF", "the app") is a personal academic dashboard that shows
 your Canvas assignments and deadlines in one place. This policy explains what
@@ -143,6 +143,54 @@ no separate "stay signed in" choice or second password entry.
 - **SSO and other schools:** if a login succeeds without submitting a PennKey
   password, Smooth can retain the session but cannot manufacture a saved
   password. Other institutions continue using their existing session handling.
+
+## Degree progress (Penn, since v12)
+
+**Switched off since 2026-11-12 while it is being finished.** While it is off
+there is no degree screen and Smooth reads nothing from Path@Penn. The rest of
+this section describes what it does when it is on.
+
+Smooth can show where you stand in your degree, and where you would stand in
+another program. It does this by opening Penn's own Path@Penn page inside the
+app, out of sight, signed in as you the same way it reconnects to Canvas (the
+PennKey saved on this phone, typed only into Penn's own sign-in page, and your
+Duo approval when Penn asks for one), and asking that page for your degree
+audit.
+
+- **What is read:** the degrees on your record (the codes for level, degree,
+  college, program, major, concentration, minor and catalog term) and Penn's
+  audit of the one you select: its requirement blocks, how complete each is,
+  the courses that count toward each (code, title, credits, whether you are
+  registered for it now) and the options still open. For a "what if", the
+  same for a program you pick from Penn's public list of programs, run by
+  Penn's audit against your own record. Since 2026-11-11 also which
+  semester each of your courses belongs to (the course code under its term,
+  for semesters you finished and the ones you are registered in), so the
+  semester table can lay them out. Nothing else from those records is taken:
+  not the section, the credit, a status or a grade.
+- **What Penn's page sends to Penn:** what it sends when you use Path@Penn in a
+  browser, which includes your registered, cart and planned courses so the
+  audit can count them. That exchange is between Penn's page and Penn. Smooth
+  adds nothing to it and sends none of it anywhere else.
+- **What never leaves Penn's page:** the sign-in token, Penn's id for you,
+  your name, your pronoun, your shopping cart and Penn's own planner, and
+  the audit as Penn draws it, which is the one place a grade could appear. Smooth takes
+  out only the fields listed above, so your grades and GPA are never read.
+  Nothing is saved in the Keychain for this.
+- **Where it stays:** on this phone, in a file in the app's own storage.
+  Nothing about your degree goes to our server, to a paired laptop, to iCloud
+  or to "the tree".
+- **It is Penn's reading, shown Smooth's way.** Smooth does not decide what
+  counts; Penn's audit does. Substitutions and advisor exceptions appear only
+  as the audit reports them, and the screen always links to Path@Penn.
+- **Your plan:** the "plan" tab is a table of semesters you fill in yourself,
+  by typing a course code or picking from the options your audit still lists
+  as open. It is kept in its own file on this phone. Smooth sends it nowhere:
+  not to Penn, our server, a paired laptop or "the tree". Because you wrote
+  it and Penn cannot give it back, it is included in this phone's ordinary
+  backup if you back the phone up (the audit itself is not).
+- **How to remove it:** disconnect Canvas. That deletes the audit file, your
+  plan and your what-if choices from this phone and closes Penn's page.
 
 ## What is sent to our server (and why)
 
@@ -426,6 +474,35 @@ nothing until you pair it with your phone.
 - **Academic integrity.** What you submit is your responsibility under your
   school's rules, and Smooth marks every draft with the assistant's name so
   that is never hidden.
+## Ambassador mode (optional, for campus ambassadors only)
+
+A few students help spread the word about Smooth at their schools. If one
+of them signs in to **Profile → ambassador** with the code a founder texted
+them, the app talks to our ambassador server (the same small service that
+counts poster scans, at smooth-poster-scans.jazzysmile20.chatgpt.site). It
+is separate from the server described above and shares nothing with it.
+
+What it sends, and only while signed in: the code; which anonymous campus
+app the ambassador picked and the phone's time-zone offset (so "today's
+post" is their today); and what they tap on that page: "i posted it", a
+checklist tick, a pause, and the feedback they type. Since 2026-11-11 an
+ambassador can also send a **poster idea**: a picture they choose, a note,
+or both, and only when they tap "send". The picture is rebuilt from its
+pixels on the phone first, at no more than 1280 pixels and 600 KB, so
+nothing the camera attached to it (location, device, time) goes with it.
+Only the founders can see a poster idea; it is stored with the
+ambassador's roster row until a founder deletes it. Opening "all posters"
+loads that school's poster pictures from the same server. It never sends
+anything about classes, Canvas, Gradescope, Ed, or the rest of the app, and
+no name or contact detail beyond what the founder already typed into the
+ambassador roster. The daily reminder is a local notification scheduled on
+the phone, not a push from a server. "Sign out" removes the code from the
+Keychain, the cached page from the phone, and the reminders. The server
+keeps the ambassador's roster row, their link-open counts, their logged
+posts, their poster ideas and their feedback until the founders remove
+them. Students who are
+not ambassadors never trigger any of this; the row in Profile does
+nothing until a code is entered.
 
 ## Who we send data to
 

@@ -1,0 +1,47 @@
+{
+  "_help": "Campus moments: timed nudges the founders send from their phone. Each has a note to the ambassador and a message they can forward. Placeholders: {name}, {school}, {link} (their group chat link), {page} (their private page). Dates are rough; founders pick the real week per school.",
+  "moments": [
+    {
+      "key": "welcome-back",
+      "label": "welcome-back weekend",
+      "when": "first weekend of the semester",
+      "to_ambassador": "hey {name}, welcome-back weekend is the easiest time to drop smooth in a chat, everyone's resetting. here's one ready to go. no pressure, whenever you see this.",
+      "forward": "new semester, new system: smooth pulls every canvas + gradescope deadline into one list and reminds you before things close. free, built by students. {link}"
+    },
+    {
+      "key": "start-of-term",
+      "label": "first week of classes",
+      "when": "week 1",
+      "to_ambassador": "{name}, syllabi are dropping this week and nobody has their deadlines sorted yet. if you're in a class-year or dorm chat, this one fits.",
+      "forward": "before the syllabi pile up: smooth puts all your deadlines from canvas and gradescope in one place and pings you before they close. 2 min to set up, free. {link}"
+    },
+    {
+      "key": "add-drop",
+      "label": "add/drop deadline",
+      "when": "end of add/drop",
+      "to_ambassador": "add/drop closes this week at {school}, so schedules are final. people are making their systems now. here's a short one if you want to post it.",
+      "forward": "schedules are locked, so now's the time: smooth takes your canvas + gradescope deadlines and turns them into one list with reminders. free. {link}"
+    },
+    {
+      "key": "midterms",
+      "label": "midterms",
+      "when": "midterm weeks",
+      "to_ambassador": "midterms at {school} this week? that's when people miss the small stuff. the message below is about that. only if you have a sec.",
+      "forward": "midterm season psa: the thing that actually tanks grades is the 5-point quiz you forgot existed. smooth lists every canvas/gradescope deadline and reminds you before it closes. free. {link}"
+    },
+    {
+      "key": "registration",
+      "label": "course registration",
+      "when": "registration week",
+      "to_ambassador": "registration week, everyone's thinking about next semester. optional: forward this to one chat.",
+      "forward": "while you're planning next semester, set up the one thing that saves you this one: smooth puts all canvas + gradescope deadlines in one list with reminders. free, by students. {link}"
+    },
+    {
+      "key": "finals",
+      "label": "finals week",
+      "when": "reading days / finals",
+      "to_ambassador": "finals week. honestly, not a time to post much. this one's short, and if you'd rather skip it, skip it. good luck on yours.",
+      "forward": "finals psa: smooth puts every canvas + gradescope deadline in one list and reminds you before it closes. free. so you only have to worry about the actual exams. {link}"
+    }
+  ]
+}

@@ -54,6 +54,13 @@ struct ProfileClassesSection: View {
             let courses = state.visibleCourseCodes()
             let deletedCourses = state.deletedCourseCodes()
 
+            // First, above the classes: it is the one row here that leads to
+            // a page of its own. Gated so nobody at another school, or with
+            // nothing read yet, sees a dead row.
+            if showsDegreeRow {
+                degreeRow
+            }
+
             if courses.isEmpty && deletedCourses.isEmpty {
                 emptyState
             } else {
@@ -96,6 +103,34 @@ struct ProfileClassesSection: View {
             Button("cancel", role: .cancel) { renamingCourse = nil }
         } message: {
             Text("empty resets")
+        }
+    }
+
+    private var showsDegreeRow: Bool {
+        // Shown whenever the feature exists on this install. It used to wait
+        // for a snapshot or a status, but nothing starts a read until the
+        // student opens the page, so on a real install it never appeared; with
+        // nothing read yet the right-hand text is simply empty.
+        state.degreeFeatureAvailable
+    }
+
+    /// The right-hand words: credits or met rules when an audit is on the
+    /// phone, else the status line.
+    private var degreeRowDetail: String {
+        if let audit = state.degree.current { return DegreeProgressMath.profileSummary(audit) }
+        return state.degreeStatus.line(now: Date()) ?? ""
+    }
+
+    private var degreeRow: some View {
+        NavigationLink(value: ContentView.DashRoute.degree) {
+            HStack(spacing: 8) {
+                Label("degree", systemImage: "graduationcap")
+                Spacer(minLength: 8)
+                Text(degreeRowDetail)
+                    .font(.lhfMono(12))
+                    .foregroundStyle(Color.smoothMuted)
+                    .lineLimit(1)
+            }
         }
     }
 
