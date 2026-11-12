@@ -1300,8 +1300,11 @@ xcrun devicectl device install app --device <CoreDevice id from `xcrun devicectl
 xcrun devicectl device process launch --device <CoreDevice id> com.lhf.lowhangingfruit
 
 # The three lines above as one step, finding both ids of the plugged-in phone
-# itself (2026-11-11; its phone-picking was tested on a made-up device list in
-# the cloud, the rest has not yet been run on a Mac):
+# itself (2026-11-11; ran end to end on Olisa's Mac that evening: built,
+# installed and launched `v12` `748ced7` on his iPhone 17. An earlier run the
+# same hour failed with "Unable to find a destination" while devicectl listed
+# the phone; replugging it cured that, and the script now falls back to a
+# generic/platform=iOS build when it recurs. The fallback itself has not run.):
 bash scripts/build-to-phone.sh
 
 # macOS build (the package; `swift test` also exercises this)
@@ -4004,8 +4007,10 @@ none is a ship line.
   does. The ring read "53%" rather than "x of y cu" on both audits, so
   `PathAuditDecoder.creditTotals` did not find Penn's credit sentence in his
   DEGREE block; not looked at yet.
-  **The semester table (2026-11-11) has not been on a phone.** Unknowns it
-  will settle: whether the registration record still lists a course dropped
+  **The semester table is installed on Olisa's iPhone 17 (the Debug build of
+  `v12` `748ced7`, 2026-11-11 evening, the first signed `xcodebuild` of the
+  table, the history reader and the merged ambassador code), and nobody has
+  reported what it shows yet.** Unknowns the first look will settle: whether the registration record still lists a course dropped
   in the current term (then the current column shows a class he is not
   taking; the fix is the row's two-letter field or a cross-check against the
   audit, whichever the evidence supports), whether a cross-listed course
