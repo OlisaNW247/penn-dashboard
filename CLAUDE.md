@@ -945,16 +945,19 @@ Keep this current. It is the fastest way for a new session to know what exists.
      **Connected agent (2026-11-11, Marco: "under accounts, in profile, it
      should have connected agent with a toggle and then list what is
      connected to your agent"; later the same day: "Connected agent should
-     be a different block in profile under agent").** Its own section,
-     "agent", right after accounts (grape background), behind
-     `canUseAgentConnection`: `ProfileAgentRows` (`ProfileAgentRows.swift`)
-     puts the agent connection there, replacing
+     be a different block in profile under agent"; on 2026-11-12: "I want to
+     say 'Connected Agent'").** Its own section right after accounts (grape
+     background), headed "connected agent" (`AgentConnectionCopy.sectionHeader`;
+     "agent" for a day), behind `canUseAgentConnection`: `ProfileAgentRows`
+     (`ProfileAgentRows.swift`) puts the agent connection there, replacing
      the "connect an agent · on/off" row and the `AgentConnectionsView`
-     screen it pushed (deleted): a plain `Toggle` "connected agent"; then, while on,
-     one row per agent (its name, muted "last used 2h ago" / "never used",
-     a trailing muted "disconnect" and chevron, the whole row a button
-     behind a "disconnect claude?" alert, as the laptop row's "unpair"
-     is), or a muted "none yet"; and "have a code?", which opens
+     screen it pushed (deleted): a plain `Toggle` labelled "on" (it said
+     "connected agent" until the header did); then, while on,
+     one row per agent (its name only since 2026-11-12, "last used 2h ago" /
+     "never used" removed; a trailing muted "disconnect" and chevron, the
+     whole row a button behind a "disconnect claude?" alert, as the laptop
+     row's "unpair" is), or a muted "none yet"; and "connect another" ("have
+     a code?" until 2026-11-12), which opens
      `AgentCodeSheet` (the code field and "connect", then the approve
      sheet over it); last, on or off, a plain "privacy policy" link row to
      `AgentConnectionCopy.privacyURL` with no sentence beside it (since
@@ -1225,12 +1228,12 @@ Keep this current. It is the fastest way for a new session to know what exists.
   alive (`LHFScenes.swift`) and open-at-login.
 - **Connect an agent** (2026-11-08, `agent/connection-v11`, compiled, never
   on a phone; behind `FeatureFlags.agentConnection`, Penn installs past
-  onboarding with a backend only). Profile → agent holds the
-  "connected agent" switch and the connected agents (since 2026-11-11 a
+  onboarding with a backend only). Profile → connected agent holds the
+  on switch and the connected agents (since 2026-11-11 a
   section of its own after accounts, see Profile above; before, a pushed
   `AgentConnectionsView` with the whole disclosure on screen). A
   `smooth://link?c=…` URL (the "Open Smooth" button on the agent's sign-in
-  page) or a typed code ("have a code?") looks the pending request up and
+  page) or a typed code ("connect another") looks the pending request up and
   shows `AgentLinkApproveSheet`, trimmed 2026-11-11 and again that night
   to the question, the prompt and the buttons: "connect claude?", "pick
   the matching number", three numbers (a wrong one denies the request on

@@ -188,7 +188,7 @@ struct SettingsPage: View {
                 Section {
                     ProfileAgentRows()
                 } header: {
-                    SmoothSectionHeader("agent", accent: .smoothCobalt)
+                    SmoothSectionHeader(AgentConnectionCopy.sectionHeader, accent: .smoothCobalt)
                 }
                 .smoothSectionBackground(.smoothGrape)
             }
