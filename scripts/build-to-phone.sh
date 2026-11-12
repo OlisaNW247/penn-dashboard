@@ -75,6 +75,16 @@ set -e
 if [ "$status" -ne 0 ] || ! grep -q "BUILD SUCCEEDED" "$log"; then
   echo "The build failed. The errors:" >&2
   grep -E "error:|BUILD FAILED" "$log" | sort -u | tail -30 >&2
+  # "Unable to find a destination" is not a compile error: xcodebuild knows the
+  # phone and will not use it yet, and the reason is on the lines after the
+  # error (a locked phone, a phone still being prepared, an iOS newer than this
+  # Xcode supports). The grep above drops those lines, which on 2026-11-11 left
+  # the error ending at its colon with nothing after it.
+  if grep -q "Unable to find a destination" "$log"; then
+    echo "xcodebuild sees the phone but will not build for it yet. What it said:" >&2
+    grep -A 25 "Unable to find a destination" "$log" | sed -n '2,26p' >&2
+    echo "Usual fix: unlock the phone, keep its screen on, wait ten seconds, run this again." >&2
+  fi
   exit 1
 fi
 echo "Built."
