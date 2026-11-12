@@ -399,8 +399,10 @@ Keep this current. It is the fastest way for a new session to know what exists.
     402pt phone). The **Sweeper**
     button (since 2026-11-10 on `v11`; since 2026-11-11 an `alarm.fill`, Marco:
     "the shovel or sweep emoji sucks"; first on a solid tomato squircle, then,
-    the same day, "far too orange", in the + button's old colours: a 22%
-    tomato wash under a tomato-ink glyph, with the + moved to lemon; a small dark-red "new"
+    the same day, "far too orange", in the + button's old colours (a 22%
+    tomato wash, the + moved to lemon), and since 2026-11-12 ("the alarm
+    should be black instead of red") an ink glyph on the header's 18% wash in
+    `smoothMuted`, the neutral; a small dark-red "new"
     dot shows only until the Sweeper page has been opened once,
     `sweeperPageSeenV1`), the **megaphone** and a profile button sit beside it. All
     three are 42pt squircles with 8pt spacing on `v11` (48pt with two)
