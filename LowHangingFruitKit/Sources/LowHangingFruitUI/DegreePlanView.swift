@@ -17,10 +17,19 @@ struct DegreePlanView: View {
     private var audit: DegreeAudit? { state.degree.current }
     private var plan: DegreePlan { state.degreePlan }
 
+    /// A dual-degree student plans toward both audits: the plan is one set of
+    /// semesters.
+    private var audits: [DegreeLabeledAudit] {
+        if state.degreeHasSeveral { return state.degreeAudits }
+        var single: [DegreeLabeledAudit] = []
+        if let audit { single.append(DegreeLabeledAudit(degreeID: "current", label: "", audit: audit)) }
+        return single
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             summary
-            DegreeSemesterTable(audit: audit)
+            DegreeSemesterTable(audits: audits)
         }
     }
 
@@ -30,9 +39,15 @@ struct DegreePlanView: View {
         let total = DegreePlanMath.totalPlannedCredits(plan)
         guard total > 0 else { return nil }
         var text = "\(DegreeProgressMath.credits(total)) cu planned"
-        let counts = DegreePlanMath.coveredCount(plan: plan, audit: audit)
-        if counts.open > 0 {
-            text += " · \(counts.covered) of \(counts.open) open requirements have a planned course"
+        var covered = 0
+        var open = 0
+        for entry in audits {
+            let counts = DegreePlanMath.coveredCount(plan: plan, audit: entry.audit)
+            covered += counts.covered
+            open += counts.open
+        }
+        if open > 0 {
+            text += " · \(covered) of \(open) open requirements have a planned course"
         }
         return text
     }
@@ -63,9 +78,9 @@ struct DegreePlanAddSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let termCode: String
-    /// The audit the table behind the sheet is drawn against, so a what-if's
+    /// The audits the table behind the sheet is drawn against, so a what-if's
     /// open requirements are the ones offered while a what-if is showing.
-    let audit: DegreeAudit?
+    let audits: [DegreeLabeledAudit]
 
     @State private var typed = ""
     @State private var credits = 1.0
@@ -83,9 +98,24 @@ struct DegreePlanAddSheet: View {
         !trimmed.isEmpty && !termIsFull && !DegreePlanMath.isPlanned(trimmed, in: plan)
     }
 
-    private var requirements: [DegreePlanMath.OpenRequirement] {
-        DegreePlanMath.addable(DegreePlanMath.openRequirements(in: audit), plan: plan, audit: audit,
-                               history: state.degree.history)
+    private struct OptionGroup: Identifiable {
+        let id: String
+        let label: String
+        let requirements: [DegreePlanMath.OpenRequirement]
+    }
+
+    /// One group per audit with something addable; empty groups are skipped.
+    private var groups: [OptionGroup] {
+        var out: [OptionGroup] = []
+        for group in DegreeOverall.openGroups(audits) {
+            let audit = audits.first { $0.degreeID == group.degreeID }?.audit
+            let addable = DegreePlanMath.addable(group.requirements, plan: plan, audit: audit,
+                                                 history: state.degree.history)
+            if !addable.isEmpty {
+                out.append(OptionGroup(id: group.degreeID, label: group.label, requirements: addable))
+            }
+        }
+        return out
     }
 
     var body: some View {
@@ -164,7 +194,7 @@ struct DegreePlanAddSheet: View {
 
     @ViewBuilder
     private var options: some View {
-        let list = requirements
+        let list = groups
         if !list.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Text("still open on your audit")
@@ -172,8 +202,15 @@ struct DegreePlanAddSheet: View {
                     .foregroundStyle(Color.smoothInk)
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 14) {
-                        ForEach(list) { requirement in
-                            section(requirement)
+                        ForEach(list) { group in
+                            if list.count > 1 {
+                                Text(group.label)
+                                    .font(.lhfSans(12, weight: .semibold))
+                                    .foregroundStyle(Color.smoothMuted)
+                            }
+                            ForEach(group.requirements) { requirement in
+                                section(requirement)
+                            }
                         }
                     }
                 }

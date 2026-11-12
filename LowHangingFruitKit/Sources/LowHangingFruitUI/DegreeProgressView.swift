@@ -259,8 +259,11 @@ struct DegreeProgressView: View {
     private var progressTab: some View {
         VStack(alignment: .leading, spacing: 16) {
             degreeChips
-            if let audit = state.degree.current {
-                auditBody(audit, tag: nil, headline: programTitle(audit), summary: nil, prefix: "c:")
+            if state.degreeOverallActive {
+                overallBody
+            } else if let audit = state.degree.current {
+                auditBody(audit, tag: nil, headline: programTitle(audit), summary: nil, prefix: "c:",
+                          tableAudits: state.degreeHasSeveral ? state.degreeAudits : nil)
             } else {
                 emptyProgress
             }
@@ -276,10 +279,14 @@ struct DegreeProgressView: View {
             let labels = DegreeGoals.chipTitles(for: degrees.map(\.goals), descriptions: descriptions)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
+                    bothChip
                     ForEach(Array(degrees.enumerated()), id: \.element.id) { index, degree in
-                        let isSelected = degree.id == selectedID
+                        let isSelected = degree.id == selectedID && !state.degreeOverallActive
                         let title = degree.goals.title(descriptions: descriptions)
-                        Button { Task { await state.selectDegree(degree.id) } } label: {
+                        Button {
+                            state.setDegreeShowsOverall(false)
+                            Task { await state.selectDegree(degree.id) }
+                        } label: {
                             Text(index < labels.count ? labels[index] : title)
                                 .font(.lhfSans(13, weight: isSelected ? .semibold : .medium))
                                 .foregroundStyle(isSelected ? Color.smoothTealInk : Color.smoothMuted)
@@ -296,6 +303,23 @@ struct DegreeProgressView: View {
                 }
             }
         }
+    }
+
+    private var bothChip: some View {
+        let isSelected = state.degreeOverallActive
+        return Button { state.setDegreeShowsOverall(true) } label: {
+            Text("both")
+                .font(.lhfSans(13, weight: isSelected ? .semibold : .medium))
+                .foregroundStyle(isSelected ? Color.smoothTealInk : Color.smoothMuted)
+                .lineLimit(1)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(isSelected ? Color.smoothTeal.opacity(0.22) : Color.clear, in: Capsule())
+                .overlay { Capsule().stroke(Color.smoothRule, lineWidth: isSelected ? 0 : 1) }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("both degrees")
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
     private var canRead: Bool {
@@ -331,6 +355,108 @@ struct DegreeProgressView: View {
         return title
     }
 
+    // MARK: Both degrees
+
+    /// Each degree's own ring, Penn's rule counts added up in one bar, the
+    /// courses Penn applied in both audits, then each audit's blocks. No
+    /// combined percent: Penn publishes none.
+    private var overallBody: some View {
+        let audits = state.degreeAudits
+        let counts = DegreeOverall.counts(audits)
+        let total = counts.met + counts.inProgress + counts.open
+        let shared = DegreeOverall.sharedCourses(audits)
+        let merged = DegreeOverall.mergedCourses(audits)
+        return VStack(alignment: .leading, spacing: 16) {
+            overallRings(audits)
+            DegreeLegend()
+            if total > 0 {
+                overallBar(counts: counts, total: total)
+            }
+            if !shared.isEmpty {
+                sharedRow(shared, merged: merged)
+            }
+            DegreeSemesterTable(audits: audits)
+            ForEach(audits) { entry in
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(entry.label)
+                        .font(.lhfSans(15, weight: .semibold))
+                        .foregroundStyle(Color.smoothInk)
+                        .accessibilityAddTraits(.isHeader)
+                    blockRows(entry.audit, prefix: "o:" + entry.degreeID + ":")
+                }
+            }
+        }
+        .task { await state.ensureAllDegreeAudits() }
+    }
+
+    private func overallRings(_ audits: [DegreeLabeledAudit]) -> some View {
+        let degrees = state.degree.degrees
+        let titles = DegreeGoals.chipTitles(for: degrees.map(\.goals), descriptions: descriptions)
+        return HStack(alignment: .top, spacing: 16) {
+            ForEach(Array(degrees.enumerated()), id: \.element.id) { index, entry in
+                let match = audits.first { $0.degreeID == entry.id }
+                let title = index < titles.count ? titles[index] : entry.goals.title(descriptions: descriptions)
+                Button {
+                    state.setDegreeShowsOverall(false)
+                    Task { await state.selectDegree(entry.id) }
+                } label: {
+                    VStack(spacing: 6) {
+                        if let match {
+                            let ring = DegreeProgressMath.ring(for: match.audit)
+                            DegreeRingView(fraction: ring.fraction, centre: ring.centre,
+                                           caption: ring.caption, diameter: 80)
+                        } else {
+                            DegreeRingView(fraction: 0, centre: "…", caption: "", diameter: 80)
+                        }
+                        Text(match?.label ?? title)
+                            .font(.lhfSans(13, weight: .medium))
+                            .foregroundStyle(Color.smoothInk)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func overallBar(counts: (met: Int, inProgress: Int, open: Int), total: Int) -> some View {
+        let whole = Double(total)
+        let shares = (met: Double(counts.met) / whole, inProgress: Double(counts.inProgress) / whole)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("both degrees")
+                    .font(.lhfSans(15, weight: .semibold))
+                    .foregroundStyle(Color.smoothInk)
+                Spacer(minLength: 8)
+                Text("\(counts.met) of \(total)")
+                    .font(.lhfMono(12))
+                    .foregroundStyle(Color.smoothMuted)
+            }
+            DegreeBar(shares: shares)
+        }
+    }
+
+    private func sharedRow(_ codes: [String], merged: [AuditCourse]) -> some View {
+        var found: [AuditCourse] = []
+        for code in codes {
+            if let course = merged.first(where: { DegreePlanMath.normalizedCode($0.code) == code }) {
+                found.append(course)
+            }
+        }
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("counts in both")
+                .font(.lhfSans(13, weight: .semibold))
+                .foregroundStyle(Color.smoothMuted)
+            DegreeFlowLayout(spacing: 6) {
+                ForEach(Array(found.enumerated()), id: \.offset) { _, course in
+                    DegreeCourseChip(course: course)
+                }
+            }
+        }
+    }
+
     // MARK: What if
 
     @ViewBuilder
@@ -340,7 +466,7 @@ struct DegreeProgressView: View {
             VStack(alignment: .leading, spacing: 12) {
                 optionsRow(shown: nil)
                 switchButton
-                DegreeSemesterTable(audit: state.degree.current)
+                DegreeSemesterTable(audits: tableAudits(replacingSelectedWith: nil))
             }
             .padding(.top, 8)
         } else {
@@ -353,7 +479,8 @@ struct DegreeProgressView: View {
                                                      target: target.goals, descriptions: descriptions)
                 let summary = DegreeWhatIf.summarize(current: state.degree.current, target: target)
                 auditBody(target, tag: "what if", headline: headline,
-                          summary: summaryLine(summary), prefix: "w:")
+                          summary: summaryLine(summary), prefix: "w:",
+                          tableAudits: state.degreeHasSeveral ? tableAudits(replacingSelectedWith: target) : nil)
             }
         }
     }
@@ -471,7 +598,8 @@ struct DegreeProgressView: View {
     // MARK: Shared audit body
 
     private func auditBody(_ audit: DegreeAudit, tag: String?, headline: String,
-                           summary: String?, prefix: String) -> some View {
+                           summary: String?, prefix: String,
+                           tableAudits: [DegreeLabeledAudit]? = nil) -> some View {
         let ring = DegreeProgressMath.ring(for: audit)
         return VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center, spacing: 16) {
@@ -502,8 +630,20 @@ struct DegreeProgressView: View {
                 Spacer(minLength: 0)
             }
             DegreeLegend()
-            DegreeSemesterTable(audit: audit)
-            ForEach(DegreeProgressMath.orderedBlocks(audit.blocks).filter(DegreeProgressMath.isShown)) { block in
+            if let tableAudits {
+                DegreeSemesterTable(audits: tableAudits)
+            } else {
+                DegreeSemesterTable(audit: audit)
+            }
+            blockRows(audit, prefix: prefix)
+        }
+    }
+
+    /// The audit's block cards, shared by the single and the combined views.
+    private func blockRows(_ audit: DegreeAudit, prefix: String) -> some View {
+        let blocks = DegreeProgressMath.orderedBlocks(audit.blocks).filter(DegreeProgressMath.isShown)
+        return VStack(alignment: .leading, spacing: 16) {
+            ForEach(blocks) { block in
                 DegreeBlockRow(block: block, isExpanded: expanded.contains(prefix + block.id)) {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                         let key = prefix + block.id
@@ -512,6 +652,23 @@ struct DegreeProgressView: View {
                 }
             }
         }
+    }
+
+    /// For a dual-degree student the table plans toward both audits; a what-if
+    /// takes the place of the selected degree's own entry.
+    private func tableAudits(replacingSelectedWith whatIf: DegreeAudit?) -> [DegreeLabeledAudit] {
+        let all = state.degreeAudits
+        guard let whatIf, let selectedID = state.selectedStudentDegree?.id,
+              all.contains(where: { $0.degreeID == selectedID }) else { return all }
+        var out: [DegreeLabeledAudit] = []
+        for entry in all {
+            if entry.degreeID == selectedID {
+                out.append(DegreeLabeledAudit(degreeID: entry.degreeID, label: entry.label, audit: whatIf))
+            } else {
+                out.append(entry)
+            }
+        }
+        return out
     }
 
     private var footer: some View {
@@ -558,6 +715,7 @@ struct DegreeRingView: View {
     let centre: String
     let caption: String
     var extraFraction: Double = 0
+    var diameter: CGFloat = 96
 
     private var main: CGFloat { CGFloat(min(max(fraction, 0), 1)) }
     private var extra: CGFloat { CGFloat(min(max(extraFraction, 0), max(0, 1 - Double(main)))) }
@@ -588,7 +746,7 @@ struct DegreeRingView: View {
             }
             .padding(.horizontal, 10)
         }
-        .frame(width: 96, height: 96)
+        .frame(width: diameter, height: diameter)
         .animation(.spring(response: 0.5, dampingFraction: 0.85), value: fraction)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(caption.isEmpty ? centre : "\(centre) \(caption)")

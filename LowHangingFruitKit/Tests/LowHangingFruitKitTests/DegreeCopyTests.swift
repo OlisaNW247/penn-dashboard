@@ -95,7 +95,28 @@ struct DegreeCopyTests {
         #expect(source.contains("struct DegreeSemesterPage"))
         #expect(source.contains("Text(\"full view\")"))
         #expect(source.contains(".accessibilityLabel(\"full view\")"))
-        #expect(source.contains("DegreeSemesterTable(audit: audit, layout: .page)"))
+        #expect(source.contains("DegreeSemesterTable(audits: audits, layout: .page)"))
         #expect(source.contains("Text(\"semesters\")"))
+    }
+
+    @Test("the combined view: both chip, Penn's counts, shared courses, no combined percent")
+    func combinedView() throws {
+        let progress = try uiSource("DegreeProgressView.swift")
+        #expect(progress.contains("Text(\"both\")"))
+        #expect(progress.contains(".accessibilityLabel(\"both degrees\")"))
+        #expect(progress.contains("DegreeOverall.counts("))
+        #expect(progress.contains("DegreeOverall.sharedCourses("))
+        #expect(progress.contains("ensureAllDegreeAudits()"))
+        #expect(!progress.lowercased().contains("average"))
+        #expect(try uiSource("DegreeSemesterTable.swift").contains("DegreeOverall.fits("))
+        #expect(try uiSource("DegreePlanView.swift").contains("DegreeOverall.openGroups("))
+    }
+
+    @Test("a fits line names the degree only when there is one to name")
+    func fitLine() {
+        let single = DegreePlanFit(degreeLabel: "", requirement: "Free Electives")
+        #expect(DegreeSemesterTable.fitLine(single) == "fits · free electives")
+        let dual = DegreePlanFit(degreeLabel: "finance", requirement: "Core Math")
+        #expect(DegreeSemesterTable.fitLine(dual) == "fits · finance · core math")
     }
 }

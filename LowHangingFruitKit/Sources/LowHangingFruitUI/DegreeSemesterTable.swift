@@ -38,12 +38,42 @@ struct DegreeSemesterTable: View {
 
     @EnvironmentObject var state: AppState
 
-    let audit: DegreeAudit?
+    let audits: [DegreeLabeledAudit]
     let layout: Layout
 
-    init(audit: DegreeAudit?, layout: Layout = .strip) {
-        self.audit = audit
+    init(audits: [DegreeLabeledAudit], layout: Layout = .strip) {
+        self.audits = audits
         self.layout = layout
+    }
+
+    /// One audit, or none: the single-degree screen's form.
+    init(audit: DegreeAudit?, layout: Layout = .strip) {
+        var wrapped: [DegreeLabeledAudit] = []
+        if let audit {
+            wrapped.append(DegreeLabeledAudit(degreeID: "current", label: "", audit: audit))
+        }
+        self.init(audits: wrapped, layout: layout)
+    }
+
+    /// The audit `DegreeTimeline.columns` looks courses up in. The timeline
+    /// only reads courses for credits and titles, and a dual-degree student's
+    /// courses are spread over two audits, so with several the first audit is
+    /// copied with every audit's courses merged into it.
+    private var lookupAudit: DegreeAudit? {
+        guard let first = audits.first?.audit else { return nil }
+        if audits.count == 1 { return first }
+        return DegreeAudit(
+            goals: first.goals, isWhatIf: first.isWhatIf, percentComplete: first.percentComplete,
+            degreeLabel: first.degreeLabel, catalogYearLabel: first.catalogYearLabel,
+            blocks: first.blocks, courses: DegreeOverall.mergedCourses(audits),
+            fetchedAt: first.fetchedAt)
+    }
+
+    /// The muted line under a planned course for one requirement it fits.
+    nonisolated static func fitLine(_ fit: DegreePlanFit) -> String {
+        let requirement = fit.requirement.lowercased()
+        if fit.degreeLabel.isEmpty { return "fits · \(requirement)" }
+        return "fits · \(fit.degreeLabel) · \(requirement)"
     }
 
     @State private var sheetTarget: PlanSheetTarget?
@@ -58,8 +88,8 @@ struct DegreeSemesterTable: View {
 
     var body: some View {
         let columns = DegreeTimeline.columns(
-            history: state.degree.history, plan: plan, audit: audit, now: Date())
-        let coverage = DegreePlanMath.coverage(plan: plan, audit: audit)
+            history: state.degree.history, plan: plan, audit: lookupAudit, now: Date())
+        let coverage = DegreeOverall.fits(plan: plan, audits: audits)
         return Group {
             if isPage {
                 pageTable(columns, coverage: coverage)
@@ -68,14 +98,14 @@ struct DegreeSemesterTable: View {
             }
         }
             .sheet(item: $sheetTarget) { target in
-                DegreePlanAddSheet(termCode: target.termCode, audit: audit)
+                DegreePlanAddSheet(termCode: target.termCode, audits: audits)
                     .environmentObject(state)
             }
     }
 
     // MARK: Table
 
-    private func stripWithButton(_ columns: [TimelineColumn], coverage: [String: String]) -> some View {
+    private func stripWithButton(_ columns: [TimelineColumn], coverage: [String: [DegreePlanFit]]) -> some View {
         VStack(alignment: .trailing, spacing: 4) {
             Button { showPage = true } label: {
                 HStack(spacing: 4) {
@@ -93,13 +123,13 @@ struct DegreeSemesterTable: View {
         }
         #if os(iOS)
         .fullScreenCover(isPresented: $showPage) {
-            DegreeSemesterPage(audit: audit)
+            DegreeSemesterPage(audits: audits)
                 .environmentObject(state)
                 .lhfSheetTheme()
         }
         #else
         .sheet(isPresented: $showPage) {
-            DegreeSemesterPage(audit: audit)
+            DegreeSemesterPage(audits: audits)
                 .environmentObject(state)
                 .lhfSheetTheme()
         }
@@ -108,7 +138,7 @@ struct DegreeSemesterTable: View {
 
     // MARK: Page
 
-    private func pageTable(_ columns: [TimelineColumn], coverage: [String: String]) -> some View {
+    private func pageTable(_ columns: [TimelineColumn], coverage: [String: [DegreePlanFit]]) -> some View {
         GeometryReader { geo in
             let cells = columns.count + 1
             let counts = DegreeTimeline.pageColumnCounts(width: Double(geo.size.width), cells: cells)
@@ -121,7 +151,7 @@ struct DegreeSemesterTable: View {
     /// because `ViewThatFits` takes its candidates as a view builder.
     private func pageFit(
         _ counts: ArraySlice<Int>, widest: Int,
-        columns: [TimelineColumn], coverage: [String: String]
+        columns: [TimelineColumn], coverage: [String: [DegreePlanFit]]
     ) -> AnyView {
         guard let first = counts.first else {
             return AnyView(ScrollView(.vertical, showsIndicators: false) {
@@ -134,7 +164,7 @@ struct DegreeSemesterTable: View {
         })
     }
 
-    private func pageGrid(perRow: Int, columns: [TimelineColumn], coverage: [String: String]) -> some View {
+    private func pageGrid(perRow: Int, columns: [TimelineColumn], coverage: [String: [DegreePlanFit]]) -> some View {
         var cells: [PageCell] = columns.map { PageCell.column($0) }
         cells.append(.addSemester)
         let rows = DegreeTimeline.rows(cells, perRow: perRow)
@@ -160,7 +190,7 @@ struct DegreeSemesterTable: View {
     }
 
     @ViewBuilder
-    private func pageCell(_ cell: PageCell, coverage: [String: String]) -> some View {
+    private func pageCell(_ cell: PageCell, coverage: [String: [DegreePlanFit]]) -> some View {
         switch cell {
         case .column(let column): columnView(column, coverage: coverage)
         case .addSemester: addTermButton
@@ -179,7 +209,7 @@ struct DegreeSemesterTable: View {
         }
     }
 
-    private func table(_ columns: [TimelineColumn], coverage: [String: String]) -> some View {
+    private func table(_ columns: [TimelineColumn], coverage: [String: [DegreePlanFit]]) -> some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: 10) {
@@ -201,7 +231,7 @@ struct DegreeSemesterTable: View {
     }
 
     @ViewBuilder
-    private func columnView(_ column: TimelineColumn, coverage: [String: String]) -> some View {
+    private func columnView(_ column: TimelineColumn, coverage: [String: [DegreePlanFit]]) -> some View {
         if column.kind == .future {
             card(column, coverage: coverage)
                 .dropDestination(for: String.self) { items, _ in
@@ -218,7 +248,7 @@ struct DegreeSemesterTable: View {
         }
     }
 
-    private func card(_ column: TimelineColumn, coverage: [String: String]) -> some View {
+    private func card(_ column: TimelineColumn, coverage: [String: [DegreePlanFit]]) -> some View {
         let isTargeted = targetedTerm == column.termCode
         return VStack(alignment: .leading, spacing: isPage ? 6 : 10) {
             header(column)
@@ -227,7 +257,7 @@ struct DegreeSemesterTable: View {
             }
             ForEach(column.planned) { course in
                 plannedRow(course, termCode: column.termCode,
-                           fit: coverage[DegreePlanMath.normalizedCode(course.code)])
+                           fits: coverage[DegreePlanMath.normalizedCode(course.code)] ?? [])
             }
             if column.kind == .future {
                 addCourseButton(column)
@@ -332,7 +362,7 @@ struct DegreeSemesterTable: View {
         }
     }
 
-    private func plannedRow(_ course: PlannedCourse, termCode: String, fit: String?) -> some View {
+    private func plannedRow(_ course: PlannedCourse, termCode: String, fits: [DegreePlanFit]) -> some View {
         let code = DegreePlanMath.normalizedCode(course.code)
         return VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 4) {
@@ -349,8 +379,8 @@ struct DegreeSemesterTable: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("remove \(course.code)")
             }
-            if let fit {
-                Text("fits · \(fit.lowercased())")
+            ForEach(Array(fits.prefix(2).enumerated()), id: \.offset) { _, fit in
+                Text(Self.fitLine(fit))
                     .font(.lhfSans(11))
                     .foregroundStyle(Color.smoothMuted)
                     .lineLimit(2)
@@ -424,7 +454,19 @@ private struct CardWidth: ViewModifier {
 struct DegreeSemesterPage: View {
     @Environment(\.dismiss) private var dismiss
 
-    let audit: DegreeAudit?
+    let audits: [DegreeLabeledAudit]
+
+    init(audits: [DegreeLabeledAudit]) {
+        self.audits = audits
+    }
+
+    init(audit: DegreeAudit?) {
+        var wrapped: [DegreeLabeledAudit] = []
+        if let audit {
+            wrapped.append(DegreeLabeledAudit(degreeID: "current", label: "", audit: audit))
+        }
+        self.audits = wrapped
+    }
 
     var body: some View {
         ZStack {
@@ -446,7 +488,7 @@ struct DegreeSemesterPage: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("close")
                 }
-                DegreeSemesterTable(audit: audit, layout: .page)
+                DegreeSemesterTable(audits: audits, layout: .page)
             }
             .padding(.horizontal, 16)
         }
