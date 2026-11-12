@@ -1548,6 +1548,14 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
+**On `claude/v11-ui-pass-84648c` (2026-11-11, off `v11-master` `0a78549`):
+3929 tests / 378 suites, all green, `swift test --no-parallel` alone on
+Marco's Mac (54 s), +7 / +1 over 3922 / 377: `UIPassNov11Tests` (the
+triple-tap rule, the backflip, the hover bounds and wiring), one
+`DashboardSmallFixesTests` case (the Sweeper button) and one
+`SweeperOnboardingTests` case (the on row first). The iOS Simulator and
+signed device Debug builds of `3c9d245` succeeded.**
+
 **Merged on `v11-master` 2026-11-11 (the UI trim `5d7d7a5` plus the three
 test-session branches, `claude/v11-test-backend-3b1f1b`,
 `claude/v11-test-phone-e16828`, `claude/v11-extensions-ac4092`, merged at
