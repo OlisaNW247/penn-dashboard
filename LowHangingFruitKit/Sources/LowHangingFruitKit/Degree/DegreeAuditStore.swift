@@ -5,6 +5,20 @@ import Foundation
 // WebView (shape observed 2026-11-10): the student's degrees, the audit
 // decoded from the page's response, and Penn's public program catalogue.
 
+/// The audit and what-ifs of a degree that is not the selected one, kept so a
+/// chip tap can show them at once. Switching chips used to discard the other
+/// degree's audit and force a 30-second read of something that had not
+/// changed since the last registration or grade posting.
+public struct DegreeShelf: Codable, Sendable, Equatable {
+    public var audit: DegreeAudit?
+    public var whatIfs: [DegreeAudit]
+
+    public init(audit: DegreeAudit? = nil, whatIfs: [DegreeAudit] = []) {
+        self.audit = audit
+        self.whatIfs = whatIfs
+    }
+}
+
 public struct DegreeSnapshot: Codable, Sendable, Equatable {
     public var current: DegreeAudit?
     /// Most recent first, at most 5 (the store enforces it on save).
@@ -24,6 +38,9 @@ public struct DegreeSnapshot: Codable, Sendable, Equatable {
     /// a course, so the timeline table reads its past and current columns from
     /// here. Empty until something fills it.
     public var history: [String: [String]]
+    /// The audits of the degrees that are not selected, by `StudentDegree.id`.
+    /// The selected degree's audit lives in `current`, never here.
+    public var shelved: [String: DegreeShelf]
 
     public init(
         current: DegreeAudit? = nil,
@@ -33,7 +50,8 @@ public struct DegreeSnapshot: Codable, Sendable, Equatable {
         programs: [PathProgramListing] = [],
         dictionaries: PathDictionaries? = nil,
         lastShape: [String] = [],
-        history: [String: [String]] = [:]
+        history: [String: [String]] = [:],
+        shelved: [String: DegreeShelf] = [:]
     ) {
         self.current = current
         self.whatIfs = whatIfs
@@ -43,12 +61,41 @@ public struct DegreeSnapshot: Codable, Sendable, Equatable {
         self.dictionaries = dictionaries
         self.lastShape = lastShape
         self.history = history
+        self.shelved = shelved
+    }
+
+    /// Moves the snapshot to another degree without losing the one it leaves:
+    /// the current audit and what-ifs go on the shelf under `oldID`, and the
+    /// shelf for `id` (if any) becomes `current` and `whatIfs`. A degree with
+    /// no shelf shows nothing until it is read. The wrong fix for the slow
+    /// switch was hiding the "reading" line; the blank screen and the sign-in
+    /// to Penn behind it would still have happened every time.
+    public func selecting(_ id: String, from oldID: String?) -> DegreeSnapshot {
+        if oldID == id { return self }
+        var next = self
+        if let oldID, current != nil || !whatIfs.isEmpty {
+            next.shelved[oldID] = DegreeShelf(audit: current, whatIfs: whatIfs)
+        }
+        let restored = next.shelved.removeValue(forKey: id)
+        next.current = restored?.audit
+        next.whatIfs = restored?.whatIfs ?? []
+        next.selectedDegreeID = id
+        return next
+    }
+
+    /// Drops shelves for degrees the record no longer lists, and the shelf for
+    /// the selected degree, whose audit is `current`: a shelf under that id
+    /// would be a stale second copy.
+    public func pruningShelves(keeping ids: [String], selected: String?) -> DegreeSnapshot {
+        var next = self
+        next.shelved = shelved.filter { ids.contains($0.key) && $0.key != selected }
+        return next
     }
 
     public static let empty = DegreeSnapshot()
 
     private enum CodingKeys: String, CodingKey {
-        case current, whatIfs, degrees, selectedDegreeID, programs, dictionaries, lastShape, history
+        case current, whatIfs, degrees, selectedDegreeID, programs, dictionaries, lastShape, history, shelved
     }
 
     /// Lenient on purpose: a file written before the Path@Penn rewrite has a
@@ -65,6 +112,7 @@ public struct DegreeSnapshot: Codable, Sendable, Equatable {
         self.dictionaries = try container.decodeIfPresent(PathDictionaries.self, forKey: .dictionaries)
         self.lastShape = try container.decodeIfPresent([String].self, forKey: .lastShape) ?? []
         self.history = try container.decodeIfPresent([String: [String]].self, forKey: .history) ?? [:]
+        self.shelved = try container.decodeIfPresent([String: DegreeShelf].self, forKey: .shelved) ?? [:]
     }
 }
 
@@ -115,6 +163,9 @@ public struct DegreeAuditStore: Sendable {
         var trimmed = snapshot
         if trimmed.whatIfs.count > Self.maxWhatIfs {
             trimmed.whatIfs = Array(trimmed.whatIfs.prefix(Self.maxWhatIfs))
+        }
+        for (key, shelf) in trimmed.shelved where shelf.whatIfs.count > Self.maxWhatIfs {
+            trimmed.shelved[key]?.whatIfs = Array(shelf.whatIfs.prefix(Self.maxWhatIfs))
         }
         let directory = fileURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

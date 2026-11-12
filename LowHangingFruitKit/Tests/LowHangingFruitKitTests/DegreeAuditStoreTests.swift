@@ -120,4 +120,74 @@ struct DegreeAuditStoreTests {
         #expect(url.lastPathComponent == "degree-audit.json")
         #expect(url.deletingLastPathComponent().lastPathComponent == "LowHangingFruit")
     }
+
+    // MARK: Shelves
+
+    @Test("selecting shelves the old degree's audit and what-ifs and restores the new one's")
+    func selectingShelves() {
+        let snapshot = DegreeSnapshot(
+            current: audit("A"), whatIfs: [audit("AW")],
+            selectedDegreeID: "a",
+            shelved: ["b": DegreeShelf(audit: audit("B"), whatIfs: [audit("BW")])])
+        let moved = snapshot.selecting("b", from: "a")
+        #expect(moved.selectedDegreeID == "b")
+        #expect(moved.current == audit("B"))
+        #expect(moved.whatIfs == [audit("BW")])
+        #expect(moved.shelved["a"] == DegreeShelf(audit: audit("A"), whatIfs: [audit("AW")]))
+        #expect(moved.shelved["b"] == nil)
+    }
+
+    @Test("switching A to B and back returns the original audit and what-ifs")
+    func roundTripSwitch() {
+        let snapshot = DegreeSnapshot(
+            current: audit("A"), whatIfs: [audit("AW")], selectedDegreeID: "a")
+        let there = snapshot.selecting("b", from: "a")
+        #expect(there.current == nil)
+        #expect(there.whatIfs.isEmpty)
+        let back = there.selecting("a", from: "b")
+        #expect(back.current == snapshot.current)
+        #expect(back.whatIfs == snapshot.whatIfs)
+        #expect(back.selectedDegreeID == "a")
+    }
+
+    @Test("selecting the selected degree changes nothing")
+    func selectingSame() {
+        let snapshot = DegreeSnapshot(
+            current: audit("A"), whatIfs: [audit("AW")], selectedDegreeID: "a",
+            shelved: ["b": DegreeShelf(audit: audit("B"))])
+        #expect(snapshot.selecting("a", from: "a") == snapshot)
+    }
+
+    @Test("pruning drops unknown degrees and the selected one's shelf")
+    func pruning() {
+        let snapshot = DegreeSnapshot(
+            current: audit("A"), selectedDegreeID: "a",
+            shelved: [
+                "a": DegreeShelf(audit: audit("stale")),
+                "b": DegreeShelf(audit: audit("B")),
+                "gone": DegreeShelf(audit: audit("G")),
+            ])
+        let pruned = snapshot.pruningShelves(keeping: ["a", "b"], selected: "a")
+        #expect(Set(pruned.shelved.keys) == ["b"])
+        #expect(pruned.current == audit("A"))
+    }
+
+    @Test("shelves survive the store, whatIfs on a shelf are capped, and an old file has none")
+    func shelvesPersist() throws {
+        let directory = scratch()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = DegreeAuditStore(directory: directory)
+        let many = (0..<8).map { audit("W\($0)") }
+        let snapshot = DegreeSnapshot(
+            current: audit("A"), selectedDegreeID: "a",
+            shelved: ["b": DegreeShelf(audit: audit("B"), whatIfs: many)])
+        try store.save(snapshot)
+        let back = store.load()
+        #expect(back.shelved["b"]?.audit == audit("B"))
+        #expect(back.shelved["b"]?.whatIfs.count == DegreeAuditStore.maxWhatIfs)
+        #expect(back.shelved["b"]?.whatIfs.map { $0.goals.majors[0] } == ["W0", "W1", "W2", "W3", "W4"])
+        let decoder = JSONDecoder()
+        let bare = try decoder.decode(DegreeSnapshot.self, from: Data(#"{"whatIfs":[]}"#.utf8))
+        #expect(bare.shelved.isEmpty)
+    }
 }
