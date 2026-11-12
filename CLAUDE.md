@@ -79,7 +79,7 @@ model on the server for course-level "facts"; they belong to the class,
 carry no user id, and a student's AI-assist switch does not stop them
 (`docs/PRIVACY.md` says so). The phone also reads Canvas's own structured
 endpoints (Planner, module completion, section dates) with the student's
-session and keeps the results on the phone. Since 2026-11-10 (`v12`; first read on a device the same day, Olisa's iPhone 17, a Debug build of `d2f37a0`) a
+session and keeps the results on the phone. Since 2026-11-10 (`v12`; first read on a device the same day, Olisa's iPhone 17, a Debug build of `d2f37a0`; **switched off on 2026-11-12**, `FeatureFlags.degreeProgress = false`, so while it is off none of this runs) a
 Penn install can show the student's degree audit by running Penn's own
 Path@Penn page in a hidden WebView (`PathPortal`), signed in with the same
 saved PennKey, and asking that page for the audit through allowlisted
@@ -832,7 +832,16 @@ Keep this current. It is the fastest way for a new session to know what exists.
   working perfectly"). Owner's ask of 2026-10-22: "voice mode for the tree AI";
   dictate-then-send was the agreed first version, hands-free with spoken
   answers set aside (`ROADMAP.md` → Next).
-- **Degree** (`DegreeProgressView`, `v12`, behind
+- **Degree** (**switched off on 2026-11-12**: `FeatureFlags.degreeProgress
+  = false`, at Olisa's word, "remove the degree progress thing temporarily
+  because I don't think it is ready", so `v12` could go to Marco without it.
+  No row in Profile, no read of Path@Penn, nothing deleted; a saved audit
+  stays on the phone, and the DEBUG `-LHFShowDegree` argument still opens
+  the screen, which reads nothing while the flag is false. Five fixture
+  tests in `DegreeAppStateTests` skip themselves while it is off and one,
+  `killSwitchOff`, runs only then, so turning it back on is the one
+  constant. Everything below describes it as built.)
+  (`DegreeProgressView`, `v12`, behind
   `FeatureFlags.degreeProgress`; rewritten 2026-11-10 against the real
   Path@Penn after Olisa's capture; green on the GitHub runner, built for
   iOS on Olisa's Mac and read on his iPhone 17 the same day: the ring and
@@ -3962,7 +3971,9 @@ itself.
 ## Branches
 
 `v12` is the line (2026-11-09): `v10` plus the degree-progress feature
-(below). Before it, `v10` (2026-11-03): `v9` plus `origin/v8` `7e004c5` plus
+(below), **which is switched off since 2026-11-12**, plus ambassador mode.
+On 2026-11-12 Olisa handed this `v12` to Marco for the finishing touches;
+`docs/HANDOFF_V12_MARCO_2026-11-12.md` is where to start. Before it, `v10` (2026-11-03): `v9` plus `origin/v8` `7e004c5` plus
 `phase0/extract-facts-bench`. Start at `docs/HANDOFF_V10_2026-11-04.md`
 (it replaces the 2026-11-03 one). The 2026-11-04 composed-day work
 (Phases 1-3) is committed on `v10`.
@@ -4081,8 +4092,10 @@ none is a ship line.
   image is served with `nosniff` and a sandboxing CSP), and the founder
   page's image links hold the founder secret in their path, as the page's
   own address does. The review notes need a test code once a roster exists.
-- **Degree progress (`v12`) has read one real audit on one phone, and
-  which degree it shows first is unsettled.** On 2026-11-10 at 12:07 local
+- **Degree progress (`v12`) is switched off (2026-11-12) with the list
+  below still open; it had read one real audit on one phone, and
+  which degree it shows first was unsettled.** Read this entry before
+  turning `FeatureFlags.degreeProgress` back on. On 2026-11-10 at 12:07 local
   the Debug build of `d2f37a0` (installed with `devicectl` over the store
   copy on Olisa's iPhone 17, launched with `-LHFShowDegree`) showed "read
   today", a 53% ring and Penn's requirement cards (major, general electives,

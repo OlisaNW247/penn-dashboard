@@ -48,6 +48,17 @@ These block shipping, or would make shipping risky. The launch-prep
 work of 2026-10-09/10 is summarised, with the order to take these in,
 in `docs/LAUNCH_PREP_HANDOFF.md`.
 
+- **`v12` is with Marco for the finishing touches on ambassador mode**
+  (handed over 2026-11-12, `docs/HANDOFF_V12_MARCO_2026-11-12.md`). Before
+  it ships: his pass on the ambassador page, the device checks nobody has
+  done (the job-first layout, the posters gallery, a poster idea from the
+  phone, the daily reminder and its tap, dark mode), the merge with `v11`
+  (five files conflict, six Swift files merge without a marker and need
+  reading), a test code and paragraph for App Review, a new build number,
+  and the third server zip if it is not deployed yet.
+- **Degree progress is switched off** (2026-11-12, Olisa: not ready;
+  `FeatureFlags.degreeProgress = false`, nothing deleted). The item below is
+  what turning it back on still needs.
 - **v12 degree progress: a Mac build, then a phone** (Olisa's decision
   2026-11-09: use the Path@Penn login; build progress and what-if, no course
   recommendations; "make this extremely smooth"). Built on 2026-11-09 against
@@ -937,6 +948,13 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-12.** Ambassador mode after its first look on a phone: the
+  "getting started" checklist is gone, the page opens on the job and a
+  filled "open my web page" button, feedback is "feedback and ideas" and
+  sits after the posters, and the anonymous posts say what the app does
+  (everywhere a professor posts, the tree, the sweeper) with five in a hype
+  voice. Degree progress switched off behind its flag, and `v12` handed to
+  Marco.
 - **2026-11-09.** Ambassador mode in the app (Profile → ambassador, for
   `v11`): sign in with the code from your ambassador page, today's post
   written and ready to copy, "i posted it", your numbers, a daily local
