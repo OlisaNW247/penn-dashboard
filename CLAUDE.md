@@ -3880,7 +3880,7 @@ it holds work that exists nowhere else.
 |---|---|
 | `v12` | **Current line (2026-11-09 onward).** `v10` at `4c136b2` plus the degree-progress research (`docs/DEGREE_PROGRESS_RESEARCH_2026-11-09.md`) and the degree feature. Built on 2026-11-09 against a guessed Degree Works host; rewritten on 2026-11-10 against what Olisa captured from his own Path@Penn session: `Degree/` in the Kit (`PathAuditDecoder`, `PathBridge`, `PathDegree`, `PathWhatIf`), `PathPortal`, `AppState+Degree`, `DegreeProgressView`, `DegreeWhatIfSheet`, `FeatureFlags.degreeProgress`. Green on the `tests` workflow, which runs on pushes to it, and built for iOS with `xcodebuild` on Olisa's Mac (Xcode 27.2) on 2026-11-10 (Test baseline); the Debug build of `d2f37a0` read a real audit on Olisa's iPhone 17 the same day (Known gaps). It does **not** contain `v11` (next row), which branched from the same `v10` commit; the two have to be merged before either ships with the other's work. **Since 2026-11-11 it also carries ambassador mode and `smooth-ambassadors/`** (the `claude/new-session-b3ylkg` row below; What the app does → Profile → 8). |
 | `v11` | **Marco's line since 2026-11-07, found on the remote on 2026-11-10** (this file said "there is no `v11`" until then, which was wrong). Off `v10` at `4c136b2`, the same commit `v12` started from, and 46 commits on by 2026-11-10 (`06250d0`): the "agent connection" (an `agent-auth` / `mcp` / `agent-snapshot` backend, a connector front on Vercel, the phone's opt-in, approve sheet and snapshot upload) and a DEBUG Canvas submit spike; its own notes say "`v11` is the line". Read only from the commit subjects and a file list here, not reviewed. It and `v12` both edit `CLAUDE.md`, `ROADMAP.md`, `docs/PRIVACY.md`, `AppState.swift`, `ContentView.swift` and `FeatureFlags.swift`; none of the degree files is touched by it. Nobody has merged the two or decided which is the base. |
-| `claude/new-session-b3ylkg` | **2026-11-09, `v10` `4c136b2` plus two commits, meant to become `v11`.** (1) `smooth-ambassadors/`: the poster-scan tracker plus the campus ambassador system as a Cloudflare Worker + D1 (private pages per ambassador, tracked links, a founder view with a digest generator, 17 Miniflare tests), drafted here to move to a private repo. (2) **Ambassador mode in the app** (What the app does → Profile → 8): a code-based sign-in in Profile, today's post, a daily local reminder, the planner carve-out. 3697/357 green on the GitHub runner at `85d4234` and the unsigned iOS `xcodebuild` green at `674b89b` (2026-11-10, Test baseline); never on a phone, server not deployed. The Worker's legacy routes were matched to the live site the same day (dashboard byte-identical, `/api/stats` rows identical). Olisa or Marco creates `v11` from it. **2026-11-10, later:** the Sites source arrived as an archive; `scripts/build-sites.mjs` folds the ambassador system into the real single-file Worker (two edits to its `fetch`, a generated section, images byte-identical), `test/sites.test.mjs` runs the original and the edited artifact side by side (14 of 14; `npm test` 28 pass), and the public `/r/{ref}` links replaced the token-bearing ones (Traps). A zip went to Olisa for the ChatGPT session that deploys Sites. **2026-11-11:** deployed to the live Sites project by that session; existing routes and totals checked from here (Known gaps). **Merged into `v12` on 2026-11-11** ("do this in v12", Olisa): `v12` was merged into this branch first (two conflicts, both "each side added a line here": the `DashRoute` cases and these notes), the merged tree was run on the runner, and only then was `v12` moved to it. The "meant to become `v11`" above is history: `v11` is Marco's line and none of this is in it. **Later on 2026-11-11:** school-prefixed codes, then posters, the dashboard link, poster-idea uploads and the Smooth restyle of the ambassador website, all landed on `v12` once compiled (Test baseline). `scripts/build-to-phone.sh` came from the same day. |
+| `claude/new-session-b3ylkg` | **2026-11-09, `v10` `4c136b2` plus two commits, meant to become `v11`.** (1) `smooth-ambassadors/`: the poster-scan tracker plus the campus ambassador system as a Cloudflare Worker + D1 (private pages per ambassador, tracked links, a founder view with a digest generator, 17 Miniflare tests), drafted here to move to a private repo. (2) **Ambassador mode in the app** (What the app does → Profile → 8): a code-based sign-in in Profile, today's post, a daily local reminder, the planner carve-out. 3697/357 green on the GitHub runner at `85d4234` and the unsigned iOS `xcodebuild` green at `674b89b` (2026-11-10, Test baseline); never on a phone, server not deployed. The Worker's legacy routes were matched to the live site the same day (dashboard byte-identical, `/api/stats` rows identical). Olisa or Marco creates `v11` from it. **2026-11-10, later:** the Sites source arrived as an archive; `scripts/build-sites.mjs` folds the ambassador system into the real single-file Worker (two edits to its `fetch`, a generated section, images byte-identical), `test/sites.test.mjs` runs the original and the edited artifact side by side (14 of 14; `npm test` 28 pass), and the public `/r/{ref}` links replaced the token-bearing ones (Traps). A zip went to Olisa for the ChatGPT session that deploys Sites. **2026-11-11:** deployed to the live Sites project by that session; existing routes and totals checked from here (Known gaps). **Merged into `v12` on 2026-11-11** ("do this in v12", Olisa): `v12` was merged into this branch first (two conflicts, both "each side added a line here": the `DashRoute` cases and these notes), the merged tree was run on the runner, and only then was `v12` moved to it. The "meant to become `v11`" above is history: `v11` is Marco's line and none of this is in it. **Later on 2026-11-11:** school-prefixed codes, then posters, the dashboard link, poster-idea uploads and the Smooth restyle of the ambassador website, all landed on `v12` once compiled (Test baseline). `scripts/build-to-phone.sh` came from the same day. **2026-11-12:** that update is live on the Sites project and was checked read-only from here (Known gaps). |
 | `v10` | **Current line (2026-11-03 onward).** `v9` (the no-banner sign-in, the onboarding polish, the composed-day research) plus `origin/v8` `7e004c5` (the tree's recency and follow-up work) plus `phase0/extract-facts-bench`. The merge's Swift run is recorded under Test baseline. |
 | `phase0/extract-facts-bench` | 2026-11-03, off `v9`: the extract-facts bench, prompt, schema and parser; the model decision (Haiku 5.5, `docs/EXTRACT_FACTS_BENCH_2026-11-03.md`). In `v10`. |
 | `v9` | 2026-11-01 to 11-03: the no-banner sign-in and keepalive, proven on Marco's phone; the onboarding polish merged; the composed-day research. In `v10`. |
@@ -3943,25 +3943,30 @@ none is a ship line.
   because no released version has ambassador mode. Until 2026-11-10 this
   file said an undeployed server made sign-in say "couldn't reach
   smooth"; it was "that code didn't work", a 404 read as an unknown code.
-  The backup of `scans` stays out of git. **School-prefixed codes
-  (2026-11-11) are built and tested but not yet live**: a second zip went
-  to Olisa for the same ChatGPT session; until it deploys, the founder
-  page still makes bare codes. It is one changed line in the deployed
-  file, no schema or variable change. **Superseded the same day by a
-  third zip that also carries poster ideas, the posters section and the
-  restyled pages** (the ambassador, sticker and founder pages in Smooth's
-  colours with Familjen Grotesk, Inter and Space Mono served from the
-  site itself; the public dashboard at `/` left exactly as it was). Until
-  that zip is deployed the live pages are the old plain ones, the app's
-  three poster rows stay hidden or answer 404 on send, and nothing here
-  has been seen with real poster pictures: the screenshots used
-  placeholders. The app's gallery, photo picker and idea sheet compiled
-  and passed on the runner and have not been on a phone. The upload route
-  was reviewed for stored-content, authorisation and limits before it
-  went out; what the review left as notes: the type check reads only a
-  file's first bytes (safe because the image is served with `nosniff` and
-  a sandboxing CSP), and the founder page's image links hold the founder
-  secret in their path, as the page's own address does. The review notes need a test code once a roster exists.
+  The backup of `scans` stays out of git. **The second update is live since 2026-11-12** (one zip:
+  school-prefixed codes, poster ideas, the posters section, the restyled
+  ambassador, sticker and founder pages; the ChatGPT session reported its
+  own live checks passing and deleted its test idea). Read from here the
+  same day, read-only, no scan or `/r/` link opened: `/` and `/api/stats`
+  as before, with the same two totals above the 2026-11-10 backup and none
+  below; `POST /` still 405; the font route serves `font/woff2` and 404s
+  an unknown name; a test ambassador's code starts with `uva-`, its
+  `plan.json` carries 12 posters, the dashboard link and `ideas`, its
+  school total equals `/api/stats` for UVA, and no post text or sticker
+  page holds the code; the page names no host but its own and keeps
+  `noindex` and `no-referrer`. The page was also mirrored locally with
+  the real posters and looked at in light and dark, which the earlier
+  screenshots (placeholders) could not show. A test ambassador at UVA is
+  left on the roster for testing; its code is deliberately not written
+  here, because this repository is public. Not seen from here: the
+  founder page and its ideas list (Olisa's token), an upload from a real
+  browser or phone, and the app's poster rows against the live server.
+  The app's gallery, photo picker and idea sheet compiled and passed on
+  the runner and have not been on a phone. What the upload review left as
+  notes: the type check reads only a file's first bytes (safe because the
+  image is served with `nosniff` and a sandboxing CSP), and the founder
+  page's image links hold the founder secret in their path, as the page's
+  own address does. The review notes need a test code once a roster exists.
 - **Degree progress (`v12`) has read one real audit on one phone, and
   which degree it shows first is unsettled.** On 2026-11-10 at 12:07 local
   the Debug build of `d2f37a0` (installed with `devicectl` over the store

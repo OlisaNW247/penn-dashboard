@@ -33,6 +33,11 @@ Checked afterwards from outside, read-only: dashboard, `/api/stats`
 against the backup (nothing lower), posters, the 404s and 405, the
 leaderboard, and an unknown code refused.
 
+**Second deploy: 2026-11-12**, the same way: school-prefixed codes, poster
+ideas, the posters section and the restyled pages. Checked afterwards the
+same read-only way, plus the font route, a prefixed code's `plan.json`
+and the page itself mirrored with its real posters.
+
 ## Step by step
 
 1. **Get the current Sites source** (the archive ChatGPT exports, with

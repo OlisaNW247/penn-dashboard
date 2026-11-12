@@ -948,9 +948,8 @@ Kept so nobody rebuilds them blind.
   with the school; a "posters" section in the app (gallery, dashboard
   link, "send a poster idea" with a photo picker); the matching buttons,
   posters grid and upload card on the ambassador web page; and that
-  website restyled to look like Smooth. Server half built, reviewed and
-  handed over as one zip, not yet deployed; app half on `v12`, not yet on
-  a phone.
+  website restyled to look like Smooth. Server half live since 2026-11-12 and checked read-only against
+  the backup; app half on `v12`, not yet on a phone.
 - **2026-11-07 (16:39 EST).** 3.4.1 (20) archived from `c3a4feb` and
   uploaded, superseding builds 18 and 19. Marco attaches 20 and submits.
 - **2026-11-07 (evening).** The megaphone lists every post the phone keeps
