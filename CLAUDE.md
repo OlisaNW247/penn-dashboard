@@ -1563,6 +1563,13 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
+**On `claude/v11-ui-pass-84648c` (2026-11-12, Marco's phone pass and the
+class-code face): 3931 tests / 378 suites, all green, `swift test
+--no-parallel` alone on Marco's Mac (89 s), +2 over 3929: the "last used"
+test went with its strings (-1), the Sweeper order test was rewritten for no
+on row, and `UIPassNov11Tests` gained three font tests (+3). The signed iOS
+Debug device build of the same tree succeeded.**
+
 **On `claude/v11-ui-pass-84648c` (2026-11-11, off `v11-master` `0a78549`):
 3929 tests / 378 suites, all green, `swift test --no-parallel` alone on
 Marco's Mac (54 s), +7 / +1 over 3922 / 377: `UIPassNov11Tests` (the
