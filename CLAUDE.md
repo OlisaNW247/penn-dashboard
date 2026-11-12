@@ -391,8 +391,11 @@ Keep this current. It is the fastest way for a new session to know what exists.
 - **Dashboard** (`ContentView`):
   - **Header.** The "Smooth" wordmark and the weekday. Tapping the wordmark
     ripples its squiggle and sweeps a shine across it. The **Sweeper**
-    broom (tomato, a small dark-red dot while it is on; since 2026-11-10 on
-    `v11`), the **megaphone** and a profile button sit beside it. All
+    button (since 2026-11-10 on `v11`; since 2026-11-11 an `alarm.fill` on a
+    solid tomato squircle, Marco: "the shovel or sweep emoji sucks, and the
+    color's too similar" to the marigold megaphone; a small dark-red "new"
+    dot shows only until the Sweeper page has been opened once,
+    `sweeperPageSeenV1`), the **megaphone** and a profile button sit beside it. All
     three are 42pt squircles with 8pt spacing on `v11` (48pt with two)
     (continuous corners, radius 0.32 × size; owner's call 2026-11-06; the
     control row's filter and + stay round). Since

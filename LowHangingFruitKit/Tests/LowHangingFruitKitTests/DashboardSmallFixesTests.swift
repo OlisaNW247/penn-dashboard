@@ -53,6 +53,24 @@ struct DashboardSmallFixesTests {
         #expect(controls.contains(".contentShape(Circle().inset(by: -3))"))
     }
 
+    @Test("the Sweeper's header button is an alarm on solid tomato, and its dot leaves once the page has been seen")
+    func sweeperHeaderButton() throws {
+        // Marco, 2026-11-11: "the shovel or sweep emoji sucks, and the color's
+        // too similar", and the dot "should go away after the first time".
+        let source = try uiSource("ContentView.swift")
+        guard !source.isEmpty else { return }
+        let button = try declarationBody("private var sweeperButton: some View", in: source)
+        #expect(button.contains("Image(systemName: \"alarm.fill\")"))
+        #expect(button.contains("headerButton(color: .smoothTomato, fillOpacity: 1)"))
+        #expect(button.contains("if !sweeperPageSeen {"))
+        #expect(!button.contains("BroomGlyph") && !button.contains("if scheduler.loudAlertEnabled {"))
+        #expect(source.contains("@AppStorage(SweeperView.pageSeenKey, store: UserDefaults.lhf) private var sweeperPageSeen = false"))
+        #expect(SweeperView.pageSeenKey == "sweeperPageSeenV1")
+        let page = try uiSource("SweeperView.swift")
+        #expect(page.contains(".onAppear { UserDefaults.lhf.set(true, forKey: Self.pageSeenKey) }"))
+        #expect(!page.contains("struct BroomGlyph"))
+    }
+
     @Test("the todo empty state does not claim a week, because todo is only overdue plus two days")
     func todoEmptyStateIsNotAWeek() throws {
         let source = try uiSource("ContentView.swift")

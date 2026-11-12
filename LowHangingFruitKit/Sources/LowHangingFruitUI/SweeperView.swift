@@ -49,53 +49,6 @@ enum SweeperText {
     }
 }
 
-// MARK: - The broom
-
-/// SF Symbols has no broom before iOS 18, so the sketch's own drawing is
-/// reproduced: a handle stroke and a bristle head, both authored on a 17-point
-/// grid and scaled to whatever frame the caller gives.
-struct BroomGlyph: View {
-    var body: some View {
-        ZStack {
-            BroomHandle()
-                .stroke(style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
-            BroomHead()
-        }
-        .aspectRatio(1, contentMode: .fit)
-        .accessibilityHidden(true)
-    }
-}
-
-private struct BroomHandle: Shape {
-    func path(in rect: CGRect) -> Path {
-        let k = rect.width / 17
-        var path = Path()
-        path.move(to: CGPoint(x: rect.minX + 15.6 * k, y: rect.minY + 1.4 * k))
-        path.addLine(to: CGPoint(x: rect.minX + 9.4 * k, y: rect.minY + 7.6 * k))
-        return path
-    }
-}
-
-private struct BroomHead: Shape {
-    func path(in rect: CGRect) -> Path {
-        let k = rect.width / 17
-        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
-            CGPoint(x: rect.minX + x * k, y: rect.minY + y * k)
-        }
-        var path = Path()
-        path.move(to: p(7.4, 6.4))
-        path.addLine(to: p(10.6, 9.6))
-        path.addLine(to: p(9.4, 10.8))
-        path.addCurve(to: p(6.2, 12.8), control1: p(8.5, 11.7), control2: p(7.1, 11.9))
-        path.addLine(to: p(3.4, 15.6))
-        path.addLine(to: p(0.4, 12.6))
-        path.addLine(to: p(3.2, 9.8))
-        path.addCurve(to: p(5.2, 6.6), control1: p(4.1, 8.9), control2: p(4.3, 7.5))
-        path.closeSubpath()
-        return path
-    }
-}
-
 // MARK: - Sound preview
 
 /// Plays a sound once so a student can hear what they are choosing. The
@@ -220,6 +173,10 @@ private struct SweeperMinutePicker: View {
 // MARK: - The page
 
 struct SweeperView: View {
+    /// Set the first time this page appears; the header's "new" dot reads it
+    /// (`ContentView.sweeperButton`). A preference, so `UserDefaults.lhf`.
+    static let pageSeenKey = "sweeperPageSeenV1"
+
     /// The dashboard's items as the sheet opened; the card reads them, the
     /// planner reads its own.
     let items: [DashItem]
@@ -297,6 +254,7 @@ struct SweeperView: View {
                     .environmentObject(scheduler)
             }
         }
+        .onAppear { UserDefaults.lhf.set(true, forKey: Self.pageSeenKey) }
         .onDisappear { preview.stop() }
     }
 

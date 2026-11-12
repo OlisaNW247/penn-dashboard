@@ -50,6 +50,8 @@ struct ContentView: View {
     @State private var showAddSheet = false
     @State private var showAnnouncementFinds = false
     @State private var showSweeper = false
+    /// The header's "new" dot leaves once the Sweeper page has been opened.
+    @AppStorage(SweeperView.pageSeenKey, store: UserDefaults.lhf) private var sweeperPageSeen = false
     /// Frozen when the megaphone sheet opens, so rows can still say "new"
     /// after opening has marked everything seen. Holds both kinds of id: a
     /// find's `Assignment.id` and a record's `AnnouncementReadState.recordKey`.
@@ -518,23 +520,36 @@ struct ContentView: View {
         showAnnouncementFinds = true
     }
 
-    /// The broom, left of the megaphone: opens the Sweeper page. Tomato, the
-    /// Sweeper's own colour. The dot on its corner is the "on" light, shown
-    /// only while the Sweeper is on, so the header answers "is it armed?"
-    /// without opening the page.
+    /// The Sweeper's button, left of the megaphone: opens the Sweeper page.
+    ///
+    /// **An alarm on a solid tomato squircle (2026-11-11).** Marco: "the
+    /// shovel or sweep emoji sucks, and the color's too similar." The drawn
+    /// broom read as a shovel at 19pt, and its 18% tomato wash sat next to the
+    /// megaphone's 18% marigold as two near-identical peaches. `alarm.fill`
+    /// says what the Sweeper does (it rings an alarm) and is an SF Symbol, so
+    /// it stays crisp at every size; the full tomato fill under an ink glyph is
+    /// the control row's add button's look, the one solid colour in the header,
+    /// so it can never be mistaken for the pastel buttons beside it. The wrong
+    /// fix is a darker wash of the same opacity: at 42pt two warm washes still
+    /// read as one colour.
+    ///
+    /// The dot is "new", not "on": it shows only until the Sweeper page has
+    /// been opened once (`sweeperPageSeenKey`, set by `SweeperView`), then
+    /// never again. Marco: "the dot next to it should go away after the first
+    /// time." It used to be the on light, which never went away.
     private var sweeperButton: some View {
         Button { showSweeper = true } label: {
-            headerButton(color: .smoothTomato) {
-                BroomGlyph()
-                    .frame(width: 19, height: 19)
+            headerButton(color: .smoothTomato, fillOpacity: 1) {
+                Image(systemName: "alarm.fill")
+                    .font(.system(size: 17, weight: .semibold))
             }
-            .overlay(alignment: .bottomTrailing) {
-                if scheduler.loudAlertEnabled {
+            .overlay(alignment: .topTrailing) {
+                if !sweeperPageSeen {
                     Circle()
                         .fill(Color.smoothTomatoInk)
-                        .frame(width: 13, height: 13)
+                        .frame(width: 11, height: 11)
                         .overlay { Circle().stroke(Color.smoothPaper, lineWidth: 2) }
-                        .offset(x: 3, y: 3)
+                        .offset(x: 3, y: -3)
                         .accessibilityHidden(true)
                 }
             }
@@ -831,11 +846,14 @@ struct ContentView: View {
         }
     }
 
-    private func headerButton<Glyph: View>(color: Color, @ViewBuilder glyph: () -> Glyph) -> some View {
+    /// `fillOpacity` is 0.18 for every button but the Sweeper's, which is the
+    /// one solid colour in the header (see `sweeperButton`).
+    private func headerButton<Glyph: View>(color: Color, fillOpacity: Double = 0.18,
+                                           @ViewBuilder glyph: () -> Glyph) -> some View {
         glyph()
             .foregroundStyle(Color.smoothInk)
             .frame(width: Self.headerButtonSize, height: Self.headerButtonSize)
-            .background(Self.headerShape.fill(color.opacity(0.18)))
+            .background(Self.headerShape.fill(color.opacity(fillOpacity)))
             .overlay { Self.headerShape.stroke(color.opacity(0.48), lineWidth: 1.25) }
             // Drawn 42pt so three fit beside the title, but touched at 44pt,
             // the platform's minimum, the same trick the control row uses.
