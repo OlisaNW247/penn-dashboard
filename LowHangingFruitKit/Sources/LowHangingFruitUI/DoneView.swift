@@ -188,6 +188,16 @@ struct DoneCardView: View {
                     .strikethrough(true, color: Color.smoothInk)
                     .lineLimit(1)
                     .truncationMode(.tail)
+                // "submitted by you · drafted by claude" (2026-11-11). The
+                // model has set `agentSubmittedBy` since 2026-11-10, but
+                // this card never drew it, so the line CLAUDE.md promised
+                // in prev existed only in the active card's code path.
+                if item.isCompleted, let name = item.agentSubmittedBy {
+                    Text(AgentConnectionCopy.submittedByYou(name))
+                        .font(.lhfSecondary(12, weight: .semibold))
+                        .foregroundStyle(Color.smoothGrapeInk)
+                        .lineLimit(1)
+                }
             }
 
             Spacer(minLength: 8)
