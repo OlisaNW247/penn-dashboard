@@ -23,7 +23,9 @@ live. Since it, text changes only:
   one of three things the app does: it reads everywhere a professor posts
   about assignments and classes, the tree answers questions about your
   classes, and the smooth sweeper rings your phone like an alarm before
-  something not turned in is due. Text only; `today.text` and
+  something not turned in is due. Five more are in a hype voice ("smooth
+  just saved my life", "this new smooth app is crazy"), so the daily bank is
+  19 entries and the rest day comes round every 19 days. Text only; `today.text` and
   `messages[].text` in `plan.json` are longer strings, nothing else moves.
 
 What that means for the deploy:

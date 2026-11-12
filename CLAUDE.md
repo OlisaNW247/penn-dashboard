@@ -1231,7 +1231,11 @@ Keep this current. It is the fastest way for a new session to know what exists.
      than canvas and gradescope, "everywhere your professor posts info
      about assignments and classes", the tree, the sweeper, "these can be
      in different messages"): each fizz / sidechat / yik yak post leads
-     with one of the three, 220 to 320 characters before the link. Two
+     with one of the three, 220 to 320 characters before the link. Five
+     more are in a hype voice at his next ask ("smooth just saved my
+     life", "this new smooth app is crazy"), with a posting tip telling
+     the ambassador to post the story ones when they are true; the bank
+     is 19 entries, so the rest day is every 19 days, not a fortnight. Two
      rules a test holds: the sweeper "rings" or is an "alarm", never
      "calls you" (he said "call"; it is an alarm, and an anonymous app
      would say so), and Ed is never named, because it is read at Penn

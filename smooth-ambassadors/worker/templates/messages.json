@@ -1,5 +1,5 @@
 {
-  "_help": "Messages ambassadors copy with one tap. Edit freely. Placeholders: {link} = their tracked link for that channel, {school} = school name, {name} = ambassador first name. Keep it short and lowercase. Never ask for ratings or reviews here. `daily` is the bank the app's daily reminder draws from: one per day, rotating, with the ambassador's chosen anonymous app on anon days. `anon` means fizz/sidechat/yik yak. Since 2026-11-12 the anonymous posts each lead with ONE of three things the app does, so a week of posts covers all three: it reads everywhere a professor posts about assignments and classes (not only canvas and gradescope deadlines), the tree answers questions about your classes, and the smooth sweeper rings your phone like an alarm before something you haven't turned in is due. Say 'rings' or 'alarm', never 'calls': it is an alarm, not a phone call, and an anonymous app will call out the difference. Don't name ed discussion: it is read at penn only.",
+  "_help": "Messages ambassadors copy with one tap. Edit freely. Placeholders: {link} = their tracked link for that channel, {school} = school name, {name} = ambassador first name. Keep it short and lowercase. Never ask for ratings or reviews here. `daily` is the bank the app's daily reminder draws from: one per day, rotating, with the ambassador's chosen anonymous app on anon days. `anon` means fizz/sidechat/yik yak. Since 2026-11-12 the anonymous posts each lead with ONE of three things the app does, so a week of posts covers all three: it reads everywhere a professor posts about assignments and classes (not only canvas and gradescope deadlines), the tree answers questions about your classes, and the smooth sweeper rings your phone like an alarm before something you haven't turned in is due. Say 'rings' or 'alarm', never 'calls': it is an alarm, not a phone call, and an anonymous app will call out the difference. Don't name ed discussion: it is read at penn only. Some anonymous posts are in a hype voice (\"smooth just saved my life\", \"this new smooth app is crazy\"), at Olisa's ask the same day. They are opinions and first-person moments, so the tip beside them tells the ambassador to post the story ones when they are true and to swap in what really happened.",
   "messages": [
     {
       "key": "gc",
@@ -41,6 +41,7 @@
   "posting_tips": [
     "post once per place. if it gets downvoted or removed, let it go. don't repost the same thing.",
     "say it like you'd say it. edit the message so it sounds like you.",
+    "the 'saved my life' style posts land when they're true. post them when it actually happens, and swap in what really happened to you.",
     "on anonymous apps, no links in the first post if the app strips them. put 'smooth for students' and people can search it.",
     "if someone asks whether you're involved, say yes, you're an ambassador. honesty does better than hype.",
     "posters only where the campus allows them. check the board's rules first. never over someone else's poster.",
@@ -50,6 +51,10 @@
     {
       "kind": "anon",
       "text": "your professor posts in five places and expects you to check all of them. smooth reads everywhere they post about assignments and classes, not just canvas and gradescope deadlines: announcements, the syllabus, modules. then it puts it all in one list and reminds you before things close. free, made by students. {link}"
+    },
+    {
+      "kind": "anon",
+      "text": "smooth just saved my life. had no idea something was due tonight until my phone went off like an alarm 10 minutes before. that's the smooth sweeper. the app is free. {link}"
     },
     {
       "kind": "anon",
@@ -65,6 +70,10 @@
     },
     {
       "kind": "anon",
+      "text": "this new smooth app is crazy. it reads everywhere your professor posts, makes one list of everything due, and you can literally ask it questions about your classes. how is this free. {link}"
+    },
+    {
+      "kind": "anon",
       "text": "anyone else find out about an assignment from an announcement you never opened? smooth reads everywhere your professor posts about assignments and classes, pulls out the things you actually have to do, and puts them in one list with the rest of your deadlines. free. {link}"
     },
     {
@@ -74,6 +83,10 @@
     {
       "kind": "anon",
       "text": "instead of scrolling a 14 page syllabus at 1am: open smooth and ask the tree. \"what's due this week\", \"can i drop a quiz\", \"when is the midterm\". it reads your classes and gives you the answer. free, by students. {link}"
+    },
+    {
+      "kind": "anon",
+      "text": "ok whoever made smooth, thank you. i asked the tree \"what's due this week\" and it just told me. no canvas tabs, no syllabus hunting. free, made by students. {link}"
     },
     {
       "kind": "anon",
@@ -88,6 +101,10 @@
       "text": "smooth in three lines. every deadline from everywhere your professor posts, in one list. the tree, which answers any question about your classes. the sweeper, which rings your phone before you miss an assignment. free, made by students. {link}"
     },
     {
+      "kind": "anon",
+      "text": "not me finding out about an assignment because an app rang my phone. smooth is crazy for that. it pulls every deadline from everywhere your professor posts and the sweeper rings before you miss one. free. {link}"
+    },
+    {
       "kind": "gc",
       "text": "for anyone drowning in tabs: smooth puts your canvas + gradescope deadlines in one list with reminders. free, built by students. {link}"
     },
@@ -98,6 +115,10 @@
     {
       "kind": "anon",
       "text": "students at penn built an app that reads everywhere your professor posts about assignments and classes (canvas, gradescope, announcements, the syllabus), answers questions about your classes, and rings your phone before you miss something. it's free and i'm using it at {school}. {link}"
+    },
+    {
+      "kind": "anon",
+      "text": "why did nobody tell me about smooth sooner. one list of everything due across all my classes, a tree that answers questions about them, and an alarm before i miss stuff. free. {link}"
     },
     {
       "kind": "rest",

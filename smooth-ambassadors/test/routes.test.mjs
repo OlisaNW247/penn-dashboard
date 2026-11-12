@@ -276,6 +276,10 @@ test("every daily entry has a kind the plan understands", async () => {
   for (const theme of [/everywhere your professor posts/, /\btree\b/, /sweeper/]) {
     assert.ok(anon.filter((t) => theme.test(t)).length >= 3, String(theme));
   }
+  // Some posts are in a hype voice, and a tip says to post the story ones when true.
+  assert.ok(anon.some((t) => t.startsWith("smooth just saved my life")));
+  assert.ok(anon.some((t) => t.startsWith("this new smooth app is crazy")));
+  assert.ok(m.posting_tips.some((t) => /when they're true/.test(t)));
   for (const t of [...m.daily, ...m.messages].map((x) => x.text)) {
     assert.doesNotMatch(t, /\bcalls? you\b|phone call|ed discussion|\bedstem\b/i, t.slice(0, 40));
     if (/sweeper/.test(t)) assert.match(t, /rings|alarm/, t.slice(0, 40));
