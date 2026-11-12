@@ -144,35 +144,26 @@ private struct SweeperPlayButton: View {
     }
 }
 
-/// The big "on." / "off." with its switch. The period is tomato while on and
-/// the rule colour while off, the whole of the page's on/off signal.
-private struct SweeperStateRow: View {
-    let isOn: Bool
+/// The on/off switch as one plain row, the same height and skin as the sound
+/// row (Marco, 2026-11-11: the page had two titles, "Sweeper" and a 64pt
+/// "on.", and the switch belongs under the card that shows the next alarm,
+/// no bigger than any other row). The wrong fix is shrinking the old "on."
+/// headline: it is still a second title, only a smaller one.
+private struct SweeperSwitchRow: View {
     let label: String
     let binding: Binding<Bool>
 
     var body: some View {
-        HStack {
-            HStack(alignment: .firstTextBaseline, spacing: 0) {
-                Text(isOn ? "on" : "off")
-                Text(".")
-                    .foregroundStyle(isOn ? Color.smoothTomato : Color.smoothRule)
-            }
-            .font(.lhfSerif(64))
-            .tracking(-2.9)
-            .foregroundStyle(Color.smoothInk)
-            .lineLimit(1)
-            .minimumScaleFactor(0.6)
-            .accessibilityHidden(true)
-
-            Spacer(minLength: 12)
-
-            Toggle(label, isOn: binding)
-                .labelsHidden()
-                .tint(Color.smoothTomato)
-                .scaleEffect(1.3)
-                .padding(.trailing, 8)
+        Toggle(isOn: binding) {
+            Text("on")
+                .font(.lhfSans(15))
+                .foregroundStyle(Color.smoothInk)
         }
+        .tint(Color.smoothTomato)
+        .accessibilityLabel(label)
+        .padding(.horizontal, 14)
+        .frame(height: 50)
+        .background(Color.smoothSurface.opacity(0.4), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 
@@ -246,8 +237,10 @@ struct SweeperView: View {
                     SmoothFormHeader(title: "Sweeper", accent: .smoothTomato, spark: .smoothMarigold)
                         .padding(.bottom, 4)
 
-                    SweeperStateRow(
-                        isOn: scheduler.loudAlertEnabled,
+                    nextSweepCard
+                        .padding(.top, 10)
+
+                    SweeperSwitchRow(
                         label: "Smooth Sweeper",
                         binding: Binding(
                             get: { scheduler.loudAlertEnabled },
@@ -257,7 +250,7 @@ struct SweeperView: View {
                             }
                         )
                     )
-                    .padding(.top, 2)
+                    .padding(.top, 10)
 
                     if !scheduler.isEnabled {
                         Label("turn on due-date reminders in profile to use Smooth Sweeper.", systemImage: "bell.slash")
@@ -265,9 +258,6 @@ struct SweeperView: View {
                             .foregroundStyle(Color.v2DateText)
                             .padding(.top, 8)
                     }
-
-                    nextSweepCard
-                        .padding(.top, 14)
 
                     section("default")
                     SweeperMinutePicker(selection: Binding(
@@ -542,15 +532,14 @@ struct SweeperClassView: View {
                                  accent: .smoothTomato, spark: .smoothMarigold)
                     .padding(.bottom, 4)
 
-                SweeperStateRow(
-                    isOn: included,
+                SweeperSwitchRow(
                     label: "sweep \(state.courseDisplayName(course))",
                     binding: Binding(
                         get: { included },
                         set: { scheduler.setSweeperCourse(course, enabled: $0) }
                     )
                 )
-                .padding(.top, 2)
+                .padding(.top, 10)
 
                 // Dimmed, not disabled, while the class is off: a student can
                 // still set up the class before switching it back on.

@@ -1103,8 +1103,11 @@ Keep this current. It is the fastest way for a new session to know what exists.
      in 3.2.1 (15), 2026-10-24; build 15 was first stamped 3.2.0): the Sweeper has its own
      section immediately below reminders (`SweeperSettingsSection`; since
      2026-11-10 on `v11` that section is gone and the Sweeper is its own
-     page, `SweeperView`, opened from the header broom: on/off, a live
-     countdown card for the next alarm actually set, the defaults, and a
+     page, `SweeperView`, opened from the header broom: one title,
+     "Sweeper", then a live countdown card for the next alarm actually set,
+     a plain "on" switch row under it (2026-11-11, Marco: the page had two
+     titles, "Sweeper" and a 64pt "on."; the class page's "on." went the same
+     way), the defaults, and a
      page per class with its own lead time and sound,
      `notif.sweeperCourseMinutesV1` / `notif.sweeperCourseSoundV1`,
      resolved by `SweeperPlan.swift`; sketch in
