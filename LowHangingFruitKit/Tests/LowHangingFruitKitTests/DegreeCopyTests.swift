@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import LowHangingFruitKit
 @testable import LowHangingFruitUI
 
 /// The degree screens' copy rules (docs/DEGREE_PROGRESS_V12_BUILD_SPEC.md):
