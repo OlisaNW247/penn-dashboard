@@ -1524,7 +1524,19 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v12` (2026-11-12, degree progress switched off): 3880 tests /
+**Current on `degree-progress` (2026-11-12, the flag back on): 3880 tests /
+377 suites, all green, `swift test --no-parallel` on the GitHub macOS runner
+in 102 s (push run 43296480808 at `8198d56`), and the unsigned iOS
+`xcodebuild`, Deno and the extension suite green in the manual run
+43296520167 at the same commit.** The same count as `v12` below with the
+skips swapped: the five fixture tests run here and `killSwitchOff` is the
+one skipped. **The signed Debug build of `8198d56` was built, installed and
+launched on Olisa's iPhone 17 the same day** (`scripts/build-to-phone.sh`,
+his terminal), the first build on a phone to carry the degree shelf and
+weekly read, the full view and the what-if options row. What it shows is
+not reported yet.
+
+On `v12` the same day: **(2026-11-12, degree progress switched off): 3880 tests /
 377 suites, all green, `swift test --no-parallel` on the GitHub macOS runner
 in 116 s, with the unsigned iOS `xcodebuild`, Deno and the extension suite
 green in the same run (manual run 43287443467 at `1ed52b2`; the commits
@@ -4153,8 +4165,9 @@ none is a ship line.
   does. The ring read "53%" rather than "x of y cu" on both audits, so
   `PathAuditDecoder.creditTotals` did not find Penn's credit sentence in his
   DEGREE block; not looked at yet.
-  **Three changes of 2026-11-12 are green on the runner and unseen on a
-  phone**: the shelf and weekly read, the full view, and the what-if options
+  **Three changes of 2026-11-12 are installed on Olisa's iPhone (the Debug
+  build of `degree-progress` `8198d56`) and nobody has reported what they
+  show**: the shelf and weekly read, the full view, and the what-if options
   row. What a phone will settle: that a chip tap between his two degrees
   shows the other audit at once (the first tap after the update still reads,
   because the old build kept one audit); that the full view picks a column
