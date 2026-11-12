@@ -90,10 +90,15 @@ struct ContentView: View {
     /// Lockstep sizes for the whole dashboard title. `ViewThatFits` chooses
     /// one candidate for the complete wordmark-plus-weekday group, so the two
     /// faces can never scale independently when header space gets tight.
-    /// Two points up across the board on 2026-11-11 (Marco: the wordmark
-    /// and weekday "look too small"); the header's spacer gave up 4pt for it
-    /// so the buttons keep their 42pt and their places.
-    static let dashboardTitlePointSizes: [CGFloat] = [29, 26, 23, 20]
+    /// 1pt steps from 29 down since 2026-11-11 (Marco: the wordmark and
+    /// weekday "look too small"). `ViewThatFits` takes the largest step that
+    /// fits, so the title is now as large as the row allows. The old list
+    /// (27, 24, 21, 18) made "Smooth Wednesday" fall from 27 straight to 24
+    /// on a 402pt phone; simply adding 2pt to each step made it fall to 23,
+    /// smaller than before, which is the wrong fix this replaces. The spacer
+    /// before the buttons gave up 10pt (minimum 2) for it; the buttons keep
+    /// their 42pt and their places.
+    static let dashboardTitlePointSizes: [CGFloat] = Array(stride(from: 29, through: 18, by: -1))
 
     init(previewVM: DashboardViewModel? = nil) {
         _vm = StateObject(wrappedValue: previewVM ?? DashboardViewModel())
@@ -794,10 +799,9 @@ struct ContentView: View {
         return HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
                 ViewThatFits(in: .horizontal) {
-                    headerTitle(weekday: weekday, pointSize: Self.dashboardTitlePointSizes[0])
-                    headerTitle(weekday: weekday, pointSize: Self.dashboardTitlePointSizes[1])
-                    headerTitle(weekday: weekday, pointSize: Self.dashboardTitlePointSizes[2])
-                    headerTitle(weekday: weekday, pointSize: Self.dashboardTitlePointSizes[3])
+                    ForEach(Self.dashboardTitlePointSizes, id: \.self) { size in
+                        headerTitle(weekday: weekday, pointSize: size)
+                    }
                 }
                 .layoutPriority(1)
                 .frame(height: 48, alignment: .center)
@@ -807,9 +811,10 @@ struct ContentView: View {
                     .foregroundStyle(Color.smoothMuted)
             }
 
-            // 8, not 12, since the title grew 2pt (2026-11-11): the title may
-            // sit closer to the Sweeper button, the buttons never move.
-            Spacer(minLength: 8)
+            // 2, not 12, since 2026-11-11: the title may sit right beside the
+            // Sweeper button (Marco: "even if the title sits a little closer"),
+            // the buttons never move.
+            Spacer(minLength: 2)
 
             HStack(spacing: Self.headerButtonSpacing) {
                 // The broom first (owner's sketch, 2026-11-09): three buttons
