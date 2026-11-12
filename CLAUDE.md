@@ -1519,7 +1519,19 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**After it, the same day (the ambassador page's job-first layout): the
+**Current on `v12` (2026-11-12, degree progress switched off): 3880 tests /
+377 suites, all green, `swift test --no-parallel` on the GitHub macOS runner
+in 116 s, with the unsigned iOS `xcodebuild`, Deno and the extension suite
+green in the same run (manual run 43287443467 at `1ed52b2`; the commits
+after it on `v12` change only notes).** +1 over 3879: `killSwitchOff` in
+`DegreeAppStateTests`, which runs only while the flag is false. Five tests in
+that suite are counted and **skipped** while it is false (`fixtureMode`,
+`fixtureWhatIfRuns`, `fixtureOptionRuns`, `fixtureSelectDegree`,
+`fixtureHistory`), because the sample audit they inspect is never loaded;
+nothing was deleted, and setting the flag back to `true` runs them again and
+skips the one. This is the tree handed to Marco that day.
+
+Before it, **after the degree changes below, the same day (the ambassador page's job-first layout): the
 ambassador commits ran on their own branch before the merge: 3864 tests /
 376 suites, all green, with the unsigned iOS build green, at `f7d5655`
 (manual run 43234340350, 112 s), which is `fb5d085` plus one new test,
