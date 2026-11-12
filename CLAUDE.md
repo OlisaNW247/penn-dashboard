@@ -224,8 +224,16 @@ tomato/marigold/lemon/teal/cobalt/grape accents, an "after sunset" dark
 mode, the S app mark, and bundled type registered at runtime by
 `SmoothFontRegistry` (`RedesignTokens.swift`):
 - Satoshi (Fontshare FFL).
-- Inter, Familjen Grotesk and Space Mono (all SIL OFL, licence files beside
-  them in `Resources/`).
+- Inter, Familjen Grotesk, Space Mono and Atkinson Hyperlegible Next (all
+  SIL OFL, licence files beside them in `Resources/`).
+- The class code on a card and on the draft review sheet is Atkinson
+  Hyperlegible Next SemiBold (`Font.lhfCourseCode`, 10pt +0.9 on the card,
+  11pt on the sheet) since 2026-11-12, Marco's pick (option B of
+  `docs/FONT_RESEARCH_2026-11-11.md`; Space Mono Bold at 9.5pt read as "like
+  Claude"). The variable file `AtkinsonHyperlegibleNext-Variable.ttf`, from
+  google/fonts; its SemiBold instance resolves as
+  `AtkinsonHyperlegibleNext-SemiBold`. The "NEW" tag, the due value and
+  "late"/"in class" stay Space Mono.
 - Roobert SemiBold for the dashboard title: a commercial face from
   Displaay, cleared for shipping on 2026-09-15 under a personal agreement
   Olisa holds. There is deliberately no licence file in the repo; the
@@ -410,9 +418,10 @@ Keep this current. It is the fastest way for a new session to know what exists.
     button (since 2026-11-10 on `v11`; since 2026-11-11 an `alarm.fill`, Marco:
     "the shovel or sweep emoji sucks"; first on a solid tomato squircle, then,
     the same day, "far too orange", in the + button's old colours (a 22%
-    tomato wash, the + moved to lemon), and since 2026-11-12 ("the alarm
-    should be black instead of red") an ink glyph on the header's 18% wash in
-    `smoothMuted`, the neutral; a small dark-red "new"
+    tomato wash, the + moved to lemon), and since 2026-11-12 an ink glyph on
+    that tomato wash (Marco: "the alarm should be black instead of red"; a
+    grey wash lasted one build: "Why is the alarm now gray? It should still be
+    red, but the icon should be black"); a small dark-red "new"
     dot shows only until the Sweeper page has been opened once,
     `sweeperPageSeenV1`), the **megaphone** and a profile button sit beside it. All
     three are 42pt squircles with 8pt spacing on `v11` (48pt with two)
@@ -1564,6 +1573,19 @@ account signed into Xcode. Submitting for review is a separate, manual
 step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
+
+**Merged on `v11-master` 2026-11-12 (the UI branch's phone-pass fixes and
+the class-code face, merged at the commit that carries this line): predicted
+3947 tests / 379 suites (3945 + 2); the run on the merged tree is recorded
+here once it has happened. The UI branch's own build of `4e06515` is on
+Marco's iPhone 17 Pro since 2026-11-12 afternoon.**
+
+**On `claude/v11-ui-pass-84648c` (2026-11-12, Marco's phone pass and the
+class-code face): 3931 tests / 378 suites, all green, `swift test
+--no-parallel` alone on Marco's Mac (89 s), +2 over 3929: the "last used"
+test went with its strings (-1), the Sweeper order test was rewritten for no
+on row, and `UIPassNov11Tests` gained three font tests (+3). The signed iOS
+Debug device build of the same tree succeeded.**
 
 **Merged on `v11-master` 2026-11-11 (the update-notes branch and the UI pass
 `claude/v11-ui-pass-84648c`, merged at the commit that carries this line):

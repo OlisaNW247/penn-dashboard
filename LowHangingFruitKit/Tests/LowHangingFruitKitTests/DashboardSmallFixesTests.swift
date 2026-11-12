@@ -53,7 +53,7 @@ struct DashboardSmallFixesTests {
         #expect(controls.contains(".contentShape(Circle().inset(by: -3))"))
     }
 
-    @Test("the Sweeper's header button is an ink alarm on a neutral wash, and its dot leaves once the page has been seen")
+    @Test("the Sweeper's header button is an ink alarm on the tomato wash, and its dot leaves once the page has been seen")
     func sweeperHeaderButton() throws {
         // Marco, 2026-11-11: "the shovel or sweep emoji sucks, and the color's
         // too similar", and the dot "should go away after the first time".
@@ -61,10 +61,11 @@ struct DashboardSmallFixesTests {
         guard !source.isEmpty else { return }
         let button = try declarationBody("private var sweeperButton: some View", in: source)
         #expect(button.contains("Image(systemName: \"alarm.fill\")"))
-        // Marco, 2026-11-12: "the alarm should be black instead of red". The
-        // header's default ink glyph on a smoothMuted wash; no tomato.
-        #expect(button.contains("headerButton(color: .smoothMuted) {"))
-        #expect(!button.contains("headerButton(color: .smoothTomato") && !button.contains("fillOpacity"))
+        // Marco, 2026-11-12: "It should still be red, but the icon should be
+        // black." The 22% tomato wash, the header's default ink glyph (no
+        // glyph colour passed), no neutral wash.
+        #expect(button.contains("headerButton(color: .smoothTomato, fillOpacity: 0.22) {"))
+        #expect(!button.contains("glyph: .smoothTomatoInk") && !button.contains("smoothMuted"))
         #expect(button.contains(".fill(Color.smoothTomatoInk)"))  // the dot stays dark red
         #expect(button.contains("if !sweeperPageSeen {"))
         #expect(!button.contains("BroomGlyph") && !button.contains("if scheduler.loudAlertEnabled {"))

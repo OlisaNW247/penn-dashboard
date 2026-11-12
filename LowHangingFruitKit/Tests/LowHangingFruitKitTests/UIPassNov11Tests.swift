@@ -1,5 +1,9 @@
 import Foundation
+import SwiftUI
 import Testing
+#if canImport(AppKit)
+import AppKit
+#endif
 @testable import LowHangingFruitUI
 
 /// Marco's second look at the v11 UI on 2026-11-11: the hovering shapes on
@@ -90,5 +94,43 @@ struct UIPassNov11Tests {
         for name in ["SettingsPage.swift", "AgentLinkApproveSheet.swift", "SweeperView.swift", "PairLaptopSheet.swift"] {
             #expect(!(try uiSource(name)).contains("hovers:"), "\(name)")
         }
+    }
+
+    @Test("Atkinson Hyperlegible Next and its OFL licence are bundled, and the package processes Resources")
+    func atkinsonBundled() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let resources = root.appendingPathComponent("Sources/LowHangingFruitUI/Resources")
+        for name in ["AtkinsonHyperlegibleNext-Variable.ttf", "AtkinsonHyperlegibleNext-OFL.txt"] {
+            #expect(FileManager.default.fileExists(atPath: resources.appendingPathComponent(name).path), "\(name)")
+        }
+        let licence = try String(contentsOf: resources.appendingPathComponent("AtkinsonHyperlegibleNext-OFL.txt"), encoding: .utf8)
+        #expect(licence.contains("SIL Open Font License"))
+        let package = try String(contentsOf: root.appendingPathComponent("Package.swift"), encoding: .utf8)
+        #expect(package.contains("resources: [.process(\"Resources\")]"))
+        let tokens = try uiSource("RedesignTokens.swift")
+        #expect(tokens.contains("(\"AtkinsonHyperlegibleNext-Variable\", \"ttf\")"))
+    }
+
+    #if canImport(AppKit)
+    @Test("the SemiBold instance resolves by name once the bundled faces are registered")
+    func atkinsonResolves() {
+        SmoothFonts.ensureRegistered()
+        let font = NSFont(name: "AtkinsonHyperlegibleNext-SemiBold", size: 10)
+        #expect(font != nil)
+        #expect(font?.fontName.hasPrefix("AtkinsonHyperlegibleNext") == true)
+    }
+    #endif
+
+    @Test("the class code on the card and the review sheet uses lhfCourseCode; NEW and the due value stay mono")
+    func courseCodeFace() throws {
+        let card = try uiSource("AssignmentCardView.swift")
+        guard !card.isEmpty else { return }
+        #expect(card.contains(".font(.lhfCourseCode(10))"))
+        #expect(!card.contains(".font(.lhfMono(9.5, weight: .semibold))"))
+        let sheet = try uiSource("AgentDraftReviewSheet.swift")
+        #expect(sheet.contains(".font(.lhfCourseCode(11))"))
+        #expect(!sheet.contains(".font(.lhfMono(10.5, weight: .semibold))"))
+        #expect(Font.courseCodeTracking == 0.9)
     }
 }

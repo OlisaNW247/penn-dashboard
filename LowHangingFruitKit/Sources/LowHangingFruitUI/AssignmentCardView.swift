@@ -239,8 +239,8 @@ struct AssignmentCardView: View {
                 // this row is back to being plain course-code text.
                 HStack(spacing: 6) {
                     Text(item.assignment.displayCourse(overrides: courseNameOverrides).uppercased())
-                        .font(.lhfMono(9.5, weight: .semibold))
-                        .tracking(1.1)
+                        .font(.lhfCourseCode(10))
+                        .tracking(Font.courseCodeTracking)
                         .foregroundStyle(courseCodeColor(now: now))
                     if isNew {
                         // The header badge's own tomato, so "unread" is one
