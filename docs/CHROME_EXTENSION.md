@@ -605,6 +605,21 @@ build to the phone, apply the migration and deploy `sync`, `pair`,
   forced run behind an in-flight pass and starts it when that pass ends
   (`queuedForce` in `collectRun`; 543 tests). Ed on real Ed is still
   unproven.
+- 2026-11-12: the harness also proves the **submission feed to the
+  phone**: the fake Canvas reports one assignment submitted and one not,
+  the laptop's sealed snapshot is decrypted in the harness with the
+  pairing key (AES-256-GCM, nonce||ciphertext||tag, no derivation, no
+  AAD; reproduced independently of `src/`) and holds a completion for the
+  submitted one at Canvas's `submitted_at` and none for the other; the
+  snapshot never travels in plaintext. Broken on purpose (the fake says
+  unsubmitted) it fails 2 checks. Found on the way: the harness's seeded
+  pairing key had been 48 bytes, so no earlier run had sealed a snapshot
+  (the Ed checks never depended on one); section 4b seeds a real 32-byte
+  key. The phone's side of applying a laptop completion is covered by the
+  Swift `SyncApplyPlan` tests and was seen live on 2026-10-23. This is
+  the rigorous form of the check the owner asked for, since a phone with
+  a live Canvas session marks submissions done on its own and proves
+  nothing about the laptop.
 - 2026-11-05, later: **the popup lost its dashboard** (owner's decision:
   the extension is not a product, it exists to gather data for the phone).
   Unpaired it is the pairing flow as before; paired it is the header, one

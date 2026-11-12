@@ -108,6 +108,8 @@ export async function startWorld({ token, certDir }) {
   const c202 = buildCourse202(now);
   const log = [];
   const uploads = [];
+  const deviceSyncUploads = []; // bodies of device-sync `put` (the sealed snapshot)
+  const submittedAt = new Date(now - 2 * 3600e3).toISOString();
   const t0 = Date.now();
 
   const send = (res, status, body, type = "application/json") => {
@@ -159,6 +161,23 @@ export async function startWorld({ token, certDir }) {
       // The collector strips Canvas's anti-hijack prefix (stripAntiHijackPrefix).
       const canvas = (v) => send(res, 200, "while(1);" + JSON.stringify(v));
       if (p === "/api/v1/users/self") return canvas({ id: 1 });
+      if (p === "/api/v1/users/self/profile") return canvas({ id: 1, calendar: { ics: "https://canvas.upenn.edu/feeds/calendars/user_fake.ics" } });
+      if (p === "/feeds/calendars/user_fake.ics") {
+        const d = new Date(now + 86400e3);
+        const stamp = `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`;
+        const ev = (n, summary) => ["BEGIN:VEVENT", `UID:assignment-${n}`, `SUMMARY:${summary}`, `DTSTART:${stamp}`,
+          `URL:https://canvas.upenn.edu/calendar?include_contexts=course_111&month=11&year=2026#assignment_${n}`, "END:VEVENT"];
+        const ics = ["BEGIN:VCALENDAR", "VERSION:2.0", ...ev(5001, "Homework 6 [CIS 2400]"), ...ev(5002, "Homework 7"), "END:VCALENDAR"].join("\r\n") + "\r\n";
+        return send(res, 200, ics, "text/calendar");
+      }
+      if (p === "/api/v1/courses/111/assignments") {
+        const a = (id, name, submission) => ({ id, name, html_url: `https://canvas.upenn.edu/courses/111/assignments/${id}`, due_at: new Date(now + 86400e3).toISOString(), points_possible: 10, description: `<p>${name}</p>`, course_id: 111, submission });
+        return canvas([
+          a(5001, "Homework 6", { submitted_at: submittedAt, workflow_state: "submitted", missing: false }),
+          a(5002, "Homework 7", { submitted_at: null, workflow_state: "unsubmitted", missing: false }),
+        ]);
+      }
+      if (p === "/api/v1/courses/222/assignments") return canvas([]);
       if (p === "/api/v1/courses") return canvas([
         { id: 111, name: "CIS 2400-001 202630 Machine Organization", course_code: "CIS 2400-001 202630" },
         { id: 222, name: "CIS 2620-001 202630 Automata", course_code: "CIS 2620-001 202630" },
@@ -177,7 +196,12 @@ export async function startWorld({ token, certDir }) {
         if (body?.action === "upload") { uploads.push(body); return send(res, 200, { profileStale: [], websitesPending: [] }); }
         return send(res, 400, { error: "bad_action" });
       }
-      return send(res, 200, {}); // device-sync, pair, extract-profile, discover-websites
+      if (p === "/functions/v1/pair") return send(res, 200, { paired: true });
+      if (p === "/functions/v1/device-sync") {
+        if (body?.action === "put") { deviceSyncUploads.push(body); return send(res, 200, { deviceId: body.deviceId, updatedAt: new Date().toISOString() }); }
+        return send(res, 200, { blobs: [] }); // get: nothing from a peer yet
+      }
+      return send(res, 200, {}); // extract-profile, discover-websites, pair, extract-profile, discover-websites
     }
     return send(res, 404, { error: "unknown_host", host });
   }
@@ -185,7 +209,7 @@ export async function startWorld({ token, certDir }) {
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   const port = server.address().port;
   return {
-    port, token, log, uploads, c101, c202, now,
+    port, token, log, uploads, deviceSyncUploads, submittedAt, c101, c202, now,
     hostRules: HOSTS.map((h) => `MAP ${h} 127.0.0.1:${port}`).join(", "),
     close: () => new Promise((r) => { server.closeAllConnections?.(); server.close(r); }),
   };

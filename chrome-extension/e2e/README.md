@@ -23,6 +23,15 @@ into the repo. Takes about 30 seconds.
   expected ids, URLs, header line, Eastern posting day and plain-text bodies.
 - The upload's `fullySyncedCourses` lists them, the summary reads `ed: "in"`,
   and the token is in no supabase request and no `chrome.storage.local` key.
+- The Canvas submission feed closes the loop: the fake calendar feed lists two
+  assignments, the fake assignments API marks one submitted, and the snapshot
+  the laptop PUTs to `device-sync` (decrypted in the harness with its own
+  AES-256-GCM copy: nonce(12) || ciphertext || tag, standard base64, no AAD)
+  holds a completion for that one at its `submitted_at` instant and none for
+  the other. `workListV1` reads `canvasSubmissions: "in"` with only that id,
+  and no device-sync or pair request carries the titles in plaintext. (The
+  harness seeds a real 32-byte key for this; the earlier "ab"x32 text is not
+  one.)
 - After a browser restart (session storage gone) a run records `ed: "none"`,
   and visiting Ed again starts a run on its own.
 
