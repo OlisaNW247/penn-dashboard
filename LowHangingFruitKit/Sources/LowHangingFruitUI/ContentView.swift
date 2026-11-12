@@ -176,7 +176,9 @@ struct ContentView: View {
                         addInlineButton
                     }
                     .padding(.horizontal, 20)
-                    .padding(.top, 14)
+                    // 10, not 14, since 2026-11-12 (Marco: "can you push the
+                    // todo, all, prev, that part up a few pixels").
+                    .padding(.top, 10)
 
                     if let classFilter {
                         ClassFilterChip(name: courseDisplayName(classFilter)) {

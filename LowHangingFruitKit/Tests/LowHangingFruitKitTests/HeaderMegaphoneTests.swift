@@ -39,7 +39,7 @@ struct HeaderMegaphoneTests {
 
         // The control row: switch, class filter, add. Nothing else.
         let rowStart = try #require(source.range(of: "DashViewPicker(selection:"))
-        let rowEnd = try #require(source.range(of: ".padding(.top, 14)", range: rowStart.upperBound..<source.endIndex))
+        let rowEnd = try #require(source.range(of: ".padding(.top, 10)", range: rowStart.upperBound..<source.endIndex))
         let row = String(source[rowStart.lowerBound..<rowEnd.lowerBound])
         #expect(row.contains("ClassFilterMenu"))
         #expect(row.contains("addInlineButton"))

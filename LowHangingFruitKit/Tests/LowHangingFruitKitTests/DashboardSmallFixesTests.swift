@@ -76,6 +76,17 @@ struct DashboardSmallFixesTests {
         #expect(!page.contains("struct BroomGlyph"))
     }
 
+    @Test("the control row sits 10pt under the header, 4pt higher than before")
+    func controlRowGap() throws {
+        // Marco, 2026-11-12: "push the todo, all, prev, that part up a few pixels".
+        let source = try uiSource("ContentView.swift")
+        guard !source.isEmpty else { return }
+        let row = try #require(source.range(of: "DashViewPicker(selection: $filter)"))
+        let tail = String(source[row.upperBound...].prefix(500))
+        #expect(tail.contains(".padding(.top, 10)"))
+        #expect(!tail.contains(".padding(.top, 14)"))
+    }
+
     @Test("the todo empty state does not claim a week, because todo is only overdue plus two days")
     func todoEmptyStateIsNotAWeek() throws {
         let source = try uiSource("ContentView.swift")
