@@ -3923,7 +3923,12 @@ none is a ship line.
 
 ## Known gaps
 
-- **Ambassador mode (2026-11-09) has not been on a phone.** Unseen: the
+- **Ambassador mode (2026-11-09) is installed on a phone and nobody has
+  reported what it shows.** The Debug build of `v12` `76bc6a0` went onto
+  Olisa's iPhone with `scripts/build-to-phone.sh` on 2026-11-12 (built,
+  installed, launched, per his terminal); it carries the posters section and
+  the idea sheet, as `748ced7` did the evening before. Unseen: a sign-in
+  with a real code, the
   daily notification firing and surviving the next reschedule pass (the
   carve-out is unit-tested, the center is not), a cold launch from its
   tap landing on Profile → ambassador, the `smooth://ambassador` link
@@ -3965,7 +3970,8 @@ none is a ship line.
   founder page and its ideas list (Olisa's token), an upload from a real
   browser or phone, and the app's poster rows against the live server.
   The app's gallery, photo picker and idea sheet compiled and passed on
-  the runner and have not been on a phone. What the upload review left as
+  the runner; they are in the build on Olisa's phone since 2026-11-12 and
+  have not been reported on. What the upload review left as
   notes: the type check reads only a file's first bytes (safe because the
   image is served with `nosniff` and a sandboxing CSP), and the founder
   page's image links hold the founder secret in their path, as the page's
