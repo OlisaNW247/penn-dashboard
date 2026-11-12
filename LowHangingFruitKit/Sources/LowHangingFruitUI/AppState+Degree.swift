@@ -81,7 +81,9 @@ extension AppState {
     /// hours until 2026-11-12, which asked for a sign-in twice a day for data
     /// that had not moved.
     nonisolated static let degreeStaleAfter: TimeInterval = 7 * 24 * 3600
-    private static let maxWhatIfs = 4
+    /// Eight, so every concentration of a college can be flipped between
+    /// without a second read. Matches `DegreeAuditStore.maxWhatIfs`.
+    private static let maxWhatIfs = 8
     /// Which of the student's degrees is audited, as `StudentDegree.id`. Kept
     /// in `UserDefaults.lhf` as well as the snapshot so the choice survives a
     /// snapshot that is cleared or quarantined.
@@ -107,6 +109,13 @@ extension AppState {
             return match
         }
         return degree.degrees.first
+    }
+
+    /// The catalogue rows of the selected degree worth comparing (its sibling
+    /// concentrations or majors); empty until the catalogue is loaded.
+    var degreeOptionListings: [PathProgramListing] {
+        guard let selected = selectedStudentDegree else { return [] }
+        return DegreeOptions.listings(for: selected, in: degree.programs)
     }
 
     nonisolated static func degreeIsStale(readAt: Date?, now: Date) -> Bool {
@@ -474,7 +483,7 @@ extension AppState {
     }
 
     /// "What if I switched or added a program": audits the plan's description
-    /// and files the result, most recent first, at most four. A failure leaves
+    /// and files the result, most recent first, at most eight. A failure leaves
     /// the current audit alone and says the failure words.
     func runWhatIf(_ plan: PathWhatIfPlan) async {
         guard degreeFeatureAvailable else { return }
@@ -529,8 +538,42 @@ extension AppState {
         if degree.whatIfs.count > Self.maxWhatIfs {
             degree.whatIfs.removeLast(degree.whatIfs.count - Self.maxWhatIfs)
         }
+        recordOptionScore(for: plan, audit: audit, at: now)
         persistDegree()
         degreeStatus = Self.degreeStatusAfterWhatIf(current: degreeStatus, previous: previous)
+    }
+
+    /// Keeps the small result of a what-if (how far along, how many rules
+    /// open) under the selected degree and the program, so options can be
+    /// compared after the full audit has left the recent list. Nothing is
+    /// recorded when no degree is selected, or for a change that is not a
+    /// switch.
+    private func recordOptionScore(for plan: PathWhatIfPlan, audit: DegreeAudit, at date: Date) {
+        // Only a switch is "this program instead of mine". An "add major" run
+        // from the sheet carries the same program code and audits something
+        // else (both majors), and would put the wrong number on the chip.
+        guard plan.change == .newProgram else { return }
+        guard let degreeID = selectedStudentDegree?.id else { return }
+        let summary = DegreeWhatIf.summarize(current: degree.current, target: audit)
+        degree.optionScores[DegreeOptions.scoreKey(degreeID: degreeID, programCode: plan.programCode)] =
+            DegreeOptionScore(
+                fraction: DegreeProgressMath.ring(for: audit).fraction,
+                open: summary.open,
+                readAt: date)
+    }
+
+    /// Runs the what-if for one catalogue row of the student's own degree
+    /// (a sibling concentration or major): the row's `new-program` plan by the
+    /// page's rule, then the same run as the what-if sheet. True when the
+    /// result is filed first in the recent list.
+    func runDegreeOption(_ listing: PathProgramListing) async -> Bool {
+        let plans = await degreeWhatIfPlans(for: listing.code)
+        guard let plan = plans.first(where: { $0.change == .newProgram }) else {
+            if !isUsingFixtureData { degreeStatus = .failed(Self.degreeFailedLine) }
+            return false
+        }
+        await runWhatIf(plan)
+        return degree.whatIfs.first?.goals == plan.goals
     }
 
     // MARK: Fixtures
@@ -580,6 +623,9 @@ extension AppState {
             }
         }
         degree = snapshot
+        if let filed = degree.whatIfs.first(where: { $0.goals == goals }) {
+            recordOptionScore(for: plan, audit: filed, at: Date())
+        }
     }
 
     // MARK: Plan

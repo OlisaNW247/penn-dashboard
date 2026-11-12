@@ -423,6 +423,7 @@ enum SampleData {
             PathProgramListing(code: "CMPE-BSE", title: "Computer Engineering BSE"),
             PathProgramListing(code: "CSCI-BSE", title: "Computer Science BSE"),
             PathProgramListing(code: "DMD-BSE", title: "Digital Media Design BSE"),
+            PathProgramListing(code: "MEAM-BSE", title: "Mechanical Engineering and Applied Mechanics BSE"),
             PathProgramListing(code: "ECON-BA", title: "Economics BA"),
             PathProgramListing(code: "MATH-BA", title: "Mathematics BA"),
             PathProgramListing(code: "MATH-MIN", title: "Mathematics Minor"),
