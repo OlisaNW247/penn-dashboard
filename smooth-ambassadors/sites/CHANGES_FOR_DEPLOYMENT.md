@@ -4,10 +4,32 @@ For the ChatGPT session that deploys project
 `appgprj_6aebbfcc56e48191a690c176014ceddf`. Base commit:
 `3770608515c285cc1e034f8be04e8d5e4c335640`.
 
+## Update, 2026-11-12 (small)
+
+This archive is the fourth one. The third was deployed on 2026-11-12 and is
+live. Since it, one change, to page text only:
+
+- **No more checklist.** The ambassador page no longer shows the
+  "checklist" section (its first step told people who already use the app to
+  download it), and the founder roster no longer shows "checklist n/5".
+- **The job, at the top.** Under the greeting the ambassador page now says:
+  "the job: get smooth in front of as many eyes as you can. spam the chats.
+  put up posters. post every day."
+
+What that means for the deploy:
+
+- Only the generated section of `worker/index.js` changes. No route, schema,
+  variable or API change. `plan.json` is byte-for-byte the same shape and
+  still carries `checklist`; `POST /a/{code}/check` still works. The public
+  dashboard at `/` is untouched.
+- Check after deploying: open any ambassador page. The yellow "the job" box
+  is under "hey {name}", there is no "checklist" section or tab, and
+  everything else is where it was.
+
 ## Update, 2026-11-11
 
-This archive is the third one. The first was deployed on 2026-11-11 and is
-live. Since it:
+The third archive. The first was deployed on 2026-11-11. What the third
+added:
 
 - **Codes start with the school.** A new ambassador's code now starts with
   their school, for example `uva-7k3m9x2p4q8w` or

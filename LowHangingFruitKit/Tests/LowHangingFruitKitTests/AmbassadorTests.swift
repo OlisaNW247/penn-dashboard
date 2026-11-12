@@ -734,6 +734,28 @@ struct AmbassadorWiringTests {
         #expect(settings.contains("NavigationLink(value: ContentView.DashRoute.ambassador)"))
     }
 
+    /// Olisa, from his phone on 2026-11-12: the checklist told a signed-in
+    /// ambassador to download the app, so it went, and the page now opens on
+    /// what the job is and on the web page, which had been the last row.
+    @Test("the page opens on the job and the web page, and has no getting-started list")
+    func jobFirst() throws {
+        let page = try uiSource("AmbassadorPage.swift")
+        #expect(!page.contains("SmoothSectionHeader(\"getting started\""))
+        #expect(!page.contains("checklistSection"))
+        #expect(!page.contains("setChecklist"))
+        let body = try #require(page.range(of: "if model.isSignedIn {"))
+        let job = try #require(page.range(of: "jobSection", range: body.upperBound..<page.endIndex))
+        let today = try #require(page.range(of: "todaySection", range: body.upperBound..<page.endIndex))
+        #expect(job.lowerBound < today.lowerBound)
+        #expect(page.contains("get smooth in front of as many eyes as you can."))
+        // One way to the web page, and it is in the job section, not the footer.
+        #expect(page.components(separatedBy: "web page \\u{2197}").count == 2)
+        let jobStart = try #require(page.range(of: "private var jobSection"))
+        let todayStart = try #require(page.range(of: "private var todaySection"))
+        let link = try #require(page.range(of: "open my web page"))
+        #expect(jobStart.lowerBound < link.lowerBound && link.lowerBound < todayStart.lowerBound)
+    }
+
     @Test("ambassador mode never mentions ratings or reviews")
     func noReviews() throws {
         for file in ["AmbassadorPage.swift", "AmbassadorModel.swift", "AmbassadorReminders.swift",

@@ -82,10 +82,8 @@ label{display:block;font:400 12px var(--mono);color:var(--muted);margin:12px 0 5
 .msg{white-space:pre-wrap;background:var(--surface);border-radius:14px;padding:12px;font-size:15px;margin:8px 0}
 .ok{font:700 13px var(--mono);padding:10px 14px;border-radius:999px;background:var(--teal);color:var(--on);display:inline-block}
 .err{color:var(--tomato-ink)}
-.check{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--rule)}
-.check:last-child{border-bottom:0}
-.check input{width:24px;height:24px;min-height:0;margin-top:1px;flex:none;accent-color:var(--teal)}
-.check .done{text-decoration:line-through;color:var(--muted)}
+.job{font:400 17px/1.4 var(--body);margin:.2em 0 .5em;padding:14px 16px;border-radius:18px;background:var(--surface);background:color-mix(in srgb,var(--lemon) 26%,var(--paper));border:1px solid var(--rule)}
+.job b{display:block;font:700 22px/1.15 var(--display);letter-spacing:-.02em;margin-bottom:4px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:10px 18px;border-radius:999px;font:400 13px var(--mono);opacity:0;transition:opacity .2s;pointer-events:none}
 .toast.show{opacity:1}

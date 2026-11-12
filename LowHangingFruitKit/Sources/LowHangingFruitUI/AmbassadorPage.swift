@@ -10,8 +10,16 @@ import AppKit
 /// closed loop the founders asked for on 2026-11-09: a daily local reminder,
 /// the post for today already written with the ambassador's own tracked link,
 /// one tap to copy it, one to say it went out, and their numbers moving
-/// underneath. The rest (checklist, the other messages, feedback, pause,
-/// sign out) is below the fold.
+/// underneath. The rest (the other messages, feedback, pause, sign out) is
+/// below the fold.
+///
+/// The page opens on the job itself and the ambassador's web page (Olisa,
+/// from his phone, 2026-11-12: the job is spamming chats, putting up posters
+/// and getting Smooth in front of as many eyes as possible, and the web page
+/// is the centre piece). There was a "getting started" checklist here until
+/// that day; its first step was "download smooth and connect canvas", shown
+/// to someone already signed in to the app, and he had the whole list removed.
+/// The server still sends `checklist` in the plan, and nothing here reads it.
 ///
 /// Same chrome as the rest of Profile: a `Form`, `SmoothSectionHeader`s,
 /// tinted section backgrounds, `lhfSecondary` type, lowercase, and the copy
@@ -44,11 +52,11 @@ struct AmbassadorPage: View {
             .listRowSeparator(.hidden)
 
             if model.isSignedIn {
+                jobSection
                 todaySection
                 postersSection
                 numbersSection
                 remindersSection
-                checklistSection
                 messagesSection
                 feedbackSection
                 accountSection
@@ -124,6 +132,46 @@ struct AmbassadorPage: View {
         #elseif canImport(AppKit)
         if let s = NSPasteboard.general.string(forType: .string) { codeField = s }
         #endif
+    }
+
+    // MARK: The job
+
+    /// What an ambassador is for, in one line, and the way to their web page,
+    /// which holds everything (links, posters, stickers, numbers). First on
+    /// the page so nobody has to scroll to learn either.
+    private var jobSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("get smooth in front of as many eyes as you can.")
+                    .font(.lhfSecondary(17, weight: .semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("spam the chats. put up posters. post every day.")
+                    .font(.lhfSecondary(14))
+                    .foregroundStyle(Color.v2DateText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.vertical, 2)
+            .accessibilityElement(children: .combine)
+            if let page = model.plan?.page, let url = URL(string: page) {
+                Button {
+                    openURL(url)
+                } label: {
+                    HStack {
+                        Text("open my web page \u{2197}")
+                            .font(.lhfSecondary(15, weight: .semibold))
+                        Spacer()
+                        Text("links \u{00B7} posters \u{00B7} stickers")
+                            .font(.lhfSecondary(12))
+                            .foregroundStyle(Color.v2DateText)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        } header: {
+            SmoothSectionHeader("the job", accent: .smoothCobalt)
+        }
+        .smoothSectionBackground(.smoothLemon)
     }
 
     // MARK: Today
@@ -345,30 +393,6 @@ struct AmbassadorPage: View {
         )
     }
 
-    // MARK: Checklist
-
-    @ViewBuilder
-    private var checklistSection: some View {
-        if let steps = model.plan?.checklist, !steps.isEmpty {
-            Section {
-                ForEach(steps) { step in
-                    Toggle(isOn: Binding(
-                        get: { step.done },
-                        set: { done in Task { await model.setChecklist(step.key, done: done) } }
-                    )) {
-                        Text(step.label)
-                            .strikethrough(step.done, color: Color.v2DateText)
-                            .foregroundStyle(step.done ? Color.v2DateText : Color.smoothInk)
-                    }
-                    .font(.lhfSecondary(14))
-                }
-            } header: {
-                SmoothSectionHeader("getting started", accent: .smoothCobalt)
-            }
-            .smoothSectionBackground(.smoothLemon)
-        }
-    }
-
     // MARK: The other messages
 
     @ViewBuilder
@@ -447,18 +471,6 @@ struct AmbassadorPage: View {
 
     private var accountSection: some View {
         Section {
-            if let page = model.plan?.page, let url = URL(string: page) {
-                Button {
-                    openURL(url)
-                } label: {
-                    HStack {
-                        Text("my web page \u{2197}")
-                        Spacer()
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
             if model.plan?.isPaused() == true {
                 Button("resume reminders") { Task { await model.pause(weeks: 0) } }
             } else {

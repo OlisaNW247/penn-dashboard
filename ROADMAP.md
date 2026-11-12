@@ -949,7 +949,11 @@ Kept so nobody rebuilds them blind.
   link, "send a poster idea" with a photo picker); the matching buttons,
   posters grid and upload card on the ambassador web page; and that
   website restyled to look like Smooth. Server half live since 2026-11-12 and checked read-only against
-  the backup; app half on `v12`, not yet on a phone.
+  the backup; app half on `v12`, on Olisa's phone since 2026-11-12, where
+  it signed in. From that first look: the "getting started" checklist is
+  gone from the app and the website, and both open on the job ("get smooth
+  in front of as many eyes as you can") with the web page as the app's top
+  link. The website half is a fourth zip waiting for a deploy.
 - **2026-11-07 (16:39 EST).** 3.4.1 (20) archived from `c3a4feb` and
   uploaded, superseding builds 18 and 19. Marco attaches 20 and submits.
 - **2026-11-07 (evening).** The megaphone lists every post the phone keeps

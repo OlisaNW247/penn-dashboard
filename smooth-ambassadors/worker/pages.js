@@ -4,7 +4,6 @@ import { layout, esc, attr } from "./html.js";
 import { isPhone, phoneForSms, IDEA_TOTAL_LIMIT } from "./data.js";
 import { ambassadorLinks, digestText, welcomeText, momentTexts, moments, firstName } from "./digest.js";
 import messages from "./templates/messages.json";
-import checklist from "./templates/checklist.json";
 
 function fillMsg(text, vars) {
   return text.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? `{${k}}`);
@@ -98,18 +97,6 @@ export function ambassadorPage({ amb, stats, ideas = { total: 0, today: 0 }, des
   const allByKey = Object.fromEntries(stats.byKeyAll.map((r) => [`${r.kind}:${r.key}`, r.n]));
   const dashboardHref = `/?school=${encodeURIComponent(amb.school)}`;
 
-  const checklistHtml = checklist.steps
-    .map((s) => {
-      const done = stats.checked.has(s.key);
-      return `<form method="post" action="${base}/check" class="check">
-        <input type="hidden" name="step" value="${attr(s.key)}">
-        <input type="hidden" name="done" value="${done ? 0 : 1}">
-        <input type="checkbox" ${done ? "checked" : ""} onchange="this.form.submit()" aria-label="${attr(s.label)}">
-        <div><div class="${done ? "done" : ""}">${esc(s.label)}</div><div class="small muted">${esc(s.hint)}</div></div>
-      </form>`;
-    })
-    .join("");
-
   const messagesHtml = messages.messages
     .map((m) => {
       const text = fillMsg(m.text, { ...vars, link: links.share(m.channel) });
@@ -164,6 +151,7 @@ export function ambassadorPage({ amb, stats, ideas = { total: 0, today: 0 }, des
 
   const body = `
     <h1>hey ${esc(firstName(amb.name))}</h1>
+    <p class="job"><b>the job: get smooth in front of as many eyes as you can.</b> spam the chats. put up posters. post every day.</p>
     <p class="muted">${esc(amb.title)}. nobody else sees this page.</p>
     <p class="noprint"><a class="btn small" href="smooth://ambassador?code=${attr(amb.token)}">open in the smooth app</a></p>
     ${flash ? `<p class="ok">${esc(flash)}</p>` : ""}
@@ -174,7 +162,7 @@ export function ambassadorPage({ amb, stats, ideas = { total: 0, today: 0 }, des
       <a class="jump t-marigold" href="#idea"><span class="gl">${ICON_IDEA}</span><b>poster idea</b><span>send us a design</span></a>
     </nav>
     <nav class="tabs noprint">
-      <a href="#numbers">numbers</a><a href="#posters">posters</a><a href="#idea">poster idea</a><a href="#messages">messages</a><a href="#drop">log a drop</a><a href="#feedback">feedback</a><a href="#start">checklist</a>
+      <a href="#numbers">numbers</a><a href="#posters">posters</a><a href="#idea">poster idea</a><a href="#messages">messages</a><a href="#drop">log a drop</a><a href="#feedback">feedback</a>
     </nav>
 
     <section class="sec t-teal"><h2 id="numbers">your numbers</h2>
@@ -240,8 +228,6 @@ export function ambassadorPage({ amb, stats, ideas = { total: 0, today: 0 }, des
       </form>
     </section>
 
-    <section class="sec t-teal"><h2 id="start">checklist</h2><div class="card">${checklistHtml}</div></section>
-
     <section class="sec t-grape"><h2>reminders</h2>
       <p class="small">we text a short update about every two weeks, from a real phone. ${paused ? `<strong>paused until ${esc(String(amb.paused_until).slice(0, 10))}.</strong>` : ""}</p>
       <form method="post" action="${base}/pause" class="row">
@@ -303,7 +289,7 @@ export function founderPage({ stats, origin, secret, flash, created }) {
           <tr><td>contact</td><td>${esc(a.contact || "—")}</td></tr>
           <tr><td>page</td><td><a href="${attr(ambassadorLinks(origin, a).page)}">open</a> · <button class="small ghost" data-copy="${attr(ambassadorLinks(origin, a).page)}">copy link</button></td></tr>
           <tr><td>opens</td><td>${a.linkOpens} links · ${a.posterOpens} stickers (${a.linkOpensRecent + a.posterOpensRecent} in ${stats.days}d)</td></tr>
-          <tr><td>did</td><td>${a.drops} posters · ${a.posts} posts · checklist ${a.checklistDone}/${checklist.steps.length} · last ${esc(ago(a.lastActivity))}</td></tr>
+          <tr><td>did</td><td>${a.drops} posters · ${a.posts} posts · last ${esc(ago(a.lastActivity))}</td></tr>
           <tr><td>last reminder</td><td>${a.lastReminder ? `${esc(a.lastReminder.kind)} ${esc(ago(a.lastReminder.ts))}${a.lastReminder.replied ? " · replied" : ""}` : "none"}</td></tr>
         </table>
         <form method="post" action="${base}/update" class="row small">

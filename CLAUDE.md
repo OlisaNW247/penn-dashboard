@@ -1171,9 +1171,21 @@ Keep this current. It is the fastest way for a new session to know what exists.
      the server in that channel; remembered per server day), their
      numbers (link opens, their school's poster scans, posts logged), the
      **daily reminder** (every day / weekdays / off, a time picker, default
-     7 pm), the onboarding checklist, the other messages and posting tips
-     behind disclosures, a feedback field, "my page" (Safari), pause for
-     4 weeks, sign out. **Since 2026-11-11 (Olisa: "clear where they can
+     7 pm), the other messages and posting tips
+     behind disclosures, a feedback field, pause for
+     4 weeks, sign out. **Since 2026-11-12 the page opens on "the job"**
+     (Olisa, from the first build on his phone: the "getting started"
+     checklist told a signed-in ambassador to "download smooth and connect
+     canvas", so the whole list went; "make it clear that their job
+     revolves around spamming chats, putting up posters and getting smooth
+     in front of as many eyes as possible", and "put the web page higher
+     as that is the center piece"): one line, "get smooth in front of as
+     many eyes as you can.", "spam the chats. put up posters. post every
+     day." under it, and "open my web page ↗" as the section's second row
+     (it was the last section's first). The website lost its checklist
+     section and gained the same line under the greeting; the server still
+     sends `checklist` in the plan and still answers `/check`, and nothing
+     shows either. **Since 2026-11-11 (Olisa: "clear where they can
      access all posters and view the dashboard", "a clear option to upload
      poster ideas") a "posters" section sits right after today's post**:
      "all posters" opens an in-app gallery of the school's designs as a
@@ -3923,12 +3935,18 @@ none is a ship line.
 
 ## Known gaps
 
-- **Ambassador mode (2026-11-09) is installed on a phone and nobody has
-  reported what it shows.** The Debug build of `v12` `76bc6a0` went onto
+- **Ambassador mode (2026-11-09) has signed in on one phone, and little
+  else is checked.** The Debug build of `v12` `76bc6a0` went onto
   Olisa's iPhone with `scripts/build-to-phone.sh` on 2026-11-12 (built,
-  installed, launched, per his terminal); it carries the posters section and
-  the idea sheet, as `748ced7` did the evening before. Unseen: a sign-in
-  with a real code, the
+  installed, launched, per his terminal). His screenshot the same morning
+  shows the page signed in against the live server (the footer header
+  reads "app · upenn"; the reminder row, the anonymous-app picker, the
+  messages and feedback sections all drew), so a code is accepted and
+  `plan.json` decodes on a device. He reported nothing about the posters
+  section, the gallery or an idea upload. The job-first layout that
+  followed (checklist removed, web page on top) and its website twin
+  compiled on the runner and are not yet on the phone or deployed. Unseen:
+  the
   daily notification firing and surviving the next reschedule pass (the
   carve-out is unit-tested, the center is not), a cold launch from its
   tap landing on Profile → ambassador, the `smooth://ambassador` link
