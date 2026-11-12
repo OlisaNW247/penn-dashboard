@@ -1563,8 +1563,9 @@ step in App Store Connect; there is no API key on the dev Mac.
 3945 tests / 379 suites, all green, `swift test --no-parallel` alone on
 Marco's Mac (54.8 s), exactly the predicted sum (3922 + 16 + 7, 377 + 1 + 1);
 the iOS Debug build (`generic/platform=iOS`, `CODE_SIGNING_ALLOWED=NO`) of the
-same tree succeeded. Not on a phone: Marco's phone has the UI branch's
-`e95f1bc`, before the title-size fix and the merge.**
+same tree succeeded. The signed Debug build of `9399ab3` was installed and
+launched on Marco's iPhone 17 Pro on 2026-11-12 at 13:10 local, over the UI
+branch's `e95f1bc`.**
 
 **On `claude/update-notes-13b416` (2026-11-11, off `v11-master`): 3938 tests /
 378 suites, all green, `swift test --no-parallel` alone on Marco's Mac (94 s),
