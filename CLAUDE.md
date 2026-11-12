@@ -1492,9 +1492,11 @@ and `DegreeCopyTests`; 3866 / 376 at that commit, run 43233237849) and
 options"; the two cap tests in `DegreeAuditStoreTests` re-pinned from five
 kept what-ifs to eight, and `fixtureWhatIfRuns` from `<= 5` to `<= 8`). The
 rest of the growth since 3840 / 373 is the ambassador posters work another
-session merged in between. `swift test` compiles the macOS slice only: the
-full view's `fullScreenCover` sits behind `#if os(iOS)` and is not covered
-by these runs.
+session merged in between. `swift test` compiles the macOS slice only, so
+the full view's `fullScreenCover` (behind `#if os(iOS)`) was checked
+separately: **the unsigned iOS `xcodebuild` of `906f9c6` succeeded** (the
+manual run 43234403994, Build step green, all four jobs green). Unsigned and
+not installed: nothing from these three is on a phone.
 
 Before it: **on `v12` (2026-11-11, with ambassador mode merged in): 3840 tests
 / 373 suites, all green, `swift test --no-parallel` on the GitHub macOS
