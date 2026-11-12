@@ -836,7 +836,11 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 3) {
                 ViewThatFits(in: .horizontal) {
                     ForEach(Self.dashboardTitlePointSizes, id: \.self) { size in
-                        headerTitle(weekday: weekday, pointSize: size)
+                        if ambassador.isSignedIn {
+                            ambassadorTitle(pointSize: size)
+                        } else {
+                            headerTitle(weekday: weekday, pointSize: size)
+                        }
                     }
                 }
                 .layoutPriority(1)
@@ -889,6 +893,48 @@ struct ContentView: View {
         .fixedSize(horizontal: true, vertical: false)
         .accessibilityElement(children: .combine)
     }
+
+    /// The title once the student has signed in as an ambassador (Marco,
+    /// 2026-11-12: "Replace the Smooth ___ {day} with Ambassador with an
+    /// underline, and a special icon for them. This is only when they become
+    /// an ambassador"). The badge, then "Ambassador" in the weekday's face at
+    /// the same lockstep size, with the wordmark's own gradient squiggle under
+    /// the word so it reads as Smooth's. Nothing else in the header moves;
+    /// signing out brings "Smooth {weekday}" back on the next draw, because
+    /// `ambassador` is observed.
+    private func ambassadorTitle(pointSize: CGFloat) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: Self.ambassadorBadgeSymbol)
+                .font(.system(size: pointSize * 0.72, weight: .semibold))
+                .foregroundStyle(Color.smoothMarigold)
+                .accessibilityHidden(true)
+            Text("Ambassador")
+                .font(.lhfHeaderTitle(pointSize))
+                .overlay(alignment: .bottomLeading) {
+                    SmoothSquiggle(phase: 0, lift: 1)
+                        .stroke(
+                            LinearGradient(
+                                colors: [.smoothTomato, .smoothMarigold, .smoothGrape],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            ),
+                            style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
+                        )
+                        .frame(height: 6)
+                        .offset(y: 6)
+                }
+        }
+        .foregroundStyle(Color.smoothInk)
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("ambassador")
+    }
+
+    /// The ambassador's badge in the header. A medal: earned, and nothing
+    /// else in the app uses it (the megaphone is announcements, the star
+    /// would read as a rating).
+    static let ambassadorBadgeSymbol = "medal.fill"
 
     private func navButton(to route: DashRoute, icon: String, title: String, color: Color) -> some View {
         NavigationLink(value: route) {

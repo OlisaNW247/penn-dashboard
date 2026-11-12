@@ -771,3 +771,27 @@ struct AmbassadorWiringTests {
         }
     }
 }
+
+/// The dashboard header once signed in as an ambassador (2026-11-12).
+@Suite("Ambassador header")
+struct AmbassadorHeaderTests {
+    private func uiSource(_ name: String) throws -> String {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/LowHangingFruitUI/\(name)")
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    @Test("the header swaps Smooth {weekday} for the badge and Ambassador only while signed in")
+    func headerSwapsOnlyWhenSignedIn() throws {
+        let source = try uiSource("ContentView.swift")
+        let header = try #require(source.range(of: "private var header: some View"))
+        let body = source[header.lowerBound...]
+        #expect(body.contains("if ambassador.isSignedIn {"))
+        #expect(body.contains("ambassadorTitle(pointSize: size)"))
+        #expect(body.contains("headerTitle(weekday: weekday, pointSize: size)"))
+        #expect(source.contains("Text(\"Ambassador\")"))
+        #expect(source.contains("SmoothSquiggle(phase: 0, lift: 1)"))
+        #expect(source.contains("ambassadorBadgeSymbol = \"medal.fill\""))
+    }
+}
