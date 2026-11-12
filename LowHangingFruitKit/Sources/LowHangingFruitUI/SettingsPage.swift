@@ -169,12 +169,6 @@ struct SettingsPage: View {
                     // Only while a pairing key is held; pairing starts from
                     // the laptop's QR code.
                     ProfileLaptopRow()
-                    // "connected agent": the switch, one line, the agents
-                    // and "have a code?" (2026-11-11, in place of a pushed
-                    // screen).
-                    if state.canUseAgentConnection {
-                        ProfileAgentRows()
-                    }
                     if let backendDataDeletionError {
                         Label(backendDataDeletionError, systemImage: "exclamationmark.triangle")
                             .font(.lhfSecondary(12))
@@ -185,6 +179,19 @@ struct SettingsPage: View {
                 SmoothSectionHeader("accounts", accent: .smoothCobalt)
             }
             .smoothSectionBackground(.smoothTeal)
+
+            // "agent", its own section right after accounts (Marco,
+            // 2026-11-11: "Connected agent should be a different block in
+            // profile under agent"). It sat inside accounts for a day, where
+            // the switch read as one more account row.
+            if state.canUseAgentConnection {
+                Section {
+                    ProfileAgentRows()
+                } header: {
+                    SmoothSectionHeader("agent", accent: .smoothCobalt)
+                }
+                .smoothSectionBackground(.smoothGrape)
+            }
 
             Section {
                 Picker("appearance", selection: Binding(

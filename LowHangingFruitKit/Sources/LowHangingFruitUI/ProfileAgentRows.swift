@@ -1,7 +1,8 @@
 import SwiftUI
 import LowHangingFruitKit
 
-/// Profile → accounts, the agent connection's rows (2026-11-11; before, a
+/// Profile → agent, the agent connection's rows (their own section after
+/// accounts since 2026-11-11, at Marco's word; before, a
 /// "connect an agent · on/off" row pushed a screen of its own). Marco: "under
 /// accounts, in profile, it should have connected agent with a toggle and
 /// then list what is connected to your agent."

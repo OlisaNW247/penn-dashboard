@@ -928,9 +928,11 @@ Keep this current. It is the fastest way for a new session to know what exists.
      strings and `SignInHealthTests` remain.
      **Connected agent (2026-11-11, Marco: "under accounts, in profile, it
      should have connected agent with a toggle and then list what is
-     connected to your agent").** After the laptop row, behind
-     `canUseAgentConnection`, `ProfileAgentRows` (`ProfileAgentRows.swift`)
-     puts the agent connection in the accounts section itself, replacing
+     connected to your agent"; later the same day: "Connected agent should
+     be a different block in profile under agent").** Its own section,
+     "agent", right after accounts (grape background), behind
+     `canUseAgentConnection`: `ProfileAgentRows` (`ProfileAgentRows.swift`)
+     puts the agent connection there, replacing
      the "connect an agent · on/off" row and the `AgentConnectionsView`
      screen it pushed (deleted): a plain `Toggle` "connected agent"; one
      muted line "shares your classes and work list with the agent's provider
@@ -1199,9 +1201,9 @@ Keep this current. It is the fastest way for a new session to know what exists.
   alive (`LHFScenes.swift`) and open-at-login.
 - **Connect an agent** (2026-11-08, `agent/connection-v11`, compiled, never
   on a phone; behind `FeatureFlags.agentConnection`, Penn installs past
-  onboarding with a backend only). Profile → accounts holds the
-  "connected agent" switch and the connected agents (since 2026-11-11 in
-  the section itself, see Profile above; before, a pushed
+  onboarding with a backend only). Profile → agent holds the
+  "connected agent" switch and the connected agents (since 2026-11-11 a
+  section of its own after accounts, see Profile above; before, a pushed
   `AgentConnectionsView` with the whole disclosure on screen). A
   `smooth://link?c=…` URL (the "Open Smooth" button on the agent's sign-in
   page) or a typed code ("have a code?") looks the pending request up and

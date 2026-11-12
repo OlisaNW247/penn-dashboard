@@ -18,7 +18,8 @@ enum AgentConnectionCopy {
     static let mismatch = "didn't match"
     static let failure = "couldn't connect"
 
-    // Profile -> accounts (2026-11-11: the rows live in the accounts section;
+    // Profile -> agent (2026-11-11: the rows are their own section after
+    // accounts;
     // the full disclosure is docs/PRIVACY.md -> "Connecting an AI assistant")
     static let switchLabel = "connected agent"
     /// Names the recipient (App Review, 5.1.2(i)); the policy says the rest.

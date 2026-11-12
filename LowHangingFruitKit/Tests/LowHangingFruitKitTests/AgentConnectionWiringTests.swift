@@ -59,7 +59,7 @@ struct AgentConnectionWiringTests {
         #expect(fn.contains("agentConnectionEnabledKey"))
     }
 
-    @Test("the accounts section holds the agent rows, gated on canUseAgentConnection, after the laptop row")
+    @Test("the agent rows are their own \"agent\" section after accounts, gated on canUseAgentConnection")
     func rowGated() throws {
         let src = try uiSource("SettingsPage.swift")
         guard !src.isEmpty else { return }
@@ -70,12 +70,15 @@ struct AgentConnectionWiringTests {
         let rows = try #require(body.range(of: "ProfileAgentRows()"))
         let laptop = try #require(body.range(of: "ProfileLaptopRow()"))
         let accounts = try #require(body.range(of: "SmoothSectionHeader(\"accounts\""))
+        let agent = try #require(body.range(of: "SmoothSectionHeader(\"agent\""))
         let appearance = try #require(body.range(of: "SmoothSectionHeader(\"appearance\""))
         #expect(gate.upperBound <= rows.lowerBound)
         #expect(rows.lowerBound.utf16Offset(in: body) - gate.upperBound.utf16Offset(in: body) < 120)
-        // Inside the accounts section: the header closure follows its rows.
-        #expect(laptop.lowerBound < rows.lowerBound && rows.lowerBound < accounts.lowerBound)
-        #expect(accounts.lowerBound < appearance.lowerBound)
+        // Not in accounts any more (Marco, 2026-11-11): after accounts' header
+        // closure, inside the agent section (whose header follows its rows),
+        // before appearance.
+        #expect(laptop.lowerBound < accounts.lowerBound && accounts.lowerBound < rows.lowerBound)
+        #expect(rows.lowerBound < agent.lowerBound && agent.lowerBound < appearance.lowerBound)
         // No pushed screen any more.
         #expect(!src.contains("AgentConnectionsView"))
         #expect(try uiSource("AgentConnectionsView.swift").isEmpty)
@@ -141,7 +144,7 @@ struct AgentConnectionWiringTests {
                        "Turn\n  the feature off, which deletes the stored work list and revokes every\n  connection"] {
             #expect(section.contains(phrase), "\(phrase)")
         }
-        #expect(section.contains("Profile → accounts → connected agent"))
+        #expect(section.contains("Profile → agent → connected agent"))
     }
 
     @Test("onOpenURL hands the url to pendingAgentLink(from:)")
