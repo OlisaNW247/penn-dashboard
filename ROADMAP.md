@@ -61,7 +61,14 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   Marco without it, `FeatureFlags.degreeProgress = false`, nothing deleted;
   the same day he asked for the work to go on in a branch of its own, where
   the flag is `true`). The item below is what it still needs before that
-  branch is merged back.
+  branch is merged back. **Later on 2026-11-12, on that branch:** his
+  screenshot of the build confirmed the table, the key, the name and the
+  "full view" button on a device, and he asked to see his progress as a dual
+  degree and plan toward it; a "both" view and a plan that reads both audits
+  were written the same day (green on the runner at `6f6f0c3`, 3891 / 378,
+  not yet on a phone). Next: his look at "both", the full view, a drag, and
+  one concentration what-if; and a shorter name for the undeclared Wharton
+  chip.
 - **v12 degree progress: a Mac build, then a phone** (Olisa's decision
   2026-11-09: use the Path@Penn login; build progress and what-if, no course
   recommendations; "make this extremely smooth"). Built on 2026-11-09 against

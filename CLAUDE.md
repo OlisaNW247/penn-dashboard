@@ -949,6 +949,33 @@ Keep this current. It is the fastest way for a new session to know what exists.
     scrolls only when no count fits. Drag, remove, "+ course" and
     "+ semester" are the strip's own code. The current semester has a "now"
     tag on its header there in place of a word after every chip.
+  - **Both degrees** (2026-11-12, Olisa, a dual-degree student, from the
+    `degree-progress` build on his phone: "There should be a way for me to
+    see my overall progress as a dual degree and plan towards that"; green on
+    the runner at `6f6f0c3`, not on a phone). A student whose record lists
+    more than one degree gets a first chip, "both" (`degreeShowsOverall`,
+    kept in `degreeOverallScopeV1`). It draws a ring per degree at Penn's own
+    percent (tap one to open that degree; a degree not read yet holds its
+    place with an empty ring), one bar adding up Penn's rule counts across
+    the audits ("both degrees · x of y"), the courses Penn applied in both
+    under "counts in both", the semester table, and each degree's
+    requirement cards under its name. **There is no combined percent, on
+    purpose**: Penn publishes one audit per degree, and a figure made from
+    two would be this app's opinion shown as Penn's; a test keeps the word
+    "average" out of the screen. Planning reads every degree wherever the
+    table appears: a planned course gets one "fits" line per degree whose
+    open requirements list it ("fits · computer science · …", two lines at
+    most), "+ course" lists what is still open in each degree under its
+    name, and in the what-if tab the audit being tried stands in for the
+    selected degree, so a Wharton concentration is planned beside the other
+    degree. The model is `DegreeOverall` (Kit, pure; `fits` is the existing
+    coverage rule called once per audit); `AppState.degreeAudits` pairs each
+    degree with its audit (the selected one from `current`, the others from
+    the shelf), and a refresh now also reads the other degrees' audits onto
+    their shelves when they are missing, stale or the read was forced
+    (`ensureAllDegreeAudits` asks for that the first time "both" opens, at
+    most once in ten minutes). The sample data is a dual-degree student, so
+    preview and demo show it.
   - **When it reads** (changed 2026-11-12, Olisa on the first build of the
     table: "It should not need to re-read as often as it does. classes
     selected do not change every couple of minutes"). Each degree's audit
@@ -1524,7 +1551,26 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `degree-progress` (2026-11-12, the flag back on): 3880 tests /
+**Current on `degree-progress` (2026-11-12, the dual-degree view): 3891
+tests / 378 suites, all green, `swift test --no-parallel` on the GitHub macOS
+runner in 94 s, with the unsigned iOS `xcodebuild`, Deno and the extension
+suite green (manual run 43325563074 at `6f6f0c3`, second attempt of the test
+job).** +11 tests and +1 suite over 3880 / 377: the suite "Degree overall"
+(6), three in `DegreeAppStateTests`, two in `DegreeCopyTests`;
+`fixtureSelectDegree` was rewritten for a sample that now has an audit per
+degree. It took three runs, and the trail is worth keeping: at `d08eb03` the
+test target did not compile (`DegreeCopyTests` named a Kit type and imported
+only the UI module; the sources had compiled); at `8758b4e` everything
+compiled, the iOS build succeeded and 3891 ran with four issues, one real
+(`fixtureSelectDegree` asserted that the sample audit's goals equal the
+sample record entry's, never true of the fixture) and three wall-clock
+budgets (`FuzzTests` twice, `HotPathBudgetTests` once) on a runner that took
+283 s for the suite; at `6f6f0c3` the first attempt's test job was cancelled
+before any step ran, with no log, and the re-run of that job was green. No
+push run was created for `4db77a8` or the commits after it although the
+branch is in the workflow's list; the manual runs are the record.
+
+Before it, on `degree-progress` (2026-11-12, the flag back on): **3880 tests /
 377 suites, all green, `swift test --no-parallel` on the GitHub macOS runner
 in 102 s (push run 43296480808 at `8198d56`), and the unsigned iOS
 `xcodebuild`, Deno and the extension suite green in the manual run
@@ -4165,9 +4211,33 @@ none is a ship line.
   does. The ring read "53%" rather than "x of y cu" on both audits, so
   `PathAuditDecoder.creditTotals` did not find Penn's credit sentence in his
   DEGREE block; not looked at yet.
+  **Seen on his phone on 2026-11-12 (a screenshot of the `degree-progress`
+  `8198d56` build, progress tab, Computer Science selected):** "read today",
+  two chips ("computer science" selected and "wharton ung prgm -
+  undeclared", which runs off the edge), a 67% ring beside "computer
+  science, bse", the three-word key, the "full view" button, and the
+  semester table opened on fall 2026 at 6.5 cu with six classes each marked
+  "· now" and an empty spring 2027 column with "+ course"; below it "major
+  in computer science 10 of 23". So the history reader fills the current
+  term on a device, the table draws in the progress tab, and the name, key
+  and button are as built. He did not say whether the six classes are
+  right, and the past columns, the what-if tab, the full view and a drag
+  are still unreported. The second chip's text is Penn's own description of
+  the major and wants a shorter form.
+  **The dual-degree view (2026-11-12, `6f6f0c3`) is green on the runner and
+  not on a phone.** What a phone will settle: that opening "both" reads the
+  second degree's audit once and fills its ring; that "counts in both"
+  lists classes he recognises as double-counted (it is every code Penn
+  applied to a rule in both audits, which for two schools may be few or
+  none); that the overall bar's count is believable beside the two rings;
+  and that a planned class shows a line for each degree it fits. Known
+  limits: a forced read (pull to refresh) now reads every degree's audit,
+  so it takes about twice as long for him; the what-if tab still acts on
+  the selected degree only, with no "both" there; and the labels in "fits"
+  lines are the chip titles, so his Wharton lines read "fits · wharton ung
+  prgm - undeclared · …" until that name is shortened.
   **Three changes of 2026-11-12 are installed on Olisa's iPhone (the Debug
-  build of `degree-progress` `8198d56`) and nobody has reported what they
-  show**: the shelf and weekly read, the full view, and the what-if options
+  build of `degree-progress` `8198d56`) and only partly reported (above)**: the shelf and weekly read, the full view, and the what-if options
   row. What a phone will settle: that a chip tap between his two degrees
   shows the other audit at once (the first tap after the update still reads,
   because the old build kept one audit); that the full view picks a column
