@@ -338,20 +338,90 @@ struct DegreeAppStateTests {
         #expect(source.contains("runDegreeOption"))
     }
 
-    @Test("in fixture mode selecting a degree moves the choice and keeps the sample audit", .enabled(if: FeatureFlags.degreeProgress))
+    @Test("in fixture mode selecting a degree moves the choice and shows that degree's own sample audit", .enabled(if: FeatureFlags.degreeProgress))
     func fixtureSelectDegree() async throws {
         let state = try makeState()
         state.forceFixtureDataForTesting(true)
         await state.refreshDegreeAudit(force: true)
         let first = try #require(state.selectedStudentDegree)
         let second = try #require(state.degree.degrees.first { $0.id != first.id })
+        let firstAudit = try #require(state.degree.current)
+        #expect(firstAudit.goals == first.goals)
         await state.selectDegree(second.id)
         #expect(state.selectedStudentDegree?.id == second.id)
-        #expect(state.degree.current != nil)
+        // The second degree's own audit is current, the first went on the shelf.
+        #expect(state.degree.current?.goals == second.goals)
+        #expect(state.degree.shelved[first.id]?.audit == firstAudit)
+        #expect(state.degree.shelved[second.id] == nil)
         // Unchanged is a no-op, and an unknown id changes nothing.
         await state.selectDegree(second.id)
         await state.selectDegree("no such degree")
         #expect(state.selectedStudentDegree?.id == second.id)
+        #expect(state.degree.current?.goals == second.goals)
+        // And back again restores the first.
+        await state.selectDegree(first.id)
+        #expect(state.degree.current == firstAudit)
+        #expect(state.degree.shelved[second.id]?.audit != nil)
+    }
+
+    @Test("fixture mode is a dual-degree student: two labeled audits with distinct labels", .enabled(if: FeatureFlags.degreeProgress))
+    func fixtureDegreeAudits() async throws {
+        let state = try makeState()
+        state.forceFixtureDataForTesting(true)
+        state.loadDegreeSnapshotAtLaunch()
+        #expect(state.degreeHasSeveral)
+        let audits = state.degreeAudits
+        #expect(audits.count == 2)
+        #expect(audits.allSatisfy { !$0.label.isEmpty })
+        #expect(Set(audits.map(\.label)).count == 2)
+        #expect(!DegreeOverall.sharedCourses(audits).isEmpty)
+        // Still two after the chip moves.
+        let other = try #require(state.degree.degrees.first { $0.id != state.selectedStudentDegree?.id })
+        await state.selectDegree(other.id)
+        #expect(state.degreeAudits.map(\.degreeID) == audits.map(\.degreeID))
+    }
+
+    @Test("the overall scope persists, clears with the degree data, and needs more than one degree")
+    func overallScope() throws {
+        let key = "degreeOverallScopeV1"
+        let saved = UserDefaults.lhf.object(forKey: key)
+        // clearDegreeData also removes the selected-degree key and the recent list.
+        let otherKeys = ["degreeSelectedIDV1", "degreeRecentWhatIfsV1"]
+        let savedOthers = otherKeys.map { UserDefaults.lhf.object(forKey: $0) }
+        defer {
+            if let saved { UserDefaults.lhf.set(saved, forKey: key) } else { UserDefaults.lhf.removeObject(forKey: key) }
+            for (name, value) in zip(otherKeys, savedOthers) {
+                if let value { UserDefaults.lhf.set(value, forKey: name) } else { UserDefaults.lhf.removeObject(forKey: name) }
+            }
+        }
+        let state = try makeState()
+        state.setDegreeShowsOverall(true)
+        #expect(state.degreeShowsOverall)
+        #expect(UserDefaults.lhf.bool(forKey: key))
+        // One degree (or none): the flag is set but the scope is not active.
+        #expect(!state.degreeOverallActive)
+        let one = StudentDegree(raw: ["degc": "BSE", "coll": "EU", "levl": "UG", "program": "EU_BSE", "major": "CSCI"])
+        let two = StudentDegree(raw: ["degc": "BS", "coll": "WU", "levl": "UG", "program": "WU_BS", "major": "UNDL"])
+        state.degree = DegreeSnapshot(degrees: [one])
+        #expect(!state.degreeOverallActive)
+        state.degree = DegreeSnapshot(degrees: [one, two])
+        #expect(state.degreeOverallActive)
+        state.clearDegreeData()
+        #expect(!state.degreeShowsOverall)
+        #expect(UserDefaults.lhf.object(forKey: key) == nil)
+    }
+
+    @Test("a snapshot with no degree list but a current audit is one unlabeled entry")
+    func degreeAuditsWithoutList() throws {
+        let state = try makeState()
+        let audit = DegreeAudit(goals: DegreeGoals(), isWhatIf: false, percentComplete: nil, degreeLabel: nil,
+                                catalogYearLabel: nil, blocks: [], courses: [],
+                                fetchedAt: Date(timeIntervalSince1970: 0))
+        state.degree = DegreeSnapshot(current: audit)
+        #expect(state.degreeAudits == [DegreeLabeledAudit(degreeID: "current", label: "", audit: audit)])
+        #expect(!state.degreeHasSeveral)
+        state.degree = .empty
+        #expect(state.degreeAudits.isEmpty)
     }
 
     @Test("selectDegree shelves and restores through the snapshot and no longer clears the audit")

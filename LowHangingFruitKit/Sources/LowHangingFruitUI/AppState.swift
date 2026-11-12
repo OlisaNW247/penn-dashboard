@@ -522,6 +522,13 @@ final class AppState: ObservableObject {
             .appendingPathComponent("degree-plan-\(UUID().uuidString)", isDirectory: true))
         : .default()
     var degreePlanLoaded = false
+    /// Whether the degree screen shows both degrees together (a dual-degree
+    /// student's "overall" scope). Kept in `UserDefaults.lhf`
+    /// (`degreeOverallScopeV1`) so the screen reopens where it was.
+    @Published var degreeShowsOverall: Bool = false
+    /// When the combined view last asked for the other degrees' audits, so
+    /// opening it again within ten minutes cannot start a read loop.
+    var degreeEnsureAttemptedAt: Date?
     /// The one hidden WebView on Penn's advising page (`PathPortal`).
     let degreePortal = PathPortal()
     var degreeRefreshTask: Task<Void, Never>?

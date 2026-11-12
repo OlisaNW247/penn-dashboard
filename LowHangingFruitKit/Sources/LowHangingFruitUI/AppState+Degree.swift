@@ -118,6 +118,60 @@ extension AppState {
         return DegreeOptions.listings(for: selected, in: degree.programs)
     }
 
+    /// Whether the record lists more than one degree: the only case the
+    /// combined view means anything.
+    var degreeHasSeveral: Bool { degree.degrees.count > 1 }
+
+    /// The combined scope is on and there is something to combine.
+    var degreeOverallActive: Bool { degreeShowsOverall && degreeHasSeveral }
+
+    /// One entry per degree of the record, in record order, that has an audit:
+    /// the selected degree's is `current`, the others' are on the shelf. Penn
+    /// publishes one audit per degree and no combined figure, so the combined
+    /// view is these side by side and nothing more. A snapshot with no list of
+    /// degrees but a current audit (an old file, a fixture) is one entry,
+    /// "current", with no label.
+    var degreeAudits: [DegreeLabeledAudit] {
+        let degrees = degree.degrees
+        guard !degrees.isEmpty else {
+            if let current = degree.current {
+                return [DegreeLabeledAudit(degreeID: "current", label: "", audit: current)]
+            }
+            return []
+        }
+        let selectedID = selectedStudentDegree?.id
+        let labels = DegreeGoals.chipTitles(for: degrees.map { $0.goals }, descriptions: degreeDescriptions)
+        var out: [DegreeLabeledAudit] = []
+        for (index, entry) in degrees.enumerated() {
+            let audit: DegreeAudit? = entry.id == selectedID ? degree.current : degree.shelved[entry.id]?.audit
+            guard let audit else { continue }
+            var label = index < labels.count ? labels[index] : ""
+            if label.isEmpty { label = entry.goals.title(descriptions: degreeDescriptions) }
+            out.append(DegreeLabeledAudit(degreeID: entry.id, label: label, audit: audit))
+        }
+        return out
+    }
+
+    private static let degreeOverallKey = "degreeOverallScopeV1"
+
+    func setDegreeShowsOverall(_ on: Bool) {
+        degreeShowsOverall = on
+        UserDefaults.lhf.set(on, forKey: Self.degreeOverallKey)
+    }
+
+    /// Asks for the audits the combined view lacks (the second degree's, the
+    /// first time it is opened). A no-op in fixture mode, with one degree, or
+    /// when every degree already has an audit; and at most one attempt in ten
+    /// minutes, so a degree Penn will not audit cannot start a loop.
+    func ensureAllDegreeAudits() async {
+        guard !isUsingFixtureData, degreeFeatureAvailable, degreeHasSeveral else { return }
+        guard degreeAudits.count < degree.degrees.count else { return }
+        let now = Date()
+        if let last = degreeEnsureAttemptedAt, now.timeIntervalSince(last) < 600 { return }
+        degreeEnsureAttemptedAt = now
+        await refreshDegreeAudit(force: true)
+    }
+
     nonisolated static func degreeIsStale(readAt: Date?, now: Date) -> Bool {
         guard let readAt else { return true }
         return now.timeIntervalSince(readAt) >= degreeStaleAfter
@@ -220,6 +274,7 @@ extension AppState {
     /// network-free, so it is safe at launch.
     func loadDegreeSnapshotAtLaunch() {
         guard FeatureFlags.degreeProgress else { return }
+        degreeShowsOverall = UserDefaults.lhf.bool(forKey: Self.degreeOverallKey)
         if isUsingFixtureData {
             degree = SampleData.degreeSnapshot()
             degreeStatus = .read(Date())
@@ -257,6 +312,9 @@ extension AppState {
         degreeStatus = .idle
         UserDefaults.lhf.removeObject(forKey: "degreeRecentWhatIfsV1")
         UserDefaults.lhf.removeObject(forKey: Self.degreeSelectedKey)
+        degreeShowsOverall = false
+        degreeEnsureAttemptedAt = nil
+        UserDefaults.lhf.removeObject(forKey: Self.degreeOverallKey)
         #if DEBUG
         DebugDegreeLog.clear()
         #endif
@@ -373,6 +431,29 @@ extension AppState {
         persistDegree()
         degreeStatus = .read(now)
 
+        // The student's other degrees, for the combined view. Each is read the
+        // same way as the selected one and filed on its shelf, only when it has
+        // no audit, its audit is stale, or the read was forced. A failure is
+        // ignored: the old shelf stays, and it is never a failed status,
+        // because the degree on screen read fine. The selected degree never
+        // gets a shelf (its audit is `current`).
+        let selectedID = selectedStudentDegree?.id
+        for other in degree.degrees where other.id != selectedID {
+            let shelf = degree.shelved[other.id]
+            guard force || shelf?.audit == nil
+                || Self.degreeIsStale(readAt: shelf?.audit?.fetchedAt, now: now) else { continue }
+            let otherResult = await portal.auditData(degreeInfo: other.raw)
+            guard generation == degreeGeneration else { return }
+            guard other.id != selectedStudentDegree?.id else { continue }
+            if let data = otherResult.data,
+               let decoded = try? PathAuditDecoder.decode(
+                data, fallbackGoals: other.goals, isWhatIf: false, now: now) {
+                degree.shelved[other.id] = DegreeShelf(
+                    audit: decoded, whatIfs: degree.shelved[other.id]?.whatIfs ?? [])
+                persistDegree()
+            }
+        }
+
         // Which semester each course belongs to, for the semester table. The
         // audit does not say, so it is a second read of the record. A failed
         // read keeps the last map: an empty table for a network blip would be
@@ -409,10 +490,11 @@ extension AppState {
     func selectDegree(_ id: String) async {
         guard id != selectedStudentDegree?.id else { return }
         if isUsingFixtureData {
-            // The demo has no network and holds one sample audit; only the
-            // chip moves, and nothing is saved.
+            // The demo has no network; the sample holds an audit for each of
+            // its two degrees, so the chip moves through the snapshot's shelf
+            // like a real switch. Nothing is saved.
             guard degree.degrees.contains(where: { $0.id == id }) else { return }
-            degree.selectedDegreeID = id
+            degree = degree.selecting(id, from: selectedStudentDegree?.id)
             return
         }
         guard degreeFeatureAvailable else { return }

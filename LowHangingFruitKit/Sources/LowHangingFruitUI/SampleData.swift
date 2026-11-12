@@ -458,9 +458,33 @@ enum SampleData {
             ahead: ["OIDD 1010", "MKTG 1010"],
         ]
 
+        // The second degree's own audit, so the demo is a dual-degree student:
+        // it shares ECON 1 and MGMT 1010 with the first audit's social-science
+        // rule, and its open "Business Foundations" rule lists STAT 4300, a
+        // course of the sample plan that fits nothing in the first audit.
+        let secondBlock = AuditBlock(
+            id: "MAJOR:UNDL", type: "MAJOR", value: "UNDL", title: "Undeclared", percentComplete: 40,
+            rules: [
+                rule("second.0", "Business Foundations", .inProgress, needCourses: 4, appliedCount: 2,
+                     applied: [econ1, mgmt1010],
+                     advice: [AdviceCourse(code: "STAT 4300", title: "probability", credits: 1),
+                              AdviceCourse(code: "OIDD 2900", title: "operations", credits: 1)]),
+                rule("second.1", "Business Electives", .open, needCourses: 3, appliedCount: 0,
+                     advice: [AdviceCourse(code: "MKTG 2120", title: "marketing", credits: 1)]),
+            ])
+        let secondDegreeBlock = AuditBlock(
+            id: "DEGREE:BS", type: "DEGREE", value: "BS", title: "Bachelor of Science", percentComplete: 55,
+            rules: [rule("second.degree", "Total Credits", .inProgress, needCredits: 37, appliedCredits: 24)])
+        let secondAudit = DegreeAudit(
+            goals: degrees[1].goals, isWhatIf: false, percentComplete: 55,
+            degreeLabel: "undeclared, bs", catalogYearLabel: "2024",
+            blocks: [secondBlock, secondDegreeBlock], courses: [transfer, econ1, mgmt1010, math1400],
+            fetchedAt: now)
+
         return DegreeSnapshot(
             current: current, whatIfs: [whatIf], degrees: degrees, selectedDegreeID: degrees[0].id,
-            programs: programs, dictionaries: dictionaries, lastShape: [], history: history)
+            programs: programs, dictionaries: dictionaries, lastShape: [], history: history,
+            shelved: [degrees[1].id: DegreeShelf(audit: secondAudit)])
     }
 
     /// The fall or spring before `term` (a summer steps back to spring), as a
