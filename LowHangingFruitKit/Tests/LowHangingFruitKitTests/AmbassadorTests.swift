@@ -748,6 +748,12 @@ struct AmbassadorWiringTests {
         let today = try #require(page.range(of: "todaySection", range: body.upperBound..<page.endIndex))
         #expect(job.lowerBound < today.lowerBound)
         #expect(page.contains("get smooth in front of as many eyes as you can."))
+        // Gathering feedback and ideas is part of the job: said in the job
+        // section, and the box for it comes before the numbers.
+        #expect(page.contains("bring back what people say and ideas for smooth."))
+        let feedback = try #require(page.range(of: "feedbackSection", range: body.upperBound..<page.endIndex))
+        let numbers = try #require(page.range(of: "numbersSection", range: body.upperBound..<page.endIndex))
+        #expect(today.lowerBound < feedback.lowerBound && feedback.lowerBound < numbers.lowerBound)
         // One way to the web page, and it is in the job section, not the footer.
         #expect(page.components(separatedBy: "web page \\u{2197}").count == 2)
         let jobStart = try #require(page.range(of: "private var jobSection"))

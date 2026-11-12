@@ -1181,8 +1181,12 @@ Keep this current. It is the fastest way for a new session to know what exists.
      in front of as many eyes as possible", and "put the web page higher
      as that is the center piece"): one line, "get smooth in front of as
      many eyes as you can.", "spam the chats. put up posters. post every
-     day." under it, and "open my web page ↗" as the section's second row
-     (it was the last section's first). The website lost its checklist
+     day. / bring back what people say and ideas for smooth." under it
+     (the last line from his next message: gathering feedback and new
+     ideas for the founders is part of the job, so the feedback box is
+     headed "feedback and ideas" and moved up to follow the posters), and
+     "open my web page ↗" as a filled button in the same section (the link
+     was the last section's first row). The website lost its checklist
      section and gained the same line under the greeting; the server still
      sends `checklist` in the plan and still answers `/check`, and nothing
      shows either. **Since 2026-11-11 (Olisa: "clear where they can

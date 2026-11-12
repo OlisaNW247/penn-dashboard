@@ -151,7 +151,7 @@ export function ambassadorPage({ amb, stats, ideas = { total: 0, today: 0 }, des
 
   const body = `
     <h1>hey ${esc(firstName(amb.name))}</h1>
-    <p class="job"><b>the job: get smooth in front of as many eyes as you can.</b> spam the chats. put up posters. post every day.</p>
+    <p class="job"><b>the job: get smooth in front of as many eyes as you can.</b> spam the chats. put up posters. post every day. bring back what people say and ideas for smooth.</p>
     <p class="muted">${esc(amb.title)}. nobody else sees this page.</p>
     <p class="noprint"><a class="btn small" href="smooth://ambassador?code=${attr(amb.token)}">open in the smooth app</a></p>
     ${flash ? `<p class="ok">${esc(flash)}</p>` : ""}
@@ -220,9 +220,9 @@ export function ambassadorPage({ amb, stats, ideas = { total: 0, today: 0 }, des
 
     <section class="sec t-lemon"><h2>recent</h2>${activityHtml}</section>
 
-    <section class="sec t-cobalt"><h2 id="feedback">tell the founders something</h2>
+    <section class="sec t-cobalt"><h2 id="feedback">feedback and ideas for smooth</h2>
       <form method="post" action="${base}/feedback">
-        <textarea name="body" aria-label="feedback" placeholder="what's confusing, what's broken, what people said, what you'd change" maxlength="2000" required></textarea>
+        <textarea name="body" aria-label="feedback" placeholder="what people said, what's broken, what's confusing, ideas for smooth" maxlength="2000" required></textarea>
         <p><button type="submit">send</button></p>
         <p class="small muted">goes straight to olisa and marco. honest beats nice.</p>
       </form>

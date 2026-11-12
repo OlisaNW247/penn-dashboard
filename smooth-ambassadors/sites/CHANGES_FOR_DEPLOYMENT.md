@@ -14,7 +14,9 @@ live. Since it, one change, to page text only:
   download it), and the founder roster no longer shows "checklist n/5".
 - **The job, at the top.** Under the greeting the ambassador page now says:
   "the job: get smooth in front of as many eyes as you can. spam the chats.
-  put up posters. post every day."
+  put up posters. post every day. bring back what people say and ideas for
+  smooth." The feedback section is now headed "feedback and ideas for
+  smooth" (same form, same route).
 
 What that means for the deploy:
 

@@ -10,8 +10,9 @@ import AppKit
 /// closed loop the founders asked for on 2026-11-09: a daily local reminder,
 /// the post for today already written with the ambassador's own tracked link,
 /// one tap to copy it, one to say it went out, and their numbers moving
-/// underneath. The rest (the other messages, feedback, pause, sign out) is
-/// below the fold.
+/// underneath. The rest (the other messages, pause, sign out) is below the
+/// fold. Feedback sits right after the posters since 2026-11-12, because
+/// gathering what students say and their ideas for Smooth is part of the job.
 ///
 /// The page opens on the job itself and the ambassador's web page (Olisa,
 /// from his phone, 2026-11-12: the job is spamming chats, putting up posters
@@ -55,10 +56,10 @@ struct AmbassadorPage: View {
                 jobSection
                 todaySection
                 postersSection
+                feedbackSection
                 numbersSection
                 remindersSection
                 messagesSection
-                feedbackSection
                 accountSection
             } else {
                 signInSection
@@ -146,6 +147,13 @@ struct AmbassadorPage: View {
                     .font(.lhfSecondary(17, weight: .semibold))
                     .fixedSize(horizontal: false, vertical: true)
                 Text("spam the chats. put up posters. post every day.")
+                    .font(.lhfSecondary(14))
+                    .foregroundStyle(Color.v2DateText)
+                    .fixedSize(horizontal: false, vertical: true)
+                // The other half of the job (Olisa, 2026-11-12): what students
+                // say about Smooth and what they wish it did, sent to the
+                // founders through the feedback box two sections down.
+                Text("bring back what people say and ideas for smooth.")
                     .font(.lhfSecondary(14))
                     .foregroundStyle(Color.v2DateText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -449,7 +457,7 @@ struct AmbassadorPage: View {
 
     private var feedbackSection: some View {
         Section {
-            TextField("tell the founders something", text: $feedbackText, axis: .vertical)
+            TextField("what people said, what broke, ideas for smooth", text: $feedbackText, axis: .vertical)
                 .lineLimit(2...6)
             HStack {
                 Button(feedbackSent ? "sent" : "send") {
@@ -467,7 +475,7 @@ struct AmbassadorPage: View {
                 Spacer()
             }
         } header: {
-            SmoothSectionHeader("feedback", accent: .smoothCobalt)
+            SmoothSectionHeader("feedback and ideas", accent: .smoothCobalt)
         }
         .smoothSectionBackground(.smoothCobalt)
     }
