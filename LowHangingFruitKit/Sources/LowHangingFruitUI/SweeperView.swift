@@ -99,8 +99,8 @@ private struct SweeperPlayButton: View {
 
 /// The on/off switch as one plain row, the same height and skin as the sound
 /// row (Marco, 2026-11-11: the page had two titles, "Sweeper" and a 64pt
-/// "on.", and the switch belongs under the card that shows the next alarm,
-/// no bigger than any other row). The wrong fix is shrinking the old "on."
+/// "on."; no bigger than any other row). It sits first, under the title and
+/// above the next-alarm card, since Marco's second look the same evening. The wrong fix is shrinking the old "on."
 /// headline: it is still a second title, only a smaller one.
 private struct SweeperSwitchRow: View {
     let label: String
@@ -194,9 +194,9 @@ struct SweeperView: View {
                     SmoothFormHeader(title: "Sweeper", accent: .smoothTomato, spark: .smoothMarigold)
                         .padding(.bottom, 4)
 
-                    nextSweepCard
-                        .padding(.top, 10)
-
+                    // First, whether it is on (Marco, 2026-11-11: "I don't
+                    // like the placement of the 'on'" under the card); then
+                    // what it will ring next.
                     SweeperSwitchRow(
                         label: "Smooth Sweeper",
                         binding: Binding(
@@ -208,6 +208,9 @@ struct SweeperView: View {
                         )
                     )
                     .padding(.top, 10)
+
+                    nextSweepCard
+                        .padding(.top, 10)
 
                     if !scheduler.isEnabled {
                         Label("reminders are off", systemImage: "bell.slash")
