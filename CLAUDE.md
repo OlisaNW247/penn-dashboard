@@ -439,8 +439,9 @@ Keep this current. It is the fastest way for a new session to know what exists.
     point. A "reconnect gradescope" banner
     (since 2026-10-27, hardening A4) appears only after a real login page
     was seen on two syncs an hour apart, and opens the same cover.
-  - **Control row.** A full-width **todo · all · prev** switch
-    (`DashViewPicker`), then a **class filter** menu (narrows all three
+  - **Control row.** 10pt under the header since 2026-11-12 (14 before;
+    Marco: "can you push the todo, all, prev, that part up a few pixels"). A
+    full-width **todo · all · prev** switch (`DashViewPicker`), then a **class filter** menu (narrows all three
     views, with a clearable chip under the row), **+** (a plain `plus`
     glyph since 2026-10-30, `calendar.badge.plus` before; the add sheet: a
     one-off or weekly assignment, class picked from a grid of per-class
