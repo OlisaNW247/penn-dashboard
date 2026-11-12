@@ -1501,8 +1501,11 @@ ambassador commits ran on their own branch before the merge: 3864 tests /
 (manual run 43234340350, 112 s), which is `fb5d085` plus one new test,
 `AmbassadorWiringTests.jobFirst`. That tree did not hold `d8dbaf3` or
 `906f9c6`. The two were then merged with no conflict and no shared file, so
-the merged `v12` should read 3879 / 377; the push run for the merge is the
-place to read it, and until someone has, that number is a prediction.**
+the merged `v12` was predicted at 3879 / 377, and the push run for the
+merge read exactly that: 3879 tests / 377 suites, all green, 118 s (run
+43238067728 at `049710f`; Deno and the extension suite green; a push run
+skips the iOS build, so the merged tree's iOS slice rests on the two
+halves' own green builds).**
 
 Before it: **on `v12` (2026-11-12, the degree screen's three changes): 3878
 tests / 377 suites, all green, `swift test --no-parallel` on the GitHub macOS
