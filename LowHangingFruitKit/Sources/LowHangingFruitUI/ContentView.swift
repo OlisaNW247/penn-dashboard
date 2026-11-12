@@ -47,6 +47,11 @@ struct ContentView: View {
     @State private var editing: DashItem?
     /// The agent draft whose review sheet is up.
     @State private var reviewingDraft: AgentDraftReview?
+    #if DEBUG
+    /// The agent screenshot seam's two sheets (AppState+AgentDemo.swift).
+    @State private var debugShowCodeSheet = false
+    @State private var debugApproveLookup: AgentPendingLookup?
+    #endif
     @State private var showAddSheet = false
     @State private var showAnnouncementFinds = false
     @State private var showSweeper = false
@@ -262,6 +267,16 @@ struct ContentView: View {
                 state.gradeWatcher.loadPreviewSnapshots(SampleData.gradeSnapshots())
                 if args.contains("-LHFShowSettings") { path = [.profile] }
                 if args.contains("-LHFShowSweeper") { showSweeper = true }
+                if args.contains("-LHFDemoAgentState") || args.contains("-LHFDemoAgentOff")
+                    || args.contains("-LHFDraftReviewHarness") {
+                    let demo = state.installAgentDemo(arguments: args)
+                    vm.applyDemoAgentState(drafts: demo.drafts, submittedBy: demo.submittedBy)
+                    if args.contains("-LHFDraftReviewHarness"), let first = state.agentDrafts.first {
+                        reviewingDraft = AgentDraftReview(draftID: first.id)
+                    }
+                    if args.contains("-LHFShowCodeSheet") { debugShowCodeSheet = true }
+                    if args.contains("-LHFShowApproveSheet") { debugApproveLookup = state.debugAgentDemo?.lookup }
+                }
                 if args.contains("-LHFShowProfile") { path = [.profile] }
                 if args.contains("-LHFShowGrades") { path = [.grades] }
                 if args.contains("-LHFShowAssistant") { path = [.assistant] }
@@ -396,6 +411,17 @@ struct ContentView: View {
             AgentDraftReviewSheet(draftID: review.draftID)
                 .environmentObject(state)
         }
+        #if DEBUG
+        .sheet(isPresented: $debugShowCodeSheet) {
+            AgentCodeSheet().environmentObject(state)
+        }
+        .sheet(isPresented: Binding(get: { debugApproveLookup != nil },
+                                    set: { if !$0 { debugApproveLookup = nil } })) {
+            if let lookup = debugApproveLookup {
+                AgentLinkApproveSheet(lookup: lookup).environmentObject(state)
+            }
+        }
+        #endif
         .sheet(isPresented: $showAddSheet, onDismiss: rescheduleNotifications) {
             AddAssignmentSheet()
                 .environmentObject(state)

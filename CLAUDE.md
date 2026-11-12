@@ -1443,6 +1443,18 @@ usable without a real Canvas session, and pairs with `-LHFShowSettings`,
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
+With `-LHFDemoData`, `-LHFDemoAgentState` (2026-11-11, DEBUG only,
+`AppState+AgentDemo.swift`) adds the agent connection in memory: one
+connected agent "claude" last used 2h ago, a text draft on "PSet 6: hashing"
+and a file draft on "Lab report 4", prev's "Recitation worksheet" as
+"submitted by you · drafted by claude". `-LHFDemoAgentOff` is the same with
+the switch off; `-LHFShowCodeSheet` and `-LHFShowApproveSheet` open those
+sheets; `-LHFDraftReviewHarness <state>` opens the review sheet directly in
+one of `text`, `textFileOnly`, `file`, `link`, `locked`, `offline`, `signIn`,
+`submitted`, `unconfirmed`, `failed`. While it is on, `agentAPI` is nil and
+nothing is persisted, so no call reaches the server. The screenshots of
+2026-11-11 (`docs/v11-ui/`) were taken with it.
+
 `-LHFAgeCanvasSession` (DEBUG only) backdates the saved Canvas cookies'
 `capturedAt` by 25 hours before launch, so the real renew-on-open path runs
 now instead of tomorrow. Every silent-renewal step in a DEBUG build is

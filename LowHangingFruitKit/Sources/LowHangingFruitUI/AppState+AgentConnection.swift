@@ -24,12 +24,18 @@ extension AppState {
 
     /// Same conditions as `canSyncWithLaptop`, behind the feature's kill switch.
     var canUseAgentConnection: Bool {
-        FeatureFlags.agentConnection && canSyncWithLaptop
+        #if DEBUG
+        if debugAgentDemo != nil { return true }
+        #endif
+        return FeatureFlags.agentConnection && canSyncWithLaptop
     }
 
     // MARK: Opt-in
 
     func setAgentConnectionEnabled(_ on: Bool) async {
+        #if DEBUG
+        if debugAgentDemo != nil { agentConnectionEnabled = on; return }
+        #endif
         UserDefaults.lhf.set(on, forKey: SharedDefaults.agentConnectionEnabledKey)
         agentConnectionEnabled = on
         if on {
@@ -52,6 +58,10 @@ extension AppState {
     }
 
     var agentAPI: AgentConnectionClient? {
+        #if DEBUG
+        // The demo never reaches the server, whatever the build is wired to.
+        if debugAgentDemo != nil { return nil }
+        #endif
         guard canUseAgentConnection, let backend = BackendServices.client else { return nil }
         return AgentConnectionClient(client: backend)
     }
@@ -69,6 +79,9 @@ extension AppState {
     /// True when the picked number matched. False can mean the server denied
     /// the request (wrong number) or the call failed.
     func approveAgentLink(id: String, picked: Int) async -> Bool {
+        #if DEBUG
+        if let demo = debugAgentDemo { return picked == demo.lookup.choices.first }
+        #endif
         guard let api = agentAPI, let approved = try? await api.approve(pendingID: id, picked: picked),
               approved else { return false }
         if !agentConnectionEnabled {
@@ -87,6 +100,9 @@ extension AppState {
     }
 
     func refreshAgentConnections() async -> [AgentConnectionSummary] {
+        #if DEBUG
+        if let demo = debugAgentDemo { return demo.connections }
+        #endif
         guard let api = agentAPI, let list = try? await api.listConnections() else { return [] }
         hasAgentConnections = !list.isEmpty
         // Only a list that answered: a failed call must not read as "every

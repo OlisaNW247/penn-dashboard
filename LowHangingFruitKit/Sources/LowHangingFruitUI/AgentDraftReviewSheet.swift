@@ -159,6 +159,10 @@ struct AgentDraftReviewSheet: View {
             }
             if let d = draft { lookup = await state.agentDraftAcceptance(for: d, item: snapshotItem) }
             await prepareDocument()
+            #if DEBUG
+            // The screenshot harness's result states (AppState+AgentDemo.swift).
+            if let demoOutcome = state.debugAgentDemo?.initialOutcome { outcome = .result(demoOutcome) }
+            #endif
         }
         .onChange(of: state.agentDrafts) { _, drafts in
             if let fresh = drafts.first(where: { $0.id == draftID }) { shown = fresh }
@@ -479,6 +483,9 @@ struct AgentDraftReviewSheet: View {
     }
 
     private var canvasURL: URL? {
+        #if DEBUG
+        if state.debugAgentDemo != nil { return URL(string: "https://canvas.upenn.edu/courses/900001/assignments/1") }
+        #endif
         if let raw = snapshotItem?.url, let url = URL(string: raw) {
             return url
         }

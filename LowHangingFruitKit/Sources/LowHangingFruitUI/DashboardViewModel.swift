@@ -292,6 +292,17 @@ final class DashboardViewModel: ObservableObject {
         items = SampleData.items()
     }
 
+    #if DEBUG
+    /// The agent screenshot seam (AppState+AgentDemo.swift): lays the demo's
+    /// draft chips and prev's "submitted by you" onto the sample cards.
+    func applyDemoAgentState(drafts: [String: AgentDraftDisplay], submittedBy: [String: String]) {
+        for i in items.indices {
+            if let draft = drafts[items[i].id] { items[i].agentDraft = draft }
+            if let name = submittedBy[items[i].id] { items[i].agentSubmittedBy = name }
+        }
+    }
+    #endif
+
     func reload(preservingEdits: Bool = false) {
         guard let state = appState else { return }
 

@@ -591,6 +591,12 @@ final class AppState: ObservableObject {
     /// The dashboard's one-line "connected to claude", set when a connection
     /// appears that the phone had not seen. Memory only.
     @Published var agentConnectionBanner: String?
+    #if DEBUG
+    /// The screenshot seam (`-LHFDemoAgentState`, `-LHFDraftReviewHarness`,
+    /// AppState+AgentDemo.swift). Nil in every real run; compiled out of
+    /// Release.
+    var debugAgentDemo: AgentDemoState?
+    #endif
     /// Never-twice records for Canvas submissions of drafts.
     lazy var agentSubmitAttempts: AgentSubmitAttemptStore = AgentSubmitAttemptStore.makeDefault()
 

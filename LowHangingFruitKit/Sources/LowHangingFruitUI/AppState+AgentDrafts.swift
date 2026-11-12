@@ -107,7 +107,11 @@ extension AppState {
     }
 
     func agentDraftDisplay(forItemID itemID: String) -> AgentDraftDisplay? {
-        guard !isUsingFixtureData, let draft = agentDraft(forItemID: itemID) else { return nil }
+        var fixture = isUsingFixtureData
+        #if DEBUG
+        if debugAgentDemo != nil { fixture = false }
+        #endif
+        guard !fixture, let draft = agentDraft(forItemID: itemID) else { return nil }
         let record = agentSubmitAttempts.record(for: draft.id)
         return AgentDraftDisplay(
             draftID: draft.id, agentName: draft.agentName.lowercased(), preview: draft.preview(maxLines: 2, maxCharacters: 160),
@@ -134,6 +138,9 @@ extension AppState {
     /// answer shapes the sheet, it never authorises a POST.
     func agentDraftAcceptance(for draft: AgentDraft, item: AgentSnapshot.WorkItem?,
                               forceLive: Bool = false) async -> AgentAcceptanceLookup {
+        #if DEBUG
+        if let demo = debugAgentDemo { return demo.lookup(for: draft) }
+        #endif
         if draft.kind != .unknown, AgentDraftSubmitter.unsupportedReason(draft: draft, item: item) != nil {
             return .known(.notOnline)
         }
@@ -223,6 +230,9 @@ extension AppState {
     /// Sends one draft to Canvas. See `AgentDraftSubmitter` for the order and
     /// the never-twice rule; this supplies the pieces from the live app.
     func submitAgentDraft(_ draftID: String, pdf: RenderedDraftPDF? = nil) async -> AgentSubmitResult {
+        #if DEBUG
+        if let demo = debugAgentDemo { return demo.initialOutcome ?? .submitted(verified: true) }
+        #endif
         guard !isUsingFixtureData, let draft = agentDrafts.first(where: { $0.id == draftID }) else {
             return .refused(.missingIDs)
         }
