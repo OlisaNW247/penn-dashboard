@@ -222,6 +222,7 @@ private enum SmoothFontRegistry {
             ("Roobert-SemiBoldItalic", "otf"),
             ("Inter", "ttf"),
             ("FamiljenGrotesk-Variable", "ttf"),
+            ("AtkinsonHyperlegibleNext-Variable", "ttf"),
             ("SpaceMono-Regular", "ttf"),
             ("SpaceMono-Bold", "ttf"),
         ] {
@@ -376,7 +377,30 @@ extension Font {
             : lhfSans(size, weight: .medium)
     }
 
-    /// Space Mono for course codes, deadlines, and other compact data.
+    /// The class code on a card and on the draft review sheet: Atkinson
+    /// Hyperlegible Next SemiBold (SIL OFL, from the Braille Institute,
+    /// designed for telling characters apart at small sizes). Marco chose it
+    /// on 2026-11-12 (option B of `docs/FONT_RESEARCH_2026-11-11.md`) because
+    /// Space Mono Bold at 9.5pt read as "like Claude". The card uses 10pt with
+    /// +0.9 tracking (`courseCodeTracking`), which keeps the cap height near
+    /// Space Mono's at 9.5. The file is the variable font; its SemiBold
+    /// instance answers to `AtkinsonHyperlegibleNext-SemiBold` (checked with
+    /// CoreText) and, by its own name, `AtkinsonHyperlegibleNext-Regular_SemiBold`,
+    /// so both are tried before falling back to Space Mono Bold. Only the
+    /// code: the "NEW" tag, the due value and "late"/"in class" stay mono.
+    static func lhfCourseCode(_ size: CGFloat = 10) -> Font {
+        SmoothFontRegistry.ensureRegistered()
+        for name in ["AtkinsonHyperlegibleNext-SemiBold", "AtkinsonHyperlegibleNext-Regular_SemiBold"]
+            where fontIsAvailable(name) {
+            return .custom(name, size: size, relativeTo: lhfTextStyle(for: size))
+        }
+        return lhfMono(size - 0.5, weight: .semibold)
+    }
+
+    /// Tracking that goes with `lhfCourseCode`.
+    static let courseCodeTracking: CGFloat = 0.9
+
+    /// Space Mono for deadlines and other compact data.
     static func lhfMono(_ size: CGFloat, weight: Weight = .regular) -> Font {
         SmoothFontRegistry.ensureRegistered()
         let custom: String

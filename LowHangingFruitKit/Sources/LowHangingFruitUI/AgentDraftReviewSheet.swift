@@ -182,8 +182,8 @@ struct AgentDraftReviewSheet: View {
         VStack(alignment: .leading, spacing: 6) {
             if !course.isEmpty {
                 Text(course.uppercased())
-                    .font(.lhfMono(10.5, weight: .semibold))
-                    .tracking(1.1)
+                    .font(.lhfCourseCode(11))
+                    .tracking(Font.courseCodeTracking)
                     .foregroundStyle(courseAccentInk(for: course))
             }
             Text(title)

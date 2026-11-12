@@ -224,8 +224,16 @@ tomato/marigold/lemon/teal/cobalt/grape accents, an "after sunset" dark
 mode, the S app mark, and bundled type registered at runtime by
 `SmoothFontRegistry` (`RedesignTokens.swift`):
 - Satoshi (Fontshare FFL).
-- Inter, Familjen Grotesk and Space Mono (all SIL OFL, licence files beside
-  them in `Resources/`).
+- Inter, Familjen Grotesk, Space Mono and Atkinson Hyperlegible Next (all
+  SIL OFL, licence files beside them in `Resources/`).
+- The class code on a card and on the draft review sheet is Atkinson
+  Hyperlegible Next SemiBold (`Font.lhfCourseCode`, 10pt +0.9 on the card,
+  11pt on the sheet) since 2026-11-12, Marco's pick (option B of
+  `docs/FONT_RESEARCH_2026-11-11.md`; Space Mono Bold at 9.5pt read as "like
+  Claude"). The variable file `AtkinsonHyperlegibleNext-Variable.ttf`, from
+  google/fonts; its SemiBold instance resolves as
+  `AtkinsonHyperlegibleNext-SemiBold`. The "NEW" tag, the due value and
+  "late"/"in class" stay Space Mono.
 - Roobert SemiBold for the dashboard title: a commercial face from
   Displaay, cleared for shipping on 2026-09-15 under a personal agreement
   Olisa holds. There is deliberately no licence file in the repo; the
