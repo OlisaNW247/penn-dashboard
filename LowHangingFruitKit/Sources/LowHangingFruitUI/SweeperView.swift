@@ -49,53 +49,6 @@ enum SweeperText {
     }
 }
 
-// MARK: - The broom
-
-/// SF Symbols has no broom before iOS 18, so the sketch's own drawing is
-/// reproduced: a handle stroke and a bristle head, both authored on a 17-point
-/// grid and scaled to whatever frame the caller gives.
-struct BroomGlyph: View {
-    var body: some View {
-        ZStack {
-            BroomHandle()
-                .stroke(style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
-            BroomHead()
-        }
-        .aspectRatio(1, contentMode: .fit)
-        .accessibilityHidden(true)
-    }
-}
-
-private struct BroomHandle: Shape {
-    func path(in rect: CGRect) -> Path {
-        let k = rect.width / 17
-        var path = Path()
-        path.move(to: CGPoint(x: rect.minX + 15.6 * k, y: rect.minY + 1.4 * k))
-        path.addLine(to: CGPoint(x: rect.minX + 9.4 * k, y: rect.minY + 7.6 * k))
-        return path
-    }
-}
-
-private struct BroomHead: Shape {
-    func path(in rect: CGRect) -> Path {
-        let k = rect.width / 17
-        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
-            CGPoint(x: rect.minX + x * k, y: rect.minY + y * k)
-        }
-        var path = Path()
-        path.move(to: p(7.4, 6.4))
-        path.addLine(to: p(10.6, 9.6))
-        path.addLine(to: p(9.4, 10.8))
-        path.addCurve(to: p(6.2, 12.8), control1: p(8.5, 11.7), control2: p(7.1, 11.9))
-        path.addLine(to: p(3.4, 15.6))
-        path.addLine(to: p(0.4, 12.6))
-        path.addLine(to: p(3.2, 9.8))
-        path.addCurve(to: p(5.2, 6.6), control1: p(4.1, 8.9), control2: p(4.3, 7.5))
-        path.closeSubpath()
-        return path
-    }
-}
-
 // MARK: - Sound preview
 
 /// Plays a sound once so a student can hear what they are choosing. The
@@ -144,35 +97,26 @@ private struct SweeperPlayButton: View {
     }
 }
 
-/// The big "on." / "off." with its switch. The period is tomato while on and
-/// the rule colour while off, the whole of the page's on/off signal.
-private struct SweeperStateRow: View {
-    let isOn: Bool
+/// The on/off switch as one plain row, the same height and skin as the sound
+/// row (Marco, 2026-11-11: the page had two titles, "Sweeper" and a 64pt
+/// "on."; no bigger than any other row). It sits first, under the title and
+/// above the next-alarm card, since Marco's second look the same evening. The wrong fix is shrinking the old "on."
+/// headline: it is still a second title, only a smaller one.
+private struct SweeperSwitchRow: View {
     let label: String
     let binding: Binding<Bool>
 
     var body: some View {
-        HStack {
-            HStack(alignment: .firstTextBaseline, spacing: 0) {
-                Text(isOn ? "on" : "off")
-                Text(".")
-                    .foregroundStyle(isOn ? Color.smoothTomato : Color.smoothRule)
-            }
-            .font(.lhfSerif(64))
-            .tracking(-2.9)
-            .foregroundStyle(Color.smoothInk)
-            .lineLimit(1)
-            .minimumScaleFactor(0.6)
-            .accessibilityHidden(true)
-
-            Spacer(minLength: 12)
-
-            Toggle(label, isOn: binding)
-                .labelsHidden()
-                .tint(Color.smoothTomato)
-                .scaleEffect(1.3)
-                .padding(.trailing, 8)
+        Toggle(isOn: binding) {
+            Text("on")
+                .font(.lhfSans(15))
+                .foregroundStyle(Color.smoothInk)
         }
+        .tint(Color.smoothTomato)
+        .accessibilityLabel(label)
+        .padding(.horizontal, 14)
+        .frame(height: 50)
+        .background(Color.smoothSurface.opacity(0.4), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 
@@ -229,6 +173,10 @@ private struct SweeperMinutePicker: View {
 // MARK: - The page
 
 struct SweeperView: View {
+    /// Set the first time this page appears; the header's "new" dot reads it
+    /// (`ContentView.sweeperButton`). A preference, so `UserDefaults.lhf`.
+    static let pageSeenKey = "sweeperPageSeenV1"
+
     /// The dashboard's items as the sheet opened; the card reads them, the
     /// planner reads its own.
     let items: [DashItem]
@@ -246,8 +194,10 @@ struct SweeperView: View {
                     SmoothFormHeader(title: "Sweeper", accent: .smoothTomato, spark: .smoothMarigold)
                         .padding(.bottom, 4)
 
-                    SweeperStateRow(
-                        isOn: scheduler.loudAlertEnabled,
+                    // First, whether it is on (Marco, 2026-11-11: "I don't
+                    // like the placement of the 'on'" under the card); then
+                    // what it will ring next.
+                    SweeperSwitchRow(
                         label: "Smooth Sweeper",
                         binding: Binding(
                             get: { scheduler.loudAlertEnabled },
@@ -257,17 +207,17 @@ struct SweeperView: View {
                             }
                         )
                     )
-                    .padding(.top, 2)
+                    .padding(.top, 10)
+
+                    nextSweepCard
+                        .padding(.top, 10)
 
                     if !scheduler.isEnabled {
-                        Label("turn on due-date reminders in profile to use Smooth Sweeper.", systemImage: "bell.slash")
+                        Label("reminders are off", systemImage: "bell.slash")
                             .font(.lhfSecondary(12))
                             .foregroundStyle(Color.v2DateText)
                             .padding(.top, 8)
                     }
-
-                    nextSweepCard
-                        .padding(.top, 14)
 
                     section("default")
                     SweeperMinutePicker(selection: Binding(
@@ -307,6 +257,7 @@ struct SweeperView: View {
                     .environmentObject(scheduler)
             }
         }
+        .onAppear { UserDefaults.lhf.set(true, forKey: Self.pageSeenKey) }
         .onDisappear { preview.stop() }
     }
 
@@ -542,15 +493,14 @@ struct SweeperClassView: View {
                                  accent: .smoothTomato, spark: .smoothMarigold)
                     .padding(.bottom, 4)
 
-                SweeperStateRow(
-                    isOn: included,
+                SweeperSwitchRow(
                     label: "sweep \(state.courseDisplayName(course))",
                     binding: Binding(
                         get: { included },
                         set: { scheduler.setSweeperCourse(course, enabled: $0) }
                     )
                 )
-                .padding(.top, 2)
+                .padding(.top, 10)
 
                 // Dimmed, not disabled, while the class is off: a student can
                 // still set up the class before switching it back on.

@@ -132,6 +132,19 @@ struct SweeperOnboardingTests {
         #expect(!(try ui("SettingsPage.swift")).contains("SweeperSettingsSection"))
     }
 
+    @Test("The Sweeper page has one title, then the on row, then the next-alarm card")
+    func switchRowFirst() throws {
+        // Marco, 2026-11-11: one title, and the "on" first, not under the card.
+        let page = try ui("SweeperView.swift")
+        let body = try #require(page.range(of: "struct SweeperView: View {"))
+        let rest = String(page[body.upperBound...])
+        let title = try #require(rest.range(of: "SmoothFormHeader(title: \"Sweeper\""))
+        let toggle = try #require(rest.range(of: "SweeperSwitchRow(\n                        label: \"Smooth Sweeper\""))
+        let card = try #require(rest.range(of: "nextSweepCard\n"))
+        #expect(title.lowerBound < toggle.lowerBound && toggle.lowerBound < card.lowerBound)
+        #expect(!page.contains("SweeperStateRow") && !page.contains(".font(.lhfSerif(64))"))
+    }
+
     @Test("The takeover screen and the alarm's lock screen card are headed Smooth Sweeper")
     func headings() throws {
         #expect(try ui("BerserkTakeoverView.swift").contains("Text(\"Smooth Sweeper\")"))

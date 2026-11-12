@@ -400,9 +400,19 @@ Keep this current. It is the fastest way for a new session to know what exists.
   opens through "update password" once Penn has rejected a saved password.
 - **Dashboard** (`ContentView`):
   - **Header.** The "Smooth" wordmark and the weekday. Tapping the wordmark
-    ripples its squiggle and sweeps a shine across it. The **Sweeper**
-    broom (tomato, a small dark-red dot while it is on; since 2026-11-10 on
-    `v11`), the **megaphone** and a profile button sit beside it. All
+    ripples its squiggle and sweeps a shine across it; since 2026-11-11 three
+    taps inside 1.5 s flip the wordmark once round its horizontal axis, a
+    0.8 s backflip that ends at the normal pose (`WordmarkTripleTap`; none
+    under Reduce Motion), and the title is as large as the row allows (1pt steps
+    from 29 to 18 through `ViewThatFits`, the spacer before the buttons 2pt
+    instead of 12; Marco: "too small"; "Smooth Wednesday" was 24pt on a
+    402pt phone). The **Sweeper**
+    button (since 2026-11-10 on `v11`; since 2026-11-11 an `alarm.fill`, Marco:
+    "the shovel or sweep emoji sucks"; first on a solid tomato squircle, then,
+    the same day, "far too orange", in the + button's old colours: a 22%
+    tomato wash under a tomato-ink glyph, with the + moved to lemon; a small dark-red "new"
+    dot shows only until the Sweeper page has been opened once,
+    `sweeperPageSeenV1`), the **megaphone** and a profile button sit beside it. All
     three are 42pt squircles with 8pt spacing on `v11` (48pt with two)
     (continuous corners, radius 0.32 × size; owner's call 2026-11-06; the
     control row's filter and + stay round). Since
@@ -436,7 +446,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
     coloured chips, `CoursePicker`). The **megaphone** used to be a fourth
     control here and moved to the header on 2026-10-18, where its circle
     is marigold (the class filter beside the switch is cobalt: ink glyph on
-    a cobalt fill, like the tomato add button). It opens
+    a cobalt fill; the + is lemon since 2026-11-11, tomato before, when tomato
+    went to the Sweeper button). It opens
     `AnnouncementFindsView`, which since 2026-10-18 is two lists under the
     page header and a class filter (the dashboard's own `ClassFilterMenu`,
     default all classes, not remembered):
@@ -879,7 +890,13 @@ Keep this current. It is the fastest way for a new session to know what exists.
   - the grade report (`GradeReportView`)
 
   `docs/grades.md` is the design record.
-- **ask / "the tree"** (`AssistantView`). A chat about your classes: the
+- **ask / "the tree"** (`AssistantView`). Since 2026-11-11 the shape
+  cluster above the greeting on an empty screen hovers: each of its four
+  shapes drifts 3 to 6 pt on its own 3 to 6 s loop with a tilt of at most 2
+  degrees (`SmoothShapeHover`, a `TimelineView` local to the cluster), still
+  while the student types and under Reduce Motion; Profile and every other
+  page keep the cluster still (`SmoothFormShapes(hovers:)`, default false).
+  Marco: "the shapes could be hovering in a cool way". A chat about your classes: the
   server path for Penn, with the on-device responder as fallback. Either
   way the search over course material runs on the phone (see "ask:
   retrieval is on the phone" under Architecture). Source chips under an
@@ -935,23 +952,27 @@ Keep this current. It is the fastest way for a new session to know what exists.
      strings and `SignInHealthTests` remain.
      **Connected agent (2026-11-11, Marco: "under accounts, in profile, it
      should have connected agent with a toggle and then list what is
-     connected to your agent").** After the laptop row, behind
-     `canUseAgentConnection`, `ProfileAgentRows` (`ProfileAgentRows.swift`)
-     puts the agent connection in the accounts section itself, replacing
+     connected to your agent"; later the same day: "Connected agent should
+     be a different block in profile under agent").** Its own section,
+     "agent", right after accounts (grape background), behind
+     `canUseAgentConnection`: `ProfileAgentRows` (`ProfileAgentRows.swift`)
+     puts the agent connection there, replacing
      the "connect an agent · on/off" row and the `AgentConnectionsView`
-     screen it pushed (deleted): a plain `Toggle` "connected agent"; one
-     muted line "shares your classes and work list with the agent's provider
-     · privacy policy" (naming the recipient, for App Review 5.1.2(i); the
-     last two words link to `AgentConnectionCopy.privacyURL`; the long
-     disclosure lives in `docs/PRIVACY.md` → "Connecting an AI assistant",
-     which `AgentConnectionWiringTests` checks still says what is shared,
-     the never list, who receives it and what off does); then, while on,
+     screen it pushed (deleted): a plain `Toggle` "connected agent"; then, while on,
      one row per agent (its name, muted "last used 2h ago" / "never used",
      a trailing muted "disconnect" and chevron, the whole row a button
      behind a "disconnect claude?" alert, as the laptop row's "unpair"
      is), or a muted "none yet"; and "have a code?", which opens
      `AgentCodeSheet` (the code field and "connect", then the approve
-     sheet over it). Turning it off asks once, "disconnect every agent?"
+     sheet over it); last, on or off, a plain "privacy policy" link row to
+     `AgentConnectionCopy.privacyURL` with no sentence beside it (since
+     2026-11-11, Marco: "remove all of the little bullshit text"; the muted
+     line "shares your classes and work list with the agent's provider ·
+     privacy policy" went; the disclosure lives in `docs/PRIVACY.md` →
+     "Connecting an AI assistant", which names the recipient for App Review
+     5.1.2(i) and which `AgentConnectionWiringTests` checks still says what
+     is shared, the never list, who receives it and what off does). Turning
+     it off asks once, "disconnect every agent?"
      with "disconnect" / "cancel" and no message (added 2026-11-11; before,
      no confirmation), because it deletes the list and disconnects every
      agent. Pinned by `AgentConnectionWiringTests`.
@@ -1113,8 +1134,12 @@ Keep this current. It is the fastest way for a new session to know what exists.
      in 3.2.1 (15), 2026-10-24; build 15 was first stamped 3.2.0): the Sweeper has its own
      section immediately below reminders (`SweeperSettingsSection`; since
      2026-11-10 on `v11` that section is gone and the Sweeper is its own
-     page, `SweeperView`, opened from the header broom: on/off, a live
-     countdown card for the next alarm actually set, the defaults, and a
+     page, `SweeperView`, opened from the header broom: one title,
+     "Sweeper", then a plain "on" switch row, then a live countdown card for
+     the next alarm actually set (2026-11-11, Marco: the page had two
+     titles, "Sweeper" and a 64pt "on."; the row sat under the card for an
+     hour until "I don't like the placement of the 'on'"; the class page's
+     "on." went the same way), the defaults, and a
      page per class with its own lead time and sound,
      `notif.sweeperCourseMinutesV1` / `notif.sweeperCourseSoundV1`,
      resolved by `SweeperPlan.swift`; sketch in
@@ -1146,8 +1171,11 @@ Keep this current. It is the fastest way for a new session to know what exists.
      touching the audio session, so the silent switch mutes them and they
      stop other audio (the `AVAudioSession` trap); a 60-minute lead
      suppresses the plain 1-hour reminder for loud items, as 10 minutes did
-     for the 10-minute one; and two capitalised explanatory lines remain in
-     the section. The section's footer (Marco's "A list minute alarm right
+     for the 10-minute one; and two capitalised explanatory lines remained in
+     the section (the section itself is gone since the Sweeper page of
+     2026-11-10; on that page the one explanation, "turn on due-date
+     reminders in profile to use Smooth Sweeper.", is "reminders are off"
+     since 2026-11-11). The section's footer (Marco's "A list minute alarm right
      before your miss an assignment.", corrected on 2026-10-24) was removed
      the same evening at Olisa's word, seeing it on his phone ("Remove the
      text under smooth sweeper"); the section ends at the classes row.
@@ -1203,17 +1231,17 @@ Keep this current. It is the fastest way for a new session to know what exists.
   alive (`LHFScenes.swift`) and open-at-login.
 - **Connect an agent** (2026-11-08, `agent/connection-v11`, compiled, never
   on a phone; behind `FeatureFlags.agentConnection`, Penn installs past
-  onboarding with a backend only). Profile → accounts holds the
-  "connected agent" switch and the connected agents (since 2026-11-11 in
-  the section itself, see Profile above; before, a pushed
+  onboarding with a backend only). Profile → agent holds the
+  "connected agent" switch and the connected agents (since 2026-11-11 a
+  section of its own after accounts, see Profile above; before, a pushed
   `AgentConnectionsView` with the whole disclosure on screen). A
   `smooth://link?c=…` URL (the "Open Smooth" button on the agent's sign-in
   page) or a typed code ("have a code?") looks the pending request up and
-  shows `AgentLinkApproveSheet`, trimmed 2026-11-11: "connect claude?",
-  the agent's host in muted type, one line "reads your classes and work,
-  proposes drafts" (", proposes drafts" only with the draft scope), "pick
-  the number the page shows", three numbers (a wrong one denies the
-  request on the server), "not now"; "did you just start this?" is gone.
+  shows `AgentLinkApproveSheet`, trimmed 2026-11-11 and again that night
+  to the question, the prompt and the buttons: "connect claude?", "pick
+  the matching number", three numbers (a wrong one denies the request on
+  the server), "not now". The agent's host, "reads your classes and work,
+  proposes drafts" and "did you just start this?" are gone.
   Approving turns the opt-in on if it was off.
   With it on, `agentSnapshotPass` uploads the work list
   (`AgentSnapshotBuilder` over `syncWorkList()`, courses, own tasks; no
@@ -1287,23 +1315,21 @@ Keep this current. It is the fastest way for a new session to know what exists.
     offer, the default, or a block. Top to bottom (trimmed 2026-11-11,
     Marco: "a lot of needless text in the submission"): the class code in
     its accent ink and the title (Familjen 24), one header; "drafted by
-    claude" in grape; the agent's note as one muted line when under 80
-    characters with no line break (`noteFitsOnALine`), else behind a
-    collapsed "note" disclosure; the draft full width (the text in Inter
+    claude" in grape; the agent's note, always behind a collapsed "note"
+    disclosure (since 2026-11-11; a short one was a visible line before); the draft full width (the text in Inter
     16, selectable; or the rendered pdf pages inline in a PDFKit view, no
     caption; a link as a ruled 56pt row that opens it; a file as a row with
     name, size and "preview", QuickLook); **one status line**
     (`DraftReviewStatus.resolve`, pinned by `DraftReviewStatusTests`): a
     small spinner, no words, while Canvas is asked; then "canvas takes a
-    pdf or docx here" / "canvas takes text here" / "this one can't be
-    submitted online" / "canvas has this one locked", or in its place a
-    refusal for this draft ("canvas doesn't take .zip here · ask for a pdf
-    file", "couldn't make a pdf") or the outcome of the last tap (which
+    pdf or docx" / "canvas takes text" / "can't be submitted online" /
+    "locked in canvas", or in its place a refusal for this draft ("canvas
+    won't take .zip · pdf only", "couldn't make a pdf") or the outcome of the last tap (which
     always wins), never two; the `SmoothSegmentPicker` "send as text" /
     "send as pdf" only when both go; then, pinned at the bottom on paper, a
     filled grape 48pt squircle "submit to canvas" (confirmation names the
-    kind, "send problem set 7 as a pdf?", with "goes in under your name" as
-    its message) and a plain "decline". Blocked, "open in canvas" (a text
+    kind, "send problem set 7 as a pdf?", and no message since 2026-11-11;
+    "goes in under your name" went) and a plain "decline". Blocked, "open in canvas" (a text
     link to the Canvas app) takes the submit's place.
     Choice rules: a text draft on a file-only assignment goes as a pdf
     (**any** text draft, plain or markdown: `DraftDocumentRenderer`
@@ -1312,13 +1338,12 @@ Keep this current. It is the fastest way for a new session to know what exists.
     the default and the pdf optional, except that a markdown draft where
     Canvas takes both text and files defaults to "send as pdf"; if the early read failed the draft's
     own kind is offered (text beside pdf, markdown leaning pdf) and the
-    submit's preflight decides. Results in plain words with the next step:
-    "no connection · try again", "sign in to canvas in profile, then try
-    again", "canvas has this one locked" + open in canvas, "it may have gone
-    in · check canvas" + open in canvas + done, "couldn't reach canvas · try
-    again"; submitted is a full-sheet state (teal tick, "submitted to
+    submit's preflight decides. Results, one short line each since 2026-11-11 (no "try again", no
+    "here"): "no connection", "sign in to canvas first", "locked in canvas"
+    + open in canvas, "may have gone in · check canvas" + open in canvas +
+    done, "couldn't reach canvas", "canvas refused it"; submitted is a full-sheet state (teal tick, "submitted to
     canvas", done) only when the read-back verified it; unverified, the
-    sheet stays with "submitted · check canvas to be sure" as its one
+    sheet stays with "submitted · not confirmed" as its one
     status line, open in canvas and done (the "in at 9:41 pm" line was
     taken out 2026-11-11). Every string in `AgentConnectionCopy`, pinned by
     `AgentConnectionCopyTests`; the table and choices by
@@ -1443,6 +1468,18 @@ usable without a real Canvas session, and pairs with `-LHFShowSettings`,
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
+With `-LHFDemoData`, `-LHFDemoAgentState` (2026-11-11, DEBUG only,
+`AppState+AgentDemo.swift`) adds the agent connection in memory: one
+connected agent "claude" last used 2h ago, a text draft on "PSet 6: hashing"
+and a file draft on "Lab report 4", prev's "Recitation worksheet" as
+"submitted by you · drafted by claude". `-LHFDemoAgentOff` is the same with
+the switch off; `-LHFShowCodeSheet` and `-LHFShowApproveSheet` open those
+sheets; `-LHFDraftReviewHarness <state>` opens the review sheet directly in
+one of `text`, `textFileOnly`, `file`, `link`, `locked`, `offline`, `signIn`,
+`submitted`, `unconfirmed`, `failed`. While it is on, `agentAPI` is nil and
+nothing is persisted, so no call reaches the server. The screenshots of
+2026-11-11 (`docs/v11-ui/`) were taken with it.
+
 `-LHFAgeCanvasSession` (DEBUG only) backdates the saved Canvas cookies'
 `capturedAt` by 25 hours before launch, so the real renew-on-open path runs
 now instead of tomorrow. Every silent-renewal step in a DEBUG build is
@@ -1521,11 +1558,25 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
+**Merged on `v11-master` 2026-11-11 (the update-notes branch and the UI pass
+`claude/v11-ui-pass-84648c`, merged at the commit that carries this line):
+predicted 3945 tests / 379 suites (3922 + 16 + 7, 377 + 1 + 1); the run on
+the merged tree is recorded below this paragraph once it has happened. Not
+on a phone.**
+
 **On `claude/update-notes-13b416` (2026-11-11, off `v11-master`): 3938 tests /
 378 suites, all green, `swift test --no-parallel` alone on Marco's Mac (94 s),
 +16 / +1 over 3922 / 377: `UpdateChangesTests` (the manifest's `changes`
 list). iOS Debug build (`generic/platform=iOS`, `CODE_SIGNING_ALLOWED=NO`)
 succeeded. Not on a phone.**
+
+**On `claude/v11-ui-pass-84648c` (2026-11-11, off `v11-master` `0a78549`):
+3929 tests / 378 suites, all green, `swift test --no-parallel` alone on
+Marco's Mac (54 s), +7 / +1 over 3922 / 377: `UIPassNov11Tests` (the
+triple-tap rule, the backflip, the hover bounds and wiring), one
+`DashboardSmallFixesTests` case (the Sweeper button) and one
+`SweeperOnboardingTests` case (the on row first). The iOS Simulator and
+signed device Debug builds of `3c9d245` succeeded.**
 
 **Merged on `v11-master` 2026-11-11 (the UI trim `5d7d7a5` plus the three
 test-session branches, `claude/v11-test-backend-3b1f1b`,

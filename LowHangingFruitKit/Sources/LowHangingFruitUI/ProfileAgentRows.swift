@@ -1,18 +1,18 @@
 import SwiftUI
 import LowHangingFruitKit
 
-/// Profile → accounts, the agent connection's rows (2026-11-11; before, a
+/// Profile → agent, the agent connection's rows (their own section after
+/// accounts since 2026-11-11, at Marco's word; before, a
 /// "connect an agent · on/off" row pushed a screen of its own). Marco: "under
 /// accounts, in profile, it should have connected agent with a toggle and
 /// then list what is connected to your agent."
 ///
-/// In order: the "connected agent" switch; one muted line, "shares your
-/// classes and work list · privacy policy" (the full disclosure Apple 5.1.2(i)
-/// asks for is `docs/PRIVACY.md` → "Connecting an AI assistant", one tap
-/// away); then, while on, one row per connected agent (its name, "last used
+/// In order: the "connected agent" switch; then, while on, one row per connected agent (its name, "last used
 /// 2h ago" or "never used", and "disconnect", drawn like the laptop row's
 /// "unpair", behind the same kind of confirmation), or "none yet"; and "have
-/// a code?", which opens `AgentCodeSheet`.
+/// a code?", which opens `AgentCodeSheet`; last, on or off, a "privacy
+/// policy" link row (the full disclosure Apple 5.1.2(i) asks for is
+/// `docs/PRIVACY.md` → "Connecting an AI assistant").
 ///
 /// Turning it off deletes the server's list and disconnects every agent
 /// (`AppState.setAgentConnectionEnabled`), so it asks once first: "disconnect
@@ -49,11 +49,6 @@ struct ProfileAgentRows: View {
         .sheet(isPresented: $showCode, onDismiss: { Task { await reload() } }) {
             AgentCodeSheet().environmentObject(state)
         }
-
-        Text(Self.sharesLine)
-            .font(.lhfSecondary(12))
-            .foregroundStyle(Color.smoothMuted)
-            .tint(Color.smoothInk)
 
         if state.agentConnectionEnabled {
             if connections.isEmpty {
@@ -102,17 +97,25 @@ struct ProfileAgentRows: View {
             }
             .buttonStyle(.plain)
         }
-    }
 
-    /// "shares your classes and work list · privacy policy", the last two
-    /// words a link to the policy.
-    static var sharesLine: AttributedString {
-        var line = AttributedString(AgentConnectionCopy.shares + " \u{00B7} ")
-        var link = AttributedString(AgentConnectionCopy.privacyPolicy)
-        link.link = URL(string: AgentConnectionCopy.privacyURL)
-        link.underlineStyle = .single
-        line.append(link)
-        return line
+        // The block's last row, on or off: a plain link, no sentence (Marco,
+        // 2026-11-11, on the line it replaced, "shares your classes and work
+        // list with the agent's provider · privacy policy": "All this
+        // explanation text ... I need that gone"). The policy carries the
+        // whole disclosure.
+        if let url = URL(string: AgentConnectionCopy.privacyURL) {
+            Link(destination: url) {
+                HStack {
+                    Text(AgentConnectionCopy.privacyPolicy).foregroundStyle(Color.smoothInk)
+                    Spacer()
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.smoothMuted)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     /// "last used 2h ago" or "never used".

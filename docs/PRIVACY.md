@@ -351,7 +351,7 @@ nothing until you pair it with your phone.
 
 ## Connecting an AI assistant (optional, Penn, off by default)
 
-- **What it is.** From Profile → accounts → connected agent, you can let an
+- **What it is.** From Profile → agent → connected agent, you can let an
   AI assistant you already use read your classes through Smooth, and propose
   drafts: Claude at claude.ai or in the Claude apps, or ChatGPT where its
   plan allows custom connectors. Nothing happens until you turn it on and

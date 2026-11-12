@@ -47,9 +47,16 @@ struct ContentView: View {
     @State private var editing: DashItem?
     /// The agent draft whose review sheet is up.
     @State private var reviewingDraft: AgentDraftReview?
+    #if DEBUG
+    /// The agent screenshot seam's two sheets (AppState+AgentDemo.swift).
+    @State private var debugShowCodeSheet = false
+    @State private var debugApproveLookup: AgentPendingLookup?
+    #endif
     @State private var showAddSheet = false
     @State private var showAnnouncementFinds = false
     @State private var showSweeper = false
+    /// The header's "new" dot leaves once the Sweeper page has been opened.
+    @AppStorage(SweeperView.pageSeenKey, store: UserDefaults.lhf) private var sweeperPageSeen = false
     /// Frozen when the megaphone sheet opens, so rows can still say "new"
     /// after opening has marked everything seen. Holds both kinds of id: a
     /// find's `Assignment.id` and a record's `AnnouncementReadState.recordKey`.
@@ -83,7 +90,15 @@ struct ContentView: View {
     /// Lockstep sizes for the whole dashboard title. `ViewThatFits` chooses
     /// one candidate for the complete wordmark-plus-weekday group, so the two
     /// faces can never scale independently when header space gets tight.
-    static let dashboardTitlePointSizes: [CGFloat] = [27, 24, 21, 18]
+    /// 1pt steps from 29 down since 2026-11-11 (Marco: the wordmark and
+    /// weekday "look too small"). `ViewThatFits` takes the largest step that
+    /// fits, so the title is now as large as the row allows. The old list
+    /// (27, 24, 21, 18) made "Smooth Wednesday" fall from 27 straight to 24
+    /// on a 402pt phone; simply adding 2pt to each step made it fall to 23,
+    /// smaller than before, which is the wrong fix this replaces. The spacer
+    /// before the buttons gave up 10pt (minimum 2) for it; the buttons keep
+    /// their 42pt and their places.
+    static let dashboardTitlePointSizes: [CGFloat] = Array(stride(from: 29, through: 18, by: -1))
 
     init(previewVM: DashboardViewModel? = nil) {
         _vm = StateObject(wrappedValue: previewVM ?? DashboardViewModel())
@@ -260,6 +275,16 @@ struct ContentView: View {
                 state.gradeWatcher.loadPreviewSnapshots(SampleData.gradeSnapshots())
                 if args.contains("-LHFShowSettings") { path = [.profile] }
                 if args.contains("-LHFShowSweeper") { showSweeper = true }
+                if args.contains("-LHFDemoAgentState") || args.contains("-LHFDemoAgentOff")
+                    || args.contains("-LHFDraftReviewHarness") {
+                    let demo = state.installAgentDemo(arguments: args)
+                    vm.applyDemoAgentState(drafts: demo.drafts, submittedBy: demo.submittedBy)
+                    if args.contains("-LHFDraftReviewHarness"), let first = state.agentDrafts.first {
+                        reviewingDraft = AgentDraftReview(draftID: first.id)
+                    }
+                    if args.contains("-LHFShowCodeSheet") { debugShowCodeSheet = true }
+                    if args.contains("-LHFShowApproveSheet") { debugApproveLookup = state.debugAgentDemo?.lookup }
+                }
                 if args.contains("-LHFShowProfile") { path = [.profile] }
                 if args.contains("-LHFShowGrades") { path = [.grades] }
                 if args.contains("-LHFShowAssistant") { path = [.assistant] }
@@ -394,6 +419,17 @@ struct ContentView: View {
             AgentDraftReviewSheet(draftID: review.draftID)
                 .environmentObject(state)
         }
+        #if DEBUG
+        .sheet(isPresented: $debugShowCodeSheet) {
+            AgentCodeSheet().environmentObject(state)
+        }
+        .sheet(isPresented: Binding(get: { debugApproveLookup != nil },
+                                    set: { if !$0 { debugApproveLookup = nil } })) {
+            if let lookup = debugApproveLookup {
+                AgentLinkApproveSheet(lookup: lookup).environmentObject(state)
+            }
+        }
+        #endif
         .sheet(isPresented: $showAddSheet, onDismiss: rescheduleNotifications) {
             AddAssignmentSheet()
                 .environmentObject(state)
@@ -491,11 +527,16 @@ struct ContentView: View {
     /// recurring task without changing the dashboard's data flow.
     private var addInlineButton: some View {
         Button { showAddSheet = true } label: {
+            // Lemon since 2026-11-11: tomato went to the Sweeper (Marco: "make
+            // the plus a different color and make that the color of Smooth
+            // Sweeper"). Not teal (the profile button beside the Sweeper),
+            // not cobalt (the class filter next to it), not grape (ask and the
+            // agent), not marigold (the megaphone).
             Image(systemName: "plus")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.smoothTomatoInk)
+                .foregroundStyle(Color.smoothLemonInk)
                 .frame(width: 38, height: 38)
-                .background(Circle().fill(Color.smoothTomato.opacity(0.22)))
+                .background(Circle().fill(Color.smoothLemon.opacity(0.32)))
                 // Drawn 38pt, tappable 44pt: the same inset `DashCircleIcon`
                 // gives the filter button next to it, so the three controls
                 // share one hit size without widening the row.
@@ -518,23 +559,37 @@ struct ContentView: View {
         showAnnouncementFinds = true
     }
 
-    /// The broom, left of the megaphone: opens the Sweeper page. Tomato, the
-    /// Sweeper's own colour. The dot on its corner is the "on" light, shown
-    /// only while the Sweeper is on, so the header answers "is it armed?"
-    /// without opening the page.
+    /// The Sweeper's button, left of the megaphone: opens the Sweeper page.
+    ///
+    /// **An alarm in the +'s old colours (2026-11-11).** Marco, first: "the
+    /// shovel or sweep emoji sucks, and the color's too similar", so the drawn
+    /// broom became `alarm.fill` (it says what the Sweeper does, and a symbol
+    /// stays crisp at 17pt) on a solid tomato squircle. Then, on the phone:
+    /// "far too orange ... a complete eyesore. Maybe make the plus a different
+    /// color and make that the color of Smooth Sweeper." So the Sweeper now
+    /// wears exactly what the + wore, a 22% tomato wash under a tomato-ink
+    /// glyph, and the + went to lemon. The tomato-ink glyph is what keeps it
+    /// apart from the marigold megaphone beside it, whose glyph is ink. The
+    /// wrong fix is a darker solid: any full warm fill is the block he
+    /// called an eyesore.
+    ///
+    /// The dot is "new", not "on": it shows only until the Sweeper page has
+    /// been opened once (`sweeperPageSeenKey`, set by `SweeperView`), then
+    /// never again. Marco: "the dot next to it should go away after the first
+    /// time." It used to be the on light, which never went away.
     private var sweeperButton: some View {
         Button { showSweeper = true } label: {
-            headerButton(color: .smoothTomato) {
-                BroomGlyph()
-                    .frame(width: 19, height: 19)
+            headerButton(color: .smoothTomato, fillOpacity: 0.22, glyph: .smoothTomatoInk) {
+                Image(systemName: "alarm.fill")
+                    .font(.system(size: 17, weight: .semibold))
             }
-            .overlay(alignment: .bottomTrailing) {
-                if scheduler.loudAlertEnabled {
+            .overlay(alignment: .topTrailing) {
+                if !sweeperPageSeen {
                     Circle()
                         .fill(Color.smoothTomatoInk)
-                        .frame(width: 13, height: 13)
+                        .frame(width: 11, height: 11)
                         .overlay { Circle().stroke(Color.smoothPaper, lineWidth: 2) }
-                        .offset(x: 3, y: 3)
+                        .offset(x: 3, y: -3)
                         .accessibilityHidden(true)
                 }
             }
@@ -744,10 +799,9 @@ struct ContentView: View {
         return HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
                 ViewThatFits(in: .horizontal) {
-                    headerTitle(weekday: weekday, pointSize: Self.dashboardTitlePointSizes[0])
-                    headerTitle(weekday: weekday, pointSize: Self.dashboardTitlePointSizes[1])
-                    headerTitle(weekday: weekday, pointSize: Self.dashboardTitlePointSizes[2])
-                    headerTitle(weekday: weekday, pointSize: Self.dashboardTitlePointSizes[3])
+                    ForEach(Self.dashboardTitlePointSizes, id: \.self) { size in
+                        headerTitle(weekday: weekday, pointSize: size)
+                    }
                 }
                 .layoutPriority(1)
                 .frame(height: 48, alignment: .center)
@@ -757,7 +811,10 @@ struct ContentView: View {
                     .foregroundStyle(Color.smoothMuted)
             }
 
-            Spacer(minLength: 12)
+            // 2, not 12, since 2026-11-11: the title may sit right beside the
+            // Sweeper button (Marco: "even if the title sits a little closer"),
+            // the buttons never move.
+            Spacer(minLength: 2)
 
             HStack(spacing: Self.headerButtonSpacing) {
                 // The broom first (owner's sketch, 2026-11-09): three buttons
@@ -831,11 +888,15 @@ struct ContentView: View {
         }
     }
 
-    private func headerButton<Glyph: View>(color: Color, @ViewBuilder glyph: () -> Glyph) -> some View {
+    /// `fillOpacity` and `glyph` are 0.18 and ink for every button but the
+    /// Sweeper's, which wears the +'s old tomato (see `sweeperButton`).
+    private func headerButton<Glyph: View>(color: Color, fillOpacity: Double = 0.18,
+                                           glyph glyphColor: Color = .smoothInk,
+                                           @ViewBuilder glyph: () -> Glyph) -> some View {
         glyph()
-            .foregroundStyle(Color.smoothInk)
+            .foregroundStyle(glyphColor)
             .frame(width: Self.headerButtonSize, height: Self.headerButtonSize)
-            .background(Self.headerShape.fill(color.opacity(0.18)))
+            .background(Self.headerShape.fill(color.opacity(fillOpacity)))
             .overlay { Self.headerShape.stroke(color.opacity(0.48), lineWidth: 1.25) }
             // Drawn 42pt so three fit beside the title, but touched at 44pt,
             // the platform's minimum, the same trick the control row uses.
@@ -1397,6 +1458,10 @@ struct SmoothWordmark: View {
     @State private var waveLift: CGFloat = 1
     @State private var shine: CGFloat = 0
     @State private var isPlaying = false
+    /// The backflip: one full turn about the x axis, then reset to 0 with no
+    /// animation so the next flip starts from the normal pose.
+    @State private var flip: Double = 0
+    @State private var taps = WordmarkTripleTap()
 
     var body: some View {
         Text("Smooth")
@@ -1415,8 +1480,36 @@ struct SmoothWordmark: View {
                     .frame(height: 6)
                     .offset(y: 6)
             }
+            .rotation3DEffect(.degrees(flip), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
             .contentShape(Rectangle())
-            .onTapGesture(perform: play)
+            .onTapGesture(perform: tapped)
+    }
+
+    /// Every tap feeds the counter first (the ripple ignores taps while it
+    /// plays, the counter must not); the third tap inside the window flips,
+    /// the others ripple as before.
+    private func tapped() {
+        if taps.register(at: Date()), !reduceMotion {
+            backflip()
+        } else {
+            play()
+        }
+    }
+
+    /// Marco, 2026-11-11: "if you click on the smooth button three times in a
+    /// row, you should make the whole smooth thing do a 360, basically do a
+    /// backflip ... then it goes back to normal and resets." One turn about
+    /// the horizontal axis, ending exactly at 360, which looks like 0; then
+    /// the angle is set back to 0 without animation. Skipped under Reduce
+    /// Motion (the counter still resets).
+    private func backflip() {
+        lhfHapticLight()
+        withAnimation(.easeInOut(duration: 0.8)) { flip = 360 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) {
+            var t = Transaction()
+            t.disablesAnimations = true
+            withTransaction(t) { flip = 0 }
+        }
     }
 
     /// A soft white band masked to the glyphs, so only the letters catch
@@ -1452,6 +1545,32 @@ struct SmoothWordmark: View {
             shine = 0
             isPlaying = false
         }
+    }
+}
+
+/// Three taps on the wordmark inside `window` seconds fire once; the count
+/// then starts again, and a tap after the window starts a new count. Pure and
+/// clock-free (the caller passes the time), so the rule is tested with fixed
+/// dates.
+struct WordmarkTripleTap: Equatable {
+    static let window: TimeInterval = 1.5
+    private(set) var count = 0
+    private(set) var firstTapAt: Date?
+
+    /// True on the third tap of a run; the run resets either way.
+    mutating func register(at now: Date) -> Bool {
+        if let first = firstTapAt, now.timeIntervalSince(first) <= Self.window, count > 0 {
+            count += 1
+        } else {
+            count = 1
+            firstTapAt = now
+        }
+        if count >= 3 {
+            count = 0
+            firstTapAt = nil
+            return true
+        }
+        return false
     }
 }
 

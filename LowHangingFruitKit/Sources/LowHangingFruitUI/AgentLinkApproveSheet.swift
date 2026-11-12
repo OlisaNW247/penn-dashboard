@@ -4,25 +4,24 @@ import LowHangingFruitKit
 /// Every word the agent connection screens print, in one place so a test can
 /// pin them (copy rule: lowercase, short, no raw errors).
 enum AgentConnectionCopy {
-    // Approve sheet (trimmed 2026-11-11: no "did you just start this?", no
-    // "go back to claude"; the numbers' prompt says it)
+    // Approve sheet: the question, the numbers' prompt and the buttons,
+    // nothing else (Marco, 2026-11-11: "remove all of the little bullshit
+    // text"; the host and the "reads your classes and work" line went, and
+    // docs/PRIVACY.md says what an agent reads).
     static func heading(_ name: String) -> String { "connect \(name.lowercased())?" }
-    static let reads = "reads your classes and work"
-    static let drafts = ", proposes drafts"
-    /// The one line under the heading: what the agent asked to do.
-    static func scopeLine(drafts withDrafts: Bool) -> String { reads + (withDrafts ? drafts : "") }
-    static let pick = "pick the number the page shows"
+    static let pick = "pick the matching number"
     static let notNow = "not now"
     static let connected = "connected"
     static let done = "done"
     static let mismatch = "didn't match"
     static let failure = "couldn't connect"
 
-    // Profile -> accounts (2026-11-11: the rows live in the accounts section;
+    // Profile -> agent (2026-11-11: the rows are their own section after
+    // accounts;
     // the full disclosure is docs/PRIVACY.md -> "Connecting an AI assistant")
     static let switchLabel = "connected agent"
-    /// Names the recipient (App Review, 5.1.2(i)); the policy says the rest.
-    static let shares = "shares your classes and work list with the agent's provider"
+    /// The last row of the agent block, a link with no sentence beside it;
+    /// the policy names the recipient (App Review, 5.1.2(i)).
     static let privacyPolicy = "privacy policy"
     static let privacyURL = "https://github.com/OlisaNW247/penn-dashboard/blob/v10/docs/PRIVACY.md"
     static let none = "none yet"
@@ -60,12 +59,8 @@ enum AgentConnectionCopy {
     // Drafts: the review sheet (2026-11-11 redesign: what canvas takes, then
     // the one choice there is, then submit or decline)
     static func noteFrom(_ name: String) -> String { "\(name.lowercased())'s note" }
-    /// The agent's note behind this, when it is too long for one line.
+    /// The agent's note, always behind this collapsed label.
     static let note = "note"
-    /// The note shows as a line only under this many characters.
-    static let noteLineLimit = 80
-    /// The confirmation's message, not a line on the sheet.
-    static let integrity = "goes in under your name"
     static let submit = "submit to canvas"
     static let send = "send"
     static let sendAsText = "send as text"
@@ -95,7 +90,7 @@ enum AgentConnectionCopy {
             if text { things.append("text") }
             if url { things.append("a link") }
             if file { things.append(extensions.isEmpty ? "a file" : "a " + orList(extensions)) }
-            return "canvas takes \(orList(things)) here"
+            return "canvas takes \(orList(things))"
         }
     }
 
@@ -105,33 +100,37 @@ enum AgentConnectionCopy {
         return words.dropLast().joined(separator: ", ") + " or " + (words.last ?? "")
     }
 
-    static let notOnline = "this one can't be submitted online"
-    static let locked = "canvas has this one locked"
+    // Each line is the fact alone (2026-11-11): no "here", no "this one", no
+    // "try again" (the button is still there; the student knows to tap it).
+    static let notOnline = "can't be submitted online"
+    static let locked = "locked in canvas"
     static func kindRefused(_ kind: AgentDraft.Kind) -> String {
         switch kind {
-        case .text: return "canvas doesn't take text here"
-        case .url: return "canvas doesn't take a link here"
-        case .file, .unknown: return "canvas doesn't take a file here"
+        case .text: return "canvas won't take text"
+        case .url: return "canvas won't take a link"
+        case .file, .unknown: return "canvas won't take a file"
         }
     }
     static func fileTypeRefused(_ ext: String, allowed: [String]) -> String {
         let shown = ext.isEmpty ? "this file" : ".\(ext.lowercased())"
-        guard !allowed.isEmpty else { return "canvas doesn't take \(shown) here" }
-        return "canvas doesn't take \(shown) here \u{00B7} ask for a \(orList(allowed.map { $0.lowercased() })) file"
+        guard !allowed.isEmpty else { return "canvas won't take \(shown)" }
+        return "canvas won't take \(shown) \u{00B7} \(orList(allowed.map { $0.lowercased() })) only"
     }
-    static let unknownKind = "this build can't send this draft"
+    static let unknownKind = "can't send this draft"
 
     // Results
     static let submitted = "submitted to canvas"
     /// Canvas answered the submit with an id, but the read-back did not.
-    static let submittedUnverified = "submitted \u{00B7} check canvas to be sure"
-    static let failed = "canvas didn't take it \u{00B7} ask for a new draft"
-    static let mayHaveGoneIn = "it may have gone in \u{00B7} check canvas"
-    static let signInFirst = "sign in to canvas in profile, then try again"
-    static let offline = "no connection \u{00B7} try again"
-    static let couldntReach = "couldn't reach canvas \u{00B7} try again"
-    static let fileUnavailable = "couldn't load the file \u{00B7} try again"
-    static let declineFailure = "couldn't decline \u{00B7} try again"
+    static let submittedUnverified = "submitted \u{00B7} not confirmed"
+    static let failed = "canvas refused it"
+    /// Kept to its two halves: the submit is never retried, so "check
+    /// canvas" is the only next step there is.
+    static let mayHaveGoneIn = "may have gone in \u{00B7} check canvas"
+    static let signInFirst = "sign in to canvas first"
+    static let offline = "no connection"
+    static let couldntReach = "couldn't reach canvas"
+    static let fileUnavailable = "couldn't load the file"
+    static let declineFailure = "couldn't decline"
     static let openInCanvas = "open in canvas"
     static let previewFile = "preview"
     static let loading = "loading"
@@ -163,12 +162,6 @@ struct AgentLinkApproveSheet: View {
                 .listRowSeparator(.hidden)
 
                 Section {
-                    if !lookup.clientHost.isEmpty {
-                        Text(lookup.clientHost)
-                            .font(.lhfSecondary(12))
-                            .foregroundStyle(Color.smoothMuted)
-                    }
-                    Text(AgentConnectionCopy.scopeLine(drafts: lookup.scopes.contains("draft")))
                     Text(AgentConnectionCopy.pick)
                         .foregroundStyle(Color.smoothMuted)
                     HStack(spacing: 12) {
