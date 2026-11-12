@@ -153,20 +153,25 @@ struct AmbassadorPage: View {
             .padding(.vertical, 2)
             .accessibilityElement(children: .combine)
             if let page = model.plan?.page, let url = URL(string: page) {
-                Button {
-                    openURL(url)
-                } label: {
-                    HStack {
+                // A filled button, not a row: it is the one control on the page
+                // the founders want nobody to miss, so it looks like the
+                // page's main action and sits above today's post.
+                VStack(alignment: .leading, spacing: 6) {
+                    Button {
+                        openURL(url)
+                    } label: {
                         Text("open my web page \u{2197}")
                             .font(.lhfSecondary(15, weight: .semibold))
-                        Spacer()
-                        Text("links \u{00B7} posters \u{00B7} stickers")
-                            .font(.lhfSecondary(12))
-                            .foregroundStyle(Color.v2DateText)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 4)
                     }
-                    .contentShape(Rectangle())
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.smoothGrape)
+                    Text("your links, posters and stickers are there")
+                        .font(.lhfSecondary(12))
+                        .foregroundStyle(Color.v2DateText)
                 }
-                .buttonStyle(.plain)
+                .listRowSeparator(.hidden)
             }
         } header: {
             SmoothSectionHeader("the job", accent: .smoothCobalt)
