@@ -122,27 +122,32 @@ struct SweeperOnboardingTests {
         #expect(try footerSlice.contains("progressDots(current: 3)"))
     }
 
-    @Test("The Sweeper page names the switch Smooth Sweeper, not the loud 10-minute alert")
+    @Test("The Sweeper page has no on/off switch, and nothing says loud 10-minute alert")
     func settingsToggle() throws {
         // The switch moved from Profile to the header's Sweeper page
-        // (SweeperView), and Profile no longer holds the section.
+        // (SweeperView) and was removed from it on 2026-11-12 at Marco's
+        // word; Profile no longer holds the section either.
         let page = try ui("SweeperView.swift")
-        #expect(page.contains("label: \"Smooth Sweeper\""))
+        #expect(!page.contains("label: \"Smooth Sweeper\""))
+        #expect(!page.contains("scheduler.setLoudAlertEnabled("))
         #expect(!page.contains("loud 10-minute alert"))
         #expect(!(try ui("SettingsPage.swift")).contains("SweeperSettingsSection"))
     }
 
-    @Test("The Sweeper page has one title, then the on row, then the next-alarm card")
-    func switchRowFirst() throws {
-        // Marco, 2026-11-11: one title, and the "on" first, not under the card.
+    @Test("The Sweeper page has one title, then the next-alarm card, and no on row")
+    func noSwitchRow() throws {
+        // Marco, 2026-11-12: "remove the on toggle ... get rid of it".
         let page = try ui("SweeperView.swift")
         let body = try #require(page.range(of: "struct SweeperView: View {"))
-        let rest = String(page[body.upperBound...])
-        let title = try #require(rest.range(of: "SmoothFormHeader(title: \"Sweeper\""))
-        let toggle = try #require(rest.range(of: "SweeperSwitchRow(\n                        label: \"Smooth Sweeper\""))
-        let card = try #require(rest.range(of: "nextSweepCard\n"))
-        #expect(title.lowerBound < toggle.lowerBound && toggle.lowerBound < card.lowerBound)
+        let classPage = try #require(page.range(of: "struct SweeperClassView: View {"))
+        let main = String(page[body.upperBound..<classPage.lowerBound])
+        let title = try #require(main.range(of: "SmoothFormHeader(title: \"Sweeper\""))
+        let card = try #require(main.range(of: "nextSweepCard\n"))
+        #expect(title.lowerBound < card.lowerBound)
+        #expect(!main.contains("SweeperSwitchRow("))
         #expect(!page.contains("SweeperStateRow") && !page.contains(".font(.lhfSerif(64))"))
+        // The class page keeps its own switch.
+        #expect(String(page[classPage.lowerBound...]).contains("SweeperSwitchRow("))
     }
 
     @Test("The takeover screen and the alarm's lock screen card are headed Smooth Sweeper")

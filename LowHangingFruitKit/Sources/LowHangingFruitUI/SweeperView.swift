@@ -99,8 +99,8 @@ private struct SweeperPlayButton: View {
 
 /// The on/off switch as one plain row, the same height and skin as the sound
 /// row (Marco, 2026-11-11: the page had two titles, "Sweeper" and a 64pt
-/// "on."; no bigger than any other row). It sits first, under the title and
-/// above the next-alarm card, since Marco's second look the same evening. The wrong fix is shrinking the old "on."
+/// "on."; no bigger than any other row). Only the class page uses it since
+/// 2026-11-12, when the main page's row was removed at Marco's word. The wrong fix is shrinking the old "on."
 /// headline: it is still a second title, only a smaller one.
 private struct SweeperSwitchRow: View {
     let label: String
@@ -194,21 +194,11 @@ struct SweeperView: View {
                     SmoothFormHeader(title: "Sweeper", accent: .smoothTomato, spark: .smoothMarigold)
                         .padding(.bottom, 4)
 
-                    // First, whether it is on (Marco, 2026-11-11: "I don't
-                    // like the placement of the 'on'" under the card); then
-                    // what it will ring next.
-                    SweeperSwitchRow(
-                        label: "Smooth Sweeper",
-                        binding: Binding(
-                            get: { scheduler.loudAlertEnabled },
-                            set: {
-                                scheduler.setLoudAlertEnabled($0)
-                                scheduler.rescheduleAfterPreferenceChange()
-                            }
-                        )
-                    )
-                    .padding(.top, 10)
-
+                    // No on/off row since 2026-11-12 (Marco: "remove the on
+                    // toggle ... take it off, get rid of it"). The preference
+                    // (`loudAlertEnabled`, on by default) stays in code and in
+                    // onboarding's reminders page; per-class switches below
+                    // still turn single classes off.
                     nextSweepCard
                         .padding(.top, 10)
 
