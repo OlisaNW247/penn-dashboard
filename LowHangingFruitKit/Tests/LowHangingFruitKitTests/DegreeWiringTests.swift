@@ -346,18 +346,21 @@ struct DegreeAppStateTests {
         let first = try #require(state.selectedStudentDegree)
         let second = try #require(state.degree.degrees.first { $0.id != first.id })
         let firstAudit = try #require(state.degree.current)
-        #expect(firstAudit.goals == first.goals)
+        // Compared as whole audits, not by goals: the sample audits' goals are
+        // written by hand and do not repeat the record entries' codes.
+        let secondAudit = try #require(state.degree.shelved[second.id]?.audit)
+        #expect(firstAudit != secondAudit)
         await state.selectDegree(second.id)
         #expect(state.selectedStudentDegree?.id == second.id)
         // The second degree's own audit is current, the first went on the shelf.
-        #expect(state.degree.current?.goals == second.goals)
+        #expect(state.degree.current == secondAudit)
         #expect(state.degree.shelved[first.id]?.audit == firstAudit)
         #expect(state.degree.shelved[second.id] == nil)
         // Unchanged is a no-op, and an unknown id changes nothing.
         await state.selectDegree(second.id)
         await state.selectDegree("no such degree")
         #expect(state.selectedStudentDegree?.id == second.id)
-        #expect(state.degree.current?.goals == second.goals)
+        #expect(state.degree.current == secondAudit)
         // And back again restores the first.
         await state.selectDegree(first.id)
         #expect(state.degree.current == firstAudit)
