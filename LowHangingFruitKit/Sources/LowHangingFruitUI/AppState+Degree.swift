@@ -74,9 +74,13 @@ enum DegreeStatus: Equatable, Sendable {
 
 extension AppState {
     nonisolated static let degreeFailedLine = "couldn't read path@penn · retry"
-    /// A read is stale after twelve hours (the audit changes at registration
-    /// and grade time, not by the minute).
-    nonisolated static let degreeStaleAfter: TimeInterval = 12 * 3600
+    /// A read is stale after seven days. The audit changes at registration and
+    /// when grades post, and a read costs a hidden sign-in to Penn (the page's
+    /// token lasts a day, so every automatic read is a sign-in and can be a
+    /// Duo push). Pull-to-refresh is the student's way to read now. It was 12
+    /// hours until 2026-11-12, which asked for a sign-in twice a day for data
+    /// that had not moved.
+    nonisolated static let degreeStaleAfter: TimeInterval = 7 * 24 * 3600
     private static let maxWhatIfs = 4
     /// Which of the student's degrees is audited, as `StudentDegree.id`. Kept
     /// in `UserDefaults.lhf` as well as the snapshot so the choice survives a
@@ -320,9 +324,19 @@ extension AppState {
             // a record whose list changed at all, falls back to the first one
             // (`degreeSelection`).
             let previousIDs = degree.degrees.map(\.id)
+            let selectedBefore = degree.selectedDegreeID
             degree.degrees = found
-            degree.selectedDegreeID = Self.degreeSelection(
-                previous: previousIDs, found: found.map(\.id), saved: degree.selectedDegreeID)
+            let chosen = Self.degreeSelection(
+                previous: previousIDs, found: found.map(\.id), saved: selectedBefore)
+            if let chosen, let selectedBefore, chosen != selectedBefore {
+                // The list changed and the choice fell back: move the snapshot
+                // with it, so `current` never shows one degree's audit under
+                // another degree's chip.
+                degree = degree.selecting(chosen, from: selectedBefore)
+            } else {
+                degree.selectedDegreeID = chosen
+            }
+            degree = degree.pruningShelves(keeping: found.map(\.id), selected: degree.selectedDegreeID)
             if let id = degree.selectedDegreeID {
                 UserDefaults.lhf.set(id, forKey: Self.degreeSelectedKey)
             }
@@ -377,8 +391,12 @@ extension AppState {
         }
     }
 
-    /// The student chose another of their own degrees: audit that one. The old
-    /// audit and the what-ifs belonged to the other degree, so they go.
+    /// The student chose another of their own degrees. The old degree's audit
+    /// and what-ifs go on the snapshot's shelf and the new degree's come off
+    /// it, so a degree read before shows at once and Penn is asked only when
+    /// there is nothing shelved or the read is stale. Throwing the audit away
+    /// here, as this used to, made every chip tap a blank screen and a
+    /// 30-second sign-in and read of an audit that had not changed.
     func selectDegree(_ id: String) async {
         guard id != selectedStudentDegree?.id else { return }
         if isUsingFixtureData {
@@ -394,18 +412,22 @@ extension AppState {
         // the real one. Skipping the wait would make `refreshDegreeAudit`
         // join the old task and return having audited the wrong degree.
         degreeGeneration += 1
-        degree.selectedDegreeID = id
-        degree.current = nil
-        // The old audit is gone, so "read today" would sit over nothing.
-        degreeStatus = .idle
-        degree.whatIfs = []
+        let oldID = selectedStudentDegree?.id
+        degree = degree.selecting(id, from: oldID)
+        if let current = degree.current {
+            degreeStatus = .read(current.fetchedAt)
+        } else {
+            degreeStatus = .idle
+        }
         UserDefaults.lhf.set(id, forKey: Self.degreeSelectedKey)
         persistDegree()
         if let running = degreeRefreshTask {
             await running.value
             if degreeRefreshTask == running { degreeRefreshTask = nil }
         }
-        await refreshDegreeAudit(force: true)
+        // Forced only when nothing is shelved for this degree; otherwise the
+        // ordinary staleness rule decides.
+        await refreshDegreeAudit(force: degree.current == nil)
     }
 
     // MARK: What if

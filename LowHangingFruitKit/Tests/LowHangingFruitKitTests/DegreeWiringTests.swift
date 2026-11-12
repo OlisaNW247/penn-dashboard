@@ -27,12 +27,12 @@ struct DegreeRefreshRuleTests {
         #expect(!rule(foreground: false, force: true))
     }
 
-    @Test("a read is stale after twelve hours, and when there never was one")
+    @Test("a read is stale after seven days, and when there never was one")
     func staleness() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         #expect(AppState.degreeIsStale(readAt: nil, now: now))
-        #expect(!AppState.degreeIsStale(readAt: now.addingTimeInterval(-11 * 3600), now: now))
-        #expect(AppState.degreeIsStale(readAt: now.addingTimeInterval(-12 * 3600), now: now))
+        #expect(!AppState.degreeIsStale(readAt: now.addingTimeInterval(-6 * 24 * 3600), now: now))
+        #expect(AppState.degreeIsStale(readAt: now.addingTimeInterval(-7 * 24 * 3600), now: now))
     }
 }
 
@@ -325,6 +325,21 @@ struct DegreeAppStateTests {
         await state.selectDegree(second.id)
         await state.selectDegree("no such degree")
         #expect(state.selectedStudentDegree?.id == second.id)
+    }
+
+    @Test("selectDegree shelves and restores through the snapshot and no longer clears the audit")
+    func selectDegreeSource() throws {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<3 { url.deleteLastPathComponent() }
+        let path = url.appendingPathComponent("Sources/LowHangingFruitUI/AppState+Degree.swift")
+        let source = try String(contentsOf: path, encoding: .utf8)
+        let start = try #require(source.range(of: "func selectDegree("))
+        let body = String(source[start.lowerBound...].prefix(2500))
+        let end = body.range(of: "// MARK: What if")?.lowerBound ?? body.endIndex
+        let function = String(body[..<end])
+        #expect(!function.contains("degree.current = nil"))
+        #expect(!function.contains("degree.whatIfs = []"))
+        #expect(function.contains("selecting("))
     }
 
     @Test("the selected degree falls back to the first, and descriptions come from the dictionaries")
