@@ -390,7 +390,11 @@ Keep this current. It is the fastest way for a new session to know what exists.
   opens through "update password" once Penn has rejected a saved password.
 - **Dashboard** (`ContentView`):
   - **Header.** The "Smooth" wordmark and the weekday. Tapping the wordmark
-    ripples its squiggle and sweeps a shine across it. The **Sweeper**
+    ripples its squiggle and sweeps a shine across it; since 2026-11-11 three
+    taps inside 1.5 s flip the wordmark once round its horizontal axis, a
+    0.8 s backflip that ends at the normal pose (`WordmarkTripleTap`; none
+    under Reduce Motion), and the title is 2pt larger (29/26/23/20pt steps,
+    the spacer before the buttons 8pt instead of 12; Marco: "too small"). The **Sweeper**
     button (since 2026-11-10 on `v11`; since 2026-11-11 an `alarm.fill`, Marco:
     "the shovel or sweep emoji sucks"; first on a solid tomato squircle, then,
     the same day, "far too orange", in the + button's old colours: a 22%

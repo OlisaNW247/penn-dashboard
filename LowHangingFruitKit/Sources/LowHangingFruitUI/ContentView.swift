@@ -90,7 +90,10 @@ struct ContentView: View {
     /// Lockstep sizes for the whole dashboard title. `ViewThatFits` chooses
     /// one candidate for the complete wordmark-plus-weekday group, so the two
     /// faces can never scale independently when header space gets tight.
-    static let dashboardTitlePointSizes: [CGFloat] = [27, 24, 21, 18]
+    /// Two points up across the board on 2026-11-11 (Marco: the wordmark
+    /// and weekday "look too small"); the header's spacer gave up 4pt for it
+    /// so the buttons keep their 42pt and their places.
+    static let dashboardTitlePointSizes: [CGFloat] = [29, 26, 23, 20]
 
     init(previewVM: DashboardViewModel? = nil) {
         _vm = StateObject(wrappedValue: previewVM ?? DashboardViewModel())
@@ -804,7 +807,9 @@ struct ContentView: View {
                     .foregroundStyle(Color.smoothMuted)
             }
 
-            Spacer(minLength: 12)
+            // 8, not 12, since the title grew 2pt (2026-11-11): the title may
+            // sit closer to the Sweeper button, the buttons never move.
+            Spacer(minLength: 8)
 
             HStack(spacing: Self.headerButtonSpacing) {
                 // The broom first (owner's sketch, 2026-11-09): three buttons
@@ -1448,6 +1453,10 @@ struct SmoothWordmark: View {
     @State private var waveLift: CGFloat = 1
     @State private var shine: CGFloat = 0
     @State private var isPlaying = false
+    /// The backflip: one full turn about the x axis, then reset to 0 with no
+    /// animation so the next flip starts from the normal pose.
+    @State private var flip: Double = 0
+    @State private var taps = WordmarkTripleTap()
 
     var body: some View {
         Text("Smooth")
@@ -1466,8 +1475,36 @@ struct SmoothWordmark: View {
                     .frame(height: 6)
                     .offset(y: 6)
             }
+            .rotation3DEffect(.degrees(flip), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
             .contentShape(Rectangle())
-            .onTapGesture(perform: play)
+            .onTapGesture(perform: tapped)
+    }
+
+    /// Every tap feeds the counter first (the ripple ignores taps while it
+    /// plays, the counter must not); the third tap inside the window flips,
+    /// the others ripple as before.
+    private func tapped() {
+        if taps.register(at: Date()), !reduceMotion {
+            backflip()
+        } else {
+            play()
+        }
+    }
+
+    /// Marco, 2026-11-11: "if you click on the smooth button three times in a
+    /// row, you should make the whole smooth thing do a 360, basically do a
+    /// backflip ... then it goes back to normal and resets." One turn about
+    /// the horizontal axis, ending exactly at 360, which looks like 0; then
+    /// the angle is set back to 0 without animation. Skipped under Reduce
+    /// Motion (the counter still resets).
+    private func backflip() {
+        lhfHapticLight()
+        withAnimation(.easeInOut(duration: 0.8)) { flip = 360 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) {
+            var t = Transaction()
+            t.disablesAnimations = true
+            withTransaction(t) { flip = 0 }
+        }
     }
 
     /// A soft white band masked to the glyphs, so only the letters catch
@@ -1503,6 +1540,32 @@ struct SmoothWordmark: View {
             shine = 0
             isPlaying = false
         }
+    }
+}
+
+/// Three taps on the wordmark inside `window` seconds fire once; the count
+/// then starts again, and a tap after the window starts a new count. Pure and
+/// clock-free (the caller passes the time), so the rule is tested with fixed
+/// dates.
+struct WordmarkTripleTap: Equatable {
+    static let window: TimeInterval = 1.5
+    private(set) var count = 0
+    private(set) var firstTapAt: Date?
+
+    /// True on the third tap of a run; the run resets either way.
+    mutating func register(at now: Date) -> Bool {
+        if let first = firstTapAt, now.timeIntervalSince(first) <= Self.window, count > 0 {
+            count += 1
+        } else {
+            count = 1
+            firstTapAt = now
+        }
+        if count >= 3 {
+            count = 0
+            firstTapAt = nil
+            return true
+        }
+        return false
     }
 }
 

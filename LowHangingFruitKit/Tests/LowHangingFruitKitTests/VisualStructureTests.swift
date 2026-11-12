@@ -9,7 +9,7 @@ import Testing
 struct VisualStructureTests {
     @Test("dashboard title chooses one lockstep responsive size")
     func balancedDashboardTitle() throws {
-        #expect(ContentView.dashboardTitlePointSizes == [27, 24, 21, 18])
+        #expect(ContentView.dashboardTitlePointSizes == [29, 26, 23, 20])
 
         let source = try uiSource("ContentView.swift")
         #expect(source.contains("ViewThatFits(in: .horizontal)"))
