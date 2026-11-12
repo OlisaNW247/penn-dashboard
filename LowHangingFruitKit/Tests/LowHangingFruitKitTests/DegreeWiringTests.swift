@@ -276,7 +276,7 @@ struct DegreeAppStateTests {
         return state
     }
 
-    @Test("fixture mode shows the sample audit and never touches the portal")
+    @Test("fixture mode shows the sample audit and never touches the portal", .enabled(if: FeatureFlags.degreeProgress))
     func fixtureMode() async throws {
         let state = try makeState()
         state.forceFixtureDataForTesting(true)
@@ -296,7 +296,7 @@ struct DegreeAppStateTests {
         #expect(state.degreeStatus != .reading)
     }
 
-    @Test("in fixture mode a what-if run files a copy under the plan's goals")
+    @Test("in fixture mode a what-if run files a copy under the plan's goals", .enabled(if: FeatureFlags.degreeProgress))
     func fixtureWhatIfRuns() async throws {
         let state = try makeState()
         state.forceFixtureDataForTesting(true)
@@ -311,7 +311,7 @@ struct DegreeAppStateTests {
         #expect(state.degree.whatIfs.count <= 8)
     }
 
-    @Test("in fixture mode running an option files a what-if and records its score")
+    @Test("in fixture mode running an option files a what-if and records its score", .enabled(if: FeatureFlags.degreeProgress))
     func fixtureOptionRuns() async throws {
         let state = try makeState()
         state.forceFixtureDataForTesting(true)
@@ -338,7 +338,7 @@ struct DegreeAppStateTests {
         #expect(source.contains("runDegreeOption"))
     }
 
-    @Test("in fixture mode selecting a degree moves the choice and keeps the sample audit")
+    @Test("in fixture mode selecting a degree moves the choice and keeps the sample audit", .enabled(if: FeatureFlags.degreeProgress))
     func fixtureSelectDegree() async throws {
         let state = try makeState()
         state.forceFixtureDataForTesting(true)
@@ -459,7 +459,7 @@ struct DegreeAppStateTests {
         #expect(state.degreePlanStore.load() == .empty)
     }
 
-    @Test("fixture mode carries a term history for the timeline")
+    @Test("fixture mode carries a term history for the timeline", .enabled(if: FeatureFlags.degreeProgress))
     func fixtureHistory() throws {
         let state = try makeState()
         state.forceFixtureDataForTesting(true)
@@ -517,6 +517,25 @@ struct DegreeAppStateTests {
         state.loadDegreePlanIfNeeded()
         #expect(state.degreePlan.terms.count == 1)
         #expect(state.degreePlan.terms.first?.courses.isEmpty == true)
+    }
+
+    /// The kill switch, seen from outside (it went off on 2026-11-12). With it
+    /// off the row has nothing to show and a forced read does nothing, even
+    /// with the sample data in hand, and the five fixture tests above are
+    /// skipped because the sample audit they inspect is never loaded. This
+    /// one skips itself when the switch goes back on, so flipping the flag
+    /// needs no test edited.
+    @Test("with the kill switch off there is no degree row and no read",
+          .enabled(if: !FeatureFlags.degreeProgress))
+    func killSwitchOff() async throws {
+        let state = try makeState()
+        #expect(!state.degreeFeatureAvailable)
+        state.forceFixtureDataForTesting(true)
+        #expect(!state.degreeFeatureAvailable)
+        state.loadDegreeSnapshotAtLaunch()
+        await state.refreshDegreeAudit(force: true)
+        #expect(state.degree.current == nil)
+        #expect(state.degree.whatIfs.isEmpty)
     }
 
     @Test("the feature is available on Penn, and with fixtures, when the flag is on")

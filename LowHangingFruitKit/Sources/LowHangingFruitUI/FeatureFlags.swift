@@ -153,7 +153,17 @@ enum FeatureFlags {
     /// 2026-11-10 from a real session, but the hidden WebView's sign-in
     /// (Cloudflare, the popup's opener) has not been seen on a device. Turn it
     /// off if reads misbehave on real phones.
-    static let degreeProgress = true
+    ///
+    /// **Off since 2026-11-12, at Olisa's word** ("remove the degree progress
+    /// thing temporarily because I don't think it is ready"), so that `v12`
+    /// could go to Marco with ambassador mode and without a half-checked
+    /// screen in Profile. Nothing was deleted: the code, its tests and any
+    /// audit already saved on a phone stay, and the DEBUG `-LHFShowDegree`
+    /// argument still opens the screen (it will read nothing while this is
+    /// false). What was still unchecked when it went off is in CLAUDE.md →
+    /// Known gaps. To bring it back, set this to `true`; the fixture tests
+    /// that are skipped while it is false run again by themselves.
+    static let degreeProgress = false
 
     /// Evaluates a token-store read only while the experiment is enabled.
     /// Keeping the guard around the closure (rather than around its result)
