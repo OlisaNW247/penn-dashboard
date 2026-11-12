@@ -164,6 +164,26 @@ WebKit hands it, or `window.opener` is nil.
   `majr_code`, `minr_code`, `conc_code`, `coll_code`, `dept_code`,
   `sis_prog_code` (`"EU_BSE"`), `hide`, `minor_sis_prog_codes` and
   `audit_xml` (50 to 80 kB of Degree Works XML, the requirement template).
+  **Read again on 2026-11-12 (Olisa's console, public catalogue only), for
+  Wharton concentrations.** `programsType: "major"` returns 552 rows and
+  `"conc"` 497 (together the 1,049); `"minor"` and `"concentration"` return
+  none. A code is `MAJR-DEGC` for a major row and `MAJR-DEGC-CONC` for a conc
+  row: `ARIN-BSE-NCON` is `prog_type: "conc"`, `prog_parent: "ARIN-BSE"`,
+  `degc_code: "BSE"`, `majr_code: "ARIN"`, `conc_code: "NCON"`,
+  `coll_code: "EU"`, `sis_prog_code: "EU_BSE"`; `ACCT-MBA-NCON` is the same
+  shape with `WM` / `WM_MBA` / level `PR`. Counted by last part: 46 rows end
+  in `NCON`, 118 in `MINOR`, 36 in `BA`, 17 in `BS`, 7 in `BSE`.
+  **Wharton's undergraduate concentrations are major rows**: the 17 `…-BS`
+  codes (`FNCS-BS` "Finance BS", `ACCT-BS`, `MKTG-BS`, `REAL-BS`, `SDSD-BS`,
+  `BSAN-BS`, `WIDV-BS` and so on); an undeclared Wharton student's own entry
+  has an undeclared major code under degree `BS`, college `WU`. So "what if
+  my concentration were Finance" is the page's `new-program` change for
+  `FNCS-BS`, not `add-conc`. A few codes end in what look like Wharton
+  specialisations (`ORGS`, `SMGT`, `MNMT`, `OPMA`, `BEES`, `SOGO`, one row
+  each), presumably `MAJR-BS-CONC` rows; their full codes and titles were not
+  in the paste. Not captured: the info of any `…-BS` row (its `coll_code` and
+  `sis_prog_code` are unread), so the app never assumes them and always sends
+  what the row's own info gives through `PathWhatIf.plans`.
 - **Dictionaries.** `foseStudentDataUtils.dictionaries()` holds five
   code-to-name maps: `majors` (1,255), `degrees` (106), `levels` (12),
   `colleges` (70), `programs` (1,049).
