@@ -51,23 +51,30 @@ public struct UpdatePolicy: Codable, Sendable, Equatable {
     /// The optional one-time feedback card (`FeedbackNotice`). Nothing in the
     /// version verdict reads it.
     public var feedback: FeedbackNotice?
+    /// The short list of what this release changed, shown under the line on
+    /// the update wall and the banner ("sweeper button and page", "connect an
+    /// agent"). Already sanitized (`sanitizedChanges`); empty means no list.
+    /// Nothing in the version verdict reads it.
+    public var changes: [String]
 
     public init(
         minimumVersion: AppVersion? = nil,
         latestVersion: AppVersion? = nil,
         message: String? = nil,
         appStoreURL: URL? = nil,
-        feedback: FeedbackNotice? = nil
+        feedback: FeedbackNotice? = nil,
+        changes: [String] = []
     ) {
         self.minimumVersion = minimumVersion
         self.latestVersion = latestVersion
         self.message = message
         self.appStoreURL = appStoreURL
         self.feedback = feedback
+        self.changes = Self.sanitizedChanges(changes)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case minimumVersion, latestVersion, message, appStoreURL, feedback
+        case minimumVersion, latestVersion, message, appStoreURL, feedback, changes
     }
 
     public init(from decoder: Decoder) throws {
@@ -92,6 +99,13 @@ public struct UpdatePolicy: Codable, Sendable, Equatable {
         // card is the least important field in the file; it is flattened to
         // nil on any problem.
         feedback = try? container.decodeIfPresent(FeedbackNotice.self, forKey: .feedback)
+        // `try?` for the same reason as `feedback`: `changes` as a number, an
+        // object or a string must cost the list, never the floor. Inside a
+        // well-formed array a non-string item is skipped on its own
+        // (`LossyStrings`), so one stray `null` does not lose the other lines.
+        changes = Self.sanitizedChanges(
+            (try? container.decodeIfPresent(LossyStrings.self, forKey: .changes))?.values ?? []
+        )
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -101,9 +115,83 @@ public struct UpdatePolicy: Codable, Sendable, Equatable {
         try container.encodeIfPresent(message, forKey: .message)
         try container.encodeIfPresent(appStoreURL?.absoluteString, forKey: .appStoreURL)
         try container.encodeIfPresent(feedback, forKey: .feedback)
+        if !changes.isEmpty {
+            try container.encode(changes, forKey: .changes)
+        }
     }
 
     // MARK: Sanitizers
+
+    /// Marco's rule for this list: very, very concise. Six lines at most, 40
+    /// characters each, so a whole update reads at a glance and no maintainer
+    /// can turn the wall into release notes.
+    static let maximumChangeCount = 6
+    static let maximumChangeLength = 40
+
+    /// Trims each line, collapses control characters and whitespace runs to
+    /// one space, lowercases it (the app's register), and drops the line
+    /// outright when it is empty, longer than 40 characters or carries a
+    /// link; then keeps the first six. A long line is dropped rather than
+    /// cut: a change list that ends mid-word says something the release did
+    /// not. A link is dropped rather than shown inert because a URL on an
+    /// undismissable screen invites the student to go type it somewhere,
+    /// which is the phishing surface this file exists to close. Idempotent,
+    /// so the cache's encode-then-decode returns the same list.
+    static func sanitizedChanges(_ raw: [String]) -> [String] {
+        var kept: [String] = []
+        for line in raw {
+            guard kept.count < maximumChangeCount else { break }
+            let spaced = String(line.map { char -> Character in
+                char.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
+                    ? " "
+                    : char
+            })
+            let collapsed = spaced
+                .components(separatedBy: .whitespacesAndNewlines)
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+                .lowercased()
+            guard !collapsed.isEmpty,
+                  collapsed.count <= maximumChangeLength,
+                  !containsLink(collapsed) else { continue }
+            kept.append(collapsed)
+        }
+        return kept
+    }
+
+    private static func containsLink(_ text: String) -> Bool {
+        if text.contains("://") || text.contains("www.") { return true }
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
+            return false
+        }
+        let range = NSRange(text.startIndex..., in: text)
+        return detector.firstMatch(in: text, options: [], range: range) != nil
+    }
+
+    /// An array whose string items are kept and whose other items (numbers,
+    /// objects, nulls, nested arrays) are skipped one by one.
+    private struct LossyStrings: Decodable {
+        let values: [String]
+
+        /// Decodes any JSON value and keeps nothing; used to step past an
+        /// item that is not a string.
+        private struct Skip: Decodable {
+            init(from decoder: Decoder) throws {}
+        }
+
+        init(from decoder: Decoder) throws {
+            var container = try decoder.unkeyedContainer()
+            var values: [String] = []
+            while !container.isAtEnd {
+                if let value = try? container.decode(String.self) {
+                    values.append(value)
+                } else if (try? container.decode(Skip.self)) == nil {
+                    break
+                }
+            }
+            self.values = values
+        }
+    }
 
     private static func sanitizedVersion(_ raw: String?) -> AppVersion? {
         guard let raw else { return nil }

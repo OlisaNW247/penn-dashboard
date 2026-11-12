@@ -88,6 +88,11 @@ final class UpdateGateStore: ObservableObject {
     /// are the states that must show nothing extra.
     @Published private(set) var feedbackNotice: FeedbackNotice?
 
+    /// The manifest's short change list, shown under the line on the wall and
+    /// the banner. Same sources and same fail-open rule as `feedbackNotice`;
+    /// empty adds nothing to either screen.
+    @Published private(set) var changes: [String] = []
+
     private let installedVersion: AppVersion?
     private let manifestURL: URL?
     private let session: URLSession
@@ -235,6 +240,7 @@ final class UpdateGateStore: ObservableObject {
                 self.verdict = cached.verdict(forInstalled: installedVersion)
                 self.appStoreURL = cached.appStoreURL
                 self.feedbackNotice = cached.feedback
+                self.changes = cached.changes
             }
         } else {
             // Unparseable bundle version: inert rather than guessing. See
@@ -331,6 +337,7 @@ final class UpdateGateStore: ObservableObject {
             verdict = policy.verdict(forInstalled: installedVersion)
             appStoreURL = policy.appStoreURL
             feedbackNotice = policy.feedback
+            changes = policy.changes
             verdictDidChange(from: previous)
         } catch {
             // Fail open: no state changes at all. Deliberately not even

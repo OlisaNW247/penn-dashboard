@@ -55,7 +55,8 @@ struct RootCore: View {
                 UpdateRequiredView(
                     minimum: minimum,
                     message: message,
-                    appStoreURL: updateGate.appStoreURL
+                    appStoreURL: updateGate.appStoreURL,
+                    changes: updateGate.changes
                 )
                 .transition(.opacity)
             } else {
@@ -69,7 +70,7 @@ struct RootCore: View {
                     .overlay(alignment: .top) {
                         if case .updateAvailable(let latest) = updateGate.verdict,
                            !updateGate.isAvailableBannerDismissed {
-                            UpdateAvailableBanner(latest: latest) {
+                            UpdateAvailableBanner(latest: latest, changes: updateGate.changes) {
                                 updateGate.dismissAvailableBanner()
                             }
                             .transition(.move(edge: .top).combined(with: .opacity))

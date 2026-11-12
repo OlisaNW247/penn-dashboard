@@ -225,6 +225,13 @@ dev Mac has none, Olisa's environment injects it)
     after the App Store starts serving it. If the new build misbehaves, set
     the repository variable `UPDATE_FLOOR_HOLD` to `true` within those six
     hours; clear it again afterwards.
+    **Set `changes` before the floor rises** (since 2026-11-11): in
+    `lhf-update.json` on the `update-manifest` branch, replace the
+    `changes` array with the two to four shortest true lines for this
+    release, lowercase, 40 characters at most each, no links, e.g.
+    `"changes": ["sweeper button and page", "connect an agent", "drafts you review and submit"]`.
+    The wall and the banner show them as "· line" rows; the workflow keeps
+    the key when it raises the floor, so an old list stays until replaced.
 22. Delete merged branches: `parked/*`, `fix/ed-posts-durable`,
     `v8-merge-marco`, `fix/relevance-backfill`, `codex/automatic-canvas-login`.
 

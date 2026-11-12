@@ -1511,6 +1511,12 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
+**On `claude/update-notes-13b416` (2026-11-11, off `v11-master`): 3938 tests /
+378 suites, all green, `swift test --no-parallel` alone on Marco's Mac (94 s),
++16 / +1 over 3922 / 377: `UpdateChangesTests` (the manifest's `changes`
+list). iOS Debug build (`generic/platform=iOS`, `CODE_SIGNING_ALLOWED=NO`)
+succeeded. Not on a phone.**
+
 **Merged on `v11-master` 2026-11-11 (the UI trim `5d7d7a5` plus the three
 test-session branches, `claude/v11-test-backend-3b1f1b`,
 `claude/v11-test-phone-e16828`, `claude/v11-extensions-ac4092`, merged at
@@ -2327,6 +2333,26 @@ on 2026-10-25.
 The manifest may also carry an optional `feedback` object (3.3.0+, the
 dashboard's feedback card, What the app does). It is decoded with `try?` so
 a bad one can never cost `minimumVersion`, and older builds ignore the key.
+
+Since 2026-11-11 (on `claude/update-notes-13b416`, compiled, never on a phone)
+it may also carry an optional `changes` array, Marco's "very, very concise
+list of the things that are changed": `"changes": ["sweeper button and page",
+"connect an agent", "drafts you review and submit"]`. The wall
+(`UpdateRequiredView`) and the banner (`UpdateAvailableBanner`) show it under
+their existing line, one "· item" per row in the secondary ink
+(`UpdateChangeList`), with no heading and no sentence; an absent or empty
+array adds nothing. Decoded with `try?`, so a number, an object or a string
+there costs the list and never the floor; inside the array a non-string item
+is skipped on its own. Sanitized in `UpdatePolicy.sanitizedChanges`: each line
+trimmed, control characters and whitespace runs collapsed to one space,
+lowercased, and dropped (never cut) when empty, over 40 characters, or
+carrying a link (`://`, `www.`, or anything `NSDataDetector` reads as one);
+then the first 6 kept. Cached with the rest of the policy. The `update-floor`
+workflow keeps every other key when it raises the floor, so the list set at
+release rides along; it is also left in place for the next release, so
+replace it each time. Older builds ignore the key. The wrong design is a
+"what's new" heading or a release-notes paragraph: that is the padding Marco
+asked not to have, and `UpdateChangesTests` scans both screens' strings for it.
 
 The rest of the lock, in builds after 3.2.1: below the floor `RootCore` renders
 only the wall (not an overlay, so `ContentView`, its sheets and its sync loop
