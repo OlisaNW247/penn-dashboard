@@ -20,7 +20,7 @@ struct DraftReviewStatusTests {
     @Test("what Canvas takes, alone")
     func takes() {
         #expect(S.resolve(outcome: nil, isFinished: false, lookup: .known(fileOnly), block: nil, noRouteLeft: false)
-                == .line("canvas takes a pdf here", .plain))
+                == .line("canvas takes a pdf", .plain))
         #expect(S.resolve(outcome: nil, isFinished: false, lookup: .known(.locked), block: .locked, noRouteLeft: false)
                 == .line(c.locked, .plain))
         #expect(S.resolve(outcome: nil, isFinished: false, lookup: .known(.notOnline), block: .notOnline, noRouteLeft: false)
@@ -63,7 +63,7 @@ struct DraftReviewStatusTests {
     func unconfirmedSubmit() throws {
         let s = S.resolve(outcome: c.submittedUnverified, outcomeTone: .plain, isFinished: true,
                           lookup: .known(fileOnly), block: nil, noRouteLeft: false)
-        #expect(s == .line("submitted \u{00B7} check canvas to be sure", .plain))
+        #expect(s == .line("submitted \u{00B7} not confirmed", .plain))
         let file = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Sources/LowHangingFruitUI/AgentDraftReviewSheet.swift")
         let src = try String(contentsOf: file, encoding: .utf8)
@@ -90,10 +90,10 @@ struct DraftReviewStatusTests {
                      "submittedAt("] {
             #expect(!src.contains(gone), "\(gone)")
         }
-        // The integrity line is the confirmation's message, not a sheet line.
+        // The confirmation is its question alone (2026-11-11): no message.
         let dialog = try #require(src.range(of: ".confirmationDialog(confirmTitle"))
-        let tail = String(src[dialog.upperBound...].prefix(400))
-        #expect(tail.contains("message:") && tail.contains("Text(AgentConnectionCopy.integrity)"))
-        #expect(src.components(separatedBy: "AgentConnectionCopy.integrity").count - 1 == 1)
+        let tail = String(src[dialog.upperBound...].prefix(300))
+        #expect(!tail.contains("message:"))
+        #expect(!src.contains("AgentConnectionCopy.integrity"))
     }
 }

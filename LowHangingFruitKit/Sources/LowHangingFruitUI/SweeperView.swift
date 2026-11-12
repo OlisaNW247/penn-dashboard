@@ -210,7 +210,7 @@ struct SweeperView: View {
                     .padding(.top, 10)
 
                     if !scheduler.isEnabled {
-                        Label("turn on due-date reminders in profile to use Smooth Sweeper.", systemImage: "bell.slash")
+                        Label("reminders are off", systemImage: "bell.slash")
                             .font(.lhfSecondary(12))
                             .foregroundStyle(Color.v2DateText)
                             .padding(.top, 8)

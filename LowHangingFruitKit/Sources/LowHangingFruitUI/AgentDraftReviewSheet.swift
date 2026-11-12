@@ -23,15 +23,15 @@ struct AgentDraftReview: Identifiable, Equatable {
 ///
 /// Top to bottom (trimmed 2026-11-11, Marco: "a lot of needless text in the
 /// submission"): the class in its accent and the assignment title; "drafted
-/// by claude"; the agent's note as one muted line when it is short, else
-/// behind a "note" disclosure; the draft itself, full width (the text in the
+/// by claude"; the agent's note behind a collapsed "note" disclosure
+/// (always, since 2026-11-11); the draft itself, full width (the text in the
 /// body face, or the rendered pages; a link as a tappable row; a file as a
 /// row with its name, size and a QuickLook preview); ONE status line
 /// (`DraftReviewStatus`: a spinner while Canvas is asked, then what Canvas
 /// takes, or the refusal or outcome in its place, never two); the text / pdf
 /// picker only when both go; then, pinned at the bottom, "submit to canvas"
-/// (a confirmation that names the kind, "send problem set 7 as a pdf?", with
-/// "goes in under your name" as its message) and "decline". When the phone
+/// (a confirmation that names the kind, "send problem set 7 as a pdf?", and
+/// says nothing else) and "decline". When the phone
 /// cannot send it, "open in canvas" takes the submit's place.
 ///
 /// The sheet reads the live draft from `AppState.agentDrafts` by id, so a
@@ -139,11 +139,11 @@ struct AgentDraftReviewSheet: View {
             .navigationBarTitleDisplayMode(.inline)
 #endif
             .quickLookPreview($previewURL)
+            // The question alone: it names the assignment and the kind,
+            // which is all there is to confirm.
             .confirmationDialog(confirmTitle, isPresented: $confirming, titleVisibility: .visible) {
                 Button(AgentConnectionCopy.send) { submit() }
                 Button(AgentConnectionCopy.cancel, role: .cancel) {}
-            } message: {
-                Text(AgentConnectionCopy.integrity)
             }
         }
         .lhfSheetTheme()
@@ -194,18 +194,17 @@ struct AgentDraftReviewSheet: View {
                     .foregroundStyle(Color.smoothMuted)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel("\(AgentConnectionCopy.noteFrom(draft?.agentName ?? "Claude")): \(note)")
-                if Self.noteFitsOnALine(note) {
-                    noteText
-                } else {
-                    DisclosureGroup {
-                        noteText.padding(.top, 4)
-                    } label: {
-                        Text(AgentConnectionCopy.note)
-                            .font(.lhfSecondary(13, weight: .semibold))
-                            .foregroundStyle(Color.smoothMuted)
-                    }
-                    .tint(Color.smoothMuted)
+                // Always folded (2026-11-11): the note is the agent's own
+                // explanation, the kind of text Marco wants off the screen
+                // until asked for, so even a short one is a tap away.
+                DisclosureGroup {
+                    noteText.padding(.top, 4)
+                } label: {
+                    Text(AgentConnectionCopy.note)
+                        .font(.lhfSecondary(13, weight: .semibold))
+                        .foregroundStyle(Color.smoothMuted)
                 }
+                .tint(Color.smoothMuted)
             }
         }
     }
@@ -306,12 +305,6 @@ struct AgentDraftReviewSheet: View {
                 .stroke(Color.smoothRule, lineWidth: 1.25)
         }
         .contentShape(Rectangle())
-    }
-
-    /// A note under 80 characters is one muted line; a longer one goes
-    /// behind "note".
-    static func noteFitsOnALine(_ note: String) -> Bool {
-        note.count < AgentConnectionCopy.noteLineLimit && !note.contains("\n")
     }
 
     // MARK: The one status line

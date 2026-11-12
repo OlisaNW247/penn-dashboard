@@ -934,19 +934,21 @@ Keep this current. It is the fastest way for a new session to know what exists.
      `canUseAgentConnection`: `ProfileAgentRows` (`ProfileAgentRows.swift`)
      puts the agent connection there, replacing
      the "connect an agent · on/off" row and the `AgentConnectionsView`
-     screen it pushed (deleted): a plain `Toggle` "connected agent"; one
-     muted line "shares your classes and work list with the agent's provider
-     · privacy policy" (naming the recipient, for App Review 5.1.2(i); the
-     last two words link to `AgentConnectionCopy.privacyURL`; the long
-     disclosure lives in `docs/PRIVACY.md` → "Connecting an AI assistant",
-     which `AgentConnectionWiringTests` checks still says what is shared,
-     the never list, who receives it and what off does); then, while on,
+     screen it pushed (deleted): a plain `Toggle` "connected agent"; then, while on,
      one row per agent (its name, muted "last used 2h ago" / "never used",
      a trailing muted "disconnect" and chevron, the whole row a button
      behind a "disconnect claude?" alert, as the laptop row's "unpair"
      is), or a muted "none yet"; and "have a code?", which opens
      `AgentCodeSheet` (the code field and "connect", then the approve
-     sheet over it). Turning it off asks once, "disconnect every agent?"
+     sheet over it); last, on or off, a plain "privacy policy" link row to
+     `AgentConnectionCopy.privacyURL` with no sentence beside it (since
+     2026-11-11, Marco: "remove all of the little bullshit text"; the muted
+     line "shares your classes and work list with the agent's provider ·
+     privacy policy" went; the disclosure lives in `docs/PRIVACY.md` →
+     "Connecting an AI assistant", which names the recipient for App Review
+     5.1.2(i) and which `AgentConnectionWiringTests` checks still says what
+     is shared, the never list, who receives it and what off does). Turning
+     it off asks once, "disconnect every agent?"
      with "disconnect" / "cancel" and no message (added 2026-11-11; before,
      no confirmation), because it deletes the list and disconnects every
      agent. Pinned by `AgentConnectionWiringTests`.
@@ -1144,8 +1146,11 @@ Keep this current. It is the fastest way for a new session to know what exists.
      touching the audio session, so the silent switch mutes them and they
      stop other audio (the `AVAudioSession` trap); a 60-minute lead
      suppresses the plain 1-hour reminder for loud items, as 10 minutes did
-     for the 10-minute one; and two capitalised explanatory lines remain in
-     the section. The section's footer (Marco's "A list minute alarm right
+     for the 10-minute one; and two capitalised explanatory lines remained in
+     the section (the section itself is gone since the Sweeper page of
+     2026-11-10; on that page the one explanation, "turn on due-date
+     reminders in profile to use Smooth Sweeper.", is "reminders are off"
+     since 2026-11-11). The section's footer (Marco's "A list minute alarm right
      before your miss an assignment.", corrected on 2026-10-24) was removed
      the same evening at Olisa's word, seeing it on his phone ("Remove the
      text under smooth sweeper"); the section ends at the classes row.
@@ -1207,11 +1212,11 @@ Keep this current. It is the fastest way for a new session to know what exists.
   `AgentConnectionsView` with the whole disclosure on screen). A
   `smooth://link?c=…` URL (the "Open Smooth" button on the agent's sign-in
   page) or a typed code ("have a code?") looks the pending request up and
-  shows `AgentLinkApproveSheet`, trimmed 2026-11-11: "connect claude?",
-  the agent's host in muted type, one line "reads your classes and work,
-  proposes drafts" (", proposes drafts" only with the draft scope), "pick
-  the number the page shows", three numbers (a wrong one denies the
-  request on the server), "not now"; "did you just start this?" is gone.
+  shows `AgentLinkApproveSheet`, trimmed 2026-11-11 and again that night
+  to the question, the prompt and the buttons: "connect claude?", "pick
+  the matching number", three numbers (a wrong one denies the request on
+  the server), "not now". The agent's host, "reads your classes and work,
+  proposes drafts" and "did you just start this?" are gone.
   Approving turns the opt-in on if it was off.
   With it on, `agentSnapshotPass` uploads the work list
   (`AgentSnapshotBuilder` over `syncWorkList()`, courses, own tasks; no
@@ -1285,23 +1290,21 @@ Keep this current. It is the fastest way for a new session to know what exists.
     offer, the default, or a block. Top to bottom (trimmed 2026-11-11,
     Marco: "a lot of needless text in the submission"): the class code in
     its accent ink and the title (Familjen 24), one header; "drafted by
-    claude" in grape; the agent's note as one muted line when under 80
-    characters with no line break (`noteFitsOnALine`), else behind a
-    collapsed "note" disclosure; the draft full width (the text in Inter
+    claude" in grape; the agent's note, always behind a collapsed "note"
+    disclosure (since 2026-11-11; a short one was a visible line before); the draft full width (the text in Inter
     16, selectable; or the rendered pdf pages inline in a PDFKit view, no
     caption; a link as a ruled 56pt row that opens it; a file as a row with
     name, size and "preview", QuickLook); **one status line**
     (`DraftReviewStatus.resolve`, pinned by `DraftReviewStatusTests`): a
     small spinner, no words, while Canvas is asked; then "canvas takes a
-    pdf or docx here" / "canvas takes text here" / "this one can't be
-    submitted online" / "canvas has this one locked", or in its place a
-    refusal for this draft ("canvas doesn't take .zip here · ask for a pdf
-    file", "couldn't make a pdf") or the outcome of the last tap (which
+    pdf or docx" / "canvas takes text" / "can't be submitted online" /
+    "locked in canvas", or in its place a refusal for this draft ("canvas
+    won't take .zip · pdf only", "couldn't make a pdf") or the outcome of the last tap (which
     always wins), never two; the `SmoothSegmentPicker` "send as text" /
     "send as pdf" only when both go; then, pinned at the bottom on paper, a
     filled grape 48pt squircle "submit to canvas" (confirmation names the
-    kind, "send problem set 7 as a pdf?", with "goes in under your name" as
-    its message) and a plain "decline". Blocked, "open in canvas" (a text
+    kind, "send problem set 7 as a pdf?", and no message since 2026-11-11;
+    "goes in under your name" went) and a plain "decline". Blocked, "open in canvas" (a text
     link to the Canvas app) takes the submit's place.
     Choice rules: a text draft on a file-only assignment goes as a pdf
     (**any** text draft, plain or markdown: `DraftDocumentRenderer`
@@ -1310,13 +1313,12 @@ Keep this current. It is the fastest way for a new session to know what exists.
     the default and the pdf optional, except that a markdown draft where
     Canvas takes both text and files defaults to "send as pdf"; if the early read failed the draft's
     own kind is offered (text beside pdf, markdown leaning pdf) and the
-    submit's preflight decides. Results in plain words with the next step:
-    "no connection · try again", "sign in to canvas in profile, then try
-    again", "canvas has this one locked" + open in canvas, "it may have gone
-    in · check canvas" + open in canvas + done, "couldn't reach canvas · try
-    again"; submitted is a full-sheet state (teal tick, "submitted to
+    submit's preflight decides. Results, one short line each since 2026-11-11 (no "try again", no
+    "here"): "no connection", "sign in to canvas first", "locked in canvas"
+    + open in canvas, "may have gone in · check canvas" + open in canvas +
+    done, "couldn't reach canvas", "canvas refused it"; submitted is a full-sheet state (teal tick, "submitted to
     canvas", done) only when the read-back verified it; unverified, the
-    sheet stays with "submitted · check canvas to be sure" as its one
+    sheet stays with "submitted · not confirmed" as its one
     status line, open in canvas and done (the "in at 9:41 pm" line was
     taken out 2026-11-11). Every string in `AgentConnectionCopy`, pinned by
     `AgentConnectionCopyTests`; the table and choices by

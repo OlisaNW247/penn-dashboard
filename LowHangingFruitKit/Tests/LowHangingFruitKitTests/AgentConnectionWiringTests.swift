@@ -84,7 +84,7 @@ struct AgentConnectionWiringTests {
         #expect(try uiSource("AgentConnectionsView.swift").isEmpty)
     }
 
-    @Test("the agent rows: the switch, one line, the agents or none yet, have a code?")
+    @Test("the agent rows: the switch, the agents or none yet, have a code?, privacy policy")
     func agentRowsShape() throws {
         let src = try uiSource("ProfileAgentRows.swift")
         guard !src.isEmpty else { return }
@@ -92,13 +92,18 @@ struct AgentConnectionWiringTests {
         let end = try #require(src.range(of: "struct AgentCodeSheet: View {"))
         let rows = String(src[start.upperBound..<end.lowerBound])
         let toggle = try #require(rows.range(of: "Toggle(AgentConnectionCopy.switchLabel"))
-        let line = try #require(rows.range(of: "Text(Self.sharesLine)"))
         let onGate = try #require(rows.range(of: "if state.agentConnectionEnabled {"))
         let none = try #require(rows.range(of: "Text(AgentConnectionCopy.none)"))
         let each = try #require(rows.range(of: "ForEach(connections)"))
         let code = try #require(rows.range(of: "Text(AgentConnectionCopy.codeHeader)"))
-        #expect(toggle.lowerBound < line.lowerBound && line.lowerBound < onGate.lowerBound)
+        let policy = try #require(rows.range(of: "Text(AgentConnectionCopy.privacyPolicy)"))
+        #expect(toggle.lowerBound < onGate.lowerBound)
         #expect(onGate.upperBound <= none.lowerBound && none.lowerBound < each.lowerBound && each.lowerBound < code.lowerBound)
+        // The policy is the last row, a link with no sentence beside it
+        // (Marco, 2026-11-11: the "shares your classes and work list" line went).
+        #expect(code.lowerBound < policy.lowerBound)
+        #expect(rows.contains("Link(destination: url)"))
+        #expect(!src.contains("sharesLine") && !src.contains("AgentConnectionCopy.shares"))
         // Each agent: its name, when it was last used, a trailing disconnect
         // behind a confirmation, like the laptop row's unpair.
         #expect(rows.contains("Text(item.clientName.lowercased())"))
