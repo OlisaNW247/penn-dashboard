@@ -1,16 +1,17 @@
 import SwiftUI
 import LowHangingFruitKit
 
-/// Profile → agent, the agent connection's rows (their own section after
-/// accounts since 2026-11-11, at Marco's word; before, a
+/// Profile → "connected agent", the agent connection's rows (their own
+/// section after accounts since 2026-11-11, headed "connected agent" since
+/// 2026-11-12, at Marco's word; before, a
 /// "connect an agent · on/off" row pushed a screen of its own). Marco: "under
 /// accounts, in profile, it should have connected agent with a toggle and
 /// then list what is connected to your agent."
 ///
-/// In order: the "connected agent" switch; then, while on, one row per connected agent (its name, "last used
-/// 2h ago" or "never used", and "disconnect", drawn like the laptop row's
-/// "unpair", behind the same kind of confirmation), or "none yet"; and "have
-/// a code?", which opens `AgentCodeSheet`; last, on or off, a "privacy
+/// In order: the switch, labelled "on" (the header says what it is); then,
+/// while on, one row per connected agent (its name and "disconnect", drawn
+/// like the laptop row's "unpair", behind the same kind of confirmation), or
+/// "none yet"; and "connect another", which opens `AgentCodeSheet`; last, on or off, a "privacy
 /// policy" link row (the full disclosure Apple 5.1.2(i) asks for is
 /// `docs/PRIVACY.md` → "Connecting an AI assistant").
 ///
@@ -59,13 +60,10 @@ struct ProfileAgentRows: View {
             ForEach(connections) { item in
                 Button { toDisconnect = item } label: {
                     HStack(spacing: 10) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.clientName.lowercased())
-                                .foregroundStyle(Color.smoothInk)
-                            Text(Self.usedText(item.lastUsedAt))
-                                .font(.lhfSecondary(12))
-                                .foregroundStyle(Color.smoothMuted)
-                        }
+                        // The name only since 2026-11-12 ("last used 2h ago"
+                        // went with Marco's pass).
+                        Text(item.clientName.lowercased())
+                            .foregroundStyle(Color.smoothInk)
                         Spacer()
                         Text(AgentConnectionCopy.disconnect)
                             .font(.lhfSecondary(12, weight: .medium))
@@ -118,12 +116,6 @@ struct ProfileAgentRows: View {
         }
     }
 
-    /// "last used 2h ago" or "never used".
-    static func usedText(_ lastUsed: Date?, now: Date = Date()) -> String {
-        guard let lastUsed else { return AgentConnectionCopy.neverUsed }
-        return AgentConnectionCopy.lastUsed(AgentConnectionCopy.ago(now.timeIntervalSince(lastUsed)))
-    }
-
     private func setEnabled(_ on: Bool) {
         Task {
             await state.setAgentConnectionEnabled(on)
@@ -145,7 +137,7 @@ struct ProfileAgentRows: View {
     }
 }
 
-/// "have a code?": the typed 8-letter code from the agent's sign-in page,
+/// "connect another": the typed 8-letter code from the agent's sign-in page,
 /// then the approve sheet over it. Closing the approve sheet closes this one.
 struct AgentCodeSheet: View {
     @EnvironmentObject private var state: AppState

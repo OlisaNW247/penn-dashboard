@@ -29,8 +29,8 @@ struct AgentConnectionCopyTests {
             c.canvasTakes(.notOnline), c.canvasTakes(.locked),
             c.kindRefused(.text), c.kindRefused(.url), c.kindRefused(.file),
             c.fileTypeRefused("ZIP", allowed: ["PDF"]), c.fileTypeRefused("zip", allowed: []),
-            c.mismatch, c.failure, c.switchLabel, c.privacyPolicy, c.none,
-            c.neverUsed, c.lastUsed(c.ago(7200)), c.disconnect, c.disconnectTitle("Claude"),
+            c.mismatch, c.failure, c.sectionHeader, c.switchLabel, c.privacyPolicy, c.none,
+            c.disconnect, c.disconnectTitle("Claude"),
             c.cancel, c.disconnectFailure, c.codeHeader, c.connect, c.codeNotFound,
         ]
     }
@@ -61,35 +61,22 @@ struct AgentConnectionCopyTests {
         }
     }
 
-    @Test("exact wording: profile → agent (2026-11-11)")
+    @Test("exact wording: profile → connected agent (2026-11-12)")
     func profileRows() {
         let c = AgentConnectionCopy.self
-        #expect(c.switchLabel == "connected agent")
+        #expect(c.sectionHeader == "connected agent")
+        #expect(c.switchLabel == "on")
         #expect(c.offTitle == "disconnect every agent?")
         #expect(c.privacyPolicy == "privacy policy")
         #expect(c.privacyURL == "https://github.com/OlisaNW247/penn-dashboard/blob/v10/docs/PRIVACY.md")
         #expect(c.none == "none yet")
-        #expect(c.neverUsed == "never used")
-        #expect(c.lastUsed("2h ago") == "last used 2h ago")
         #expect(c.disconnect == "disconnect")
         #expect(c.disconnectTitle("Claude") == "disconnect claude?")
         #expect(c.disconnectFailure == "couldn't disconnect")
-        #expect(c.codeHeader == "have a code?")
+        #expect(c.codeHeader == "connect another")
         #expect(c.codePlaceholder == "XXXX-XXXX")
         #expect(c.connect == "connect")
         #expect(c.codeNotFound == "code not found")
-    }
-
-    @Test("last used reads short: just now, minutes, hours, days")
-    func lastUsedShort() {
-        let c = AgentConnectionCopy.self
-        #expect(c.ago(-5) == "just now" && c.ago(59) == "just now")
-        #expect(c.ago(60) == "1m ago" && c.ago(3599) == "59m ago")
-        #expect(c.ago(7200) == "2h ago" && c.ago(86_399) == "23h ago")
-        #expect(c.ago(86_400 * 3) == "3d ago")
-        let now = Date(timeIntervalSince1970: 1_000_000)
-        #expect(ProfileAgentRows.usedText(nil, now: now) == "never used")
-        #expect(ProfileAgentRows.usedText(now.addingTimeInterval(-7200), now: now) == "last used 2h ago")
     }
 
     @Test("the review sheet's words, pinned (2026-11-11)")

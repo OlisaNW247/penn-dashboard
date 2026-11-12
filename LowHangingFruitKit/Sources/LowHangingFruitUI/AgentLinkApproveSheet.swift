@@ -19,29 +19,24 @@ enum AgentConnectionCopy {
     // Profile -> agent (2026-11-11: the rows are their own section after
     // accounts;
     // the full disclosure is docs/PRIVACY.md -> "Connecting an AI assistant")
-    static let switchLabel = "connected agent"
+    /// The Profile section's header (Marco, 2026-11-12: "I want to say
+    /// 'Connected Agent'"); the switch under it says only "on".
+    static let sectionHeader = "connected agent"
+    static let switchLabel = "on"
     /// The last row of the agent block, a link with no sentence beside it;
     /// the policy names the recipient (App Review, 5.1.2(i)).
     static let privacyPolicy = "privacy policy"
     static let privacyURL = "https://github.com/OlisaNW247/penn-dashboard/blob/v10/docs/PRIVACY.md"
     static let none = "none yet"
-    static let neverUsed = "never used"
-    static func lastUsed(_ relative: String) -> String { "last used \(relative)" }
-    /// "just now", "5m ago", "2h ago", "3d ago": short enough for a row.
-    static func ago(_ seconds: TimeInterval) -> String {
-        let s = max(0, Int(seconds))
-        if s < 60 { return "just now" }
-        if s < 3600 { return "\(s / 60)m ago" }
-        if s < 86_400 { return "\(s / 3600)h ago" }
-        return "\(s / 86_400)d ago"
-    }
     static let disconnect = "disconnect"
     /// Turning "connected agent" off asks once; the title is the whole of it.
     static let offTitle = "disconnect every agent?"
     static func disconnectTitle(_ name: String) -> String { "disconnect \(name.lowercased())?" }
     static let cancel = "cancel"
     static let disconnectFailure = "couldn't disconnect"
-    static let codeHeader = "have a code?"
+    /// The row that opens the code sheet, and that sheet's header (was
+    /// "have a code?" until 2026-11-12).
+    static let codeHeader = "connect another"
     static let codePlaceholder = "XXXX-XXXX"
     static let connect = "connect"
     static let codeNotFound = "code not found"

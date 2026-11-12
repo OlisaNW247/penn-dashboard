@@ -573,13 +573,21 @@ struct ContentView: View {
     /// wrong fix is a darker solid: any full warm fill is the block he
     /// called an eyesore.
     ///
+    /// **Ink on a neutral wash since 2026-11-12.** Marco, on the phone: "the
+    /// alarm should be black instead of red." The glyph is `smoothInk` (black
+    /// on paper, paper-ink after sunset) and the squircle takes the header's
+    /// usual 18% wash in `smoothMuted`, the app's neutral, so the button
+    /// reads as a grey control beside the marigold megaphone and the teal
+    /// profile button. Not teal: that would make it the profile button's
+    /// twin. The "new" dot stays dark red.
+    ///
     /// The dot is "new", not "on": it shows only until the Sweeper page has
     /// been opened once (`sweeperPageSeenKey`, set by `SweeperView`), then
     /// never again. Marco: "the dot next to it should go away after the first
     /// time." It used to be the on light, which never went away.
     private var sweeperButton: some View {
         Button { showSweeper = true } label: {
-            headerButton(color: .smoothTomato, fillOpacity: 0.22, glyph: .smoothTomatoInk) {
+            headerButton(color: .smoothMuted) {
                 Image(systemName: "alarm.fill")
                     .font(.system(size: 17, weight: .semibold))
             }

@@ -70,7 +70,7 @@ struct AgentConnectionWiringTests {
         let rows = try #require(body.range(of: "ProfileAgentRows()"))
         let laptop = try #require(body.range(of: "ProfileLaptopRow()"))
         let accounts = try #require(body.range(of: "SmoothSectionHeader(\"accounts\""))
-        let agent = try #require(body.range(of: "SmoothSectionHeader(\"agent\""))
+        let agent = try #require(body.range(of: "SmoothSectionHeader(AgentConnectionCopy.sectionHeader"))
         let appearance = try #require(body.range(of: "SmoothSectionHeader(\"appearance\""))
         #expect(gate.upperBound <= rows.lowerBound)
         #expect(rows.lowerBound.utf16Offset(in: body) - gate.upperBound.utf16Offset(in: body) < 120)
@@ -104,10 +104,10 @@ struct AgentConnectionWiringTests {
         #expect(code.lowerBound < policy.lowerBound)
         #expect(rows.contains("Link(destination: url)"))
         #expect(!src.contains("sharesLine") && !src.contains("AgentConnectionCopy.shares"))
-        // Each agent: its name, when it was last used, a trailing disconnect
+        // Each agent: its name only (since 2026-11-12), a trailing disconnect
         // behind a confirmation, like the laptop row's unpair.
         #expect(rows.contains("Text(item.clientName.lowercased())"))
-        #expect(rows.contains("Text(Self.usedText(item.lastUsedAt))"))
+        #expect(!rows.contains("usedText") && !rows.contains("lastUsedAt"))
         #expect(rows.contains("Text(AgentConnectionCopy.disconnect)"))
         #expect(rows.contains("Button(AgentConnectionCopy.disconnect, role: .destructive)"))
         #expect(rows.contains("AgentCodeSheet()"))
@@ -149,7 +149,7 @@ struct AgentConnectionWiringTests {
                        "Turn\n  the feature off, which deletes the stored work list and revokes every\n  connection"] {
             #expect(section.contains(phrase), "\(phrase)")
         }
-        #expect(section.contains("Profile → agent → connected agent"))
+        #expect(section.contains("Profile → connected agent"))
     }
 
     @Test("onOpenURL hands the url to pendingAgentLink(from:)")
