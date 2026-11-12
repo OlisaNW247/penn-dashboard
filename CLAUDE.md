@@ -229,7 +229,17 @@ mode, the S app mark, and bundled type registered at runtime by
 - Roobert SemiBold for the dashboard title: a commercial face from
   Displaay, cleared for shipping on 2026-09-15 under a personal agreement
   Olisa holds. There is deliberately no licence file in the repo; the
-  agreement is Olisa's to produce if it is ever asked for.
+  agreement is Olisa's to produce if it is ever asked for. **Found
+  2026-11-11 by the font research:** the bundled files are Displaay's
+  trial build (PostScript name `RoobertTRIAL-SemiBold`, which
+  `RedesignTokens.swift` asks for by name), and Displaay's licence says
+  trial fonts are not for public-facing projects. Whether Olisa's
+  agreement covers that file is his to confirm
+  (`docs/NOTE_FOR_OLISA_2026-11-11.md`); if not, the licensed file replaces
+  it and `lhfWordmark` / `lhfHeaderTitle` take the new name.
+  `docs/FONT_RESEARCH_2026-11-11.md` (merged 2026-11-11) names the face that
+  draws the class code (Space Mono Bold, 9.5pt, +1.1) and five shippable
+  alternatives with renders; no font changed.
 
 **Release state.** Live on the App Store: **3.4.1 (build 20) since 2026-11-08
 at 22:29 UTC** (public iTunes
@@ -4042,6 +4052,8 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
+| `claude/font-research-22067c` | 2026-11-11, off `v11-master`, docs only, merged into `v11-master` at `fee63ba`. The class-code font research and renders (`docs/FONT_RESEARCH_2026-11-11.md`). Safe to delete. |
+| `claude/v11-ui-pass-84648c` | **2026-11-11, off `v11-master` `0936f29`, local, not merged.** Marco's UI pass: one Sweeper title with the switch row, the header button as an alarm glyph with a once-only new dot, the agent in its own Profile "agent" section, the slop cut; then the five asks of the same afternoon (the + and Sweeper swap colours, the "on" row under the title, hovering shapes on ask, a triple-tap backflip of the wordmark, a slightly larger header title), with Simulator photos in `docs/v11-ui/` and `docs/V11_UI_PHOTOS_2026-11-11.md`. The session that started it merges. |
 | `claude/v11-test-backend-3b1f1b` | **2026-11-11, off `v11` `ee653d9`, local, not pushed, not merged.** The hostile test of the v11 backend (`docs/V11_TEST_BACKEND_2026-11-11.md`) and its fixes: the front's client-address header, the stray upload sweep, file-name and mime-type checks, `delete-account` in the agent runbook. Deno 898 green. Nothing deployed. The session that started it merges. |
 | `claude/v11-phone-c7aaf2` | **2026-11-10, off `agent/connection-v11` `2503a3b`, local, not pushed, not merged.** The phone halves of v11 Phases 3 and 4: drafts polled onto the card, the review sheet, `CanvasSubmissionClient` with the attempt store, the "connected" confirmation and dashboard line (What the app does → "Drafts from an agent"). Compiled and tested; never on a phone, never against Canvas. The session that started it merges. |
 | `v11` | **The line since 2026-11-10 (about 07:30 UTC, at Marco's "Yes, push to v11").** `origin/v11` was fast-forwarded from Marco's two commits (the Sweeper page, `CompletionSwipe.Axis`) to the merged tree `f8330ab`: all of `agent/connection-v11` (below) plus the night's three session branches. Marco's other thread pushes to it too; fetch before merging and never force-push. New work branches from here. |

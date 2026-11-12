@@ -1,6 +1,55 @@
 # App Review notes — paste into App Store Connect → App Review Information → Notes
 
-## To paste for 3.2.0 (14), 2026-10-23 (the same block served 3.1.0 (13) on 2026-10-20)
+## To paste for 3.5.0 (21), 2026-11-11
+
+Draft. Same shape as the block below, trimmed to make room for the agent
+connection (Guideline 5.1.2(i)); every earlier fact is kept. The Sweeper
+walkthrough item now points at the header's alarm button and its page.
+
+```text
+HOW TO REVIEW WITHOUT A SCHOOL LOGIN
+Sign-in uses each university's own Canvas single sign-on (at Penn: PennKey plus Duo). Only the university issues those accounts, so we can't provide a demo login. You don't need one:
+
+On the first screen, tap "just exploring? preview with sample data". The same link is at the bottom of the Connect Canvas screen. It loads a populated demo; no account or network is needed.
+
+Everything is reachable from the demo:
+1. Dashboard: the todo / all / prev switch. Swipe a card right to complete it; tap it for details.
+2. Megaphone: the header button. Announcements and the tasks found in them.
+3. Ask: the "ask about your classes" button. In the demo it answers on the device.
+4. Profile: the person button in the header. Accounts, reminders, classes, notifications.
+5. Widget: "Next Due", Home or Lock Screen.
+6. Smooth Sweeper: the alarm button in the header opens its page (on/off, next-alarm countdown, per-class lead time and sound). It never rings on sample data; seeing it needs a school login.
+
+WHAT IT DOES
+A dashboard for university students. It reads the student's own Canvas deadlines (calendar feed and signed-in session) and, optionally, Gradescope, into one "what's due next" list with local reminders.
+
+ALARMS AND NOTIFICATIONS
+The Sweeper rings before work the student has not turned in (10 minutes by default); it is on by default. On iOS 26 it asks once for alarm permission (AlarmKit) and rings full screen like Clock. On earlier iOS, or if permission is refused, it sends three Time Sensitive local notifications instead, which need notification permission. Buttons: "turned in" and "open in canvas".
+
+CONNECT AN AI ASSISTANT (5.1.2(i))
+Optional, Penn only, off by default. The demo can't show it: it needs a real Canvas session and a Claude account. In Profile > agent the student turns on "connected agent", adds Smooth as a connector in Claude's settings, and approves that connection on the phone by picking a number the sign-in page shows. Claude (Anthropic) can then read the student's classes, work list and pooled course material, and propose a draft for an assignment; never grades, name, cookies or passwords. The draft appears on the assignment's card; the student reviews it and submits it to Canvas from the phone with their own session, or declines. The agent cannot submit, and our server never talks to Canvas. Turning the switch off deletes the server's copy and revokes every agent.
+
+PRIVACY AND NETWORKING
+- Grades, completions, the name and login cookies stay on the device (cookies in the Keychain, this device only). The alarm runs on it. The work list leaves it only if the assistant switch is on.
+- At Penn, our small backend (Supabase) pools non-personal course material (syllabi, pages, assignment descriptions, announcements, Ed staff posts) per Canvas course, and answers "ask" through an AI model via OpenRouter. Questions and answers are not stored. The announcement "ai assist" is on by default; Profile > notifications turns it off. Each install has an anonymous account (no email or name); disconnecting Canvas deletes it and its data.
+- No analytics, tracking, ads or third-party SDKs.
+
+STAY SIGNED IN (PENN ONLY)
+A one-line notice above Penn's login page says signing in saves the PennKey on this device. After a verified sign-in in the app's own login web view, the app saves the PennKey username and password in the device Keychain (this device only, never synced, sent nowhere but Penn's login page) to sign the student back in; until Canvas confirms, the pair is held in memory (10 minutes at most). Duo is never bypassed. One rejected password turns the feature off. Disconnecting Canvas deletes it. Preview mode never uses it.
+
+THIRD-PARTY SERVICES (5.2.2)
+Smooth is an independent client for services the student already uses, with their own credentials, showing only their own data. Not affiliated with Instructure (Canvas), Turnitin (Gradescope), Ed Discussion, Anthropic or any university.
+```
+
+_Character count of the block above: 3990 (limit 4,000), measured on the text between the fences._
+
+**Before submitting:** re-read the App Store privacy label for the agent
+connection ("data shared with third parties: course material, coursework" when
+the agent switch is on); the label in `LISTING.md` still lists only the 2026-09 answers.
+
+What's New: paste the 3.5.0 text from `LISTING.md`.
+
+## History: as pasted for 3.2.0 (14), 2026-10-23 (the same block served 3.1.0 (13) on 2026-10-20)
 
 This is the block to paste for 3.2.0; nothing a reviewer meets changed
 since 3.1.0 except the megaphone's class bubbles and every class listed,

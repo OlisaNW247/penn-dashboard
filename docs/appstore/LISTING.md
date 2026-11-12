@@ -1,6 +1,8 @@
 # App Store listing — copy & metadata
 
-_Last updated: 2026-10-20. Rewritten for **3.1.0** (build 13), going straight
+_Last updated: 2026-11-11. Draft for **3.5.0** (build 21): What's New, the
+Sweeper and CONNECT AN AI ASSISTANT paragraphs, the Promotional text and the
+Description count are new; the rest is the 3.1.0 rewrite of 2026-10-20 (build 13), which went straight
 to App Review from `v8`. The product is **Smooth** (display name and copy
 only — the bundle id stays `com.lhf.lowhangingfruit`, and internal names such
 as module names, app-group names, and defaults keys keep their LHF spelling).
@@ -9,8 +11,8 @@ as module names, app-group names, and defaults keys keep their LHF spelling).
 claim in the Promotional text, Description and FEATURES has been scrubbed. A
 claim or a screenshot of an unexposed feature is a Guideline 2.3.1 rejection,
 so check the screenshots in App Store Connect for any grades screen too.
-Live on the store is **3.0.0 (11)**, whose copy still carries the grades
-claims, so **every section below has to be re-pasted, not just What's New.**_
+Live on the store is **3.4.1 (20)**; paste the 3.5.0 What's New, Promotional
+text and Description. The 3.0.0 grades claims are long gone from the copy._
 
 Fill these into App Store Connect. Character limits noted; all copy below is
 within limits.
@@ -39,14 +41,13 @@ within limits.
 
 ## Promotional text (≤170, editable anytime)
 
-Every Canvas deadline in one calm list, soonest first — now with an alarm for anything you haven't turned in, and answers to questions about your classes. (154)
+Every Canvas deadline in one calm list, soonest first, with an alarm for anything you haven't turned in. Now Claude can draft work for you to review and submit. (160)
 
 ## Description
 
 There's more to life than school. Smooth is for the rest of it.
 
-Every deadline your classes throw at you — assignments, readings, quizzes,
-labs, the lecture you keep forgetting — lands in one calm list, soonest
+Every deadline your classes throw at you lands in one calm list, soonest
 first. You open it, you see what's next, you close it. That's the whole idea.
 
 Connect Canvas once and Smooth fills itself in: what's due, when, for which
@@ -57,51 +58,55 @@ THE SMOOTH SWEEPER
 Ten minutes before anything you haven't turned in, Smooth rings. On iOS 26 it's
 a real alarm: full screen on the lock screen, through silent mode and Focus,
 with "turned in" and Stop buttons, and a live countdown in the Dynamic Island.
-Open the app while it rings and Smooth takes the whole screen: "turned in,"
-"open in canvas," or "not yet." On older iPhones it's three loud Time
+Open the app while it rings and Smooth takes the whole screen. On older iPhones it's three loud Time
 Sensitive notifications with "turned in" and "open in canvas" buttons. It's on
-by default, with a switch in Profile.
+by default; the Sweeper has its own page, from the alarm button in the header.
 
 NOT JUST PROBLEM SETS
 A week of school isn't only things you upload. Smooth picks up readings, class
-sessions, and everything else on your Canvas calendar — including readings a
-professor buries in the Modules page — and tags anything you don't hand in
-with a plain "nothing to submit," so you always know whether a deadline wants
-a file or just you. Those never turn red for being late. They just pass.
+sessions, and everything else on your Canvas calendar, including readings
+buried in the Modules page, and tags anything you don't hand in so you know
+whether a deadline wants a file or just you. Those never turn red for being
+late. They just pass.
 
 THE MEGAPHONE
-Tap it for the past week of announcements from Canvas and Ed Discussion, and
-the tasks hiding inside them. Those tasks land on your list as cards too, for
-any class where you leave that switched on. Exams named in a syllabus or an
-announcement get one black card each, never duplicated.
+Tap it for announcements from Canvas and Ed Discussion, and the tasks hiding
+inside them. Those tasks land on your list as cards too. Exams named in a syllabus or an
+announcement get one card each, never duplicated.
 
 JUST ASK
 "When's my next exam?" "What's the late policy in 2400?" "Anything new on Ed
 this week?" Ask in plain English on the tree and get an answer out of your own
-course material, with tappable links to its sources. Follow-ups work, and at
-Penn it knows where and when each section meets. An AI model writes the
-answer; offline or over the daily limit, Smooth answers from what's already on
-your phone instead.
+course material, with tappable source links. Follow-ups work. An AI model
+writes the answer; offline or over the daily limit, Smooth answers from what's
+already on your phone instead.
+
+CONNECT AN AI ASSISTANT
+Optional, at Penn, off until you turn it on. Add Smooth as a connector in
+Claude's settings, then approve the connection on your phone by matching a
+number. Claude can read your classes, work list and course material, and
+propose a draft for an assignment. The draft appears on its card, marked
+"drafted by claude." You review it and submit it to Canvas yourself, or
+decline. Claude never submits anything. Grades, your name and your logins are
+never shared. Switch it off in Profile and everything shared is deleted.
 
 FEATURES
 • One chronological list of everything due, soonest first
 • todo / all / prev views, and a filter by class
-• Swipe to complete; tap a card for details, or to open it in Canvas or
-  Gradescope
+• Swipe to complete; tap a card for details or to open it in Canvas
 • Add your own one-off or weekly tasks; delete them or stop repeating
-• Adjust any due date by hand when your professor moves it
+• Adjust any due date by hand
 • Per-class reminder times and switches
 • Home Screen and Lock Screen widget showing what's due next
-• Ed Discussion (Penn): announcements, pinned threads and staff posts feed the
-  tree and the megaphone
-• Announcement Watcher with an optional AI assist (on by default, off anytime
-  in Profile)
+• Ed Discussion (Penn) feeds the tree and the megaphone
+• Announcement Watcher with an optional AI assist (off anytime in Profile)
 • Stays signed in to Canvas at Penn
-• Light and dark appearance, including a full after-sunset dark mode
+• Light and dark appearance
 
 PRIVATE BY DESIGN
 Your work, your completions, your name, and your Canvas and Gradescope logins
-stay on your phone, and the alarm runs entirely on it. Smooth talks to your
+stay on your phone, and the alarm runs entirely on it (unless you connect an
+assistant, above). Smooth talks to your
 school's Canvas, to Gradescope if you connect it, and to one small server of
 ours. That server does two things: it pools the course material everyone in a
 class can already see — syllabi, pages, assignment instructions,
@@ -114,7 +119,30 @@ deletes your account and its data from our server.
 Smooth is an independent app and is not affiliated with or endorsed by
 Instructure (Canvas), Turnitin (Gradescope), Ed Discussion, or any university.
 
-_Description: 3,793 characters including line breaks, within the 4,000 limit. The 3.0.0 text said a grades feature and "archive it in a tap" semester rollover; neither is in this build, so both are gone._
+_Description: 3,957 characters including line breaks, within the 4,000 limit (3.5.0 cut words elsewhere to make room for the assistant paragraph)._
+
+## What's New in 3.5.0 (release notes, ≤4000)
+
+The Sweeper gets its own page, and Claude can draft work for you to review.
+
+• The Smooth Sweeper has its own page, opened from the alarm button in the
+  header: switch it on or off, see a countdown to the next alarm, and set the
+  lead time and sound for each class
+• Connect an AI assistant (optional, Penn): add Smooth as a connector in
+  Claude's settings, then approve the connection on your phone by matching a
+  number. Claude can read your classes, work list and course material, and
+  propose a draft for an assignment
+• A draft shows on the assignment's card as "drafted by claude." Open it to
+  review it and see what Canvas accepts, then submit it to Canvas from your
+  phone, or decline. Claude never submits anything
+• Profile → agent has the switch and the list of connected assistants;
+  turning it off deletes what was shared and disconnects them all
+• Scrolling no longer sticks when your finger starts on a card
+• A card with nothing to hand in says "in class" or "off canvas" under its due
+  time, whichever is true
+• The update screen lists what changed
+
+_What's New: 1,077 characters, within the 4,000 limit._
 
 ## What's New in 3.4.1 (release notes, ≤4000)
 
@@ -350,12 +378,11 @@ unless it is licensed: confirm the licence is in hand before uploading.)
 
 ## Build / version
 
-- Marketing version: **3.4.1** (stamped 2026-11-06; 3.4.0 (17) is live since
-  2026-10-28; before it 3.3.0 (16), 3.2.1 (15), 3.2.0 (14), 3.1.0 (13))
-- Build: **20** (must exceed every build App Store Connect has seen; 18 and
-  19 were uploaded 2026-11-06/07 and superseded before submission. **Before
-  archiving, confirm in App Store Connect → TestFlight → Builds that no
-  build 20 exists**, and pick the next number if one does.)
+- Marketing version: **3.5.0** (draft; **3.4.1 (20)** is live since 2026-11-08;
+  3.4.0 (17) before it since 2026-10-28; before it 3.3.0 (16), 3.2.1 (15), 3.2.0 (14), 3.1.0 (13))
+- Build: **21** (must exceed every build App Store Connect has seen; 20 is
+  3.4.1's. **Before archiving, confirm in App Store Connect → TestFlight →
+  Builds that no build 21 exists**, and pick the next number if one does.)
 - The widget target's `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` must match
   the app's or validation fails. Both are stamped from `project.yml` and are
-  3.4.1 / 20 in `project.yml` and the committed project.
+  3.4.1 / 20 in `project.yml` and the committed project until the 3.5.0 stamp.
