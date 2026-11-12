@@ -308,7 +308,34 @@ struct DegreeAppStateTests {
         await state.runWhatIf(plan)
         #expect(state.degree.whatIfs.first?.goals == goals)
         #expect(state.degree.whatIfs.first?.isWhatIf == true)
-        #expect(state.degree.whatIfs.count <= 5)
+        #expect(state.degree.whatIfs.count <= 8)
+    }
+
+    @Test("in fixture mode running an option files a what-if and records its score")
+    func fixtureOptionRuns() async throws {
+        let state = try makeState()
+        state.forceFixtureDataForTesting(true)
+        await state.refreshDegreeAudit(force: true)
+        let listing = try #require(state.degreeOptionListings.first { $0.code == "CMPE-BSE" })
+        let ok = await state.runDegreeOption(listing)
+        #expect(ok)
+        #expect(state.degree.whatIfs.first?.isWhatIf == true)
+        let id = try #require(state.selectedStudentDegree?.id)
+        let score = try #require(state.degree.optionScores[DegreeOptions.scoreKey(degreeID: id, programCode: "CMPE-BSE")])
+        #expect(score.fraction >= 0 && score.fraction <= 1)
+        // The student's own program is not an option.
+        #expect(!state.degreeOptionListings.contains { $0.code == "CSCI-BSE" })
+    }
+
+    @Test("the what-if tab shows the options row from the catalogue")
+    func optionsRowSource() throws {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<3 { url.deleteLastPathComponent() }
+        let path = url.appendingPathComponent("Sources/LowHangingFruitUI/DegreeProgressView.swift")
+        let source = try String(contentsOf: path, encoding: .utf8)
+        #expect(source.contains("degreeOptionListings"))
+        #expect(source.contains("DegreeOptions.heading"))
+        #expect(source.contains("runDegreeOption"))
     }
 
     @Test("in fixture mode selecting a degree moves the choice and keeps the sample audit")

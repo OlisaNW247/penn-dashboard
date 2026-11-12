@@ -166,6 +166,12 @@ struct DegreeProgressView: View {
     @State private var expanded: Set<String> = []
     @State private var selectedWhatIf = 0
     @State private var showSheet = false
+    /// The catalogue row whose what-if is running, if any.
+    @State private var runningOption: String?
+    /// The goals each option filed in this view, by catalogue code. Not
+    /// persisted: it only says which chip's result is the one on screen, by
+    /// comparing exact goals, never titles.
+    @State private var optionGoals: [String: DegreeGoals] = [:]
 
     private var descriptions: [String: String] { state.degreeDescriptions }
 
@@ -198,6 +204,13 @@ struct DegreeProgressView: View {
             Task { await state.refreshDegreeAudit(force: false) }
         }
         .onChange(of: state.degree.whatIfs.first?.goals) { _, _ in selectedWhatIf = 0 }
+        .task(id: tab) {
+            // The options row needs the catalogue; only the what-if tab asks,
+            // and `loadDegreePrograms` returns at once when it is cached.
+            if tab == .whatIf, state.degree.programs.isEmpty {
+                _ = await state.loadDegreePrograms()
+            }
+        }
         .sheet(isPresented: $showSheet) {
             DegreeWhatIfSheet()
                 .environmentObject(state)
@@ -325,6 +338,7 @@ struct DegreeProgressView: View {
         let list = state.degree.whatIfs
         if list.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
+                optionsRow(shown: nil)
                 switchButton
                 DegreeSemesterTable(audit: state.degree.current)
             }
@@ -333,6 +347,7 @@ struct DegreeProgressView: View {
             let index = min(selectedWhatIf, list.count - 1)
             let target = list[index]
             VStack(alignment: .leading, spacing: 16) {
+                optionsRow(shown: target)
                 whatIfChips(list, selected: index)
                 let headline = DegreeWhatIf.headline(current: state.degree.current?.goals,
                                                      target: target.goals, descriptions: descriptions)
@@ -341,6 +356,75 @@ struct DegreeProgressView: View {
                           summary: summaryLine(summary), prefix: "w:")
             }
         }
+    }
+
+    /// The student's own degree's sibling programs as chips (a Wharton
+    /// student's concentrations), each one tap from its what-if. Hidden until
+    /// the catalogue is loaded. `shown` is the what-if on screen, so the chip
+    /// whose result it is reads as selected.
+    @ViewBuilder
+    private func optionsRow(shown: DegreeAudit?) -> some View {
+        let listings = state.degreeOptionListings
+        if !listings.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(DegreeOptions.heading(college: state.selectedStudentDegree?.college))
+                    .font(.lhfSans(13, weight: .semibold))
+                    .foregroundStyle(Color.smoothMuted)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(listings) { listing in
+                            optionChip(listing, shown: shown)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func optionChip(_ listing: PathProgramListing, shown: DegreeAudit?) -> some View {
+        let selected: Bool = {
+            guard let shown, let goals = optionGoals[listing.code] else { return false }
+            return shown.goals == goals
+        }()
+        let running = runningOption == listing.code
+        let label: String = {
+            let title = DegreeOptions.shortTitle(listing)
+            guard let degreeID = state.selectedStudentDegree?.id,
+                  let score = state.degree.optionScores[
+                    DegreeOptions.scoreKey(degreeID: degreeID, programCode: listing.code)]
+            else { return title }
+            return title + " · \(Int((score.fraction * 100).rounded()))%"
+        }()
+        return Button {
+            guard runningOption == nil else { return }
+            runningOption = listing.code
+            Task {
+                let ok = await state.runDegreeOption(listing)
+                runningOption = nil
+                if ok {
+                    optionGoals[listing.code] = state.degree.whatIfs.first?.goals
+                    selectedWhatIf = 0
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                if running {
+                    ProgressView().controlSize(.mini)
+                }
+                Text(label)
+                    .font(.lhfSans(13, weight: selected ? .semibold : .medium))
+                    .foregroundStyle(selected ? Color.smoothGrapeInk : Color.smoothMuted)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(selected ? Color.smoothGrape.opacity(0.18) : Color.clear, in: Capsule())
+            .overlay { Capsule().stroke(Color.smoothRule, lineWidth: selected ? 0 : 1) }
+        }
+        .buttonStyle(.plain)
+        .disabled(runningOption != nil)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 
     private var switchButton: some View {

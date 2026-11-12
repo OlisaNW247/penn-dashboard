@@ -19,9 +19,24 @@ public struct DegreeShelf: Codable, Sendable, Equatable {
     }
 }
 
+/// The small result of one what-if the student has run: how far along that
+/// program is. Kept after the full audit falls out of the recent list, so the
+/// options can still be compared.
+public struct DegreeOptionScore: Codable, Sendable, Equatable {
+    public var fraction: Double
+    public var open: Int
+    public var readAt: Date
+
+    public init(fraction: Double, open: Int, readAt: Date) {
+        self.fraction = fraction
+        self.open = open
+        self.readAt = readAt
+    }
+}
+
 public struct DegreeSnapshot: Codable, Sendable, Equatable {
     public var current: DegreeAudit?
-    /// Most recent first, at most 5 (the store enforces it on save).
+    /// Most recent first, at most `DegreeAuditStore.maxWhatIfs` (the store enforces it on save).
     public var whatIfs: [DegreeAudit]
     /// The student's own curriculum entries, from the page's record.
     public var degrees: [StudentDegree]
@@ -41,6 +56,8 @@ public struct DegreeSnapshot: Codable, Sendable, Equatable {
     /// The audits of the degrees that are not selected, by `StudentDegree.id`.
     /// The selected degree's audit lives in `current`, never here.
     public var shelved: [String: DegreeShelf]
+    /// `DegreeOptions.scoreKey` -> the result of each what-if run for an option.
+    public var optionScores: [String: DegreeOptionScore]
 
     public init(
         current: DegreeAudit? = nil,
@@ -51,7 +68,8 @@ public struct DegreeSnapshot: Codable, Sendable, Equatable {
         dictionaries: PathDictionaries? = nil,
         lastShape: [String] = [],
         history: [String: [String]] = [:],
-        shelved: [String: DegreeShelf] = [:]
+        shelved: [String: DegreeShelf] = [:],
+        optionScores: [String: DegreeOptionScore] = [:]
     ) {
         self.current = current
         self.whatIfs = whatIfs
@@ -62,6 +80,7 @@ public struct DegreeSnapshot: Codable, Sendable, Equatable {
         self.lastShape = lastShape
         self.history = history
         self.shelved = shelved
+        self.optionScores = optionScores
     }
 
     /// Moves the snapshot to another degree without losing the one it leaves:
@@ -95,7 +114,7 @@ public struct DegreeSnapshot: Codable, Sendable, Equatable {
     public static let empty = DegreeSnapshot()
 
     private enum CodingKeys: String, CodingKey {
-        case current, whatIfs, degrees, selectedDegreeID, programs, dictionaries, lastShape, history, shelved
+        case current, whatIfs, degrees, selectedDegreeID, programs, dictionaries, lastShape, history, shelved, optionScores
     }
 
     /// Lenient on purpose: a file written before the Path@Penn rewrite has a
@@ -113,6 +132,7 @@ public struct DegreeSnapshot: Codable, Sendable, Equatable {
         self.lastShape = try container.decodeIfPresent([String].self, forKey: .lastShape) ?? []
         self.history = try container.decodeIfPresent([String: [String]].self, forKey: .history) ?? [:]
         self.shelved = try container.decodeIfPresent([String: DegreeShelf].self, forKey: .shelved) ?? [:]
+        self.optionScores = try container.decodeIfPresent([String: DegreeOptionScore].self, forKey: .optionScores) ?? [:]
     }
 }
 
@@ -122,7 +142,7 @@ public struct DegreeSnapshot: Codable, Sendable, Equatable {
 /// student's academic record, so on iOS it is protected until first unlock.
 /// It is never put in iCloud, the App Group, the laptop sync or the backend.
 public struct DegreeAuditStore: Sendable {
-    public static let maxWhatIfs = 5
+    public static let maxWhatIfs = 8
     private static let fileName = "degree-audit.json"
 
     public let fileURL: URL

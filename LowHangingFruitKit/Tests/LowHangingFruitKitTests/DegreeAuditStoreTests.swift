@@ -72,16 +72,32 @@ struct DegreeAuditStoreTests {
         #expect(FileManager.default.fileExists(atPath: store.fileURL.path))
     }
 
-    @Test("whatIfs are capped at five on save, most recent first kept")
+    @Test("whatIfs are capped at eight on save, most recent first kept")
     func cap() throws {
         let directory = scratch()
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = DegreeAuditStore(directory: directory)
-        let many = (0..<8).map { audit("M\($0)") }
+        let many = (0..<11).map { audit("M\($0)") }
         try store.save(DegreeSnapshot(current: nil, whatIfs: many, lastShape: []))
         let back = store.load()
-        #expect(back.whatIfs.count == 5)
-        #expect(back.whatIfs.map { $0.goals.majors[0] } == ["M0", "M1", "M2", "M3", "M4"])
+        #expect(DegreeAuditStore.maxWhatIfs == 8)
+        #expect(back.whatIfs.count == 8)
+        #expect(back.whatIfs.map { $0.goals.majors[0] } == ["M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7"])
+    }
+
+    @Test("option scores survive the store, and a file without the key decodes with none")
+    func optionScores() throws {
+        let directory = scratch()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = DegreeAuditStore(directory: directory)
+        let score = DegreeOptionScore(fraction: 0.42, open: 7, readAt: Self.now)
+        let snapshot = DegreeSnapshot(optionScores: [DegreeOptions.scoreKey(degreeID: "d1", programCode: "FNCS-BS"): score])
+        try store.save(snapshot)
+        let back = store.load()
+        #expect(back.optionScores["d1|FNCS-BS"] == score)
+        #expect(back == snapshot)
+        let bare = try JSONDecoder().decode(DegreeSnapshot.self, from: Data(#"{"whatIfs":[]}"#.utf8))
+        #expect(bare.optionScores.isEmpty)
     }
 
     @Test("an undecodable file is moved aside, never overwritten, and reads as empty")
@@ -177,7 +193,7 @@ struct DegreeAuditStoreTests {
         let directory = scratch()
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = DegreeAuditStore(directory: directory)
-        let many = (0..<8).map { audit("W\($0)") }
+        let many = (0..<11).map { audit("W\($0)") }
         let snapshot = DegreeSnapshot(
             current: audit("A"), selectedDegreeID: "a",
             shelved: ["b": DegreeShelf(audit: audit("B"), whatIfs: many)])
@@ -185,7 +201,7 @@ struct DegreeAuditStoreTests {
         let back = store.load()
         #expect(back.shelved["b"]?.audit == audit("B"))
         #expect(back.shelved["b"]?.whatIfs.count == DegreeAuditStore.maxWhatIfs)
-        #expect(back.shelved["b"]?.whatIfs.map { $0.goals.majors[0] } == ["W0", "W1", "W2", "W3", "W4"])
+        #expect(back.shelved["b"]?.whatIfs.map { $0.goals.majors[0] } == ["W0", "W1", "W2", "W3", "W4", "W5", "W6", "W7"])
         let decoder = JSONDecoder()
         let bare = try decoder.decode(DegreeSnapshot.self, from: Data(#"{"whatIfs":[]}"#.utf8))
         #expect(bare.shelved.isEmpty)

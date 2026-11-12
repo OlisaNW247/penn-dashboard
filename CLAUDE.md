@@ -859,8 +859,24 @@ Keep this current. It is the fastest way for a new session to know what exists.
     2026-11-10). Picking one shows a button per change Penn's own rules
     allow, `PathWhatIf` mirroring the page's script: "switch to", "add
     major", "add minor", "add concentration"; the result is the same block
-    list under a grape "what if" tag with one summary line. The last four
-    are kept as chips.
+    list under a grape "what if" tag with one summary line. The last eight
+    are kept as chips (four until 2026-11-12).
+    **Options row** (2026-11-12, Olisa, undeclared in Wharton: "the
+    hypotheticals should factor in the fact that I have to pick a
+    concentration … and allow me to look at different possibilities";
+    green on the runner at `906f9c6`, not on a phone). Above the chips, a row of the selected
+    degree's sibling programs, headed "concentrations" for college `WU` and
+    "majors" otherwise (`DegreeOptions`, Kit). His read of the public
+    catalogue that day showed a Wharton concentration is a *major* row in
+    Penn's data (`FNCS-BS` "Finance BS" and sixteen siblings), so a tap runs
+    the page's `new-program` change for that row through the row's own info
+    (`AppState.runDegreeOption`), never `add-conc`. The rows are chosen from
+    the catalogue code alone (`MAJR-DEGC[-CONC]` with the student's degree
+    code, minus their own program and a no-concentration twin); the code's
+    shape only decides what is shown. A tried chip carries its ring percent
+    ("finance · 58%"), from `DegreeSnapshot.optionScores`, a small score per
+    degree and program that outlives the audit leaving the recent list. Only
+    a switch records a score.
   - **Plan** (2026-11-10, Olisa from his phone: "a table feature where you
     can build a sample course load for the next semester or rest of your
     time at Penn"; written the same hour, green on the runner at `78c4a77`,
@@ -908,6 +924,27 @@ Keep this current. It is the fastest way for a new session to know what exists.
     `DegreeSnapshot.history` and keeps the last one when the read fails.
     `docs/PRIVACY.md` changed in the same commit: the course-per-semester
     list is now read, and stays on the phone.
+    **Full view** (2026-11-12, Olisa: "fit the entire class table on one
+    page maybe with multiple rows. there should be a button"; green on the
+    runner, not on a phone). A "full view" button above the strip opens
+    `DegreeSemesterPage` (a full-screen cover on iOS, a sheet on the Mac):
+    the same cards in rows, `DegreeSemesterTable(layout: .page)`. It tries
+    the fewest columns first and adds columns until the whole table fits the
+    screen's height (`ViewThatFits` over plain rows,
+    `DegreeTimeline.pageColumnCounts`, cells never under 112 points), and
+    scrolls only when no count fits. Drag, remove, "+ course" and
+    "+ semester" are the strip's own code. The current semester has a "now"
+    tag on its header there in place of a word after every chip.
+  - **When it reads** (changed 2026-11-12, Olisa on the first build of the
+    table: "It should not need to re-read as often as it does. classes
+    selected do not change every couple of minutes"). Each degree's audit
+    and what-ifs are kept: the selected one in `current` / `whatIfs`, the
+    others on `DegreeSnapshot.shelved` by degree id, so a chip tap shows the
+    other degree at once (it used to clear the audit and run a 30-second
+    sign-in and read every time). Penn is asked only when a degree has
+    nothing kept, when its read is seven days old (`degreeStaleAfter`; it
+    was twelve hours, a hidden sign-in and possibly a Duo push twice a day),
+    or on pull to refresh. Green on the runner, not on a phone.
   - **How it reads.** `PathPortal` keeps one hidden `WKWebView` on
     `https://courses.upenn.edu/` for the app run, on the Canvas login data
     store so the PennKey session and Duo trust carry over. The page opens
@@ -1458,7 +1495,26 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v12` (2026-11-11, with ambassador mode merged in): 3840 tests
+**Current on `v12` (2026-11-12, the degree screen's three changes): 3878
+tests / 377 suites, all green, `swift test --no-parallel` on the GitHub macOS
+runner in 120 s (the `tests` workflow, push run 43234287131 at `906f9c6`;
+Deno and the extension suite green in the same run).** Three pushes that
+each compiled at the first attempt: `fb5d085` (each degree's audit kept on a
+shelf, a weekly read; +6 tests in `DegreeAuditStoreTests` and
+`DegreeWiringTests`, the staleness test re-pinned from 12 hours to 7 days),
+`d8dbaf3` (the full view of the semester table; +3 in `DegreeTimelineTests`
+and `DegreeCopyTests`; 3866 / 376 at that commit, run 43233237849) and
+`906f9c6` (the what-if options row; +12 tests and the suite "Degree
+options"; the two cap tests in `DegreeAuditStoreTests` re-pinned from five
+kept what-ifs to eight, and `fixtureWhatIfRuns` from `<= 5` to `<= 8`). The
+rest of the growth since 3840 / 373 is the ambassador posters work another
+session merged in between. `swift test` compiles the macOS slice only, so
+the full view's `fullScreenCover` (behind `#if os(iOS)`) was checked
+separately: **the unsigned iOS `xcodebuild` of `906f9c6` succeeded** (the
+manual run 43234403994, Build step green, all four jobs green). Unsigned and
+not installed: nothing from these three is on a phone.
+
+Before it: **on `v12` (2026-11-11, with ambassador mode merged in): 3840 tests
 / 373 suites, all green, `swift test --no-parallel` on the GitHub macOS
 runner in 90 s (the `tests` workflow, the push run 43098959640 at
 `4bd5c04`; Deno and the extension suite green in the same run).** That is
@@ -4035,6 +4091,23 @@ none is a ship line.
   does. The ring read "53%" rather than "x of y cu" on both audits, so
   `PathAuditDecoder.creditTotals` did not find Penn's credit sentence in his
   DEGREE block; not looked at yet.
+  **Three changes of 2026-11-12 are green on the runner and unseen on a
+  phone**: the shelf and weekly read, the full view, and the what-if options
+  row. What a phone will settle: that a chip tap between his two degrees
+  shows the other audit at once (the first tap after the update still reads,
+  because the old build kept one audit); that the full view picks a column
+  count that fits his semesters on one screen, and that a drag works there;
+  and the options row end to end, which is also **the first what-if ever
+  run on a device**. For the row specifically: the info of a `…-BS`
+  catalogue row has never been read, so whether Penn answers a `new-program`
+  audit for it under his Wharton entry is unknown; his own entry's program
+  code is an undeclared-specific one and the row's will differ. The few
+  catalogue rows that look like `MAJR-BS-CONC` specialisations will show as
+  chips with a parenthesis in the name if their titles follow the pattern
+  seen elsewhere. The highlighted chip is remembered only while the screen
+  is open; the percent on a chip is kept. A stale kept audit is replaced
+  only after seven days or by pull to refresh, so a student who registers
+  and opens the screen sees last week's audit until they pull.
   **The semester table is installed on Olisa's iPhone 17 (the Debug build of
   `v12` `748ced7`, 2026-11-11 evening, the first signed `xcodebuild` of the
   table, the history reader and the merged ambassador code), and nobody has

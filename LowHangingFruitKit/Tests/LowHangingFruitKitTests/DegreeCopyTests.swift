@@ -88,4 +88,14 @@ struct DegreeCopyTests {
             #expect(source.contains(phrase), "the plan views are missing \(phrase)")
         }
     }
+
+    @Test("the strip has a full view button and the page hosts the table in page layout")
+    func fullView() throws {
+        let source = try uiSource("DegreeSemesterTable.swift")
+        #expect(source.contains("struct DegreeSemesterPage"))
+        #expect(source.contains("Text(\"full view\")"))
+        #expect(source.contains(".accessibilityLabel(\"full view\")"))
+        #expect(source.contains("DegreeSemesterTable(audit: audit, layout: .page)"))
+        #expect(source.contains("Text(\"semesters\")"))
+    }
 }

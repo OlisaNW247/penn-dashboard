@@ -156,4 +156,22 @@ struct DegreeTimelineTests {
         #expect(out.allSatisfy { $0.kind == .future && $0.taken.isEmpty })
         #expect(out.map { $0.planned.map(\.code) } == [["CIS 3200"], []])
     }
+
+    @Test("rows chunks in order, the last one short")
+    func rowsChunk() {
+        #expect(Timeline.rows([1, 2, 3, 4, 5], perRow: 2) == [[1, 2], [3, 4], [5]])
+        #expect(Timeline.rows([1, 2, 3], perRow: 0) == [[1], [2], [3]])
+        #expect(Timeline.rows([1, 2], perRow: 5) == [[1, 2]])
+        #expect(Timeline.rows([Int](), perRow: 3).isEmpty)
+    }
+
+    @Test("page column counts: fewest first, 112pt cells, capped at six and at the cells")
+    func pageColumnCounts() {
+        #expect(Timeline.pageColumnCounts(width: 361, cells: 9) == [2, 3])
+        #expect(Timeline.pageColumnCounts(width: 1000, cells: 9) == [2, 3, 4, 5, 6])
+        #expect(Timeline.pageColumnCounts(width: 1000, cells: 2) == [2])
+        #expect(Timeline.pageColumnCounts(width: 361, cells: 2) == [2])
+        #expect(Timeline.pageColumnCounts(width: 1000, cells: 1) == [1])
+        #expect(Timeline.pageColumnCounts(width: 50, cells: 5) == [2])
+    }
 }
