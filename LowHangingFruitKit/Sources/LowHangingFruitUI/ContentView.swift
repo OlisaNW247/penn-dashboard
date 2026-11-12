@@ -519,11 +519,16 @@ struct ContentView: View {
     /// recurring task without changing the dashboard's data flow.
     private var addInlineButton: some View {
         Button { showAddSheet = true } label: {
+            // Lemon since 2026-11-11: tomato went to the Sweeper (Marco: "make
+            // the plus a different color and make that the color of Smooth
+            // Sweeper"). Not teal (the profile button beside the Sweeper),
+            // not cobalt (the class filter next to it), not grape (ask and the
+            // agent), not marigold (the megaphone).
             Image(systemName: "plus")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.smoothTomatoInk)
+                .foregroundStyle(Color.smoothLemonInk)
                 .frame(width: 38, height: 38)
-                .background(Circle().fill(Color.smoothTomato.opacity(0.22)))
+                .background(Circle().fill(Color.smoothLemon.opacity(0.32)))
                 // Drawn 38pt, tappable 44pt: the same inset `DashCircleIcon`
                 // gives the filter button next to it, so the three controls
                 // share one hit size without widening the row.
@@ -548,16 +553,17 @@ struct ContentView: View {
 
     /// The Sweeper's button, left of the megaphone: opens the Sweeper page.
     ///
-    /// **An alarm on a solid tomato squircle (2026-11-11).** Marco: "the
-    /// shovel or sweep emoji sucks, and the color's too similar." The drawn
-    /// broom read as a shovel at 19pt, and its 18% tomato wash sat next to the
-    /// megaphone's 18% marigold as two near-identical peaches. `alarm.fill`
-    /// says what the Sweeper does (it rings an alarm) and is an SF Symbol, so
-    /// it stays crisp at every size; the full tomato fill under an ink glyph is
-    /// the control row's add button's look, the one solid colour in the header,
-    /// so it can never be mistaken for the pastel buttons beside it. The wrong
-    /// fix is a darker wash of the same opacity: at 42pt two warm washes still
-    /// read as one colour.
+    /// **An alarm in the +'s old colours (2026-11-11).** Marco, first: "the
+    /// shovel or sweep emoji sucks, and the color's too similar", so the drawn
+    /// broom became `alarm.fill` (it says what the Sweeper does, and a symbol
+    /// stays crisp at 17pt) on a solid tomato squircle. Then, on the phone:
+    /// "far too orange ... a complete eyesore. Maybe make the plus a different
+    /// color and make that the color of Smooth Sweeper." So the Sweeper now
+    /// wears exactly what the + wore, a 22% tomato wash under a tomato-ink
+    /// glyph, and the + went to lemon. The tomato-ink glyph is what keeps it
+    /// apart from the marigold megaphone beside it, whose glyph is ink. The
+    /// wrong fix is a darker solid: any full warm fill is the block he
+    /// called an eyesore.
     ///
     /// The dot is "new", not "on": it shows only until the Sweeper page has
     /// been opened once (`sweeperPageSeenKey`, set by `SweeperView`), then
@@ -565,7 +571,7 @@ struct ContentView: View {
     /// time." It used to be the on light, which never went away.
     private var sweeperButton: some View {
         Button { showSweeper = true } label: {
-            headerButton(color: .smoothTomato, fillOpacity: 1) {
+            headerButton(color: .smoothTomato, fillOpacity: 0.22, glyph: .smoothTomatoInk) {
                 Image(systemName: "alarm.fill")
                     .font(.system(size: 17, weight: .semibold))
             }
@@ -872,12 +878,13 @@ struct ContentView: View {
         }
     }
 
-    /// `fillOpacity` is 0.18 for every button but the Sweeper's, which is the
-    /// one solid colour in the header (see `sweeperButton`).
+    /// `fillOpacity` and `glyph` are 0.18 and ink for every button but the
+    /// Sweeper's, which wears the +'s old tomato (see `sweeperButton`).
     private func headerButton<Glyph: View>(color: Color, fillOpacity: Double = 0.18,
+                                           glyph glyphColor: Color = .smoothInk,
                                            @ViewBuilder glyph: () -> Glyph) -> some View {
         glyph()
-            .foregroundStyle(Color.smoothInk)
+            .foregroundStyle(glyphColor)
             .frame(width: Self.headerButtonSize, height: Self.headerButtonSize)
             .background(Self.headerShape.fill(color.opacity(fillOpacity)))
             .overlay { Self.headerShape.stroke(color.opacity(0.48), lineWidth: 1.25) }

@@ -53,7 +53,7 @@ struct DashboardSmallFixesTests {
         #expect(controls.contains(".contentShape(Circle().inset(by: -3))"))
     }
 
-    @Test("the Sweeper's header button is an alarm on solid tomato, and its dot leaves once the page has been seen")
+    @Test("the Sweeper's header button is an alarm in the +'s old tomato wash, and its dot leaves once the page has been seen")
     func sweeperHeaderButton() throws {
         // Marco, 2026-11-11: "the shovel or sweep emoji sucks, and the color's
         // too similar", and the dot "should go away after the first time".
@@ -61,7 +61,10 @@ struct DashboardSmallFixesTests {
         guard !source.isEmpty else { return }
         let button = try declarationBody("private var sweeperButton: some View", in: source)
         #expect(button.contains("Image(systemName: \"alarm.fill\")"))
-        #expect(button.contains("headerButton(color: .smoothTomato, fillOpacity: 1)"))
+        // Marco, later the same day: the solid tomato was "far too orange";
+        // the Sweeper takes the +'s 22% wash and tomato-ink glyph.
+        #expect(button.contains("headerButton(color: .smoothTomato, fillOpacity: 0.22, glyph: .smoothTomatoInk)"))
+        #expect(!button.contains("fillOpacity: 1"))
         #expect(button.contains("if !sweeperPageSeen {"))
         #expect(!button.contains("BroomGlyph") && !button.contains("if scheduler.loudAlertEnabled {"))
         #expect(source.contains("@AppStorage(SweeperView.pageSeenKey, store: UserDefaults.lhf) private var sweeperPageSeen = false"))

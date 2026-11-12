@@ -55,7 +55,10 @@ struct VisualStructureTests {
         let add = try functionBody(named: "addInlineButton", in: source)
         let announcements = try functionBody(named: "announcementFindsButton", in: source)
 
-        #expect(add.contains("smoothTomato"))
+        // Lemon since 2026-11-11, when tomato went to the Sweeper.
+        #expect(add.contains("smoothLemon"))
+        #expect(!add.contains("smoothTomato"))
+        #expect(!add.contains("smoothTeal") && !add.contains("smoothCobalt") && !add.contains("smoothGrape"))
         #expect(!add.contains("smoothAnnouncement"))
         // The megaphone is drawn by the header's shared 48pt circle
         // (2026-10-18), which tints with the colour it is handed instead of

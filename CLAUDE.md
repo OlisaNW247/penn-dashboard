@@ -391,9 +391,10 @@ Keep this current. It is the fastest way for a new session to know what exists.
 - **Dashboard** (`ContentView`):
   - **Header.** The "Smooth" wordmark and the weekday. Tapping the wordmark
     ripples its squiggle and sweeps a shine across it. The **Sweeper**
-    button (since 2026-11-10 on `v11`; since 2026-11-11 an `alarm.fill` on a
-    solid tomato squircle, Marco: "the shovel or sweep emoji sucks, and the
-    color's too similar" to the marigold megaphone; a small dark-red "new"
+    button (since 2026-11-10 on `v11`; since 2026-11-11 an `alarm.fill`, Marco:
+    "the shovel or sweep emoji sucks"; first on a solid tomato squircle, then,
+    the same day, "far too orange", in the + button's old colours: a 22%
+    tomato wash under a tomato-ink glyph, with the + moved to lemon; a small dark-red "new"
     dot shows only until the Sweeper page has been opened once,
     `sweeperPageSeenV1`), the **megaphone** and a profile button sit beside it. All
     three are 42pt squircles with 8pt spacing on `v11` (48pt with two)
@@ -429,7 +430,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
     coloured chips, `CoursePicker`). The **megaphone** used to be a fourth
     control here and moved to the header on 2026-10-18, where its circle
     is marigold (the class filter beside the switch is cobalt: ink glyph on
-    a cobalt fill, like the tomato add button). It opens
+    a cobalt fill; the + is lemon since 2026-11-11, tomato before, when tomato
+    went to the Sweeper button). It opens
     `AnnouncementFindsView`, which since 2026-10-18 is two lists under the
     page header and a class filter (the dashboard's own `ClassFilterMenu`,
     default all classes, not remembered):
