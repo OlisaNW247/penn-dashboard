@@ -66,9 +66,13 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   "full view" button on a device, and he asked to see his progress as a dual
   degree and plan toward it; a "both" view and a plan that reads both audits
   were written the same day (green on the runner at `6f6f0c3`, 3891 / 378,
-  not yet on a phone). Next: his look at "both", the full view, a drag, and
-  one concentration what-if; and a shorter name for the undeclared Wharton
-  chip.
+  seen on his phone that evening: two rings and "27 of 73"). He then asked
+  for the progress to go up as he plans classes, and for the "counts in
+  both" row to go; both are in `7f9fc23` (a cobalt "planned" layer on the
+  ring and bars from `DegreeProjection`; 3910 / 379 green on the runner, not
+  yet on a phone). Next: his look at the planned layer, the full view, a
+  drag, and one concentration what-if; and a shorter name for the undeclared
+  Wharton chip.
 - **v12 degree progress: a Mac build, then a phone** (Olisa's decision
   2026-11-09: use the Path@Penn login; build progress and what-if, no course
   recommendations; "make this extremely smooth"). Built on 2026-11-09 against

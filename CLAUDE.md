@@ -957,9 +957,13 @@ Keep this current. It is the fastest way for a new session to know what exists.
     kept in `degreeOverallScopeV1`). It draws a ring per degree at Penn's own
     percent (tap one to open that degree; a degree not read yet holds its
     place with an empty ring), one bar adding up Penn's rule counts across
-    the audits ("both degrees · x of y"), the courses Penn applied in both
-    under "counts in both", the semester table, and each degree's
-    requirement cards under its name. **There is no combined percent, on
+    the audits ("both degrees · x of y"), the semester table, and each
+    degree's requirement cards under its name. (A "counts in both" row of
+    every course Penn applied in both audits sat under the bar for a few
+    hours; his first look at it on the phone was 27 chips of classes he
+    already knew he had taken, "I don't think the counts in both section in
+    necessary either", and it was removed the same evening.
+    `DegreeOverall.sharedCourses` stays in the Kit, unused by the screen.) **There is no combined percent, on
     purpose**: Penn publishes one audit per degree, and a figure made from
     two would be this app's opinion shown as Penn's; a test keeps the word
     "average" out of the screen. Planning reads every degree wherever the
@@ -976,6 +980,35 @@ Keep this current. It is the fastest way for a new session to know what exists.
     (`ensureAllDegreeAudits` asks for that the first time "both" opens, at
     most once in ten minutes). The sample data is a dual-degree student, so
     preview and demo show it.
+  - **Planned progress** (2026-11-12, Olisa, filling spring 2027 in the
+    table on his phone: "It should show the progress towards my degree going
+    up as I pick potential new classes as I try to fill the rest of my
+    calendar table"; green on the runner at `7f9fc23`, not on a phone).
+    `DegreeProjection.make(plan:audit:)` (Kit, pure) lays the plan against
+    one audit: every open or in-progress rule that lists options has a
+    remaining need (credits when Penn states them, else courses, else one
+    course), a planned course goes to the first such rule in Penn's order
+    that lists it and still has room, and one that arrives after the need is
+    spent is kept as overflow that adds nothing. A course already on the
+    audit is skipped. A parent rule with no options of its own is as full as
+    its unmet children on average. The screen draws the result as its own
+    cobalt layer under its own word, "planned": an arc after the done arc on
+    each ring with "≈ NN% with plan" under it, a segment on each block bar
+    and on the "both degrees" bar, "· n planned" beside Penn's counts, and
+    planned chips inside the rule they are laid against (the legend gains
+    "planned" only while something is). **Penn's number in the middle of the
+    ring never changes, and nothing planned is called met.** The percent is
+    this app's estimate, which is why it carries "≈": the sum of fills over
+    open rules, divided by the rules that are open or in progress, applied to
+    what Penn's percent leaves (`ringShare`, `ringGain(base:)`). An
+    in-progress rule keeps its planned chips but adds nothing to the shares,
+    or the bar would draw it twice. Known limits: a planned course no open
+    rule lists (a free elective, a requirement Penn describes in words) moves
+    nothing; the "fits" line under a chip is still the older first-match rule
+    (`DegreePlanMath.coverage`), so when the first rule that lists a course
+    is already full the chip can say it fits one rule while the projection
+    counts it toward the next; and two rules with the same id in one block
+    would share a projection entry.
   - **When it reads** (changed 2026-11-12, Olisa on the first build of the
     table: "It should not need to re-read as often as it does. classes
     selected do not change every couple of minutes"). Each degree's audit
@@ -1551,7 +1584,19 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `degree-progress` (2026-11-12, the dual-degree view): 3891
+**Current on `degree-progress` (2026-11-12, planned progress): 3910 tests /
+379 suites, all green, `swift test --no-parallel` on the GitHub macOS runner
+in 96 s, with the unsigned iOS `xcodebuild`, Deno and the extension suite
+green (manual run 43332101067 at `7f9fc23`), compiled at the first attempt.**
++19 tests and +1 suite over 3891 / 378: the suite "Degree projection" (14),
+four in `DegreeCopyTests` (the with-plan line, the two count texts, a source
+pin) and `fixtureProjection` in `DegreeWiringTests`. Two pins in
+`DegreeCopyTests` were rewritten on purpose: the legend pin from
+`DegreeLegend()` to `DegreeLegend(` (the call now carries `showsPlanned:`),
+and the combined-view pin from "calls `sharedCourses`" to "does not contain
+the words counts in both", with the row. Nothing from this run is on a phone.
+
+Before it, on `degree-progress` the same day (the dual-degree view): 3891
 tests / 378 suites, all green, `swift test --no-parallel` on the GitHub macOS
 runner in 94 s, with the unsigned iOS `xcodebuild`, Deno and the extension
 suite green (manual run 43325563074 at `6f6f0c3`, second attempt of the test
@@ -4226,11 +4271,19 @@ none is a ship line.
   the major and wants a shorter form.
   **The dual-degree view (2026-11-12, `6f6f0c3`) is green on the runner and
   not on a phone.** What a phone will settle: that opening "both" reads the
-  second degree's audit once and fills its ring; that "counts in both"
-  lists classes he recognises as double-counted (it is every code Penn
-  applied to a rule in both audits, which for two schools may be few or
-  none); that the overall bar's count is believable beside the two rings;
-  and that a planned class shows a line for each degree it fits. Known
+  second degree's audit once and fills its ring; that the overall bar's
+  count is believable beside the two rings; and that a planned class shows a
+  line for each degree it fits. **His screenshot that evening settled the
+  first two**: "both" showed 67% and 53% rings and "27 of 73" on the bar,
+  so the second audit was read; the "counts in both" row listed 27 courses
+  and he asked for it to go (removed in `7f9fc23`). An earlier screenshot
+  the same day showed per-degree "fits" lines under planned spring classes.
+  **Planned progress (`7f9fc23`) is green on the runner and not on a
+  phone.** What a phone will settle: that the blue arc and the "≈ NN% with
+  plan" line move when he adds a class in the table on the same screen;
+  that the size of the move is believable (it depends on how many of his
+  rules state a credit or course need, which no capture has counted); and
+  that the planned chips inside a requirement are the classes he expects. Known
   limits: a forced read (pull to refresh) now reads every degree's audit,
   so it takes about twice as long for him; the what-if tab still acts on
   the selected degree only, with no "both" there; and the labels in "fits"
