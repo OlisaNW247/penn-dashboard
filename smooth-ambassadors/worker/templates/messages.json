@@ -1,5 +1,5 @@
 {
-  "_help": "Messages ambassadors copy with one tap. Edit freely. Placeholders: {link} = their tracked link for that channel, {school} = school name, {name} = ambassador first name. Keep it short and lowercase. Never ask for ratings or reviews here. `daily` is the bank the app's daily reminder draws from: one per day, rotating, with the ambassador's chosen anonymous app on anon days. `anon` means fizz/sidechat/yik yak.",
+  "_help": "Messages ambassadors copy with one tap. Edit freely. Placeholders: {link} = their tracked link for that channel, {school} = school name, {name} = ambassador first name. Keep it short and lowercase. Never ask for ratings or reviews here. `daily` is the bank the app's daily reminder draws from: one per day, rotating, with the ambassador's chosen anonymous app on anon days. `anon` means fizz/sidechat/yik yak. Since 2026-11-12 the anonymous posts each lead with ONE of three things the app does, so a week of posts covers all three: it reads everywhere a professor posts about assignments and classes (not only canvas and gradescope deadlines), the tree answers questions about your classes, and the smooth sweeper rings your phone like an alarm before something you haven't turned in is due. Say 'rings' or 'alarm', never 'calls': it is an alarm, not a phone call, and an anonymous app will call out the difference. Don't name ed discussion: it is read at penn only.",
   "messages": [
     {
       "key": "gc",
@@ -11,7 +11,7 @@
       "key": "anon",
       "channel": "fizz",
       "label": "fizz / sidechat / yik yak",
-      "text": "psa for anyone who keeps finding out about assignments at 11:58pm: smooth puts every canvas + gradescope deadline in one list and pings you before they close. made by students, free. {link}"
+      "text": "psa for anyone who keeps finding out about assignments at 11:58pm. smooth does three things: it reads everywhere your professor posts about assignments and classes and puts it in one list, it has a tree you can ask any question about your classes, and the smooth sweeper rings your phone like an alarm before you miss something. free, made by students. {link}"
     },
     {
       "key": "ig",
@@ -49,11 +49,11 @@
   "daily": [
     {
       "kind": "anon",
-      "text": "the number of people who found out about a gradescope deadline from the 'closed' page is too high. smooth lists every canvas + gradescope deadline and reminds you before they close. free, made by students. {link}"
+      "text": "your professor posts in five places and expects you to check all of them. smooth reads everywhere they post about assignments and classes, not just canvas and gradescope deadlines: announcements, the syllabus, modules. then it puts it all in one list and reminds you before things close. free, made by students. {link}"
     },
     {
       "kind": "anon",
-      "text": "if you have 5 classes and 5 different places deadlines hide, smooth puts them in one list and pings you before anything closes. free. {link}"
+      "text": "smooth has a thing called the tree. you ask it any question about your classes, like \"what's the late policy\" or \"how much is the final worth\", and it answers from your own syllabus and announcements. no digging through canvas. free, made by students. {link}"
     },
     {
       "kind": "gc",
@@ -61,11 +61,11 @@
     },
     {
       "kind": "anon",
-      "text": "psa: smooth is a free app that takes your canvas and gradescope deadlines and makes one list with reminders before things close. built by students at penn. {link}"
+      "text": "the smooth sweeper: 10 minutes before something you haven't turned in is due, your phone goes off like an alarm. not a notification you swipe away, an actual alarm. you pick how early and which classes. free, made by students. {link}"
     },
     {
       "kind": "anon",
-      "text": "real talk, what tanks grades isn't the hard stuff, it's the 5-point check-in you didn't know existed. smooth catches those. free, one list, reminders. {link}"
+      "text": "anyone else find out about an assignment from an announcement you never opened? smooth reads everywhere your professor posts about assignments and classes, pulls out the things you actually have to do, and puts them in one list with the rest of your deadlines. free. {link}"
     },
     {
       "kind": "ig",
@@ -73,11 +73,11 @@
     },
     {
       "kind": "anon",
-      "text": "midweek reminder that smooth exists: every canvas + gradescope deadline, one list, reminders before they close. free, by students. {link}"
+      "text": "instead of scrolling a 14 page syllabus at 1am: open smooth and ask the tree. \"what's due this week\", \"can i drop a quiz\", \"when is the midterm\". it reads your classes and gives you the answer. free, by students. {link}"
     },
     {
       "kind": "anon",
-      "text": "anyone else find assignments through the 'you missed it' email? smooth puts every deadline from canvas and gradescope in one list and reminds you first. free. {link}"
+      "text": "real talk, what tanks grades isn't the hard stuff, it's the small thing you forgot to submit. the smooth sweeper rings your phone like an alarm right before anything you haven't turned in closes, so it's a lot harder to forget. free. {link}"
     },
     {
       "kind": "dm",
@@ -85,7 +85,7 @@
     },
     {
       "kind": "anon",
-      "text": "students at penn built an app that pulls canvas + gradescope deadlines into one list and reminds you before they close. it's free and i'm using it at {school}. {link}"
+      "text": "smooth in three lines. every deadline from everywhere your professor posts, in one list. the tree, which answers any question about your classes. the sweeper, which rings your phone before you miss an assignment. free, made by students. {link}"
     },
     {
       "kind": "gc",
@@ -93,11 +93,11 @@
     },
     {
       "kind": "anon",
-      "text": "smooth = one list of every canvas + gradescope deadline + a reminder before each one closes. free. that's the whole pitch. {link}"
+      "text": "the 11:58pm moment is avoidable. smooth already knows what's due from everywhere your professor posts, and its sweeper sets off an alarm on your phone 10 minutes before anything you haven't turned in. free, by students. {link}"
     },
     {
       "kind": "anon",
-      "text": "the 11:58pm moment is avoidable. smooth lists every canvas and gradescope deadline and reminds you before they close. free, by students. {link}"
+      "text": "students at penn built an app that reads everywhere your professor posts about assignments and classes (canvas, gradescope, announcements, the syllabus), answers questions about your classes, and rings your phone before you miss something. it's free and i'm using it at {school}. {link}"
     },
     {
       "kind": "rest",

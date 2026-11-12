@@ -7,7 +7,7 @@ For the ChatGPT session that deploys project
 ## Update, 2026-11-12 (small)
 
 This archive is the fourth one. The third was deployed on 2026-11-12 and is
-live. Since it, one change, to page text only:
+live. Since it, text changes only:
 
 - **No more checklist.** The ambassador page no longer shows the
   "checklist" section (its first step told people who already use the app to
@@ -17,6 +17,14 @@ live. Since it, one change, to page text only:
   put up posters. post every day. bring back what people say and ideas for
   smooth." The feedback section is now headed "feedback and ideas for
   smooth" (same form, same route).
+
+- **Longer anonymous posts.** The fizz / sidechat / yik yak posts in the
+  daily bank, and the anonymous message under "messages", now each lead with
+  one of three things the app does: it reads everywhere a professor posts
+  about assignments and classes, the tree answers questions about your
+  classes, and the smooth sweeper rings your phone like an alarm before
+  something not turned in is due. Text only; `today.text` and
+  `messages[].text` in `plan.json` are longer strings, nothing else moves.
 
 What that means for the deploy:
 

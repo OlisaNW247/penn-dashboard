@@ -269,6 +269,17 @@ test("every daily entry has a kind the plan understands", async () => {
   assert.ok(m.daily.length >= 10);
   for (const d of m.daily) assert.ok(["anon", "gc", "ig", "dm", "rest"].includes(d.kind), d.kind);
   assert.ok(m.daily.filter((d) => d.kind === "anon").length >= 7);
+  // Olisa, 2026-11-12: the anonymous posts say more than "canvas and gradescope
+  // deadlines". Across the bank they cover the three things the app does, and the
+  // sweeper is an alarm, never a phone call, in every message an ambassador can copy.
+  const anon = m.daily.filter((d) => d.kind === "anon").map((d) => d.text);
+  for (const theme of [/everywhere your professor posts/, /\btree\b/, /sweeper/]) {
+    assert.ok(anon.filter((t) => theme.test(t)).length >= 3, String(theme));
+  }
+  for (const t of [...m.daily, ...m.messages].map((x) => x.text)) {
+    assert.doesNotMatch(t, /\bcalls? you\b|phone call|ed discussion|\bedstem\b/i, t.slice(0, 40));
+    if (/sweeper/.test(t)) assert.match(t, /rings|alarm/, t.slice(0, 40));
+  }
 });
 
 // ---- the private code never appears in anything posted or printed

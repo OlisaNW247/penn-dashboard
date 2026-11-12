@@ -1226,7 +1226,18 @@ Keep this current. It is the fastest way for a new session to know what exists.
      was the last section's first row). The website lost its checklist
      section and gained the same line under the greeting; the server still
      sends `checklist` in the plan and still answers `/check`, and nothing
-     shows either. **Since 2026-11-11 (Olisa: "clear where they can
+     shows either. The same day the anonymous posts were rewritten
+     (`smooth-ambassadors/worker/templates/messages.json`; Olisa: say more
+     than canvas and gradescope, "everywhere your professor posts info
+     about assignments and classes", the tree, the sweeper, "these can be
+     in different messages"): each fizz / sidechat / yik yak post leads
+     with one of the three, 220 to 320 characters before the link. Two
+     rules a test holds: the sweeper "rings" or is an "alarm", never
+     "calls you" (he said "call"; it is an alarm, and an anonymous app
+     would say so), and Ed is never named, because it is read at Penn
+     only while the rest is true at any school. Known and not fixed: Yik
+     Yak is reported to cap a post at 200 characters, which every post
+     exceeded with its link even before this. **Since 2026-11-11 (Olisa: "clear where they can
      access all posters and view the dashboard", "a clear option to upload
      poster ideas") a "posters" section sits right after today's post**:
      "all posters" opens an in-app gallery of the school's designs as a
