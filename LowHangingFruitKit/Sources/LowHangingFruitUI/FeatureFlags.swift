@@ -163,7 +163,14 @@ enum FeatureFlags {
     /// false). What was still unchecked when it went off is in CLAUDE.md →
     /// Known gaps. To bring it back, set this to `true`; the fixture tests
     /// that are skipped while it is false run again by themselves.
-    static let degreeProgress = false
+    ///
+    /// **On again on the `degree-progress` branch only** (2026-11-12, Olisa:
+    /// "keep v12 for the ambassador mode and work further on this in another
+    /// branch"). `v12` keeps it false. This constant is the one line that
+    /// differs in code between the two, so merging this branch back into the
+    /// line is what switches the feature on there, and that merge should be
+    /// a decision, not a side effect.
+    static let degreeProgress = true
 
     /// Evaluates a token-store read only while the experiment is enabled.
     /// Keeping the guard around the closure (rather than around its result)

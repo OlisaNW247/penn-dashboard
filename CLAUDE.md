@@ -832,7 +832,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
   working perfectly"). Owner's ask of 2026-10-22: "voice mode for the tree AI";
   dictate-then-send was the agreed first version, hands-free with spoken
   answers set aside (`ROADMAP.md` → Next).
-- **Degree** (**switched off on 2026-11-12**: `FeatureFlags.degreeProgress
+- **Degree** (**on in this branch, `degree-progress`, and off on `v12`.**
+  On 2026-11-12 it was switched off on `v12`: `FeatureFlags.degreeProgress
   = false`, at Olisa's word, "remove the degree progress thing temporarily
   because I don't think it is ready", so `v12` could go to Marco without it.
   No row in Profile, no read of Path@Penn, nothing deleted; a saved audit
@@ -840,7 +841,11 @@ Keep this current. It is the fastest way for a new session to know what exists.
   the screen, which reads nothing while the flag is false. Five fixture
   tests in `DegreeAppStateTests` skip themselves while it is off and one,
   `killSwitchOff`, runs only then, so turning it back on is the one
-  constant. Everything below describes it as built.)
+  constant. The same day he asked for the degree work to go on "in another
+  branch": that is this one, cut from `v12` `4aadc3c` with the constant set
+  to `true` and the "switched off" line taken out of `docs/PRIVACY.md`, so
+  here the row, the screen and the reads are all live. Everything below
+  describes it as built.)
   (`DegreeProgressView`, `v12`, behind
   `FeatureFlags.degreeProgress`; rewritten 2026-11-10 against the real
   Path@Penn after Olisa's capture; green on the GitHub runner, built for
@@ -3982,8 +3987,12 @@ itself.
 
 ## Branches
 
+**You are on `degree-progress`** (2026-11-12): `v12` at `4aadc3c` with
+degree progress switched back on, where the degree work continues while
+`v12` goes to Marco with ambassador mode. See its row in the table.
+
 `v12` is the line (2026-11-09): `v10` plus the degree-progress feature
-(below), **which is switched off since 2026-11-12**, plus ambassador mode.
+(below), **which is switched off there since 2026-11-12**, plus ambassador mode.
 On 2026-11-12 Olisa handed this `v12` to Marco for the finishing touches;
 `docs/HANDOFF_V12_MARCO_2026-11-12.md` is where to start. Before it, `v10` (2026-11-03): `v9` plus `origin/v8` `7e004c5` plus
 `phase0/extract-facts-bench`. Start at `docs/HANDOFF_V10_2026-11-04.md`
@@ -4003,6 +4012,7 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
+| `degree-progress` | **Where degree work continues (2026-11-12 onward).** Cut from `v12` `4aadc3c` at Olisa's ask: "keep v12 for the ambassador mode and work further on this in another branch". It differs from `v12` in one constant (`FeatureFlags.degreeProgress = true`), the "switched off" line removed from `docs/PRIVACY.md` and `docs/site/privacy.html`, its own name added to the `tests` workflow's push branches, and these notes. Everything else, ambassador mode included, is `v12`'s as of that commit. Later ambassador work lands on `v12` and has to be merged in here from time to time (`git merge origin/v12`; expect the flag, the privacy line and these notes to be the conflicts, and keep this branch's side of all three). Merging this branch back into the line switches degree progress on there, so do that only when Olisa says the feature is ready. Build it onto a phone with `git checkout degree-progress && git pull && bash scripts/build-to-phone.sh`. |
 | `v12` | **Current line (2026-11-09 onward).** `v10` at `4c136b2` plus the degree-progress research (`docs/DEGREE_PROGRESS_RESEARCH_2026-11-09.md`) and the degree feature. Built on 2026-11-09 against a guessed Degree Works host; rewritten on 2026-11-10 against what Olisa captured from his own Path@Penn session: `Degree/` in the Kit (`PathAuditDecoder`, `PathBridge`, `PathDegree`, `PathWhatIf`), `PathPortal`, `AppState+Degree`, `DegreeProgressView`, `DegreeWhatIfSheet`, `FeatureFlags.degreeProgress`. Green on the `tests` workflow, which runs on pushes to it, and built for iOS with `xcodebuild` on Olisa's Mac (Xcode 27.2) on 2026-11-10 (Test baseline); the Debug build of `d2f37a0` read a real audit on Olisa's iPhone 17 the same day (Known gaps). It does **not** contain `v11` (next row), which branched from the same `v10` commit; the two have to be merged before either ships with the other's work. **Since 2026-11-11 it also carries ambassador mode and `smooth-ambassadors/`** (the `claude/new-session-b3ylkg` row below; What the app does → Profile → 8). |
 | `v11` | **Marco's line since 2026-11-07, found on the remote on 2026-11-10** (this file said "there is no `v11`" until then, which was wrong). Off `v10` at `4c136b2`, the same commit `v12` started from, and 46 commits on by 2026-11-10 (`06250d0`): the "agent connection" (an `agent-auth` / `mcp` / `agent-snapshot` backend, a connector front on Vercel, the phone's opt-in, approve sheet and snapshot upload) and a DEBUG Canvas submit spike; its own notes say "`v11` is the line". Read only from the commit subjects and a file list here, not reviewed. It and `v12` both edit `CLAUDE.md`, `ROADMAP.md`, `docs/PRIVACY.md`, `AppState.swift`, `ContentView.swift` and `FeatureFlags.swift`; none of the degree files is touched by it. Nobody has merged the two or decided which is the base. |
 | `claude/new-session-b3ylkg` | **2026-11-09, `v10` `4c136b2` plus two commits, meant to become `v11`.** (1) `smooth-ambassadors/`: the poster-scan tracker plus the campus ambassador system as a Cloudflare Worker + D1 (private pages per ambassador, tracked links, a founder view with a digest generator, 17 Miniflare tests), drafted here to move to a private repo. (2) **Ambassador mode in the app** (What the app does → Profile → 8): a code-based sign-in in Profile, today's post, a daily local reminder, the planner carve-out. 3697/357 green on the GitHub runner at `85d4234` and the unsigned iOS `xcodebuild` green at `674b89b` (2026-11-10, Test baseline); never on a phone, server not deployed. The Worker's legacy routes were matched to the live site the same day (dashboard byte-identical, `/api/stats` rows identical). Olisa or Marco creates `v11` from it. **2026-11-10, later:** the Sites source arrived as an archive; `scripts/build-sites.mjs` folds the ambassador system into the real single-file Worker (two edits to its `fetch`, a generated section, images byte-identical), `test/sites.test.mjs` runs the original and the edited artifact side by side (14 of 14; `npm test` 28 pass), and the public `/r/{ref}` links replaced the token-bearing ones (Traps). A zip went to Olisa for the ChatGPT session that deploys Sites. **2026-11-11:** deployed to the live Sites project by that session; existing routes and totals checked from here (Known gaps). **Merged into `v12` on 2026-11-11** ("do this in v12", Olisa): `v12` was merged into this branch first (two conflicts, both "each side added a line here": the `DashRoute` cases and these notes), the merged tree was run on the runner, and only then was `v12` moved to it. The "meant to become `v11`" above is history: `v11` is Marco's line and none of this is in it. **Later on 2026-11-11:** school-prefixed codes, then posters, the dashboard link, poster-idea uploads and the Smooth restyle of the ambassador website, all landed on `v12` once compiled (Test baseline). `scripts/build-to-phone.sh` came from the same day. **2026-11-12:** that update is live on the Sites project and was checked read-only from here (Known gaps). |
@@ -4104,8 +4114,8 @@ none is a ship line.
   image is served with `nosniff` and a sandboxing CSP), and the founder
   page's image links hold the founder secret in their path, as the page's
   own address does. The review notes need a test code once a roster exists.
-- **Degree progress (`v12`) is switched off (2026-11-12) with the list
-  below still open; it had read one real audit on one phone, and
+- **Degree progress is on in this branch and switched off on `v12`
+  (2026-11-12), with the list below still open; it had read one real audit on one phone, and
   which degree it shows first was unsettled.** Read this entry before
   turning `FeatureFlags.degreeProgress` back on. On 2026-11-10 at 12:07 local
   the Debug build of `d2f37a0` (installed with `devicectl` over the store

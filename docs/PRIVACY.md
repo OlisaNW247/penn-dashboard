@@ -143,10 +143,6 @@ no separate "stay signed in" choice or second password entry.
 
 ## Degree progress (Penn, since v12)
 
-**Switched off since 2026-11-12 while it is being finished.** While it is off
-there is no degree screen and Smooth reads nothing from Path@Penn. The rest of
-this section describes what it does when it is on.
-
 Smooth can show where you stand in your degree, and where you would stand in
 another program. It does this by opening Penn's own Path@Penn page inside the
 app, out of sight, signed in as you the same way it reconnects to Canvas (the

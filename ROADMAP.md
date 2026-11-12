@@ -56,9 +56,12 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   (five files conflict, six Swift files merge without a marker and need
   reading), a test code and paragraph for App Review, a new build number,
   and the third server zip if it is not deployed yet.
-- **Degree progress is switched off** (2026-11-12, Olisa: not ready;
-  `FeatureFlags.degreeProgress = false`, nothing deleted). The item below is
-  what turning it back on still needs.
+- **Degree progress is switched off on `v12` and continues on the
+  `degree-progress` branch** (2026-11-12, Olisa: not ready, so `v12` went to
+  Marco without it, `FeatureFlags.degreeProgress = false`, nothing deleted;
+  the same day he asked for the work to go on in a branch of its own, where
+  the flag is `true`). The item below is what it still needs before that
+  branch is merged back.
 - **v12 degree progress: a Mac build, then a phone** (Olisa's decision
   2026-11-09: use the Path@Penn login; build progress and what-if, no course
   recommendations; "make this extremely smooth"). Built on 2026-11-09 against
