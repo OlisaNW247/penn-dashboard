@@ -7,7 +7,7 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-11-10 on `v12` (degree progress rewritten against the real Path@Penn; the Now entry). Before that, 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
+Last updated 2026-11-12 on `v12` (degree: weekly reads, the full view, Wharton concentrations; the Now entry). Before that, 2026-11-10 on `v12` (degree progress rewritten against the real Path@Penn). Before that, 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
 backend half went live 2026-11-05 01:20-01:45 UTC, the evening of 2026-11-04
 US Eastern). Before that, 2026-10-28 on `release/3.4.0` (the 3.4.0 release,
 renamed from 3.3.1 that afternoon when PR #16 was folded in). Before
@@ -78,7 +78,18 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   same day (CLAUDE.md → Degree). Its past and current columns need the term
   of each course, which the audit does not carry: next is reading `hist`
   and `reg` from the record once their format is seen, with the privacy
-  text changed in the same commit;
+  text changed in the same commit (done 2026-11-11, `76d34bd`);
+  **2026-11-12:** the table build (`748ced7`) went onto his phone with
+  `scripts/build-to-phone.sh`, and he asked for three things, all written
+  and green on the runner the same day (3878 / 377 at `906f9c6`), none on a
+  phone yet: read Penn less often (each degree's audit is kept, a weekly
+  read), a full view of the table on one page, and Wharton concentrations
+  in the what-if (an options row; a concentration is a major row in Penn's
+  catalogue). Next on the phone: switching degree chips is instant, "full
+  view" fits his semesters on one screen and drag works there, and one
+  concentration what-if runs end to end, which is also the first what-if
+  ever run on a device. He has not yet said what the semester table itself
+  showed (past terms, a dropped class in the current column);
   (3) capture
   what was not seen: a record with a concentration or minor, and the page's
   own `currentStudentDegrees`; (4) the privacy label and `REVIEW_NOTES.md`,
