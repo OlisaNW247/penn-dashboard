@@ -38,7 +38,7 @@ struct DegreeCopyTests {
     @Test("the bars have a three-word key: done, in progress, left")
     func legend() throws {
         let source = try uiSource("DegreeProgressView.swift")
-        #expect(source.contains("DegreeLegend()"))
+        #expect(source.contains("DegreeLegend("))
         for word in ["\"done\"", "\"in progress\"", "\"left\""] {
             #expect(source.contains(word), "legend is missing \(word)")
         }
@@ -100,13 +100,13 @@ struct DegreeCopyTests {
         #expect(source.contains("Text(\"semesters\")"))
     }
 
-    @Test("the combined view: both chip, Penn's counts, shared courses, no combined percent")
+    @Test("the combined view: both chip, Penn's counts, no shared-course row, no combined percent")
     func combinedView() throws {
         let progress = try uiSource("DegreeProgressView.swift")
         #expect(progress.contains("Text(\"both\")"))
         #expect(progress.contains(".accessibilityLabel(\"both degrees\")"))
         #expect(progress.contains("DegreeOverall.counts("))
-        #expect(progress.contains("DegreeOverall.sharedCourses("))
+        #expect(!progress.contains("counts in both"))
         #expect(progress.contains("ensureAllDegreeAudits()"))
         #expect(!progress.lowercased().contains("average"))
         #expect(try uiSource("DegreeSemesterTable.swift").contains("DegreeOverall.fits("))
@@ -119,5 +119,48 @@ struct DegreeCopyTests {
         #expect(DegreeSemesterTable.fitLine(single) == "fits · free electives")
         let dual = DegreePlanFit(degreeLabel: "finance", requirement: "Core Math")
         #expect(DegreeSemesterTable.fitLine(dual) == "fits · finance · core math")
+    }
+
+    // MARK: Planned layer
+
+    private func planRule(needCourses: Int?, applied: Int?) -> AuditRule {
+        AuditRule(id: "r", label: "rule", ruleType: "Subset", percentComplete: nil, status: .open,
+                  needCourses: needCourses, needCredits: nil, appliedCount: applied, appliedCredits: nil,
+                  applied: [], advice: [], adviceText: nil, children: [])
+    }
+
+    @Test("the with-plan line appears only for a real gain and clamps at 100%")
+    func withPlanText() {
+        #expect(DegreeProgressMath.withPlanText(base: 0.5, gain: 0) == nil)
+        #expect(DegreeProgressMath.withPlanText(base: 0.5, gain: 0.004) == nil)
+        #expect(DegreeProgressMath.withPlanText(base: 0.67, gain: 0.09) == "≈ 76% with plan")
+        #expect(DegreeProgressMath.withPlanText(base: 0.95, gain: 0.3) == "≈ 100% with plan")
+    }
+
+    @Test("a block count adds planned courses and is unchanged without any")
+    func blockCountPlanned() {
+        let block = AuditBlock(id: "B", type: "MAJOR", value: "B", title: "Major", percentComplete: nil,
+                               rules: [planRule(needCourses: 2, applied: 1)])
+        #expect(DegreeProgressMath.blockCount(block, planned: 0) == DegreeProgressMath.blockCount(block))
+        #expect(DegreeProgressMath.blockCount(block, planned: 3).hasSuffix(" · 3 planned"))
+    }
+
+    @Test("a rule count: Penn's n of N, the planned count, both, or nothing")
+    func ruleCountPlanned() {
+        let counted = planRule(needCourses: 3, applied: 1)
+        let uncounted = planRule(needCourses: nil, applied: nil)
+        #expect(DegreeProgressMath.ruleCountText(counted, planned: 0) == "1 of 3")
+        #expect(DegreeProgressMath.ruleCountText(counted, planned: 2) == "1 of 3 · 2 planned")
+        #expect(DegreeProgressMath.ruleCountText(uncounted, planned: 2) == "2 planned")
+        #expect(DegreeProgressMath.ruleCountText(uncounted, planned: 0) == nil)
+    }
+
+    @Test("the progress view draws the planned layer from the plan")
+    func plannedLayerSource() throws {
+        let source = try uiSource("DegreeProgressView.swift")
+        #expect(source.contains("\"planned\""))
+        #expect(source.contains("with plan"))
+        #expect(source.contains("DegreeProjection.make(plan: state.degreePlan"))
+        #expect(!source.lowercased().contains("recommend"))
     }
 }

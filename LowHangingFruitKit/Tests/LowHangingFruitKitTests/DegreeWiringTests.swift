@@ -532,6 +532,17 @@ struct DegreeAppStateTests {
         #expect(state.degreePlanStore.load() == .empty)
     }
 
+    @Test("in fixture mode the projection of the sample plan is a bounded gain", .enabled(if: FeatureFlags.degreeProgress))
+    func fixtureProjection() async throws {
+        let state = try makeState()
+        state.forceFixtureDataForTesting(true)
+        await state.refreshDegreeAudit(force: true)
+        state.loadDegreePlanIfNeeded()
+        let projection = DegreeProjection.make(plan: state.degreePlan, audit: state.degree.current)
+        let gain = projection.ringGain(base: 0.5)
+        #expect(gain >= 0 && gain <= 0.5)
+    }
+
     @Test("fixture mode carries a term history for the timeline", .enabled(if: FeatureFlags.degreeProgress))
     func fixtureHistory() throws {
         let state = try makeState()

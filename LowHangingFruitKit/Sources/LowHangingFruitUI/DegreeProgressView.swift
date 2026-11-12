@@ -125,6 +125,33 @@ enum DegreeProgressMath {
         return "\(met) of \(rules.count)"
     }
 
+    /// A block's count with the courses the plan lays against it. The plan
+    /// never touches the "n of N" itself, which is Penn's reading.
+    static func blockCount(_ block: AuditBlock, planned courses: Int) -> String {
+        let base = blockCount(block)
+        return courses > 0 ? "\(base) · \(courses) planned" : base
+    }
+
+    /// A rule's right-hand count: Penn's "n of N" only when the audit said how
+    /// many courses the rule needs, then the planned courses beside it.
+    static func ruleCountText(_ rule: AuditRule, planned: Int) -> String? {
+        var base: String?
+        if let need = rule.needCourses, need > 0 {
+            base = "\(rule.appliedCount ?? rule.applied.count) of \(need)"
+        }
+        guard planned > 0 else { return base }
+        if let base { return "\(base) · \(planned) planned" }
+        return "\(planned) planned"
+    }
+
+    /// The projected percent under the ring. It is this app's estimate, not
+    /// Penn's, which is why it carries "≈" and its own colour and never
+    /// replaces the number in the middle of the ring.
+    static func withPlanText(base: Double, gain: Double) -> String? {
+        guard gain >= 0.005 else { return nil }
+        return "≈ \(percentText((base + gain) * 100)) with plan"
+    }
+
     /// Met and in-progress shares of a block's bar.
     static func blockShares(_ block: AuditBlock) -> (met: Double, inProgress: Double) {
         let rules = countable(block.rules)
@@ -358,22 +385,25 @@ struct DegreeProgressView: View {
     // MARK: Both degrees
 
     /// Each degree's own ring, Penn's rule counts added up in one bar, the
-    /// courses Penn applied in both audits, then each audit's blocks. No
-    /// combined percent: Penn publishes none.
+    /// semester table, then each audit's blocks. No combined percent: Penn
+    /// publishes none. A row of every course Penn applied in both audits
+    /// (`DegreeOverall.sharedCourses`) sat under the bar until 2026-11-12, when the owner saw 27
+    /// chips of classes he already knew he had taken and asked for it to go.
     private var overallBody: some View {
         let audits = state.degreeAudits
         let counts = DegreeOverall.counts(audits)
         let total = counts.met + counts.inProgress + counts.open
-        let shared = DegreeOverall.sharedCourses(audits)
-        let merged = DegreeOverall.mergedCourses(audits)
+        // One projection per degree, built once and handed down.
+        let plan = state.degreePlan
+        let projections: [String: DegreeProjection] = audits.reduce(into: [:]) { out, entry in
+            out[entry.degreeID] = DegreeProjection.make(plan: plan, audit: entry.audit)
+        }
+        let anyPlanned = projections.values.contains { !$0.isEmpty }
         return VStack(alignment: .leading, spacing: 16) {
-            overallRings(audits)
-            DegreeLegend()
+            overallRings(audits, projections: projections)
+            DegreeLegend(showsPlanned: anyPlanned)
             if total > 0 {
-                overallBar(counts: counts, total: total)
-            }
-            if !shared.isEmpty {
-                sharedRow(shared, merged: merged)
+                overallBar(counts: counts, total: total, projections: Array(projections.values))
             }
             DegreeSemesterTable(audits: audits)
             ForEach(audits) { entry in
@@ -382,14 +412,16 @@ struct DegreeProgressView: View {
                         .font(.lhfSans(15, weight: .semibold))
                         .foregroundStyle(Color.smoothInk)
                         .accessibilityAddTraits(.isHeader)
-                    blockRows(entry.audit, prefix: "o:" + entry.degreeID + ":")
+                    blockRows(entry.audit, prefix: "o:" + entry.degreeID + ":",
+                              projection: projections[entry.degreeID] ?? .empty)
                 }
             }
         }
         .task { await state.ensureAllDegreeAudits() }
     }
 
-    private func overallRings(_ audits: [DegreeLabeledAudit]) -> some View {
+    private func overallRings(_ audits: [DegreeLabeledAudit],
+                              projections: [String: DegreeProjection]) -> some View {
         let degrees = state.degree.degrees
         let titles = DegreeGoals.chipTitles(for: degrees.map(\.goals), descriptions: descriptions)
         return HStack(alignment: .top, spacing: 16) {
@@ -403,8 +435,11 @@ struct DegreeProgressView: View {
                     VStack(spacing: 6) {
                         if let match {
                             let ring = DegreeProgressMath.ring(for: match.audit)
+                            let gain = (projections[match.degreeID] ?? .empty).ringGain(base: ring.fraction)
+                            let planLine = DegreeProgressMath.withPlanText(base: ring.fraction, gain: gain)
                             DegreeRingView(fraction: ring.fraction, centre: ring.centre,
-                                           caption: ring.caption, diameter: 80)
+                                           caption: ring.caption, diameter: 80,
+                                           plannedFraction: gain, plannedLine: planLine)
                         } else {
                             DegreeRingView(fraction: 0, centre: "…", caption: "", diameter: 80)
                         }
@@ -413,6 +448,15 @@ struct DegreeProgressView: View {
                             .foregroundStyle(Color.smoothInk)
                             .lineLimit(2)
                             .multilineTextAlignment(.center)
+                        if let match {
+                            let ring = DegreeProgressMath.ring(for: match.audit)
+                            let gain = (projections[match.degreeID] ?? .empty).ringGain(base: ring.fraction)
+                            if let planLine = DegreeProgressMath.withPlanText(base: ring.fraction, gain: gain) {
+                                Text(planLine)
+                                    .font(.lhfMono(10, weight: .semibold))
+                                    .foregroundStyle(Color.smoothCobaltInk)
+                            }
+                        }
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -421,8 +465,11 @@ struct DegreeProgressView: View {
         }
     }
 
-    private func overallBar(counts: (met: Int, inProgress: Int, open: Int), total: Int) -> some View {
+    private func overallBar(counts: (met: Int, inProgress: Int, open: Int), total: Int,
+                            projections: [DegreeProjection]) -> some View {
         let whole = Double(total)
+        let plannedShare = projections.reduce(0.0) { $0 + $1.openFill } / whole
+        let plannedCodes = Set(projections.flatMap { $0.placed })
         let shares = (met: Double(counts.met) / whole, inProgress: Double(counts.inProgress) / whole)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
@@ -430,30 +477,13 @@ struct DegreeProgressView: View {
                     .font(.lhfSans(15, weight: .semibold))
                     .foregroundStyle(Color.smoothInk)
                 Spacer(minLength: 8)
-                Text("\(counts.met) of \(total)")
+                Text(plannedCodes.isEmpty
+                     ? "\(counts.met) of \(total)"
+                     : "\(counts.met) of \(total) · \(plannedCodes.count) planned")
                     .font(.lhfMono(12))
                     .foregroundStyle(Color.smoothMuted)
             }
-            DegreeBar(shares: shares)
-        }
-    }
-
-    private func sharedRow(_ codes: [String], merged: [AuditCourse]) -> some View {
-        var found: [AuditCourse] = []
-        for code in codes {
-            if let course = merged.first(where: { DegreePlanMath.normalizedCode($0.code) == code }) {
-                found.append(course)
-            }
-        }
-        return VStack(alignment: .leading, spacing: 8) {
-            Text("counts in both")
-                .font(.lhfSans(13, weight: .semibold))
-                .foregroundStyle(Color.smoothMuted)
-            DegreeFlowLayout(spacing: 6) {
-                ForEach(Array(found.enumerated()), id: \.offset) { _, course in
-                    DegreeCourseChip(course: course)
-                }
-            }
+            DegreeBar(shares: shares, planned: plannedShare)
         }
     }
 
@@ -601,11 +631,21 @@ struct DegreeProgressView: View {
                            summary: String?, prefix: String,
                            tableAudits: [DegreeLabeledAudit]? = nil) -> some View {
         let ring = DegreeProgressMath.ring(for: audit)
+        // Read from the body so a course added in the table redraws the ring.
+        let projection = DegreeProjection.make(plan: state.degreePlan, audit: audit)
+        let gain = projection.ringGain(base: ring.fraction + (tag == nil ? 0 : ring.extraFraction))
+        let planLine = DegreeProgressMath.withPlanText(base: ring.fraction, gain: gain)
         return VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center, spacing: 16) {
                 VStack(spacing: 6) {
                     DegreeRingView(fraction: ring.fraction, centre: ring.centre, caption: ring.caption,
-                                   extraFraction: tag == nil ? 0 : ring.extraFraction)
+                                   extraFraction: tag == nil ? 0 : ring.extraFraction,
+                                   plannedFraction: gain, plannedLine: planLine)
+                    if let planLine {
+                        Text(planLine)
+                            .font(.lhfMono(10, weight: .semibold))
+                            .foregroundStyle(Color.smoothCobaltInk)
+                    }
                     if let tag {
                         Text(tag)
                             .font(.lhfMono(10, weight: .semibold))
@@ -629,27 +669,27 @@ struct DegreeProgressView: View {
                 }
                 Spacer(minLength: 0)
             }
-            DegreeLegend()
+            DegreeLegend(showsPlanned: !projection.isEmpty)
             if let tableAudits {
                 DegreeSemesterTable(audits: tableAudits)
             } else {
                 DegreeSemesterTable(audit: audit)
             }
-            blockRows(audit, prefix: prefix)
+            blockRows(audit, prefix: prefix, projection: projection)
         }
     }
 
     /// The audit's block cards, shared by the single and the combined views.
-    private func blockRows(_ audit: DegreeAudit, prefix: String) -> some View {
+    private func blockRows(_ audit: DegreeAudit, prefix: String, projection: DegreeProjection) -> some View {
         let blocks = DegreeProgressMath.orderedBlocks(audit.blocks).filter(DegreeProgressMath.isShown)
         return VStack(alignment: .leading, spacing: 16) {
             ForEach(blocks) { block in
-                DegreeBlockRow(block: block, isExpanded: expanded.contains(prefix + block.id)) {
+                DegreeBlockRow(block: block, isExpanded: expanded.contains(prefix + block.id), toggle: {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                         let key = prefix + block.id
                         if expanded.contains(key) { expanded.remove(key) } else { expanded.insert(key) }
                     }
-                }
+                }, projection: projection)
             }
         }
     }
@@ -685,10 +725,15 @@ struct DegreeProgressView: View {
 /// audit on his phone and asked what orange against green meant. Three words,
 /// because the bars carry no other explanation and a colour alone is not one.
 struct DegreeLegend: View {
+    var showsPlanned: Bool = false
+
     var body: some View {
         HStack(spacing: 14) {
             entry(Color.smoothTeal, "done")
             entry(Color.smoothMarigold, "in progress")
+            if showsPlanned {
+                entry(Color.smoothCobalt, "planned")
+            }
             entry(Color.smoothRule, "left")
             Spacer(minLength: 0)
         }
@@ -716,13 +761,33 @@ struct DegreeRingView: View {
     let caption: String
     var extraFraction: Double = 0
     var diameter: CGFloat = 96
+    /// The projected arc the plan adds, in cobalt after the done and extra
+    /// arcs. `plannedLine` is drawn by the callers under the ring and is kept
+    /// here only for the accessibility label.
+    var plannedFraction: Double = 0
+    var plannedLine: String? = nil
 
     private var main: CGFloat { CGFloat(min(max(fraction, 0), 1)) }
     private var extra: CGFloat { CGFloat(min(max(extraFraction, 0), max(0, 1 - Double(main)))) }
+    private var planned: CGFloat {
+        CGFloat(min(max(plannedFraction, 0), max(0, 1 - Double(main) - Double(extra))))
+    }
+
+    private var ringLabel: String {
+        let base = caption.isEmpty ? centre : "\(centre) \(caption)"
+        if let plannedLine { return "\(base), \(plannedLine)" }
+        return base
+    }
 
     var body: some View {
         ZStack {
             Circle().stroke(Color.v2RingTrack, lineWidth: 9)
+            if planned > 0 {
+                Circle()
+                    .trim(from: main + extra, to: main + extra + planned)
+                    .stroke(Color.smoothCobalt, style: StrokeStyle(lineWidth: 9, lineCap: .butt))
+                    .rotationEffect(.degrees(-90))
+            }
             if extra > 0 {
                 Circle()
                     .trim(from: main, to: main + extra)
@@ -748,8 +813,9 @@ struct DegreeRingView: View {
         }
         .frame(width: diameter, height: diameter)
         .animation(.spring(response: 0.5, dampingFraction: 0.85), value: fraction)
+        .animation(.spring(response: 0.5, dampingFraction: 0.85), value: plannedFraction)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(caption.isEmpty ? centre : "\(centre) \(caption)")
+        .accessibilityLabel(ringLabel)
     }
 }
 
@@ -759,6 +825,7 @@ struct DegreeBlockRow: View {
     let block: AuditBlock
     let isExpanded: Bool
     let toggle: () -> Void
+    var projection: DegreeProjection = .empty
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -768,7 +835,7 @@ struct DegreeBlockRow: View {
             if isExpanded {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(block.rules) { rule in
-                        DegreeRuleRow(rule: rule, depth: 0)
+                        DegreeRuleRow(rule: rule, depth: 0, blockID: block.id, projection: projection)
                     }
                 }
                 .padding(.top, 14)
@@ -781,14 +848,15 @@ struct DegreeBlockRow: View {
     }
 
     private var summary: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let planned = projection.block(block)
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Text(DegreeProgressMath.blockTitle(block))
                     .font(.lhfSans(15, weight: .semibold))
                     .foregroundStyle(Color.smoothInk)
                     .multilineTextAlignment(.leading)
                 Spacer(minLength: 8)
-                Text(DegreeProgressMath.blockCount(block))
+                Text(DegreeProgressMath.blockCount(block, planned: planned.courses))
                     .font(.lhfMono(12))
                     .foregroundStyle(Color.smoothMuted)
                 Image(systemName: "chevron.right")
@@ -796,21 +864,27 @@ struct DegreeBlockRow: View {
                     .foregroundStyle(Color.smoothMuted)
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
             }
-            DegreeBar(shares: DegreeProgressMath.blockShares(block))
+            DegreeBar(shares: DegreeProgressMath.blockShares(block), planned: planned.share)
         }
         .contentShape(Rectangle())
     }
 }
 
-/// Three segments on a rule-grey track: met in teal, in progress in marigold.
+/// Segments on a rule-grey track: met in teal, in progress in marigold, and
+/// the planned share in cobalt after them.
 struct DegreeBar: View {
     let shares: (met: Double, inProgress: Double)
+    var planned: Double = 0
 
     var body: some View {
         GeometryReader { geo in
             let width = geo.size.width
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.smoothRule)
+                if planned > 0 {
+                    Capsule().fill(Color.smoothCobalt)
+                        .frame(width: width * CGFloat(min(1, shares.met + shares.inProgress + planned)))
+                }
                 Capsule().fill(Color.smoothMarigold)
                     .frame(width: width * CGFloat(min(1, shares.met + shares.inProgress)))
                 Capsule().fill(Color.smoothTeal)
@@ -818,6 +892,7 @@ struct DegreeBar: View {
             }
         }
         .frame(height: 6)
+        .animation(.spring(response: 0.5, dampingFraction: 0.85), value: planned)
         .accessibilityHidden(true)
     }
 }
@@ -827,6 +902,8 @@ struct DegreeBar: View {
 struct DegreeRuleRow: View {
     let rule: AuditRule
     let depth: Int
+    var blockID: String = ""
+    var projection: DegreeProjection = .empty
 
     private var statusWord: String {
         switch rule.status {
@@ -844,10 +921,16 @@ struct DegreeRuleRow: View {
         }
     }
 
-    /// "n of N" only when the audit said how many courses the rule needs.
+    private var entry: DegreeRuleProjection? {
+        projection.rule(blockID: blockID, ruleID: rule.id)
+    }
+
+    private var plannedCourses: [PlannedCourse] { entry?.planned ?? [] }
+
+    /// "n of N" only when the audit said how many courses the rule needs,
+    /// then the planned count.
     private var countText: String? {
-        guard let need = rule.needCourses, need > 0 else { return nil }
-        return "\(rule.appliedCount ?? rule.applied.count) of \(need)"
+        DegreeProgressMath.ruleCountText(rule, planned: plannedCourses.count)
     }
 
     var body: some View {
@@ -869,7 +952,7 @@ struct DegreeRuleRow: View {
                         if let countText {
                             Text(countText)
                                 .font(.lhfMono(11))
-                                .foregroundStyle(Color.smoothMuted)
+                                .foregroundStyle(plannedCourses.isEmpty ? Color.smoothMuted : Color.smoothCobaltInk)
                         }
                         if rule.status != .info {
                             Text(statusWord)
@@ -880,7 +963,7 @@ struct DegreeRuleRow: View {
                 }
                 chips
                 ForEach(rule.children) { child in
-                    DegreeRuleRow(rule: child, depth: depth + 1)
+                    DegreeRuleRow(rule: child, depth: depth + 1, blockID: blockID, projection: projection)
                 }
             }
             .padding(.leading, depth == 0 ? 0 : 12)
@@ -889,23 +972,34 @@ struct DegreeRuleRow: View {
 
     @ViewBuilder
     private var chips: some View {
+        let planned = plannedCourses
+        let plannedCodes = Set(planned.map { DegreePlanMath.normalizedCode($0.code) })
         if rule.status == .open || rule.status == .info {
             // Courses already counted toward an open rule come first, then
-            // the suggestions as ghosts; showing only the advice hid progress.
-            if !rule.applied.isEmpty || !rule.advice.isEmpty {
+            // the planned ones in cobalt, then the suggestions as ghosts;
+            // showing only the advice hid progress. A suggestion the plan
+            // already holds is drawn once, as the planned chip.
+            let ghosts = rule.advice.filter { !plannedCodes.contains(DegreePlanMath.normalizedCode($0.code)) }
+            if !rule.applied.isEmpty || !planned.isEmpty || !ghosts.isEmpty {
                 DegreeFlowLayout(spacing: 6) {
                     ForEach(rule.applied) { course in
                         DegreeCourseChip(course: course)
                     }
-                    ForEach(rule.advice.prefix(6)) { course in
+                    ForEach(Array(planned.enumerated()), id: \.offset) { _, course in
+                        DegreePlannedChip(code: course.code)
+                    }
+                    ForEach(ghosts.prefix(6)) { course in
                         DegreeGhostChip(code: course.code)
                     }
                 }
             }
-        } else if !rule.applied.isEmpty {
+        } else if !rule.applied.isEmpty || !planned.isEmpty {
             DegreeFlowLayout(spacing: 6) {
                 ForEach(rule.applied) { course in
                     DegreeCourseChip(course: course)
+                }
+                ForEach(Array(planned.enumerated()), id: \.offset) { _, course in
+                    DegreePlannedChip(code: course.code)
                 }
             }
         }
@@ -941,6 +1035,22 @@ struct DegreeGhostChip: View {
                 Capsule().strokeBorder(Color.smoothRule, style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
             }
             .accessibilityLabel("\(code), could count")
+    }
+}
+
+/// A course the student has planned against a rule: the ghost chip's metrics
+/// in cobalt, so it reads as a sketch and never as something Penn counted.
+struct DegreePlannedChip: View {
+    let code: String
+
+    var body: some View {
+        Text(code)
+            .font(.lhfMono(11))
+            .foregroundStyle(Color.smoothCobaltInk)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(Color.smoothCobalt.opacity(0.18), in: Capsule())
+            .accessibilityLabel("\(code), planned")
     }
 }
 
