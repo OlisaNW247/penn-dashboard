@@ -874,7 +874,13 @@ Keep this current. It is the fastest way for a new session to know what exists.
   - the grade report (`GradeReportView`)
 
   `docs/grades.md` is the design record.
-- **ask / "the tree"** (`AssistantView`). A chat about your classes: the
+- **ask / "the tree"** (`AssistantView`). Since 2026-11-11 the shape
+  cluster above the greeting on an empty screen hovers: each of its four
+  shapes drifts 3 to 6 pt on its own 3 to 6 s loop with a tilt of at most 2
+  degrees (`SmoothShapeHover`, a `TimelineView` local to the cluster), still
+  while the student types and under Reduce Motion; Profile and every other
+  page keep the cluster still (`SmoothFormShapes(hovers:)`, default false).
+  Marco: "the shapes could be hovering in a cool way". A chat about your classes: the
   server path for Penn, with the on-device responder as fallback. Either
   way the search over course material runs on the phone (see "ask:
   retrieval is on the phone" under Architecture). Source chips under an
