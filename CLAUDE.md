@@ -1136,10 +1136,11 @@ step in App Store Connect; there is no API key on the dev Mac.
 ## Test baseline
 
 **Chrome extension (a separate suite; never add it to the Swift or Deno
-counts): 517 tests, all green, on `v8` (2026-11-04, `cd chrome-extension
+counts): 543 tests, all green, on `v8` (2026-11-12, `cd chrome-extension
 && npm test`, node 22 in the cloud container), plus the closed-loop
-harness `npm run e2e` (real Chromium, fake Ed/Canvas/backend; see
-`docs/CHROME_EXTENSION.md` → Status, 2026-11-04).** The pure core: term,
+harness `npm run e2e` (real Chromium, fake Ed/Canvas/backend; it proves
+the Ed read and the sealed submission feed; see
+`docs/CHROME_EXTENSION.md` → Status, 2026-11-04 onward).** The pure core: term,
 course code, assignment ids, content hash, ICS (74), dedup (64),
 Gradescope parsing (51), the sync snapshot (18, pinned to the shared
 AES-GCM vector the Swift suite also pins), and the course-material
@@ -2853,14 +2854,15 @@ none is a ship line.
 
 ## Known gaps
 
-- **The extension's Ed read is proven only against a fake Ed** (2026-11-04).
-  Until that day it had never read Ed at all (every live run `ed: none`,
-  see `docs/CHROME_EXTENSION.md` → Status for the cause and fix). The
-  harness in `chrome-extension/e2e/` proves everything but a real Ed
-  login; the first store install that opens edstem.org and then shows
-  `collector = 'extension'` rows of kind `ed` on the server is the live
-  proof. Expect few: a phone that reads the same board uploads the same
-  ids and hashes first, and the planner skips what the server holds.
+- **The extension's Ed read and submission feed are proven live**
+  (2026-11-12, the owner's new laptop, store build 0.1.3): `ed: "in"`,
+  126 assignments seen as submitted, 12 `ed` rows from the extension on
+  the server, the first ever. Until 2026-11-04 it had never read Ed at
+  all (`docs/CHROME_EXTENSION.md` → Status, 2026-11-04 to 11-12, for the
+  causes: no token at run time, then a hang with no timeouts, then a
+  token arriving mid-pass). Nothing in the extension is unproven live
+  any more except the 0.1.4 queued run, which is the fix for that last
+  cause and is harness-proven.
 - **No anonymous Ed post reached the pool through the extension**
   (checked 2026-10-29: every live `ed` row, 622, has `collector =
   'phone'`). Had one, it would have stayed: `ed` is a window kind
