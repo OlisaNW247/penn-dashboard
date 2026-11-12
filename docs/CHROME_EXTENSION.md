@@ -620,6 +620,16 @@ build to the phone, apply the migration and deploy `sync`, `pair`,
   the rigorous form of the check the owner asked for, since a phone with
   a live Canvas session marks submissions done on its own and proves
   nothing about the laptop.
+- 2026-11-12, later: **Ed and the submission feed proven on the owner's
+  laptop** (0.1.3, the new laptop): the summary reads `ed: "in"`, the
+  work list `canvasSubmissions: "in"` with 126 assignments seen as
+  submitted, and the server holds 12 `ed` rows from the extension (the
+  first ever; newest 12:24 UTC), so the laptop read real Ed boards and
+  uploaded posts the phone had not. With the harness proof of the sealed
+  snapshot, every pipe is now seen working live: collection, PDFs, the
+  phone exchange, Ed, and submissions. The extension is good to go for
+  other students; the one thing to tell them is to open edstem.org once
+  after Chrome starts, which the popup says when it applies.
 - 2026-11-05, later: **the popup lost its dashboard** (owner's decision:
   the extension is not a product, it exists to gather data for the phone).
   Unpaired it is the pairing flow as before; paired it is the header, one
