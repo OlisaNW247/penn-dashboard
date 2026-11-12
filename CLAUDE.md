@@ -1575,9 +1575,9 @@ step in App Store Connect; there is no API key on the dev Mac.
 ## Test baseline
 
 **Merged on `v11-master` 2026-11-12 (the UI branch's phone-pass fixes and
-the class-code face, merged at the commit that carries this line): predicted
-3947 tests / 379 suites (3945 + 2); the run on the merged tree is recorded
-here once it has happened. The UI branch's own build of `4e06515` is on
+the class-code face, merged at the commit that carries this line): 3947 tests / 379 suites, all green, `swift test --no-parallel` alone on
+Marco's Mac (90 s), exactly the predicted sum (3945 + 2); the iOS Debug build
+(`generic/platform=iOS`, `CODE_SIGNING_ALLOWED=NO`) of the same tree succeeded. The UI branch's own build of `4e06515` is on
 Marco's iPhone 17 Pro since 2026-11-12 afternoon.**
 
 **On `claude/v11-ui-pass-84648c` (2026-11-12, Marco's phone pass and the
