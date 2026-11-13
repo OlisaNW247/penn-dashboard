@@ -903,32 +903,27 @@ struct ContentView: View {
     /// signing out brings "Smooth {weekday}" back on the next draw, because
     /// `ambassador` is observed.
     private func ambassadorTitle(pointSize: CGFloat) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: Self.ambassadorBadgeSymbol)
-                .font(.system(size: pointSize * 0.72, weight: .semibold))
-                .foregroundStyle(Color.smoothMarigold)
-                .accessibilityHidden(true)
-            Text("Ambassador")
-                .font(.lhfHeaderTitle(pointSize))
-                .overlay(alignment: .bottomLeading) {
-                    SmoothSquiggle(phase: 0, lift: 1)
-                        .stroke(
-                            LinearGradient(
-                                colors: [.smoothTomato, .smoothMarigold, .smoothGrape],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            ),
-                            style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
-                        )
-                        .frame(height: 6)
-                        .offset(y: 6)
-                }
+        // The same view as the "Smooth" wordmark, so it squiggles and shines
+        // on a tap and backflips on three (Marco, 2026-11-12: "the ambassador
+        // squiggle needs to squiggle when you touch it. Super important").
+        // The medal is drawn like the header buttons and sits under the same
+        // squiggle as the word; a tap also opens the page, so the student
+        // never has to go through Profile for it.
+        SmoothWordmark(
+            pointSize: pointSize,
+            text: "Ambassador",
+            font: .lhfHeaderTitle(pointSize),
+            badge: Self.ambassadorBadgeSymbol,
+            badgeColor: .smoothMarigold
+        ) {
+            path = [.profile, .ambassador]
         }
         .foregroundStyle(Color.smoothInk)
         .lineLimit(1)
         .fixedSize(horizontal: true, vertical: false)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("ambassador")
+        .accessibilityAddTraits(.isButton)
     }
 
     /// The ambassador's badge in the header. A medal: earned, and nothing
@@ -1534,6 +1529,16 @@ struct ContentView: View {
 /// skips itself entirely under Reduce Motion.
 struct SmoothWordmark: View {
     let pointSize: CGFloat
+    /// "Smooth" in the wordmark face by default; the ambassador header passes
+    /// "Ambassador" in the weekday's face (`ContentView.ambassadorTitle`).
+    var text: String = "Smooth"
+    var font: Font? = nil
+    /// An SF Symbol drawn in front of the word as a header-button-style
+    /// squircle (`WordmarkBadge`), under the same squiggle and shine.
+    var badge: String? = nil
+    var badgeColor: Color = .smoothMarigold
+    /// Runs on every tap after the ripple or flip has been started.
+    var onTap: (() -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var wavePhase: CGFloat = 0
@@ -1545,9 +1550,23 @@ struct SmoothWordmark: View {
     @State private var flip: Double = 0
     @State private var taps = WordmarkTripleTap()
 
+    /// The letters, with the badge in front when there is one. Used twice:
+    /// drawn, and as the mask the shine sweeps through.
+    private var letters: some View {
+        HStack(alignment: .center, spacing: 6) {
+            if let badge {
+                WordmarkBadge(symbol: badge, color: badgeColor, size: pointSize * 1.25)
+            }
+            if let font {
+                Text(text).font(font)
+            } else {
+                Text(text).font(.lhfWordmark(pointSize))
+            }
+        }
+    }
+
     var body: some View {
-        Text("Smooth")
-            .font(.lhfWordmark(pointSize))
+        letters
             .overlay { shineOverlay }
             .overlay(alignment: .bottomLeading) {
                 SmoothSquiggle(phase: wavePhase, lift: waveLift)
@@ -1576,6 +1595,7 @@ struct SmoothWordmark: View {
         } else {
             play()
         }
+        onTap?()
     }
 
     /// Marco, 2026-11-11: "if you click on the smooth button three times in a
@@ -1607,7 +1627,7 @@ struct SmoothWordmark: View {
             .frame(width: band)
             .offset(x: -band + shine * (geo.size.width + band))
         }
-        .mask(Text("Smooth").font(.lhfWordmark(pointSize)))
+        .mask(letters)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
@@ -1627,6 +1647,31 @@ struct SmoothWordmark: View {
             shine = 0
             isPlaying = false
         }
+    }
+}
+
+/// The ambassador's medal in the header title: the header buttons' squircle
+/// (continuous corners, radius 0.32 × size, an 18% wash and a 48% stroke of
+/// its colour, an ink glyph), scaled to the title's point size so it reads as
+/// one of them rather than a loose symbol (Marco, 2026-11-12: "make it like
+/// the other icons").
+struct WordmarkBadge: View {
+    let symbol: String
+    let color: Color
+    let size: CGFloat
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: size * 0.32, style: .continuous)
+    }
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: size * 0.46, weight: .semibold))
+            .foregroundStyle(Color.smoothInk)
+            .frame(width: size, height: size)
+            .background(shape.fill(color.opacity(0.18)))
+            .overlay { shape.stroke(color.opacity(0.48), lineWidth: 1.25) }
+            .accessibilityHidden(true)
     }
 }
 

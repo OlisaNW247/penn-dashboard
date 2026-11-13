@@ -790,8 +790,12 @@ struct AmbassadorHeaderTests {
         #expect(body.contains("if ambassador.isSignedIn {"))
         #expect(body.contains("ambassadorTitle(pointSize: size)"))
         #expect(body.contains("headerTitle(weekday: weekday, pointSize: size)"))
-        #expect(source.contains("Text(\"Ambassador\")"))
-        #expect(source.contains("SmoothSquiggle(phase: 0, lift: 1)"))
+        // The same view as the wordmark, so a tap squiggles and shines, with
+        // the medal as a header-style squircle, and the tap opens the page.
+        #expect(source.contains("text: \"Ambassador\""))
+        #expect(source.contains("badge: Self.ambassadorBadgeSymbol"))
+        #expect(source.contains("path = [.profile, .ambassador]"))
+        #expect(source.contains("struct WordmarkBadge: View"))
         #expect(source.contains("ambassadorBadgeSymbol = \"medal.fill\""))
     }
 }
