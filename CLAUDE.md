@@ -1479,7 +1479,9 @@ xcrun devicectl device process launch --device <CoreDevice id> com.lhf.lowhangin
 # the phone; replugging it cured that, and the script now falls back to a
 # generic/platform=iOS build when it recurs. The fallback ran for the first
 # time on 2026-11-12 and built; the install then failed because the phone was
-# not connected at all, so the script now waits up to two minutes for it.):
+# not connected at all, so the script now waits up to two minutes for it. That
+# wait ran on his Mac on 2026-11-13: the phone read "unavailable" at the start
+# and the build was installed and launched at the end.):
 bash scripts/build-to-phone.sh
 
 # macOS build (the package; `swift test` also exercises this)
@@ -1627,8 +1629,11 @@ search, a source pin). Three pins in `DegreeCopyTests` were rewritten on
 purpose with the feature: the plan phrases now expect "counts toward your
 degree" where they expected "still open on your audit", and the combined-view
 test expects `DegreeContribution.planned(` and `.suggestions(` where it
-expected `DegreeOverall.fits(` and `.openGroups(`. Nothing from this run is on
-a phone.
+expected `DegreeOverall.fits(` and `.openGroups(`. **The signed Debug build of
+`18fa24b` (this tree plus notes) was built, installed and launched on Olisa's
+iPhone 17 on 2026-11-13** (`scripts/build-to-phone.sh`, his terminal), the
+first build on a phone to carry planned progress, the removal of "counts in
+both" and guided planning. What it shows is not reported yet.
 
 Before it, on `degree-progress` (2026-11-12, planned progress): 3910 tests /
 379 suites, all green, `swift test --no-parallel` on the GitHub macOS runner
@@ -4327,14 +4332,15 @@ none is a ship line.
   so the second audit was read; the "counts in both" row listed 27 courses
   and he asked for it to go (removed in `7f9fc23`). An earlier screenshot
   the same day showed per-degree "fits" lines under planned spring classes.
-  **Planned progress (`7f9fc23`) is green on the runner and not on a
-  phone.** What a phone will settle: that the blue arc and the "≈ NN% with
+  **Planned progress (`7f9fc23`) is in the same build on his phone since
+  2026-11-13, unreported.** What his first look will settle: that the blue arc and the "≈ NN% with
   plan" line move when he adds a class in the table on the same screen;
   that the size of the move is believable (it depends on how many of his
   rules state a credit or course need, which no capture has counted); and
   that the planned chips inside a requirement are the classes he expects.
-  **Guided planning (`c7f9ee9`, 2026-11-13) is green on the runner and not
-  on a phone.** What a phone will settle: how many courses the sheet lists
+  **Guided planning (`c7f9ee9`, 2026-11-13) is installed on Olisa's iPhone
+  (the Debug build of `18fa24b`, the same day) and nothing about it has been
+  reported yet.** What his first look will settle: how many courses the sheet lists
   for his two audits and how long the list takes to appear (Penn's option
   lists have never been counted; the layout cache is there because they may
   be long); whether the "+N%" figures separate courses usefully or are all
