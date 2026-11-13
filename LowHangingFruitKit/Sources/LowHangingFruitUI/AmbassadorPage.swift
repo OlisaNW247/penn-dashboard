@@ -111,9 +111,6 @@ struct AmbassadorPage: View {
                     .font(.lhfSecondary(12))
                     .foregroundStyle(Color.smoothTomatoInk)
             }
-            Text("it\u{2019}s in the text from marco or olisa. no account needed.")
-                .font(.lhfSecondary(12))
-                .foregroundStyle(Color.v2DateText)
         } header: {
             SmoothSectionHeader("sign in", accent: .smoothCobalt)
         }
