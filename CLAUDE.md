@@ -1446,7 +1446,9 @@ xcrun devicectl device process launch --device <CoreDevice id> com.lhf.lowhangin
 # installed and launched `v12` `748ced7` on his iPhone 17. An earlier run the
 # same hour failed with "Unable to find a destination" while devicectl listed
 # the phone; replugging it cured that, and the script now falls back to a
-# generic/platform=iOS build when it recurs. The fallback itself has not run.):
+# generic/platform=iOS build when it recurs. The fallback ran for the first
+# time on 2026-11-12 and built; the install then failed because the phone was
+# not connected at all, so the script now waits up to two minutes for it.):
 bash scripts/build-to-phone.sh
 
 # macOS build (the package; `swift test` also exercises this)

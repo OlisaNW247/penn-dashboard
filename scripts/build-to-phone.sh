@@ -69,6 +69,29 @@ fi
 
 IFS=$'\t' read -r udid device state link name <<<"$picked"
 echo "Phone: $name (connection: $state, link: $link)"
+
+# The tunnel state of the chosen phone, asked again. devicectl remembers a phone
+# it has paired with, so a phone that is unplugged or asleep is still listed
+# (2026-11-12: "connection: unavailable, link: none", a full build, and then an
+# install that could only fail).
+phone_state() {
+  xcrun devicectl list devices --json-output "$devices_json" >/dev/null 2>&1 || { echo unknown; return; }
+  /usr/bin/python3 - "$devices_json" "$device" <<'PY'
+import json, sys
+
+devices = json.load(open(sys.argv[1])).get("result", {}).get("devices", [])
+for d in devices:
+    if d.get("identifier") == sys.argv[2]:
+        print(d.get("connectionProperties", {}).get("tunnelState") or "unknown")
+        break
+else:
+    print("unknown")
+PY
+}
+
+if [ "$state" != "connected" ]; then
+  echo "The phone is not connected right now. Plug it in and unlock it; the build starts anyway and the install waits for it."
+fi
 echo "Building (a first build takes several minutes; the full log is $log)..."
 
 build_for() {
@@ -109,17 +132,32 @@ fi
 echo "Built."
 
 app="build/dd/Build/Products/Debug-iphoneos/Smooth.app"
+install_log="build/phone-install.log"
+
+# Up to two minutes for a phone that was unplugged or locked during the build.
+waited=0
+while [ "$(phone_state)" != "connected" ] && [ "$waited" -lt 120 ]; do
+  if [ "$waited" -eq 0 ]; then
+    echo "Waiting for the phone: plug it in, unlock it, tap Trust if it asks..."
+  fi
+  sleep 5
+  waited=$((waited + 5))
+done
+
+# The install's output has a log of its own. It used to be appended to the build
+# log and the failure message grepped that whole file for "error", which printed
+# compiler notes about NSError parameters above devicectl's one real line.
 echo "Installing..."
-xcrun devicectl device install app --device "$device" "$app" >>"$log" 2>&1 || {
+xcrun devicectl device install app --device "$device" "$app" >"$install_log" 2>&1 || {
   echo "The install failed. What devicectl said:" >&2
-  grep -iE "error|not connected|unavailable|unlock|trust" "$log" | tail -8 >&2
-  echo "Unplug the phone and plug it back in, unlock it, tap Trust if it asks, then run this again." >&2
+  grep -iE "error|not connected|unavailable|unlock|trust" "$install_log" | tail -8 >&2
+  echo "The app is built, so the next run is quick. Plug the phone in, unlock it, tap Trust if it asks, then run this again." >&2
   exit 1
 }
 echo "Installed."
 
 # A locked phone refuses the launch but keeps the install, so this is not an error.
-if xcrun devicectl device process launch --device "$device" com.lhf.lowhangingfruit >>"$log" 2>&1; then
+if xcrun devicectl device process launch --device "$device" com.lhf.lowhangingfruit >>"$install_log" 2>&1; then
   echo "Launched on $name."
 else
   echo "Installed, but the phone would not launch it (usually because it is locked). Open Smooth on the phone."
