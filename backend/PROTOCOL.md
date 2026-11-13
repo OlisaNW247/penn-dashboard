@@ -1594,8 +1594,20 @@ that student, "no such draft" otherwise.
 scope `draft` and are annotated like `propose_submission` (not read-only; the
 `destructiveHint` follows the same knob). Caps: 1,572,864 bytes, at most 100
 chunks (the byte cap is 96), one open upload per connection (a new `begin`
-deletes the unfinished one, its chunks and its staged object), 30 minutes from
-`begin` to `finish` (`expires_at`; later calls say "upload expired"). Staging
+deletes the unfinished one, its chunks and its staged object). **Expiry
+(changed 2026-11-12, not deployed):** an upload expires 30 minutes after its
+last accepted chunk (after `begin` when none has come), and never more than
+2 hours after `begin`; each accepted chunk moves `expires_at` forward, and a
+later call on an expired upload says "upload expired with N of M chunks
+received". Before, it was a fixed 30 minutes from `begin`. Why: a sandboxed
+client that cannot reach the signed URL types every chunk's base64 itself, and
+a 74 KB file took a Claude cloud session longer than 30 minutes; it got
+`missing: []` and was then told "expired" at finish, a finished upload thrown
+away. A longer fixed window was the wrong fix (it still discards a slow
+finished upload and keeps garbage longer). A document the model wrote should
+go as a text draft and be rendered to PDF on the phone, which the tool texts
+now say. No migration: `agent_sweep_expired` deletes at `expires_at <= now()`,
+which stays right because the column is what moves. Staging
 is the table `agent_uploads` (`id` `smu_` + 22 base64url characters, `user_id`,
 `connection_id`, `assignment_id`, `file_name`, `mime_type`, `total_bytes`,
 `sha256`, `chunk_bytes`, `chunks`, `created_at`, `expires_at`) and

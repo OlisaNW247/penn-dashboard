@@ -1835,6 +1835,11 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
+**Deno on `claude/agent-debug-998a30` (2026-11-12, off the `v12` merge
+`79b3a99`): 902 passed, 0 failed (898 + 4: the sliding upload expiry, its
+ceiling, and the Postgrest `touch`), `deno task check` clean. No Swift
+touched; the Swift count is the line below.**
+
 **Merged on `v11` 2026-11-12 (`origin/v12` `4aadc3c`, Olisa's ambassador mode
 and the switched-off degree progress, merged into `v11-master` `2f49f8d` at
 the commit that carries this line): 4154 tests / 405 suites, all green,
@@ -3451,6 +3456,25 @@ itself.
 
 ## Traps that have already bitten
 
+- **A fixed 30-minute expiry on a chunked upload threw away a finished
+  upload** (2026-11-12, Marco's PHYS 0151 Worksheet 10.1 from a Claude cloud
+  session; fixed on `claude/agent-debug-998a30`, Deno 902, **not deployed**).
+  `agent_uploads.expires_at` was stamped once at `begin_file_upload`, and
+  `UploadService.live()` deleted the row and every chunk on the first call
+  after it. The sandbox's egress proxy refuses `supabase.co` (a `CONNECT`
+  403, nothing we can change), so Claude typed five 22,000-character base64
+  chunks; all five landed (`missing: []`), and `finish_file_upload` itself
+  answered "expired". Now each accepted chunk moves `expires_at` to now plus
+  30 minutes, two hours after `begin` at most (`UPLOAD_MAX_LIFE_MS`), and the
+  message says "expired with N of M chunks received". The wrong fix is a
+  longer fixed window. The deeper lesson is in the tool text: a document the
+  model *wrote* should be a `text` draft in Markdown, which the phone already
+  renders into a PDF when Canvas wants a file; `propose_submission` and
+  `begin_file_upload` now say so, because Claude did not know and compiled
+  LaTeX to a PDF instead. Also seen that day: the Management token in
+  `~/lhf-bench/supabase.token` answers 401 on a plain project listing, so no
+  log was read and nothing can be deployed from this Mac until a new token
+  replaces it.
 - **Supabase's gateway rewrites `x-forwarded-for`, so behind a proxy every
   caller is the proxy** (2026-11-11, `docs/V11_TEST_BACKEND_2026-11-11.md`).
   `agent-auth` limits `/authorize` and `/register` "per ip" from the first
@@ -4722,6 +4746,13 @@ none is a ship line.
 
 ## Known gaps
 
+- **Chunked uploads expire on a sliding window on `claude/agent-debug-998a30`
+  only; production `mcp` v11 still throws away a slow finished upload**
+  (2026-11-12, Traps). Deploying it is `node backend/scripts/deploy-agent.mjs
+  --public-base https://smooth-agent.vercel.app/functions/v1` at Marco's or
+  Olisa's word, with a working Management token (the one on the Mac is dead,
+  see Traps); no migration. Then `agent-e2e.mjs` and, by hand, a draft from
+  a Claude cloud session: expect it to arrive as a text draft now, not a PDF.
 - **v11 backend, tested hostile on 2026-11-11, three deploys owed**
   (`docs/V11_TEST_BACKEND_2026-11-11.md`; branch `claude/v11-test-backend-3b1f1b`,
   nothing deployed). About 220 checks against production matched
