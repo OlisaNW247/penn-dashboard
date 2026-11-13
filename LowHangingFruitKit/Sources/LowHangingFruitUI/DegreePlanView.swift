@@ -69,10 +69,22 @@ struct PlanSheetTarget: Identifiable {
     var id: String { termCode }
 }
 
-/// The add sheet: type any course code, or tap one of the options Penn's own
-/// audit lists for a requirement it still has open. The list is Penn's, in
-/// Penn's order; the only thing removed from it is what the plan or the audit
-/// already holds. Nothing here ranks, filters or recommends.
+/// The add sheet: type any course code, or tap a course that counts toward a
+/// requirement still open. Until 2026-11-13 this sheet listed Penn's options in
+/// Penn's order and nothing in it ranked, filtered or suggested; the owner
+/// reversed that ("it should guide you and only recommend courses that
+/// contribute to your degree. classes that contribute to a higher percentage
+/// of completion to your degrees should be highlighted differently"). So the
+/// list is now ordered by how much each course raises the degree estimate, and
+/// a course that raises it by more than half a point carries that figure.
+///
+/// What survives from before: every course offered is still one Penn itself
+/// lists as an option of a requirement that still has room, the percent is this
+/// app's own estimate (the one the ring labels "with plan", never Penn's), and
+/// typing any code still works. A typed course that counts nowhere is added all
+/// the same; the line under the field only says what it would do. The list is
+/// computed once when the sheet opens, in `.task`, and not in `body`: it runs
+/// one projection per candidate and a requirement can list hundreds of courses.
 struct DegreePlanAddSheet: View {
     @EnvironmentObject var state: AppState
     @Environment(\.dismiss) private var dismiss
@@ -98,24 +110,28 @@ struct DegreePlanAddSheet: View {
         !trimmed.isEmpty && !termIsFull && !DegreePlanMath.isPlanned(trimmed, in: plan)
     }
 
-    private struct OptionGroup: Identifiable {
-        let id: String
-        let label: String
-        let requirements: [DegreePlanMath.OpenRequirement]
+    @State private var suggestions: [DegreeSuggestion] = []
+
+    /// Case-insensitive, spaces ignored on both sides, so "cis12" finds "CIS 1200".
+    nonisolated static func matches(_ suggestion: DegreeSuggestion, query: String) -> Bool {
+        let needle = query.lowercased().replacingOccurrences(of: " ", with: "")
+        if needle.isEmpty { return true }
+        let code = suggestion.course.code.lowercased().replacingOccurrences(of: " ", with: "")
+        if code.contains(needle) { return true }
+        let title = (suggestion.course.title ?? "").lowercased().replacingOccurrences(of: " ", with: "")
+        return title.contains(needle)
     }
 
-    /// One group per audit with something addable; empty groups are skipped.
-    private var groups: [OptionGroup] {
-        var out: [OptionGroup] = []
-        for group in DegreeOverall.openGroups(audits) {
-            let audit = audits.first { $0.degreeID == group.degreeID }?.audit
-            let addable = DegreePlanMath.addable(group.requirements, plan: plan, audit: audit,
-                                                 history: state.degree.history)
-            if !addable.isEmpty {
-                out.append(OptionGroup(id: group.degreeID, label: group.label, requirements: addable))
-            }
-        }
-        return out
+    /// The muted line under a suggestion for one requirement it counts toward.
+    nonisolated static func gainLine(_ gain: DegreeGain) -> String {
+        let requirement = gain.requirement.lowercased()
+        if gain.degreeLabel.isEmpty { return requirement }
+        return "\(gain.degreeLabel) · \(requirement)"
+    }
+
+    private var filtered: [DegreeSuggestion] {
+        if trimmed.isEmpty { return suggestions }
+        return suggestions.filter { Self.matches($0, query: trimmed) }
     }
 
     var body: some View {
@@ -126,7 +142,12 @@ struct DegreePlanAddSheet: View {
                     .foregroundStyle(Color.smoothInk)
                     .accessibilityAddTraits(.isHeader)
                 entryRow
+                typedNote
                 options
+            }
+            .task {
+                suggestions = DegreeContribution.suggestions(
+                    plan: plan, audits: audits, history: state.degree.history)
             }
             .padding(20)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -192,25 +213,47 @@ struct DegreePlanAddSheet: View {
 
     // MARK: Penn's open options
 
+    /// What a typed code would do, so the student can still add anything but
+    /// knows whether it moves the estimate. Two projections per degree: cheap
+    /// enough for `body`.
+    @ViewBuilder
+    private var typedNote: some View {
+        // Only once nothing in the list matches what was typed: a note under a
+        // half-typed "cis" would call the prefix itself a course that counts
+        // nowhere while the matches sit right below it. And with no audit read
+        // there is nothing to judge a code against.
+        if !trimmed.isEmpty, canAdd, !audits.isEmpty, filtered.isEmpty {
+            let typedGains = DegreeContribution.gains(
+                for: trimmed, credits: credits, plan: plan, audits: audits)
+            if typedGains.isEmpty {
+                Text("not on an open requirement")
+                    .font(.lhfSans(12))
+                    .foregroundStyle(Color.smoothMuted)
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(typedGains.prefix(2).enumerated()), id: \.offset) { _, gain in
+                        Text(Self.gainLine(gain))
+                            .font(.lhfSans(12))
+                            .foregroundStyle(Color.smoothCobaltInk)
+                    }
+                }
+            }
+        }
+    }
+
     @ViewBuilder
     private var options: some View {
-        let list = groups
+        let list = filtered
         if !list.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                Text("still open on your audit")
+                Text("counts toward your degree")
                     .font(.lhfSans(13, weight: .semibold))
                     .foregroundStyle(Color.smoothInk)
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 14) {
-                        ForEach(list) { group in
-                            if list.count > 1 {
-                                Text(group.label)
-                                    .font(.lhfSans(12, weight: .semibold))
-                                    .foregroundStyle(Color.smoothMuted)
-                            }
-                            ForEach(group.requirements) { requirement in
-                                section(requirement)
-                            }
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(list) { suggestion in
+                            suggestionRow(suggestion)
+                            Divider().overlay(Color.smoothRule.opacity(0.6))
                         }
                     }
                 }
@@ -218,36 +261,44 @@ struct DegreePlanAddSheet: View {
         }
     }
 
-    private func section(_ requirement: DegreePlanMath.OpenRequirement) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(requirement.label.lowercased())
-                .font(.lhfMono(11))
-                .foregroundStyle(Color.smoothMuted)
-                .padding(.bottom, 4)
-            ForEach(Array(requirement.options.enumerated()), id: \.offset) { _, option in
-                optionRow(option)
-                Divider().overlay(Color.smoothRule.opacity(0.6))
-            }
-        }
+    private func badge(_ suggestion: DegreeSuggestion, text: String) -> some View {
+        let both = suggestion.gains.count >= 2
+        return Text(text)
+            .font(.lhfMono(11, weight: .semibold))
+            .foregroundStyle(both ? Color.smoothInk : Color.smoothCobaltInk)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(both ? Color.smoothCobalt : Color.smoothCobalt.opacity(0.18), in: Capsule())
     }
 
-    private func optionRow(_ option: AdviceCourse) -> some View {
-        Button { choose(option) } label: {
-            HStack(spacing: 8) {
-                Text(option.code)
-                    .font(.lhfMono(12))
-                    .foregroundStyle(Color.smoothInk)
-                if let title = option.title, !title.isEmpty {
-                    Text(title.lowercased())
-                        .font(.lhfSans(14))
+    private func suggestionRow(_ suggestion: DegreeSuggestion) -> some View {
+        Button { choose(suggestion.course) } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 8) {
+                    Text(suggestion.course.code)
+                        .font(.lhfMono(12))
+                        .foregroundStyle(Color.smoothInk)
+                    if let title = suggestion.course.title, !title.isEmpty {
+                        Text(title.lowercased())
+                            .font(.lhfSans(14))
+                            .foregroundStyle(Color.smoothMuted)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 8)
+                    if let value = suggestion.course.credits {
+                        Text("\(DegreeProgressMath.credits(value)) cu")
+                            .font(.lhfMono(11))
+                            .foregroundStyle(Color.smoothMuted)
+                    }
+                    if let text = DegreeProgressMath.gainBadge(suggestion.points) {
+                        badge(suggestion, text: text)
+                    }
+                }
+                ForEach(Array(suggestion.gains.prefix(2).enumerated()), id: \.offset) { _, gain in
+                    Text(Self.gainLine(gain))
+                        .font(.lhfSans(11))
                         .foregroundStyle(Color.smoothMuted)
                         .lineLimit(1)
-                }
-                Spacer(minLength: 8)
-                if let value = option.credits {
-                    Text("\(DegreeProgressMath.credits(value)) cu")
-                        .font(.lhfMono(11))
-                        .foregroundStyle(Color.smoothMuted)
                 }
             }
             .padding(.vertical, 10)

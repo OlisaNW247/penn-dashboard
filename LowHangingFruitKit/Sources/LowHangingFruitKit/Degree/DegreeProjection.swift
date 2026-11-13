@@ -49,8 +49,17 @@ public struct DegreeProjection: Sendable, Equatable {
     /// `openFill` over the countable rules that are open or in progress; 0 when
     /// there are none; clamped to 0...1.
     public let ringShare: Double
+    /// Normalized code -> label of the requirement the course was laid against WITH room
+    /// (it consumed some of the rule's remaining need). An overflow course and an unplaced
+    /// course are absent. The label is the rule's label, or the block's title when the
+    /// rule's label is empty (the same choice `DegreePlanMath.openRequirements` makes).
+    public let counted: [String: String]
 
-    init(rules: [String: DegreeRuleProjection], placed: [String], unplaced: [String], openFill: Double, ringShare: Double) {
+    init(
+        rules: [String: DegreeRuleProjection], placed: [String], unplaced: [String],
+        openFill: Double, ringShare: Double, counted: [String: String]
+    ) {
+        self.counted = counted
         self.rules = rules
         self.placed = placed
         self.unplaced = unplaced
@@ -58,7 +67,7 @@ public struct DegreeProjection: Sendable, Equatable {
         self.ringShare = ringShare
     }
 
-    public static let empty = DegreeProjection(rules: [:], placed: [], unplaced: [], openFill: 0, ringShare: 0)
+    public static let empty = DegreeProjection(rules: [:], placed: [], unplaced: [], openFill: 0, ringShare: 0, counted: [:])
 
     public var isEmpty: Bool { placed.isEmpty }
 
@@ -96,6 +105,19 @@ public struct DegreeProjection: Sendable, Equatable {
 
     /// The arc to add to a ring whose done fraction is `fraction`:
     /// `(1 - fraction) * ringShare`, clamped to 0...(1 - fraction).
+    /// The done share a ring starts from: Penn's percent / 100 clamped to 0...1 when the
+    /// audit has one, else met / (met + inProgress + open) from `ruleCounts` (0 when
+    /// there are no rules).
+    public static func baseFraction(of audit: DegreeAudit) -> Double {
+        if let percent = audit.percentComplete {
+            return min(1, max(0, percent / 100))
+        }
+        let counts = audit.ruleCounts
+        let total = counts.met + counts.inProgress + counts.open
+        guard total > 0 else { return 0 }
+        return Double(counts.met) / Double(total)
+    }
+
     public func ringGain(base fraction: Double) -> Double {
         let room = max(0, 1 - fraction)
         return min(room, max(0, room * ringShare))
@@ -105,29 +127,29 @@ public struct DegreeProjection: Sendable, Equatable {
 
     private struct Slot {
         let key: String
+        let label: String
         let usesCredits: Bool
         let remaining: Double
         var left: Double
         var supplied: Double
-        let options: Set<String>
         var planned: [PlannedCourse]
     }
 
-    private static func isRequirement(_ rule: AuditRule) -> Bool {
+    fileprivate static func isRequirement(_ rule: AuditRule) -> Bool {
         (rule.status == .open || rule.status == .inProgress) && !rule.advice.isEmpty
     }
 
     public static func make(plan: DegreePlan, audit: DegreeAudit?) -> DegreeProjection {
         guard let audit else { return .empty }
+        let layout = DegreeProjectionLayoutCache.shared.layout(for: audit)
 
         // The plan's courses, once each, minus what Penn already counts.
-        let taken = Set(audit.courses.map { DegreePlanMath.normalizedCode($0.code) })
         var seen = Set<String>()
         var candidates: [PlannedCourse] = []
         for term in plan.terms {
             for course in term.courses {
                 let code = DegreePlanMath.normalizedCode(course.code)
-                if code.isEmpty || taken.contains(code) { continue }
+                if code.isEmpty || layout.taken.contains(code) { continue }
                 if seen.insert(code).inserted {
                     candidates.append(PlannedCourse(code: code, title: course.title, credits: course.credits))
                 }
@@ -136,47 +158,18 @@ public struct DegreeProjection: Sendable, Equatable {
         guard !candidates.isEmpty else { return .empty }
 
         // Requirements in Penn's order, each with its remaining need.
-        var slots: [Slot] = []
-        func collect(_ rules: [AuditRule], blockID: String) {
-            for rule in rules {
-                if isRequirement(rule) {
-                    let usesCredits: Bool
-                    let remaining: Double
-                    if let needCredits = rule.needCredits, needCredits > 0 {
-                        let applied = rule.appliedCredits ?? rule.applied.reduce(0.0) { $0 + ($1.credits ?? 0) }
-                        usesCredits = true
-                        remaining = max(0, needCredits - applied)
-                    } else if let needCourses = rule.needCourses, needCourses > 0 {
-                        let applied = rule.appliedCount ?? rule.applied.count
-                        usesCredits = false
-                        remaining = Double(max(0, needCourses - applied))
-                    } else {
-                        usesCredits = false
-                        remaining = 1
-                    }
-                    slots.append(Slot(
-                        key: key(blockID: blockID, ruleID: rule.id),
-                        usesCredits: usesCredits,
-                        remaining: remaining,
-                        left: remaining,
-                        supplied: 0,
-                        options: Set(rule.advice.map { DegreePlanMath.normalizedCode($0.code) }),
-                        planned: []))
-                }
-                collect(rule.children, blockID: blockID)
-            }
+        var slots: [Slot] = layout.requirements.map { requirement in
+            Slot(key: requirement.key, label: requirement.label, usesCredits: requirement.usesCredits,
+                 remaining: requirement.remaining, left: requirement.remaining, supplied: 0, planned: [])
         }
-        for block in audit.blocks { collect(block.rules, blockID: block.id) }
 
         // Lay each planned course against the first requirement that lists it
         // and still has room; else as overflow on the first that lists it.
         var placed: [String] = []
         var unplaced: [String] = []
+        var counted: [String: String] = [:]
         for course in candidates {
-            var listing: [Int] = []
-            for index in slots.indices where slots[index].options.contains(course.code) {
-                listing.append(index)
-            }
+            let listing = layout.listing[course.code] ?? []
             guard let firstListing = listing.first else {
                 unplaced.append(course.code)
                 continue
@@ -191,6 +184,7 @@ public struct DegreeProjection: Sendable, Equatable {
                 slots[target].left -= used
                 slots[target].supplied += used
                 slots[target].planned.append(course)
+                counted[course.code] = slots[target].label
             } else {
                 slots[firstListing].planned.append(course)
             }
@@ -239,6 +233,95 @@ public struct DegreeProjection: Sendable, Equatable {
         for block in audit.blocks { tally(block.rules, blockID: block.id) }
         let share = denominator > 0 ? min(1, max(0, openFill / Double(denominator))) : 0
 
-        return DegreeProjection(rules: entries, placed: placed, unplaced: unplaced, openFill: openFill, ringShare: share)
+        return DegreeProjection(rules: entries, placed: placed, unplaced: unplaced, openFill: openFill, ringShare: share, counted: counted)
+    }
+}
+
+// What `make` needs from an audit and nothing from a plan: the codes Penn
+// already counts, each requirement's remaining need, and which requirements
+// list which course. It is split out because the contribution model asks for
+// one projection per candidate course, and a requirement can list hundreds of
+// options: normalizing every option's code for every candidate turned a list of
+// suggestions into seconds of work on paper before it ever ran. With the layout
+// built once, a projection costs the plan's length plus one walk of the rules.
+struct DegreeProjectionLayout: Sendable {
+    struct Requirement: Sendable {
+        let key: String
+        let label: String
+        let usesCredits: Bool
+        let remaining: Double
+    }
+
+    let taken: Set<String>
+    let requirements: [Requirement]
+    /// Normalized code -> indices into `requirements` that list it, Penn's order.
+    let listing: [String: [Int]]
+
+    init(audit: DegreeAudit) {
+        var taken = Set<String>()
+        for course in audit.courses { taken.insert(DegreePlanMath.normalizedCode(course.code)) }
+
+        var requirements: [Requirement] = []
+        var listing: [String: [Int]] = [:]
+        func collect(_ rules: [AuditRule], blockID: String, blockTitle: String) {
+            for rule in rules {
+                if DegreeProjection.isRequirement(rule) {
+                    let usesCredits: Bool
+                    let remaining: Double
+                    if let needCredits = rule.needCredits, needCredits > 0 {
+                        let applied = rule.appliedCredits ?? rule.applied.reduce(0.0) { $0 + ($1.credits ?? 0) }
+                        usesCredits = true
+                        remaining = max(0, needCredits - applied)
+                    } else if let needCourses = rule.needCourses, needCourses > 0 {
+                        let applied = rule.appliedCount ?? rule.applied.count
+                        usesCredits = false
+                        remaining = Double(max(0, needCourses - applied))
+                    } else {
+                        usesCredits = false
+                        remaining = 1
+                    }
+                    let index = requirements.count
+                    requirements.append(Requirement(
+                        key: DegreeProjection.key(blockID: blockID, ruleID: rule.id),
+                        label: rule.label.isEmpty ? blockTitle : rule.label,
+                        usesCredits: usesCredits,
+                        remaining: remaining))
+                    var listedHere = Set<String>()
+                    for option in rule.advice {
+                        let code = DegreePlanMath.normalizedCode(option.code)
+                        if code.isEmpty || !listedHere.insert(code).inserted { continue }
+                        listing[code, default: []].append(index)
+                    }
+                }
+                collect(rule.children, blockID: blockID, blockTitle: blockTitle)
+            }
+        }
+        for block in audit.blocks { collect(block.rules, blockID: block.id, blockTitle: block.title) }
+
+        self.taken = taken
+        self.requirements = requirements
+        self.listing = listing
+    }
+}
+
+// The last few layouts, so a screen that asks for a projection on every redraw
+// (the ring, each requirement card, the semester table) builds an audit's
+// layout once and not once per frame. Keyed by the audit's own value: a new
+// read or a what-if is a different audit and gets its own entry. Eight is more
+// than a dual-degree student with a what-if open can hold at once.
+final class DegreeProjectionLayoutCache: @unchecked Sendable {
+    static let shared = DegreeProjectionLayoutCache()
+
+    private let lock = NSLock()
+    private var entries: [(audit: DegreeAudit, layout: DegreeProjectionLayout)] = []
+
+    func layout(for audit: DegreeAudit) -> DegreeProjectionLayout {
+        lock.lock()
+        defer { lock.unlock() }
+        if let hit = entries.first(where: { $0.audit == audit }) { return hit.layout }
+        let layout = DegreeProjectionLayout(audit: audit)
+        entries.append((audit: audit, layout: layout))
+        if entries.count > 8 { entries.removeFirst() }
+        return layout
     }
 }

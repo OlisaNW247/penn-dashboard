@@ -9,7 +9,9 @@ import LowHangingFruitKit
 /// One view, hosted by the progress and what-if tabs (under the ring) and by
 /// the plan tab, so the table is written once. It is handed the audit its host
 /// is drawing: in a what-if that is the what-if program's audit, so the
-/// "fits" line is read against what the student is looking at. The add sheet is
+/// "fits" lines and the badge beside a planned course are read against what the
+/// student is looking at. They come from `DegreeContribution.planned`, the model
+/// behind the ring's planned arc, so a line and the arc cannot disagree. The add sheet is
 /// presented from here for the same reason: it has to work wherever the table
 /// sits.
 ///
@@ -69,7 +71,8 @@ struct DegreeSemesterTable: View {
             fetchedAt: first.fetchedAt)
     }
 
-    /// The muted line under a planned course for one requirement it fits.
+    /// The muted line under a planned course for one requirement it counts
+    /// toward (a requirement that still has room, per the contribution model).
     nonisolated static func fitLine(_ fit: DegreePlanFit) -> String {
         let requirement = fit.requirement.lowercased()
         if fit.degreeLabel.isEmpty { return "fits · \(requirement)" }
@@ -89,7 +92,7 @@ struct DegreeSemesterTable: View {
     var body: some View {
         let columns = DegreeTimeline.columns(
             history: state.degree.history, plan: plan, audit: lookupAudit, now: Date())
-        let coverage = DegreeOverall.fits(plan: plan, audits: audits)
+        let coverage = DegreeContribution.planned(plan: plan, audits: audits)
         return Group {
             if isPage {
                 pageTable(columns, coverage: coverage)
@@ -105,7 +108,7 @@ struct DegreeSemesterTable: View {
 
     // MARK: Table
 
-    private func stripWithButton(_ columns: [TimelineColumn], coverage: [String: [DegreePlanFit]]) -> some View {
+    private func stripWithButton(_ columns: [TimelineColumn], coverage: [String: [DegreeGain]]) -> some View {
         VStack(alignment: .trailing, spacing: 4) {
             Button { showPage = true } label: {
                 HStack(spacing: 4) {
@@ -138,7 +141,7 @@ struct DegreeSemesterTable: View {
 
     // MARK: Page
 
-    private func pageTable(_ columns: [TimelineColumn], coverage: [String: [DegreePlanFit]]) -> some View {
+    private func pageTable(_ columns: [TimelineColumn], coverage: [String: [DegreeGain]]) -> some View {
         GeometryReader { geo in
             let cells = columns.count + 1
             let counts = DegreeTimeline.pageColumnCounts(width: Double(geo.size.width), cells: cells)
@@ -151,7 +154,7 @@ struct DegreeSemesterTable: View {
     /// because `ViewThatFits` takes its candidates as a view builder.
     private func pageFit(
         _ counts: ArraySlice<Int>, widest: Int,
-        columns: [TimelineColumn], coverage: [String: [DegreePlanFit]]
+        columns: [TimelineColumn], coverage: [String: [DegreeGain]]
     ) -> AnyView {
         guard let first = counts.first else {
             return AnyView(ScrollView(.vertical, showsIndicators: false) {
@@ -164,7 +167,7 @@ struct DegreeSemesterTable: View {
         })
     }
 
-    private func pageGrid(perRow: Int, columns: [TimelineColumn], coverage: [String: [DegreePlanFit]]) -> some View {
+    private func pageGrid(perRow: Int, columns: [TimelineColumn], coverage: [String: [DegreeGain]]) -> some View {
         var cells: [PageCell] = columns.map { PageCell.column($0) }
         cells.append(.addSemester)
         let rows = DegreeTimeline.rows(cells, perRow: perRow)
@@ -190,7 +193,7 @@ struct DegreeSemesterTable: View {
     }
 
     @ViewBuilder
-    private func pageCell(_ cell: PageCell, coverage: [String: [DegreePlanFit]]) -> some View {
+    private func pageCell(_ cell: PageCell, coverage: [String: [DegreeGain]]) -> some View {
         switch cell {
         case .column(let column): columnView(column, coverage: coverage)
         case .addSemester: addTermButton
@@ -209,7 +212,7 @@ struct DegreeSemesterTable: View {
         }
     }
 
-    private func table(_ columns: [TimelineColumn], coverage: [String: [DegreePlanFit]]) -> some View {
+    private func table(_ columns: [TimelineColumn], coverage: [String: [DegreeGain]]) -> some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: 10) {
@@ -231,7 +234,7 @@ struct DegreeSemesterTable: View {
     }
 
     @ViewBuilder
-    private func columnView(_ column: TimelineColumn, coverage: [String: [DegreePlanFit]]) -> some View {
+    private func columnView(_ column: TimelineColumn, coverage: [String: [DegreeGain]]) -> some View {
         if column.kind == .future {
             card(column, coverage: coverage)
                 .dropDestination(for: String.self) { items, _ in
@@ -248,7 +251,7 @@ struct DegreeSemesterTable: View {
         }
     }
 
-    private func card(_ column: TimelineColumn, coverage: [String: [DegreePlanFit]]) -> some View {
+    private func card(_ column: TimelineColumn, coverage: [String: [DegreeGain]]) -> some View {
         let isTargeted = targetedTerm == column.termCode
         return VStack(alignment: .leading, spacing: isPage ? 6 : 10) {
             header(column)
@@ -257,7 +260,7 @@ struct DegreeSemesterTable: View {
             }
             ForEach(column.planned) { course in
                 plannedRow(course, termCode: column.termCode,
-                           fits: coverage[DegreePlanMath.normalizedCode(course.code)] ?? [])
+                           gains: coverage[DegreePlanMath.normalizedCode(course.code)] ?? [])
             }
             if column.kind == .future {
                 addCourseButton(column)
@@ -313,13 +316,13 @@ struct DegreeSemesterTable: View {
 
     // MARK: Rows
 
-    private func chip(code: String, label: String) -> some View {
+    private func chip(code: String, label: String, muted: Bool = false) -> some View {
         Text(code)
             .font(.lhfMono(11))
-            .foregroundStyle(courseAccentInk(for: code))
+            .foregroundStyle(muted ? Color.smoothMuted : courseAccentInk(for: code))
             .padding(.horizontal, 9)
             .padding(.vertical, 4)
-            .background(courseAccent(for: code).opacity(0.28), in: Capsule())
+            .background(muted ? Color.smoothRule.opacity(0.5) : courseAccent(for: code).opacity(0.28), in: Capsule())
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(label)
     }
@@ -362,12 +365,32 @@ struct DegreeSemesterTable: View {
         }
     }
 
-    private func plannedRow(_ course: PlannedCourse, termCode: String, fits: [DegreePlanFit]) -> some View {
+    /// A planned course. When the contribution model lays it against a
+    /// requirement that still has room, the chip keeps its class colour, the
+    /// estimate it adds is shown beside it and one "fits" line per requirement
+    /// sits under it. When it counts nowhere the chip is muted and one line says
+    /// so. The lines come from the same model as the ring's planned arc, so the
+    /// line and the arc cannot disagree.
+    private func plannedRow(_ course: PlannedCourse, termCode: String, gains: [DegreeGain]) -> some View {
         let code = DegreePlanMath.normalizedCode(course.code)
+        let counts = !gains.isEmpty
+        // With no audit read yet there is nothing to judge a course against, and
+        // muting every planned course then would read as "none of this counts".
+        let judged = !audits.isEmpty
+        let total = gains.reduce(0) { $0 + $1.points }
+        let countsWord = counts ? ", counts toward your degree" : (judged ? ", not on an open requirement" : "")
         return VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 4) {
-                chip(code: course.code, label: "\(course.code), \(creditsWord(course.credits))")
+                chip(code: course.code,
+                     label: "\(course.code), \(creditsWord(course.credits))\(countsWord)",
+                     muted: judged && !counts)
                     .draggable(code)
+                if counts, let badge = DegreeProgressMath.gainBadge(total) {
+                    Text(badge)
+                        .font(.lhfMono(10, weight: .semibold))
+                        .foregroundStyle(Color.smoothCobaltInk)
+                        .lineLimit(1)
+                }
                 Spacer(minLength: 0)
                 Button { state.removePlannedCourse(code: course.code, from: termCode) } label: {
                     Image(systemName: "xmark")
@@ -379,8 +402,16 @@ struct DegreeSemesterTable: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("remove \(course.code)")
             }
-            ForEach(Array(fits.prefix(2).enumerated()), id: \.offset) { _, fit in
-                Text(Self.fitLine(fit))
+            if counts {
+                ForEach(Array(gains.prefix(2).enumerated()), id: \.offset) { _, gain in
+                    Text(Self.fitLine(DegreePlanFit(degreeLabel: gain.degreeLabel, requirement: gain.requirement)))
+                        .font(.lhfSans(11))
+                        .foregroundStyle(Color.smoothMuted)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                Text("not on an open requirement")
                     .font(.lhfSans(11))
                     .foregroundStyle(Color.smoothMuted)
                     .lineLimit(2)

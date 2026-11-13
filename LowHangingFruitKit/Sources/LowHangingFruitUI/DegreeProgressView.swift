@@ -48,6 +48,12 @@ enum DegreeProgressMath {
         return String(format: "%.1f", value)
     }
 
+    /// "+3%" for what a course adds to the estimate; nil under half a point, because "+0%" reads as a verdict.
+    static func gainBadge(_ points: Double) -> String? {
+        guard points >= 0.5 else { return nil }
+        return "+\(Int(min(points, 100).rounded()))%"
+    }
+
     static func degreeBlock(of audit: DegreeAudit) -> AuditBlock? {
         audit.blocks.first { $0.type.uppercased() == "DEGREE" }
     }

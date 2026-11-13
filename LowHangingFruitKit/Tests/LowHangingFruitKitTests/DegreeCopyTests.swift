@@ -85,7 +85,7 @@ struct DegreeCopyTests {
         // The table's phrases moved with it to DegreeSemesterTable.swift; the
         // add sheet stayed in DegreePlanView.swift.
         let source = try uiSource("DegreePlanView.swift") + uiSource("DegreeSemesterTable.swift")
-        for phrase in ["+ course", "+ semester", "fits · ", "still open on your audit"] {
+        for phrase in ["+ course", "+ semester", "fits · ", "counts toward your degree"] {
             #expect(source.contains(phrase), "the plan views are missing \(phrase)")
         }
     }
@@ -109,8 +109,8 @@ struct DegreeCopyTests {
         #expect(!progress.contains("counts in both"))
         #expect(progress.contains("ensureAllDegreeAudits()"))
         #expect(!progress.lowercased().contains("average"))
-        #expect(try uiSource("DegreeSemesterTable.swift").contains("DegreeOverall.fits("))
-        #expect(try uiSource("DegreePlanView.swift").contains("DegreeOverall.openGroups("))
+        #expect(try uiSource("DegreeSemesterTable.swift").contains("DegreeContribution.planned("))
+        #expect(try uiSource("DegreePlanView.swift").contains("DegreeContribution.suggestions("))
     }
 
     @Test("a fits line names the degree only when there is one to name")
@@ -162,5 +162,47 @@ struct DegreeCopyTests {
         #expect(source.contains("with plan"))
         #expect(source.contains("DegreeProjection.make(plan: state.degreePlan"))
         #expect(!source.lowercased().contains("recommend"))
+    }
+
+    // MARK: Contribution
+
+    @Test("the gain badge hides under half a point and caps at 100")
+    func gainBadge() {
+        #expect(DegreeProgressMath.gainBadge(0) == nil)
+        #expect(DegreeProgressMath.gainBadge(0.4) == nil)
+        #expect(DegreeProgressMath.gainBadge(0.5) == "+1%")
+        #expect(DegreeProgressMath.gainBadge(1.4) == "+1%")
+        #expect(DegreeProgressMath.gainBadge(33.3) == "+33%")
+        #expect(DegreeProgressMath.gainBadge(250) == "+100%")
+    }
+
+    @Test("a suggestion's line names the degree only when there is one to name")
+    func gainLine() {
+        let single = DegreeGain(degreeID: "a", degreeLabel: "", requirement: "Calc III", points: 3)
+        #expect(DegreePlanAddSheet.gainLine(single) == "calc iii")
+        let dual = DegreeGain(degreeID: "a", degreeLabel: "computer science", requirement: "Calc III", points: 3)
+        #expect(DegreePlanAddSheet.gainLine(dual) == "computer science · calc iii")
+    }
+
+    @Test("the add sheet's search ignores case and spaces, in codes and titles")
+    func suggestionMatching() {
+        let gain = DegreeGain(degreeID: "a", degreeLabel: "", requirement: "Core", points: 2)
+        let course = AdviceCourse(code: "CIS 1200", title: "Big Data Analytics", credits: 1)
+        let suggestion = DegreeSuggestion(course: course, gains: [gain])
+        #expect(DegreePlanAddSheet.matches(suggestion, query: "cis12"))
+        #expect(DegreePlanAddSheet.matches(suggestion, query: "data"))
+        #expect(!DegreePlanAddSheet.matches(suggestion, query: "zzz"))
+    }
+
+    @Test("the add sheet suggests from the contribution model and the table says what does not count")
+    func contributionSource() throws {
+        let table = try uiSource("DegreeSemesterTable.swift")
+        let sheet = try uiSource("DegreePlanView.swift")
+        #expect(table.contains("\"not on an open requirement\""))
+        #expect(sheet.contains(".task {"))
+        #expect(sheet.contains("DegreeContribution.suggestions("))
+        for source in [table, sheet] {
+            #expect(!source.contains("\"recommended"))
+        }
     }
 }
