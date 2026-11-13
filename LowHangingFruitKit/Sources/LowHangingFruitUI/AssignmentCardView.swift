@@ -114,7 +114,7 @@ struct AssignmentCardView: View {
     private let maxDrag: CGFloat = 86
 
     private var dragProgress: CGFloat {
-        min(max(dragX / completeThreshold, 0), 1)
+        min(abs(dragX) / completeThreshold, 1)
     }
 
     // MARK: Exam styling
@@ -556,8 +556,8 @@ struct AssignmentCardView: View {
                     )
                 }
                 guard swipeAxis == .horizontal else { return }
-                let nextDrag = min(max(0, value.translation.width), maxDrag)
-                let nextArmed = nextDrag >= completeThreshold
+                let nextDrag = min(max(-maxDrag, value.translation.width), maxDrag)
+                let nextArmed = abs(nextDrag) >= completeThreshold
                 if nextArmed && !isArmed { lhfHapticLight() }
                 isArmed = nextArmed
                 dragX = nextDrag
@@ -566,8 +566,13 @@ struct AssignmentCardView: View {
                 let wasHorizontal = swipeAxis == .horizontal
                 swipeAxis = .undecided
                 guard wasHorizontal else { return }
-                let horizontalFlick = value.predictedEndTranslation.width >= completeThreshold + 14
-                if isArmed || (dragX >= 42 && horizontalFlick) {
+                // Either direction clears a card (owner's rule, 2026-11-12);
+                // the thresholds live in `CompletionSwipe.acceptsCompletion`.
+                if CompletionSwipe.acceptsCompletion(
+                    horizontal: value.translation.width,
+                    vertical: value.translation.height,
+                    predicted: value.predictedEndTranslation.width
+                ) {
                     triggerComplete(state: state)
                 } else {
                     withAnimation(.spring(response: 0.28, dampingFraction: 0.72)) {
@@ -581,6 +586,8 @@ struct AssignmentCardView: View {
     private func triggerComplete(state: DueState) {
         guard !isCompleting else { return }
         isCompleting = true
+        // The exit continues the way the card was pulled.
+        let side: CGFloat = dragX < 0 ? -1 : 1
         // Save first, then animate: the completion is recorded before the card
         // starts to leave, not when it has finished leaving (`onCommit`). Kept
         // above both animation branches below so neither can run without it.
@@ -589,7 +596,7 @@ struct AssignmentCardView: View {
 
         if reduceMotion {
             withAnimation(.easeOut(duration: 0.18)) {
-                dragX = maxDrag
+                dragX = side * maxDrag
                 exitOpacity = 0
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { onComplete() }
@@ -600,7 +607,7 @@ struct AssignmentCardView: View {
         // pieces of the same paper used by the empty state, and make room for
         // the next assignment. There is no label or confirmation icon.
         withAnimation(.spring(response: 0.22, dampingFraction: 0.78)) {
-            dragX = completeThreshold + 3
+            dragX = side * (completeThreshold + 3)
             exitScale = 1.006
         }
         DispatchQueue.main.async {
@@ -610,7 +617,7 @@ struct AssignmentCardView: View {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
             withAnimation(.easeOut(duration: 0.22)) {
-                dragX = completeThreshold + 6
+                dragX = side * (completeThreshold + 6)
                 exitScale = 0.94
                 exitOffset = -6
                 exitOpacity = 0

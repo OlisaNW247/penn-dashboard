@@ -54,4 +54,27 @@ struct CompletionSwipeTests {
         #expect(!state.isCompleted(assignment))
         #expect(!AppState(assignmentStore: store).isCompleted(assignment))
     }
+
+    @Test("Either direction completes an active card; vertical never does; undo stays left-only")
+    func eitherDirectionCompletes() {
+        #expect(CompletionSwipe.acceptsCompletion(horizontal: -70, vertical: 0, predicted: -70))
+        #expect(CompletionSwipe.acceptsCompletion(horizontal: 70, vertical: 0, predicted: 70))
+        #expect(CompletionSwipe.acceptsCompletion(horizontal: -45, vertical: 0, predicted: -90))
+        #expect(!CompletionSwipe.acceptsCompletion(horizontal: -45, vertical: 0, predicted: -20))
+        #expect(!CompletionSwipe.acceptsCompletion(horizontal: 0, vertical: 120, predicted: 0))
+        #expect(!CompletionSwipe.acceptsCompletion(horizontal: -70, vertical: 90, predicted: -70))
+        #expect(!CompletionSwipe.accepts(horizontal: 70, vertical: 0, predicted: 90, undo: true))
+    }
+
+    @Test("The active card uses the either-direction rule; prev keeps left-only undo")
+    func sourceUsage() throws {
+        let ui = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/LowHangingFruitUI")
+        let card = try String(contentsOf: ui.appendingPathComponent("AssignmentCardView.swift"), encoding: .utf8)
+        let done = try String(contentsOf: ui.appendingPathComponent("DoneView.swift"), encoding: .utf8)
+        #expect(card.contains("acceptsCompletion"))
+        #expect(done.contains("CompletionSwipe.accepts("))
+        #expect(done.contains("undo: true"))
+    }
 }

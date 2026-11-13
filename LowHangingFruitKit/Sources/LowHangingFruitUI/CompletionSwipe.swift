@@ -11,6 +11,20 @@ enum CompletionSwipe {
         return distance >= 68 || (distance >= 42 && predicted * direction >= 82)
     }
 
+    /// Completing an active card: either direction works. Owner's rule,
+    /// 2026-11-12: "you can swipe it left or you can swipe it right". Same
+    /// thresholds as `accepts`, measured in whichever direction the drag went.
+    ///
+    /// Undo in prev deliberately stays left-only (`accepts(..., undo: true)`).
+    /// The wrong fix is making undo bidirectional too: a scroll-flick that
+    /// drifts right in prev would then re-open finished work.
+    static func acceptsCompletion(horizontal: Double, vertical: Double, predicted: Double) -> Bool {
+        let distance = abs(horizontal)
+        guard distance > abs(vertical) else { return false }
+        let sameWay = horizontal.sign == predicted.sign ? abs(predicted) : 0
+        return distance >= 68 || (distance >= 42 && sameWay >= 82)
+    }
+
     /// Which way a drag on a card is going, decided once, from its first
     /// reported movement, and then held until the finger lifts.
     ///
