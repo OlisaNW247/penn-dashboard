@@ -70,9 +70,13 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   for the progress to go up as he plans classes, and for the "counts in
   both" row to go; both are in `7f9fc23` (a cobalt "planned" layer on the
   ring and bars from `DegreeProjection`; 3910 / 379 green on the runner, not
-  yet on a phone). Next: his look at the planned layer, the full view, a
-  drag, and one concentration what-if; and a shorter name for the undeclared
-  Wharton chip.
+  yet on a phone). **2026-11-13:** he asked for the add sheet to guide him:
+  only courses that count toward a requirement still open, ranked and marked
+  by how much each adds, which reverses the "no recommendations" rule this
+  feature started under (`c7f9ee9`, `DegreeContribution`; 3925 / 380 green on
+  the runner, not yet on a phone). Next: his look at the planned layer and
+  the guided sheet, the full view, a drag, and one concentration what-if; and
+  a shorter name for the undeclared Wharton chip.
 - **v12 degree progress: a Mac build, then a phone** (Olisa's decision
   2026-11-09: use the Path@Penn login; build progress and what-if, no course
   recommendations; "make this extremely smooth"). Built on 2026-11-09 against

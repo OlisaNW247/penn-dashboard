@@ -903,8 +903,9 @@ Keep this current. It is the fastest way for a new session to know what exists.
     (`DegreePlanMath.coverage`, first match, Penn's order). "+ course" opens
     a sheet: type a code, or pick from "still open on your audit", Penn's
     list untouched except for what is already planned or taken. The word is
-    "fits", never "satisfies", and nothing is ranked: no recommendations is
-    still the rule. The plan is the student's own work, so it has its own
+    "fits", never "satisfies". (Nothing was ranked and "no recommendations"
+    was the rule until 2026-11-13; see Guided planning below for what the
+    sheet lists now.) The plan is the student's own work, so it has its own
     file (`degree-plan.json`, `DegreePlanStore`), is backed up with the
     phone where the audit is not, and is deleted with the rest on
     disconnect. It never reaches Penn: Penn's audit request carries the
@@ -1004,11 +1005,41 @@ Keep this current. It is the fastest way for a new session to know what exists.
     in-progress rule keeps its planned chips but adds nothing to the shares,
     or the bar would draw it twice. Known limits: a planned course no open
     rule lists (a free elective, a requirement Penn describes in words) moves
-    nothing; the "fits" line under a chip is still the older first-match rule
-    (`DegreePlanMath.coverage`), so when the first rule that lists a course
-    is already full the chip can say it fits one rule while the projection
-    counts it toward the next; and two rules with the same id in one block
-    would share a projection entry.
+    nothing; and two rules with the same id in one block would share a
+    projection entry. (Until 2026-11-13 the "fits" line under a chip was the
+    older first-match rule and could name a different requirement from the
+    one the projection counted; Guided planning, below, made them one.)
+  - **Guided planning** (2026-11-13, Olisa: "When you are adding courses to
+    your plan it should guide you and only recommend courses that contribute
+    to your degree. classes that contribute to a higher percentage of
+    completion to your degrees should be highlighted differently compared to
+    classes that don't"; green on the runner at `c7f9ee9`, not on a phone).
+    **This reverses the rule the plan tab was built under** ("nothing is
+    ranked: no recommendations is still the rule", the Plan bullet above),
+    and the reversal is his. `DegreeContribution` (Kit, pure) uses the same
+    projection as the planned arc. `planned(plan:audits:)` is what each
+    planned course is worth: the estimate with it minus the estimate without
+    it, per degree. `suggestions(plan:audits:history:)` is what is worth
+    adding: every option Penn lists for a requirement still open, in any of
+    the student's audits, that would be laid against a requirement with
+    room, sorted by points added, then by how many degrees it counts in, then
+    Penn's order. A course whose requirement the plan already fills is left
+    out. The add sheet (`DegreePlanAddSheet`) lists those under "counts
+    toward your degree" with a "+N%" badge (filled cobalt when the course
+    counts toward two degrees, tinted otherwise; none under half a point) and
+    the requirement under each row; typing filters the list, and a typed code
+    nothing matches can still be added, under a line that reads "not on an
+    open requirement". In the semester table a planned course that counts
+    keeps its class colour and shows "+N%"; one that does not is greyed with
+    the same line (never while no audit is loaded). The "fits" lines now come
+    from the contribution model, so a line and the arc name the same
+    requirement. What survives of the old rule: every course offered is one
+    Penn itself lists for an open requirement, the percent is this app's
+    estimate, and the screen never says "recommended" (a test holds that).
+    The list is computed once in the sheet's `.task`, and the per-audit half
+    of a projection is a layout kept for the last eight audits
+    (`DegreeProjectionLayoutCache`), because one projection per candidate
+    would otherwise normalize every option of every requirement each time.
   - **When it reads** (changed 2026-11-12, Olisa on the first build of the
     table: "It should not need to re-read as often as it does. classes
     selected do not change every couple of minutes"). Each degree's audit
@@ -1586,7 +1617,20 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `degree-progress` (2026-11-12, planned progress): 3910 tests /
+**Current on `degree-progress` (2026-11-13, guided planning): 3925 tests /
+380 suites, all green, `swift test --no-parallel` on the GitHub macOS runner
+in 120 s, with the unsigned iOS `xcodebuild`, Deno and the extension suite
+green (manual run 43347520726 at `c7f9ee9`), compiled at the first attempt.**
++15 tests and +1 suite over 3910 / 379: the suite "Degree contribution" (11)
+and four in `DegreeCopyTests` (the gain badge, the gain line, the sheet's
+search, a source pin). Three pins in `DegreeCopyTests` were rewritten on
+purpose with the feature: the plan phrases now expect "counts toward your
+degree" where they expected "still open on your audit", and the combined-view
+test expects `DegreeContribution.planned(` and `.suggestions(` where it
+expected `DegreeOverall.fits(` and `.openGroups(`. Nothing from this run is on
+a phone.
+
+Before it, on `degree-progress` (2026-11-12, planned progress): 3910 tests /
 379 suites, all green, `swift test --no-parallel` on the GitHub macOS runner
 in 96 s, with the unsigned iOS `xcodebuild`, Deno and the extension suite
 green (manual run 43332101067 at `7f9fc23`), compiled at the first attempt.**
@@ -1596,7 +1640,10 @@ pin) and `fixtureProjection` in `DegreeWiringTests`. Two pins in
 `DegreeCopyTests` were rewritten on purpose: the legend pin from
 `DegreeLegend()` to `DegreeLegend(` (the call now carries `showsPlanned:`),
 and the combined-view pin from "calls `sharedCourses`" to "does not contain
-the words counts in both", with the row. Nothing from this run is on a phone.
+the words counts in both", with the row. The signed Debug build of `fd22de6`
+(this tree plus notes) was built on Olisa's Mac that evening through the
+script's any-iPhone fallback, its first real run; the install failed because
+the phone was not connected, so it did not reach the phone then.
 
 Before it, on `degree-progress` the same day (the dual-degree view): 3891
 tests / 378 suites, all green, `swift test --no-parallel` on the GitHub macOS
@@ -4285,7 +4332,20 @@ none is a ship line.
   plan" line move when he adds a class in the table on the same screen;
   that the size of the move is believable (it depends on how many of his
   rules state a credit or course need, which no capture has counted); and
-  that the planned chips inside a requirement are the classes he expects. Known
+  that the planned chips inside a requirement are the classes he expects.
+  **Guided planning (`c7f9ee9`, 2026-11-13) is green on the runner and not
+  on a phone.** What a phone will settle: how many courses the sheet lists
+  for his two audits and how long the list takes to appear (Penn's option
+  lists have never been counted; the layout cache is there because they may
+  be long); whether the "+N%" figures separate courses usefully or are all
+  the same small number; whether a class he considers part of his degree
+  shows greyed as "not on an open requirement" because Penn describes its
+  requirement in words and lists no options (free electives are the likely
+  case, and the line would then read as a wrong verdict); and whether the
+  list wants grouping by requirement back, which the ranked list gave up.
+  `DegreeOverall.fits` and `openGroups` stay in the Kit with their tests and
+  are no longer used by a screen; the plan tab's summary line still counts
+  with the older `coveredCount`. Known
   limits: a forced read (pull to refresh) now reads every degree's audit,
   so it takes about twice as long for him; the what-if tab still acts on
   the selected degree only, with no "both" there; and the labels in "fits"
