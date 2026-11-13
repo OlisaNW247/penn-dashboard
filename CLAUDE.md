@@ -858,8 +858,12 @@ Keep this current. It is the fastest way for a new session to know what exists.
     a recurring task), each behind a system confirmation (2026-10-10;
     `OwnTaskRemoval`, `AppState.removeManualAssignment` /
     `removeRecurringTask`). Never on feed items or on preview and demo
-    data. Swipe right
-    to complete it, with a small paper-scatter animation. A floating
+    data. Swipe right **or left** to complete it (either way since
+    2026-11-12, Marco: "you can swipe it left or you can swipe it right.
+    Either one works"; `CompletionSwipe.acceptsCompletion`; the intro's
+    practice lesson still teaches swipe-right, at his word, and undo in prev
+    stays a left swipe or a tap), with a small paper-scatter animation that
+    exits the way the card was pulled. A floating
     button opens **ask**.
   - **Feedback card** (since 3.3.0, 2026-10-27, owner-approved from a
     mockup): under the header, a one-time card ("how's smooth so far?" /
