@@ -891,6 +891,47 @@ Keep this current. It is the fastest way for a new session to know what exists.
     ("finance · 58%"), from `DegreeSnapshot.optionScores`, a small score per
     degree and program that outlives the audit leaving the recent list. Only
     a switch records a score.
+    **Typed search** (2026-11-13, Olisa, from the what-if tab on his phone:
+    "I should be able to search the concentration I want to add within
+    search instead of swiping left with so many options. There should be a
+    way to distinguish within search adding/switching concentrations vs
+    switching majors. Incorporate AI to make this as smooth as possible";
+    green on the runner at `58e9391`, not on a phone). The tab now opens
+    with a search bar ("search concentrations, majors, minors") where the
+    "switch or add…" button was, and the options row keeps only the options
+    already tried, with their percents; the full list moved into the sheet.
+    `DegreeWhatIfSheet` is sectioned: concentrations, majors, minors, other
+    programs, with scope chips (all · concentrations · majors · minors) and
+    one line under each row saying what it is ("concentration · wharton",
+    "major · instead of computer science", "minor"). A row that is a sibling
+    of one of the student's degrees runs in one tap through
+    `AppState.runDegreeEntry`, which selects the degree the row belongs to
+    first, so a Wharton concentration picked while the engineering degree
+    is on screen is filed, and scored, under Wharton. Any other row opens
+    Penn's allowed changes under itself, as before. The words are read
+    (`DegreeProgramSearch`, Kit, pure): "add a math minor", "switch to
+    econ", "finance concentration" set the scope chip and put the matching
+    change first and filled (`preferredPlan`); the rest is matched by exact
+    word, prefix, one typo for five letters or more, initialism ("cs"), the
+    code's first part ("fncs") and a short alias table ("stats", "acct",
+    "poli sci"). The classification (`entries`) is from the code's shape and
+    decides only what is shown and under which word; what is sent to Penn
+    still comes from the row's own info through `PathWhatIf.plans`.
+    **The AI is Apple's on-device model, and only a helper**
+    (`DegreeSearchAssist`, `OnDeviceLanguageModel.reply`): when a search
+    finds fewer than three rows, the model is asked for up to six subject
+    names, and those names are looked up in the catalogue (`related`), under
+    a "related" heading with a sparkle. Nothing the model says is shown
+    unless Penn lists it; without the model (older phones, Apple
+    Intelligence off, the test runner) the same slot is a looser text match
+    (`loose`). A server model was rejected: `docs/PRIVACY.md` promises that
+    nothing about the degree goes to the server, and a round trip per search
+    is not smooth. `docs/PRIVACY.md` gained "Searching programs". Results
+    are computed in one `.task(id:)`, never in `body`. Known and accepted:
+    the student's own program is listed as a plain major; "finance
+    concentration" finds nothing for a student whose degrees have no
+    concentration rows; a search that names a kind and then taps "all" drops
+    the kind.
   - **Plan** (2026-11-10, Olisa from his phone: "a table feature where you
     can build a sample course load for the next semester or rest of your
     time at Penn"; written the same hour, green on the runner at `78c4a77`,
@@ -1619,7 +1660,18 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `degree-progress` (2026-11-13, guided planning): 3925 tests /
+**Current on `degree-progress` (2026-11-14 UTC, the what-if search): 3958
+tests / 381 suites, all green, `swift test --no-parallel` on the GitHub macOS
+runner in 118 s, with the unsigned iOS `xcodebuild`, Deno and the extension
+suite green (manual run 43532721971 at `58e9391`), compiled at the first
+attempt.** +33 tests and +1 suite over 3925 / 380: the suite "Degree program
+search" (31) and two fixture tests in `DegreeAppStateTests`
+(`fixtureProgramEntries`, `fixtureEntryRuns`). One pin rewritten on purpose:
+`sheetIsASearchableList` expects the new placeholder and the search wiring
+where it expected "search programs". The sample catalogue gained four Wharton
+rows so the demo has concentrations. Not on a phone.
+
+Before it, on `degree-progress` (2026-11-13, guided planning): 3925 tests /
 380 suites, all green, `swift test --no-parallel` on the GitHub macOS runner
 in 120 s, with the unsigned iOS `xcodebuild`, Deno and the extension suite
 green (manual run 43347520726 at `c7f9ee9`), compiled at the first attempt.**
@@ -4338,9 +4390,24 @@ none is a ship line.
   that the size of the move is believable (it depends on how many of his
   rules state a credit or course need, which no capture has counted); and
   that the planned chips inside a requirement are the classes he expects.
+  **The what-if search (`58e9391`, 2026-11-14 UTC) is green on the runner
+  and not on a phone.** What a phone will settle: whether the on-device
+  model answers at all from the sheet and how long it takes (it has only
+  ever rephrased ask's answers; its reply here is free text parsed by
+  `DegreeSearchAssist.terms`, proven on invented replies only); whether the
+  keyboard focus lands in the field when the sheet opens; whether the real
+  catalogue's 118 minor rows and 497 concentration rows fall under the
+  right headings (the rules were written from counts and a handful of
+  codes, never the full list); and, still, the first what-if run on a
+  device, which the one-tap rows now depend on.
   **Guided planning (`c7f9ee9`, 2026-11-13) is installed on Olisa's iPhone
-  (the Debug build of `18fa24b`, the same day) and nothing about it has been
-  reported yet.** What his first look will settle: how many courses the sheet lists
+  (the Debug build of `18fa24b`, the same day). His screenshot that evening
+  (what-if tab) shows it drawing:** six planned classes in spring 2027, five
+  with a "+2%" badge and a per-degree "fits" line, one (CIS 4480) with its
+  line and no badge, which is a course laid against a requirement that adds
+  under half a point (an in-progress rule adds nothing by design). So the
+  badges render and, as feared, they tie: every one reads +2%. He reported
+  nothing else about it. What his first look will still settle: how many courses the sheet lists
   for his two audits and how long the list takes to appear (Penn's option
   lists have never been counted; the layout cache is there because they may
   be long); whether the "+N%" figures separate courses usefully or are all

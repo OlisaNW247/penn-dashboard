@@ -966,6 +966,13 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-13.** Degree what-if search (`degree-progress`, `58e9391`,
+  green on the runner, not on a phone): one typed search for concentrations,
+  majors and minors in place of the sideways chip row; rows say what they
+  are; plain words ("add a math minor", "switch to econ") set the scope and
+  the change; Apple's on-device model suggests related subject names when a
+  search finds little, checked against Penn's list. CLAUDE.md → Degree →
+  "Typed search".
 - **2026-11-12.** Ambassador mode after its first look on a phone: the
   "getting started" checklist is gone, the page opens on the job and a
   filled "open my web page" button, feedback is "feedback and ideas" and
