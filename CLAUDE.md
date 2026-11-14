@@ -151,7 +151,7 @@ with the backend unreachable, ask answers on-device:
 items, retrieves policy and content answers from synced course materials
 (`CourseKnowledgeCollector` → `CourseKnowledgeStore`), and on iOS 26 /
 macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
-(`OnDeviceLanguageModel`). A twelfth function, `degree-advisor`, is in the tree on `degree-progress` since 2026-11-14 and **not deployed** (Degree → Plan with AI). Eleven Edge Functions are in
+(`OnDeviceLanguageModel`). A twelfth function, `degree-advisor`, is in the tree on `degree-progress` and **live since 2026-11-14 at about 17:49 UTC** (version 1, deployed from `b5b0762` at Olisa's go; Degree → Plan with AI); only a `degree-progress` build calls it. Eleven Edge Functions are in
 `backend/supabase/functions/` (all eleven are deployed; `extract-facts` was
 the last, on 2026-11-05): `ask`,
 `ask-canary`, `delete-account`, `device-sync`, `discover-websites`,
@@ -1096,8 +1096,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
     these recommendations and don't mind saving user degree data to the
     server. I currently don't see where the AI aspect comes in. There should
     be a chatbot to ask questions and have it add courses for you"; green on
-    the runner at `a8956fc`, **the function is not deployed** and nothing is
-    on a phone). A sparkle button floats bottom-right on the degree screen
+    the runner at `a8956fc`; the function went live the same day at his go,
+    version 1; nothing is on a phone and no question has been asked). A sparkle button floats bottom-right on the degree screen
     (`degreeAdvisorAvailable`: the feature on, and a backend client or the
     demo) and opens `DegreeAdvisorView`, "plan with ai": three starter
     questions, one line saying what is sent, a chat. A message goes to the
@@ -4453,8 +4453,14 @@ none is a ship line.
   rules state a credit or course need, which no capture has counted); and
   that the planned chips inside a requirement are the classes he expects.
   **Plan with AI (`a8956fc`, 2026-11-14) is green on the runner, its
-  function is not deployed, and no model has ever answered it.** Until
-  `degree-advisor` is deployed the chat answers "couldn't reach smooth." What
+  function is live, and no model has ever answered it.** `degree-advisor`
+  version 1 was deployed on 2026-11-14 at about 17:49 UTC with Olisa's go
+  (`NODE_USE_ENV_PROXY=1 node backend/scripts/deploy-function.mjs
+  degree-advisor` from the cloud session, whose proxy supplies the
+  management credential); `ask` (21) and `sync` (29) kept their versions.
+  From here it answers `OPTIONS` with 200 and an unsigned POST with the
+  gateway's 401, so it boots; a signed question cannot be sent from a cloud
+  session (the network-secret trap), so the phone asks the first one. What
   the first real question will settle: that OpenRouter knows the primary
   model's id (never checked; a refusal falls back to the smaller model and
   logs one line); that a strict-schema answer comes back inside the wait a
