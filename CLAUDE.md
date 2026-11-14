@@ -151,7 +151,7 @@ with the backend unreachable, ask answers on-device:
 items, retrieves policy and content answers from synced course materials
 (`CourseKnowledgeCollector` → `CourseKnowledgeStore`), and on iOS 26 /
 macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
-(`OnDeviceLanguageModel`). A twelfth function, `degree-advisor`, is in the tree on `degree-progress` and **live since 2026-11-14 at about 17:49 UTC** (version 1, deployed from `b5b0762` at Olisa's go; Degree → Plan with AI); only a `degree-progress` build calls it. Eleven Edge Functions are in
+(`OnDeviceLanguageModel`). A twelfth function, `degree-advisor`, is in the tree on `degree-progress` and **live since 2026-11-14 at about 17:49 UTC** (version 1 from `b5b0762`; **version 2 since about 18:40 UTC the same day, from `1b92d58`**, the what-if round trip, both at Olisa's go; Degree → Plan with AI); only a `degree-progress` build calls it. Eleven Edge Functions are in
 `backend/supabase/functions/` (all eleven are deployed; `extract-facts` was
 the last, on 2026-11-05): `ask`,
 `ask-canary`, `delete-account`, `device-sync`, `discover-websites`,
@@ -4493,8 +4493,11 @@ none is a ship line.
   failed the task** (the feature entry above has the exchange). Settled by
   it: the request reaches the function, a model answers "instantly", the
   strict JSON decodes, two validated adds landed in the plan and the card
-  with `undo` drew. The fixes (`f86c778`) are green on the runner and
-  unproven: no what-if round trip has run, and the model has not been asked
+  with `undo` drew. The fixes (`f86c778`) are green on the runner, **live on
+  the server as version 2 since about 18:40 UTC on 2026-11-14** (his go;
+  `ask` 21 and `sync` 29 untouched; it answers `OPTIONS` with 200 and an
+  unsigned POST with 401) and not yet in a build on his phone. Version 2
+  still serves the older build, which sends no `programs`. Unproven: no what-if round trip has run, and the model has not been asked
   for a whole plan under the new prompt. What the next question will
   settle: whether it asks for the finance audit, whether Penn answers the
   `new-program` audit for `FNCS-BS` at all (still the first what-if ever run
