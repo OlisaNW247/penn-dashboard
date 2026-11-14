@@ -151,7 +151,7 @@ with the backend unreachable, ask answers on-device:
 items, retrieves policy and content answers from synced course materials
 (`CourseKnowledgeCollector` → `CourseKnowledgeStore`), and on iOS 26 /
 macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
-(`OnDeviceLanguageModel`). Eleven Edge Functions are in
+(`OnDeviceLanguageModel`). A twelfth function, `degree-advisor`, is in the tree on `degree-progress` since 2026-11-14 and **not deployed** (Degree → Plan with AI). Eleven Edge Functions are in
 `backend/supabase/functions/` (all eleven are deployed; `extract-facts` was
 the last, on 2026-11-05): `ask`,
 `ask-canary`, `delete-account`, `device-sync`, `discover-websites`,
@@ -1090,6 +1090,49 @@ Keep this current. It is the fastest way for a new session to know what exists.
     of a projection is a layout kept for the last eight audits
     (`DegreeProjectionLayoutCache`), because one projection per candidate
     would otherwise normalize every option of every requirement each time.
+  - **Plan with AI** (2026-11-14, Olisa, from the add sheet on his phone:
+    "The recommender seems to be only recommending courses for cis even
+    though I have two degrees. Additionally I want to use a better model for
+    these recommendations and don't mind saving user degree data to the
+    server. I currently don't see where the AI aspect comes in. There should
+    be a chatbot to ask questions and have it add courses for you"; green on
+    the runner at `a8956fc`, **the function is not deployed** and nothing is
+    on a phone). A sparkle button floats bottom-right on the degree screen
+    (`degreeAdvisorAvailable`: the feature on, and a backend client or the
+    demo) and opens `DegreeAdvisorView`, "plan with ai": three starter
+    questions, one line saying what is sent, a chat. A message goes to the
+    new Edge Function `degree-advisor` with `DegreeAdvisor.brief` (Kit,
+    pure): a text document built from the audits the tab is drawing (so a
+    what-if on screen is what it plans against), the semesters, the plan and
+    the app's own worth estimates; the future terms it may touch (the
+    plan's, then following ones, eight in all); and the course codes it may
+    add (Penn's options for open requirements, minus taken, registered and
+    planned). The model answers in at most 120 words and may return `add`,
+    `remove` and `move` actions. **Two checks stand between the model and
+    the plan**: the server drops any action outside the lists it was sent
+    (`buildDegreeAdvice`), and the phone applies what is left against the
+    live plan (`DegreeAdvisor.apply`), skipping anything not in its own
+    list, already planned, or in a term it cannot reach without a gap. Edits
+    are applied at once and listed on a card under the answer ("added CIS
+    4710, CIS 4010 · fall 2027") with `undo` on the latest one, which puts
+    the earlier plan back. The conversation lives in the screen's state and
+    is gone when the screen closes. The model is
+    `LHF_DEGREE_MODEL` (default `anthropic/claude-sonnet-5.5`) with
+    `LHF_DEGREE_FALLBACK_MODEL` (default `anthropic/claude-haiku-5.5`), strict
+    JSON schema, low reasoning, 1,500 tokens, the daily quota `ask` uses; the
+    function retries on the fallback when the provider refuses the primary's
+    name (400 or 404), because the id could not be checked from the cloud
+    session. Nothing is stored server-side. The prompt forbids inventing
+    course codes, prerequisites or offerings, and says a planned course
+    "would count toward" a requirement, never that it is met. What the model
+    cannot do: add a course Penn's audit does not list as an option (a free
+    elective, a requirement Penn describes in words), on purpose.
+    **The add sheet's list is grouped** (`DegreeContribution.grouped`): "both
+    degrees" first, then each degree under its name, ranked inside. Ranked by
+    points alone, his five engineering rows (+2% each) sat above two Wharton
+    rows (+1%), which read as the list ignoring Wharton. The Wharton group is
+    short for a real reason the grouping does not change: his plan already
+    fills most of the Wharton requirements that list options.
   - **When it reads** (changed 2026-11-12, Olisa on the first build of the
     table: "It should not need to re-read as often as it does. classes
     selected do not change every couple of minutes"). Each degree's audit
@@ -1669,7 +1712,17 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `degree-progress` (2026-11-14 UTC, the what-if search): 3958
+**Current on `degree-progress` (2026-11-14, plan with AI): 3999 tests / 382
+suites, all green, `swift test --no-parallel` on the GitHub macOS runner in
+116 s, with the unsigned iOS `xcodebuild`, the extension suite and Deno (728
+passed, 0 failed) green in the same run (manual run 43620558994 at
+`a8956fc`), compiled at the first attempt.** +41 tests and +1 suite over
+3958 / 381: the suite "Degree advisor" (37, the document, the request, the
+lenient response, `apply`, the summary and the grouping) and the advisor
+tests in `DegreeCopyTests` and `DegreeAppStateTests`. Deno +15 over 713:
+`degree_advisor.test.ts`. Not deployed, not on a phone.
+
+Before it, on `degree-progress` (2026-11-14 UTC, the what-if search): 3958
 tests / 381 suites, all green, `swift test --no-parallel` on the GitHub macOS
 runner in 118 s, with the unsigned iOS `xcodebuild`, Deno and the extension
 suite green (manual run 43532721971 at `58e9391`), compiled at the first
@@ -4399,6 +4452,25 @@ none is a ship line.
   that the size of the move is believable (it depends on how many of his
   rules state a credit or course need, which no capture has counted); and
   that the planned chips inside a requirement are the classes he expects.
+  **Plan with AI (`a8956fc`, 2026-11-14) is green on the runner, its
+  function is not deployed, and no model has ever answered it.** Until
+  `degree-advisor` is deployed the chat answers "couldn't reach smooth." What
+  the first real question will settle: that OpenRouter knows the primary
+  model's id (never checked; a refusal falls back to the smaller model and
+  logs one line); that a strict-schema answer comes back inside the wait a
+  student will tolerate (it does not stream; the phone's timeout is the
+  URL session's 60 s); how large the document is for his two audits (capped
+  at 60,000 characters, options cut first); whether the model adds when
+  asked a plain question, or declines to add when told to (the prompt's
+  rule is words, not code); whether its picks are sensible, which no test
+  can say; and what a day's use costs against the shared quota, since each
+  message carries the whole document. Known limits: the brief is built on
+  the main actor before each send; the chat cannot add a course Penn lists
+  no option for; the sparkle button floats over the bottom of every tab;
+  undo restores the whole earlier plan, so a hand edit made after the
+  chat's edit is undone with it. Before a release: the privacy label and
+  `REVIEW_NOTES.md` need this, and the opt-out question (there is no switch;
+  not sending a message is the opt-out) is the owners' to settle.
   **The what-if search (`58e9391`, 2026-11-14 UTC) is green on the runner
   and not on a phone.** What a phone will settle: whether the on-device
   model answers at all from the sheet and how long it takes (it has only

@@ -966,6 +966,13 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-14.** Plan with AI (`degree-progress`, `a8956fc`, green on the
+  runner; the `degree-advisor` function is written and **not deployed**): a
+  chat on the degree screen that answers from Penn's audits through a larger
+  server model and adds, moves or removes planned courses, with undo; the
+  add sheet's list grouped per degree. The first degree data to leave the
+  phone, at the owner's word, only inside a chat message, stored nowhere.
+  CLAUDE.md → Degree → "Plan with AI".
 - **2026-11-13.** Degree what-if search (`degree-progress`, `58e9391`,
   green on the runner, not on a phone): one typed search for concentrations,
   majors and minors in place of the sideways chip row; rows say what they
