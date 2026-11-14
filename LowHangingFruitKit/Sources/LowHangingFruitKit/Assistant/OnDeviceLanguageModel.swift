@@ -77,6 +77,26 @@ public enum OnDeviceLanguageModel {
         #endif
     }
 
+    /// A plain one-shot reply for callers that validate the text themselves.
+    /// Nil when the model is unavailable, under the test runner, or on any
+    /// error.
+    public static func reply(instructions: String, prompt: String) async -> String? {
+        guard !SharedDefaults.isTestRunner else { return nil }
+        #if canImport(FoundationModels)
+        guard #available(iOS 26.0, macOS 26.0, *), isAvailable else { return nil }
+        do {
+            let session = LanguageModelSession(instructions: instructions)
+            let response = try await session.respond(to: prompt)
+            let text = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            return text.isEmpty ? nil : text
+        } catch {
+            return nil
+        }
+        #else
+        return nil
+        #endif
+    }
+
     /// Keeps the prompt well inside the on-device model's ~4K-token window:
     /// three passages, each trimmed, plus the draft.
     static func buildPrompt(question: String, answer: AssistantAnswer) -> String {

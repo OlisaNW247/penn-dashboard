@@ -173,6 +173,11 @@ audit.
 - **Where it stays:** on this phone, in a file in the app's own storage.
   Nothing about your degree goes to our server, to a paired laptop, to iCloud
   or to "the tree".
+- **Searching programs:** the search in "what if" runs on this phone, over
+  Penn's public list of programs. On an iPhone with Apple Intelligence,
+  when a search finds almost nothing, Apple's on-device model is asked for
+  related subject names, which are then looked up in that same list. The
+  model runs on the phone; what you type there is sent to no one.
 - **It is Penn's reading, shown Smooth's way.** Smooth does not decide what
   counts; Penn's audit does. Substitutions and advisor exceptions appear only
   as the audit reports them, and the screen always links to Path@Penn.

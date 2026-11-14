@@ -500,8 +500,8 @@ struct DegreeProgressView: View {
         let list = state.degree.whatIfs
         if list.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                optionsRow(shown: nil)
                 switchButton
+                optionsRow(shown: nil)
                 DegreeSemesterTable(audits: tableAudits(replacingSelectedWith: nil))
             }
             .padding(.top, 8)
@@ -509,6 +509,7 @@ struct DegreeProgressView: View {
             let index = min(selectedWhatIf, list.count - 1)
             let target = list[index]
             VStack(alignment: .leading, spacing: 16) {
+                switchButton
                 optionsRow(shown: target)
                 whatIfChips(list, selected: index)
                 let headline = DegreeWhatIf.headline(current: state.degree.current?.goals,
@@ -521,13 +522,21 @@ struct DegreeProgressView: View {
         }
     }
 
-    /// The student's own degree's sibling programs as chips (a Wharton
-    /// student's concentrations), each one tap from its what-if. Hidden until
-    /// the catalogue is loaded. `shown` is the what-if on screen, so the chip
-    /// whose result it is reads as selected.
+    /// The sibling programs of the student's own degree (a Wharton student's
+    /// concentrations) that they have already tried, as chips, each one tap
+    /// from its what-if. The full list lives in the search sheet now, because
+    /// seventeen chips in a sideways row was the owner's complaint; the row
+    /// keeps only what has a result to compare. Hidden until the catalogue is
+    /// loaded and something has been tried. `shown` is the what-if on screen,
+    /// so the chip whose result it is reads as selected.
     @ViewBuilder
     private func optionsRow(shown: DegreeAudit?) -> some View {
-        let listings = state.degreeOptionListings
+        let listings: [PathProgramListing] = {
+            guard let degreeID = state.selectedStudentDegree?.id else { return [] }
+            return state.degreeOptionListings.filter {
+                state.degree.optionScores[DegreeOptions.scoreKey(degreeID: degreeID, programCode: $0.code)] != nil
+            }
+        }()
         if !listings.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Text(DegreeOptions.heading(college: state.selectedStudentDegree?.college))
@@ -592,14 +601,24 @@ struct DegreeProgressView: View {
 
     private var switchButton: some View {
         Button { showSheet = true } label: {
-            Text("switch or add…")
-                .font(.lhfSans(14, weight: .semibold))
-                .foregroundStyle(Color.smoothGrapeInk)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 9)
-                .background(Color.smoothGrape.opacity(0.18), in: Capsule())
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13))
+                Text("search concentrations, majors, minors")
+                    .font(.lhfSans(14))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Color.smoothMuted)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity)
+            .background(Color.smoothSurface.opacity(0.58), in: Capsule())
+            .overlay { Capsule().stroke(Color.smoothRule.opacity(0.72), lineWidth: 1.25) }
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("search programs")
     }
 
     private func whatIfChips(_ list: [DegreeAudit], selected: Int) -> some View {

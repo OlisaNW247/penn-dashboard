@@ -336,6 +336,44 @@ struct DegreeAppStateTests {
         #expect(source.contains("degreeOptionListings"))
         #expect(source.contains("DegreeOptions.heading"))
         #expect(source.contains("runDegreeOption"))
+        #expect(source.contains("optionScores"))
+    }
+
+    @Test("in fixture mode the catalogue is classified against both sample degrees", .enabled(if: FeatureFlags.degreeProgress))
+    func fixtureProgramEntries() async throws {
+        let state = try makeState()
+        state.forceFixtureDataForTesting(true)
+        await state.refreshDegreeAudit(force: true)
+        let programs = await state.loadDegreePrograms()
+        let entries = state.degreeProgramEntries(programs)
+        let first = try #require(state.degree.degrees.first)
+        let second = try #require(state.degree.degrees.first { $0.id != first.id })
+        let major = try #require(entries.first { $0.listing.code == "CMPE-BSE" })
+        #expect(major.kind == .major)
+        #expect(major.isSibling)
+        #expect(major.degreeID == first.id)
+        let concentration = try #require(entries.first { $0.listing.code == "FNCS-BS" })
+        #expect(concentration.kind == .concentration)
+        #expect(concentration.isSibling)
+        #expect(concentration.degreeID == second.id)
+        let minor = try #require(entries.first { $0.listing.code == "MATH-MIN" })
+        #expect(minor.kind == .minor)
+    }
+
+    @Test("in fixture mode running another degree's entry selects that degree and files its score there", .enabled(if: FeatureFlags.degreeProgress))
+    func fixtureEntryRuns() async throws {
+        let state = try makeState()
+        state.forceFixtureDataForTesting(true)
+        await state.refreshDegreeAudit(force: true)
+        let programs = await state.loadDegreePrograms()
+        let entries = state.degreeProgramEntries(programs)
+        let first = try #require(state.selectedStudentDegree)
+        let second = try #require(state.degree.degrees.first { $0.id != first.id })
+        let entry = try #require(entries.first { $0.listing.code == "FNCS-BS" })
+        let ok = await state.runDegreeEntry(entry)
+        #expect(ok)
+        #expect(state.selectedStudentDegree?.id == second.id)
+        #expect(state.degree.optionScores[DegreeOptions.scoreKey(degreeID: second.id, programCode: "FNCS-BS")] != nil)
     }
 
     @Test("in fixture mode selecting a degree moves the choice and shows that degree's own sample audit", .enabled(if: FeatureFlags.degreeProgress))

@@ -73,7 +73,12 @@ struct DegreeCopyTests {
     @Test("the what-if sheet is a searchable list wired to the three data calls")
     func sheetIsASearchableList() throws {
         let source = try uiSource("DegreeWhatIfSheet.swift")
-        #expect(source.contains("search programs"))
+        #expect(source.contains("search concentrations, majors, minors"))
+        for piece in ["DegreeProgramSearch.sections(", "DegreeProgramSearch.actionLine(", "runDegreeEntry(",
+                      "DegreeSearchAssist.shouldAsk(", "OnDeviceLanguageModel.reply(", ".task(id:",
+                      "Text(\"related\")"] {
+            #expect(source.contains(piece), "the sheet is missing \(piece)")
+        }
         #expect(source.contains("loadDegreePrograms"))
         #expect(source.contains("degreeWhatIfPlans"))
         #expect(source.contains("runWhatIf("))

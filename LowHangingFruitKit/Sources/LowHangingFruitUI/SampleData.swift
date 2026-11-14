@@ -431,6 +431,10 @@ enum SampleData {
             PathProgramListing(code: "PSYC-MIN", title: "Psychology Minor"),
             PathProgramListing(code: "STAT-MIN", title: "Statistics Minor"),
             PathProgramListing(code: "NETS-BAS", title: "Networked and Social Systems Engineering BAS"),
+            PathProgramListing(code: "FNCS-BS", title: "Finance BS"),
+            PathProgramListing(code: "ACCT-BS", title: "Accounting BS"),
+            PathProgramListing(code: "MKTG-BS", title: "Marketing BS"),
+            PathProgramListing(code: "BSAN-BS", title: "Business Analytics BS"),
         ]
         let dictionaries = PathDictionaries(
             majors: ["CSCI": "Computer Science", "MATH": "Mathematics", "UNDL": "Undeclared"],

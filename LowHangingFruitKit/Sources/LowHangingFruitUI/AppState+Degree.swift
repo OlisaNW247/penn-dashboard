@@ -658,6 +658,31 @@ extension AppState {
         return degree.whatIfs.first?.goals == plan.goals
     }
 
+    /// The catalogue classified against the student's degrees, for the what-if
+    /// search. The labels are the same chip titles `degreeAudits` shows, in the
+    /// record's order, so a row reads "instead of computer science" in the
+    /// words the rest of the screen already uses; the colleges map turns a
+    /// degree's college code into the name the search matches on.
+    func degreeProgramEntries(_ programs: [PathProgramListing]) -> [DegreeProgramEntry] {
+        let degrees = degree.degrees
+        let labels = DegreeGoals.chipTitles(for: degrees.map { $0.goals }, descriptions: degreeDescriptions)
+        return DegreeProgramSearch.entries(
+            programs: programs, degrees: degrees, labels: labels,
+            colleges: degree.dictionaries?.colleges ?? [:])
+    }
+
+    /// Runs a one-tap entry. An entry that belongs to another of the student's
+    /// degrees selects that degree first, so the result is filed (and its
+    /// score kept) under the degree it is an option of; running it under the
+    /// selected degree instead would put a Wharton concentration's percent on
+    /// the engineering degree's chip.
+    func runDegreeEntry(_ entry: DegreeProgramEntry) async -> Bool {
+        if let id = entry.degreeID, id != selectedStudentDegree?.id {
+            await selectDegree(id)
+        }
+        return await runDegreeOption(entry.listing)
+    }
+
     // MARK: Fixtures
 
     /// The demo's plans: no portal, so one invented switch for any entry and
