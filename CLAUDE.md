@@ -1127,6 +1127,33 @@ Keep this current. It is the fastest way for a new session to know what exists.
     "would count toward" a requirement, never that it is met. What the model
     cannot do: add a course Penn's audit does not list as an option (a free
     elective, a requirement Penn describes in words), on purpose.
+    **The first real question, the same day, and what it changed
+    (`f86c778`, green on the runner).** On his phone: "plan out the rest of
+    my schedule so I can graduate on time with a cs major and Wharton finance
+    concentration". It answered at once, added CIS 4230 and MATH 2400 to
+    spring 2028, refused the concentration ("your Wharton degree shows the
+    concentration as undeclared, and the audit lists no finance
+    requirements") and contradicted itself in the text ("Correction: I added
+    only…"). His verdict: "It should be able to do this." So: (1) the
+    request carries `programs`, the catalogue rows that stand in for exactly
+    one of the student's degrees (`DegreeAdvisor.programs(from:)`: entries
+    with a `degreeID`), and the model may answer `whatIf`, a program code,
+    in place of a plan; the phone then reads that audit from Penn
+    (`runDegreeEntry`, or the add-concentration plan for a concentration of
+    the student's own major), swaps it in under the label "finance (what if,
+    not declared)" and asks the same question again with `programs: []`,
+    the loop guard: at most one Penn read and two requests per send. The
+    chat keeps those audits for the rest of the conversation
+    (`activeAudits`) and shows "read path@penn's audit for finance" above
+    the answer. (2) The schema's order is `actions`, `whatIf`, `answer`, so
+    the decision exists before the sentence about it. (3) The prompt defines
+    a whole plan (a course for every open requirement that lists options, as
+    many as its need, where the plan ends, what Penn lists no options for);
+    reasoning effort medium, 4,000 tokens, 60 actions. The response also
+    names the `model` that answered, kept on the phone as
+    `lastDegreeAdvisorModelV1`, because the function log could not be read
+    from the cloud session and nobody knows which model wrote that first
+    answer.
     **The add sheet's list is grouped** (`DegreeContribution.grouped`): "both
     degrees" first, then each degree under its name, ranked inside. Ranked by
     points alone, his five engineering rows (+2% each) sat above two Wharton
@@ -1712,7 +1739,16 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `degree-progress` (2026-11-14, plan with AI): 3999 tests / 382
+**Current on `degree-progress` (2026-11-14, the advisor's what-if round
+trip): 4005 tests / 382 suites, all green, `swift test --no-parallel` on the
+GitHub macOS runner in 153 s, with the unsigned iOS `xcodebuild`, the
+extension suite and Deno (732 passed, 0 failed) green in the same run
+(manual run 43622220156 at `f86c778`), compiled at the first attempt.** +6
+over 3999: the programs list, the lenient `whatIf` / `model` decode, the
+audit swap and a source pin. Deno +4 over 728. The `CoreData: error` lines in
+that log are an older grade-history test opening a bad path on purpose.
+
+Before it, on `degree-progress` (2026-11-14, plan with AI): 3999 tests / 382
 suites, all green, `swift test --no-parallel` on the GitHub macOS runner in
 116 s, with the unsigned iOS `xcodebuild`, the extension suite and Deno (728
 passed, 0 failed) green in the same run (manual run 43620558994 at
@@ -4452,8 +4488,22 @@ none is a ship line.
   that the size of the move is believable (it depends on how many of his
   rules state a credit or course need, which no capture has counted); and
   that the planned chips inside a requirement are the classes he expects.
-  **Plan with AI (`a8956fc`, 2026-11-14) is green on the runner, its
-  function is live, and no model has ever answered it.** `degree-advisor`
+  **Plan with AI has answered one real question (2026-11-14, Olisa's phone,
+  the `a8956fc` build against function version 1): it works end to end and
+  failed the task** (the feature entry above has the exchange). Settled by
+  it: the request reaches the function, a model answers "instantly", the
+  strict JSON decodes, two validated adds landed in the plan and the card
+  with `undo` drew. The fixes (`f86c778`) are green on the runner and
+  unproven: no what-if round trip has run, and the model has not been asked
+  for a whole plan under the new prompt. What the next question will
+  settle: whether it asks for the finance audit, whether Penn answers the
+  `new-program` audit for `FNCS-BS` at all (still the first what-if ever run
+  on a device), how long two requests and a Penn read take together, how
+  many courses it places, and which model answers
+  (`lastDegreeAdvisorModelV1` in the App Group plist). Older notes on this
+  entry follow.
+  **Plan with AI (`a8956fc`, 2026-11-14) was green on the runner with its
+  function live before any model had answered it.** `degree-advisor`
   version 1 was deployed on 2026-11-14 at about 17:49 UTC with Olisa's go
   (`NODE_USE_ENV_PROXY=1 node backend/scripts/deploy-function.mjs
   degree-advisor` from the cloud session, whose proxy supplies the
