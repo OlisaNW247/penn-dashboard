@@ -308,6 +308,22 @@ struct BackendWireTests {
 
     // MARK: - CourseCatalogEntry decoding
 
+    @Test("ClassMeeting decodes a room, a null room and a missing room, and round-trips")
+    func classMeetingDecodesRoom() throws {
+        let withRoom = #"{"sectionID":"001","activity":"LEC","weekday":3,"startMinutes":615,"endMinutes":704,"room":"AGH 106B"}"#
+        let nullRoom = #"{"sectionID":"001","activity":"LEC","weekday":3,"startMinutes":615,"endMinutes":704,"room":null}"#
+        let noKey = #"{"sectionID":"001","activity":"LEC","weekday":3,"startMinutes":615,"endMinutes":704}"#
+        let decoder = BackendJSON.decoder()
+        let a = try decoder.decode(ClassMeeting.self, from: Data(withRoom.utf8))
+        let b = try decoder.decode(ClassMeeting.self, from: Data(nullRoom.utf8))
+        let c = try decoder.decode(ClassMeeting.self, from: Data(noKey.utf8))
+        #expect(a.room == "AGH 106B")
+        #expect(b.room == nil)
+        #expect(c.room == nil)
+        let again = try decoder.decode(ClassMeeting.self, from: JSONEncoder().encode(a))
+        #expect(again == a)
+    }
+
     @Test("CourseCatalogEntry decodes without a meetings key, defaulting to empty")
     func catalogEntryDecodesWithoutMeetings() throws {
         let json = #"{"courseID":"1234","catalogCode":"CIS 2400","title":"Intro to Computer Systems"}"#

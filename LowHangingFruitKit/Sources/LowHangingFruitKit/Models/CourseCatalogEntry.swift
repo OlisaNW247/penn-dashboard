@@ -28,13 +28,42 @@ public struct ClassMeeting: Codable, Sendable, Hashable {
     public let startMinutes: Int
     /// Minutes after midnight the meeting ends.
     public let endMinutes: Int
+    /// The room, when the registrar lists one (2026-11-14). `nil` means
+    /// online, unlisted, or a manifest or saved file from before the server
+    /// sent rooms, which is why it decodes with `decodeIfPresent`.
+    public let room: String?
 
-    public init(sectionID: String, activity: String, weekday: Int, startMinutes: Int, endMinutes: Int) {
+    public init(sectionID: String, activity: String, weekday: Int, startMinutes: Int, endMinutes: Int, room: String? = nil) {
         self.sectionID = sectionID
         self.activity = activity
         self.weekday = weekday
         self.startMinutes = startMinutes
         self.endMinutes = endMinutes
+        self.room = room
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case sectionID, activity, weekday, startMinutes, endMinutes, room
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sectionID = try container.decode(String.self, forKey: .sectionID)
+        activity = try container.decode(String.self, forKey: .activity)
+        weekday = try container.decode(Int.self, forKey: .weekday)
+        startMinutes = try container.decode(Int.self, forKey: .startMinutes)
+        endMinutes = try container.decode(Int.self, forKey: .endMinutes)
+        room = try container.decodeIfPresent(String.self, forKey: .room)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(sectionID, forKey: .sectionID)
+        try container.encode(activity, forKey: .activity)
+        try container.encode(weekday, forKey: .weekday)
+        try container.encode(startMinutes, forKey: .startMinutes)
+        try container.encode(endMinutes, forKey: .endMinutes)
+        try container.encodeIfPresent(room, forKey: .room)
     }
 }
 

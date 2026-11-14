@@ -75,7 +75,8 @@ CourseFactWire      { seq, courseID, documentID, contentHash,
                       postedAt: string | null }
 CatalogEntryWire    { courseID, catalogCode, title, credits,
                       meetings: [{ sectionID, activity, weekday,
-                                   startMinutes, endMinutes }],
+                                   startMinutes, endMinutes,
+                                   room: string | null }],
                       components: [{ activity, credits, sectionIDs }] }
 CourseProfileWire   { courseID,
                       gradingWeights: [{ name, percent, expectedCount?, dropLowest? }],
@@ -83,6 +84,10 @@ CourseProfileWire   { courseID,
                       examDates: [{ name, date?, text }],
                       extractedAt }
 ```
+
+`CatalogEntryWire.meetings[].room` (2026-11-14) is the meeting's room or
+null (online or unlisted); the phone decodes it with `decodeIfPresent`, so
+an older server's manifest without it still loads.
 
 `CatalogEntryWire.meetings[].weekday` is 1 (Sunday) through 7 (Saturday) --
 the same convention `Foundation`'s `Calendar` uses on the iOS side. Penn
