@@ -492,7 +492,7 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
             let body = cutAtWordBoundary(structuredExcerptBody(hit.passage.text), limit: excerptCharacterLimit)
             let labelled = hit.component != .general && (splitByCourse[hit.document.course] ?? false)
             let componentTag = labelled ? "[\(hit.component.label)] · " : ""
-            let postedTag = postedLabel(for: hit.document, askedAt: context.askedAt).map { "posted \($0) · " } ?? ""
+            let postedTag = PassageSituating.dateLabel(for: hit.document, askedAt: context.askedAt, in: context.timeZone).map { "\($0) · " } ?? ""
             return "[\(index + 1)] \(hit.document.course) · \(hit.document.kind.label) · \(postedTag)\(componentTag)\"\(hit.document.title)\": \(body)"
         }
         var header = ["RETRIEVED EXCERPTS (from the student's synced course materials):"]
@@ -650,46 +650,11 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         return hits
     }
 
-    /// Every school the app signs in to (Penn, Brown, Columbia, Cornell,
-    /// Dartmouth, Harvard, Princeton, Yale) keeps Eastern time. A date label
-    /// needs a day, and the day a post was written is the day in the
-    /// student's time zone: UTC would call a 9 PM post the next day, which is
-    /// the wrong answer to "what did they post yesterday?". It is a fixed
-    /// zone rather than the device's so two calls with the same inputs give
-    /// the same text.
-    private static let excerptTimeZone = TimeZone(identifier: "America/New_York") ?? .gmt
-
-    /// `Oct 3`, or `Oct 3, 2025` when the post is not from the year the
-    /// question was asked in, for an Ed post or a Canvas announcement with a
-    /// known date; `nil` for every other kind of document and for an
-    /// undated one. A syllabus has no "posted" day, and a policy that has
-    /// been edited since is not news.
-    ///
-    /// For an Ed post the date is the day it was posted, read from the
-    /// document's header (`CourseDocument.shownPostedAt`), not `updatedAt`:
-    /// that is Ed's last-activity time, and the label said "posted Oct 15"
-    /// for a thread written on Sep 29 and merely replied to on the 15th, which
-    /// the model then repeated as fact. A document from before the header
-    /// carried a date falls back to `updatedAt`.
-    ///
-    /// Reads `askedAt` and never the clock: the same inputs always give the
-    /// same text. The excerpts sit after the cache breakpoint, so a date here
-    /// cannot disturb the cached prefix, but "the same question, the same
-    /// bytes" is what lets this be tested and traced.
-    static func postedLabel(for document: CourseDocument, askedAt: Date) -> String? {
-        guard document.kind == .ed || document.kind == .announcement,
-              let posted = document.shownPostedAt
-        else { return nil }
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = excerptTimeZone
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.calendar = calendar
-        formatter.timeZone = excerptTimeZone
-        let sameYear = calendar.component(.year, from: posted) == calendar.component(.year, from: askedAt)
-        formatter.dateFormat = sameYear ? "MMM d" : "MMM d, yyyy"
-        return formatter.string(from: posted)
-    }
+    // The excerpt date label (`posted 2026-11-01 (yesterday)`, `updated
+    // 2026-10-14 (31 days ago)`) is `PassageSituating.dateLabel`, in the
+    // student's own zone (`context.timeZone`). It replaced `postedLabel`
+    // (2026-11-14), which printed `Oct 3` with no year or age, for Ed posts
+    // and announcements only, in a fixed Eastern zone.
 
 
     // MARK: - The `<sources>` splitter

@@ -63,8 +63,13 @@ public struct CourseSearch: Sendable {
         let documentsByID = Dictionary(knowledge.documents.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         self.documents = documentsByID
         // The titles go in with the passages so a page is findable by its
-        // name; see `BM25Index.init(passages:titles:)`.
-        self.index = BM25Index(passages: all, titles: documentsByID.mapValues(\.title))
+        // name; see `BM25Index.init(passages:titles:)`. What is passed is the
+        // situating line (course, kind, title, date: `PassageSituating`), once
+        // per document and counted once per word like a title, so "cis 2620
+        // syllabus late policy" reaches a passage whose body never names
+        // either. It lives only in the in-memory index: `CourseDocument.text`
+        // and its hash are untouched, and the index is rebuilt at launch.
+        self.index = BM25Index(passages: all, titles: documentsByID.mapValues { PassageSituating.indexLine(for: $0) })
     }
 
     public var isEmpty: Bool { index.isEmpty }

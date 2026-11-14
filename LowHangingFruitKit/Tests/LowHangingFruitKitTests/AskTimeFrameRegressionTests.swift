@@ -430,7 +430,7 @@ struct AskTimeFrameRegressionTests {
         let block = BackendAssistantResponder.excerptBlock(question: Self.question, context: F.context([F.schedule, post]))
         let lines = F.lines(block)
         try #require(!lines.isEmpty)
-        #expect(lines[0].contains("posted Nov 1") && lines[0].contains("No lectures this week"))
+        #expect(lines[0].contains("posted 2026-11-01") && lines[0].contains("No lectures this week"))
         #expect(F.latestAt8(block, post))
         #expect(block.text.contains(BackendAssistantResponder.meetingExcerptNote))
         if case .classMeeting(let range) = F.frame(Self.question) {
@@ -446,7 +446,7 @@ struct AskTimeFrameRegressionTests {
         let block = BackendAssistantResponder.excerptBlock(question: "where is cis 2620 lecture today", context: F.context([F.schedule, post]))
         let lines = F.lines(block)
         try #require(!lines.isEmpty)
-        #expect(lines[0].contains("posted Oct 30") && lines[0].contains("Room change"))
+        #expect(lines[0].contains("posted 2026-10-30") && lines[0].contains("Room change"))
         #expect(F.latestAt8(block, post))
     }
 
@@ -469,8 +469,8 @@ struct AskTimeFrameRegressionTests {
         let block = BackendAssistantResponder.excerptBlock(question: Self.question, context: F.context([F.schedule, off, on]))
         let lines = F.lines(block)
         try #require(lines.count >= 2)
-        #expect(lines[0].contains("posted Nov 2") && lines[0].contains("Class is on as usual"))
-        #expect(lines[1].contains("posted Oct 28"))
+        #expect(lines[0].contains("posted 2026-11-02") && lines[0].contains("Class is on as usual"))
+        #expect(lines[1].contains("posted 2026-10-28"))
         #expect(F.latestAt8(block, on))
     }
 

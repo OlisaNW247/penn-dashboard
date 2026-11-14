@@ -189,12 +189,12 @@ struct AskRecencyExcerptTests {
         )
         let lines = Self.lines(block)
         try #require(lines.count == 7)
-        #expect(lines[0].hasPrefix("[1] ") && lines[0].contains("posted Oct 18") && lines[0].contains("\"Project partners\""))
-        #expect(lines[1].hasPrefix("[2] ") && lines[1].contains("posted Oct 12") && lines[1].contains("\"Thanksgiving schedule\""))
-        #expect(lines[2].contains("posted Oct 7"))
-        #expect(lines[3].contains("posted Sep 3"))
-        #expect(lines[4].contains("posted Aug 28"))
-        #expect(lines[5].contains("posted Aug 26"))
+        #expect(lines[0].hasPrefix("[1] ") && lines[0].contains("posted 2026-10-18") && lines[0].contains("\"Project partners\""))
+        #expect(lines[1].hasPrefix("[2] ") && lines[1].contains("posted 2026-10-12") && lines[1].contains("\"Thanksgiving schedule\""))
+        #expect(lines[2].contains("posted 2026-10-07"))
+        #expect(lines[3].contains("posted 2026-09-03"))
+        #expect(lines[4].contains("posted 2026-08-28"))
+        #expect(lines[5].contains("posted 2026-08-26"))
         // The word match still rides along, after the picks.
         #expect(lines[6].contains("\"Solutions schedule\""))
         #expect(block.text.contains(BackendAssistantResponder.recencyExcerptNote))
@@ -222,12 +222,12 @@ struct AskRecencyExcerptTests {
         )
         let lines = Self.lines(block)
         try #require(!lines.isEmpty)
-        #expect(lines[0].contains("posted Oct 18"))
+        #expect(lines[0].contains("posted 2026-10-18"))
         // Oct 12 is 8 days old: not a pick, so at most BM25 brings it, behind the pick.
-        if let index = lines.firstIndex(where: { $0.contains("posted Oct 12") }) {
+        if let index = lines.firstIndex(where: { $0.contains("posted 2026-10-12") }) {
             #expect(index > 0)
         }
-        #expect(lines.filter { $0.contains("posted Oct 18") }.count == 1)
+        #expect(lines.filter { $0.contains("posted 2026-10-18") }.count == 1)
         #expect(block.text.contains(BackendAssistantResponder.recencyExcerptNote))
     }
 
@@ -238,9 +238,9 @@ struct AskRecencyExcerptTests {
         )
         let lines = Self.lines(block)
         try #require(lines.count >= 3)
-        #expect(lines[0].contains("posted Oct 18"))
-        #expect(lines[1].contains("posted Oct 12"))
-        #expect(lines[2].contains("posted Oct 7"))
+        #expect(lines[0].contains("posted 2026-10-18"))
+        #expect(lines[1].contains("posted 2026-10-12"))
+        #expect(lines[2].contains("posted 2026-10-07"))
         #expect(block.text.contains(BackendAssistantResponder.recencyExcerptNote))
     }
 
@@ -253,13 +253,13 @@ struct AskRecencyExcerptTests {
 
         let named = Self.lines(BackendAssistantResponder.excerptBlock(question: Self.recentQuestion, context: Self.context(documents)))
         try #require(!named.isEmpty)
-        #expect(named[0].contains("posted Oct 18"))
+        #expect(named[0].contains("posted 2026-10-18"))
         #expect(!named.contains { $0.contains("MATH 1400") })
 
         let unnamed = Self.lines(BackendAssistantResponder.excerptBlock(question: "what's new on ed", context: Self.context(documents)))
         try #require(unnamed.count >= 2)
-        #expect(unnamed[0].contains("MATH 1400") && unnamed[0].contains("posted Oct 19"))
-        #expect(unnamed[1].contains("posted Oct 18"))
+        #expect(unnamed[0].contains("MATH 1400") && unnamed[0].contains("posted 2026-10-19"))
+        #expect(unnamed[1].contains("posted 2026-10-18"))
     }
 
     // MARK: - Left alone
@@ -305,7 +305,7 @@ struct AskRecencyExcerptTests {
         )
         let lines = Self.lines(block)
         try #require(!lines.isEmpty)
-        #expect(lines[0].contains("posted Oct 18"))
+        #expect(lines[0].contains("posted 2026-10-18"))
         #expect(!lines.contains { $0.contains("Whiteboard photo") || $0.contains("Empty board note") })
         #expect(!lines.prefix(6).contains { $0.contains("Undated note") })
     }
@@ -321,9 +321,9 @@ struct AskRecencyExcerptTests {
         )
         let lines = Self.lines(block)
         try #require(lines.count >= 3)
-        #expect(lines[0].contains("posted Oct 18"))
-        #expect(lines[1].contains("posted Oct 15") && lines[1].contains("· announcement ·"))
-        #expect(lines[2].contains("posted Oct 12"))
+        #expect(lines[0].contains("posted 2026-10-18"))
+        #expect(lines[1].contains("posted 2026-10-15") && lines[1].contains("· announcement ·"))
+        #expect(lines[2].contains("posted 2026-10-12"))
     }
 }
 
@@ -389,7 +389,7 @@ struct AskMeetingExcerptTests {
         let block = BackendAssistantResponder.excerptBlock(question: Self.question, context: Self.context([post, Self.schedule]))
         let lines = Self.lines(block)
         try #require(!lines.isEmpty)
-        #expect(lines[0].hasPrefix("[1] ") && lines[0].contains("posted Nov 1") && lines[0].contains("No lectures this week but quiz on Monday"))
+        #expect(lines[0].hasPrefix("[1] ") && lines[0].contains("posted 2026-11-01") && lines[0].contains("No lectures this week but quiz on Monday"))
         #expect(lines.filter { $0.contains("No lectures this week") }.count == 1)
         #expect(block.text.contains(BackendAssistantResponder.meetingExcerptNote))
         #expect(!block.text.contains(BackendAssistantResponder.recencyExcerptNote))
@@ -413,11 +413,11 @@ struct AskMeetingExcerptTests {
         let block = BackendAssistantResponder.excerptBlock(question: Self.question, context: Self.context(posts + [Self.schedule]))
         let lines = Self.lines(block)
         try #require(lines.count >= 4)
-        #expect(lines[0].contains("posted Nov 1"))
-        #expect(lines[1].contains("posted Oct 31"))
-        #expect(lines[2].contains("posted Oct 30"))
-        #expect(lines[3].contains("posted Oct 29"))
-        #expect(!lines.contains { $0.contains("posted Oct 28") || $0.contains("posted Oct 27") })
+        #expect(lines[0].contains("posted 2026-11-01"))
+        #expect(lines[1].contains("posted 2026-10-31"))
+        #expect(lines[2].contains("posted 2026-10-30"))
+        #expect(lines[3].contains("posted 2026-10-29"))
+        #expect(!lines.contains { $0.contains("posted 2026-10-28") || $0.contains("posted 2026-10-27") })
     }
 
     @Test("a news question is untouched by the meeting rule: the news note, and no meeting note")
