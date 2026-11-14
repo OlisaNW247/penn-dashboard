@@ -72,7 +72,10 @@ public enum WeeklyScheduleLine {
             if let courseIDs, !courseIDs.contains(course.courseID) { continue }
             let key = CourseMatcher.normalize(course.code)
             if seenCodes.insert(key).inserted { codes.append(course.code) }
-            if let section = course.section, !section.isEmpty {
+            // `CourseSummary` carries no section of its own; the Canvas site
+            // name ("PHYS 0151-151 Fall 2026 ...") does, and `CourseCode.parse`
+            // reads it exactly as the dashboard does for its own labels.
+            if let section = CourseCode.parse(course.name).section, !section.isEmpty {
                 sectionsByCode[key, default: []].insert(section.uppercased())
             }
         }
