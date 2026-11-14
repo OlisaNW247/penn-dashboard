@@ -393,7 +393,16 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         // the server treats as "no excerpts" and leaves out; it is now this
         // one line, so a question with no hits still gets its date right.
         let localLine = localDateLine(askedAt: context.askedAt, timeZone: context.timeZone)
-        guard !context.knowledge.isEmpty else { return ExcerptBlock(text: localLine, sources: []) }
+        guard !context.knowledge.isEmpty else {
+            // No materials to search, but a deadline question is answered from
+            // the work list, and its computed list needs no materials. Every
+            // other question keeps the one line, as before.
+            if case .dueOn(let range) = AskTimeFrame.resolve(question: question, now: context.askedAt, timeZone: context.timeZone) {
+                let due = AskExcerptBudget.dueList(work: context.work, range: range, timeZone: context.timeZone)
+                return ExcerptBlock(text: ([localLine] + due).joined(separator: "\n"), sources: [])
+            }
+            return ExcerptBlock(text: localLine, sources: [])
+        }
         let courses = context.knowledge.courses
         let followUp = FollowUpRetrieval.resolve(
             question: question,
@@ -433,6 +442,28 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
                 now: context.askedAt
             )
         }
+        // Computed lines that follow the date line, per intent (research
+        // Part 3 steps 3 and 5). They sit in this per-question block and never
+        // in the cached context document, which stays byte-stable.
+        var computedLines: [String] = []
+        // The authority rule of a class-meeting question: the last line of the
+        // block, so it is the last thing read before the server's `QUESTION:`.
+        var closingRule: String?
+        switch timeFrame {
+        case .dueOn(let range):
+            computedLines = AskExcerptBudget.dueList(work: context.work, range: range, timeZone: context.timeZone)
+        case .classMeeting(let range):
+            computedLines = WeeklyScheduleLine.lines(
+                entries: WeeklyScheduleLine.entries(knowledge: context.knowledge, courseIDs: courseIDs),
+                day: range?.start ?? context.askedAt,
+                dayString: range?.firstDay,
+                timeZone: context.timeZone,
+                scoped: courseIDs != nil
+            )
+            closingRule = meetingAuthorityRule
+        case .recentNews, .policy, .specific:
+            break
+        }
         var hits = topHits(limit: excerptLimit)
         // An Ed post that is only a picture matches on its title and category
         // words and then has nothing to say, but it still takes one of the
@@ -444,6 +475,14 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         // this only decides what rides along with one question.
         if hits.contains(where: \.isTextlessEdPost) {
             hits = Array(topHits(limit: excerptLimit * 3).filter { !$0.isTextlessEdPost }.prefix(excerptLimit))
+        }
+        // A standing-rule question keeps four slots for the syllabus, pages
+        // and files, and lets a dated post in only when it speaks in policy
+        // words (`AskExcerptBudget.policySelection` says why). It searches
+        // deeper than the limit so the reservation has something to choose from.
+        if case .policy = timeFrame {
+            let deep = topHits(limit: excerptLimit * 3).filter { !$0.isTextlessEdPost }
+            hits = AskExcerptBudget.policySelection(deep, limit: excerptLimit)
         }
         // A question about the newest posts is answered from the newest posts,
         // not from whichever posts share its words (`RecencyIntent` says why).
@@ -472,11 +511,15 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
             // Nothing to number, but a meeting question still needs its note:
             // an empty block would leave the model with only the registrar's
             // schedule and the confidence that came with it.
-            guard let recencyNote else { return ExcerptBlock(text: localLine, sources: []) }
-            return ExcerptBlock(
-                text: [localLine, "RETRIEVED EXCERPTS (from the student's synced course materials):", recencyNote].joined(separator: "\n"),
-                sources: []
-            )
+            guard let recencyNote else {
+                return ExcerptBlock(text: ([localLine] + computedLines).joined(separator: "\n"), sources: [])
+            }
+            var parts: [String] = [localLine]
+            parts.append(contentsOf: computedLines)
+            parts.append("RETRIEVED EXCERPTS (from the student's synced course materials):")
+            parts.append(recencyNote)
+            if let closingRule { parts.append(closingRule) }
+            return ExcerptBlock(text: parts.joined(separator: "\n"), sources: [])
         }
         // Labelled only for courses that are actually split (a lecture
         // syllabus and a lab syllabus, whether on one Canvas site or two)
@@ -498,8 +541,13 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
         var header = ["RETRIEVED EXCERPTS (from the student's synced course materials):"]
         if hits.contains(where: { $0.document.kind == .ed }) { header.append(edExcerptNote) }
         if let recencyNote { header.append(recencyNote) }
+        var all: [String] = [localLine]
+        all.append(contentsOf: computedLines)
+        all.append(contentsOf: header)
+        all.append(contentsOf: lines)
+        if let closingRule { all.append(closingRule) }
         return ExcerptBlock(
-            text: ([localLine] + header + lines).joined(separator: "\n"),
+            text: all.joined(separator: "\n"),
             sources: hits.map { ExcerptSource(document: $0.document) }
         )
     }
@@ -592,6 +640,13 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
     /// brings the schedule and the syllabus's attendance text alongside.
     static let meetingPickLimit = 4
 
+    /// The last line of a class-meeting block, right before the server's
+    /// `QUESTION:`, where a conflict between two sources is resolved (the
+    /// research's step 5, after the GPT-4.1 prompting guide). It must be the
+    /// last line: `meetingExcerptNote` above says the same thing early, where
+    /// the model has not yet read the posts. Must not start with `[`.
+    static let meetingAuthorityRule = "Authority rule: a dated post newer than the weekly schedule overrides it. If no post from the last 14 days mentions a change, say that the schedule stands and that no post mentions a change."
+
     /// The newest dated Ed posts and Canvas announcements in scope, newest
     /// first, at most `excerptLimit`, each as the first passage of its
     /// document (a post is short, and its head carries the news).
@@ -635,7 +690,9 @@ struct BackendAssistantResponder: AssistantResponder, Sendable {
             // nothing and the meeting note carries the "none found" answer.
             if chosen.isEmpty, intent.kind == .news { chosen = Array(newestFirst.prefix(3)) }
         }
-        let pickLimit = intent.kind == .meeting ? meetingPickLimit : excerptLimit
+        // News picks stop at `AskExcerptBudget.newsPickLimit` so two BM25 hits
+        // survive beside them.
+        let pickLimit = intent.kind == .meeting ? meetingPickLimit : AskExcerptBudget.newsPickLimit
         var seen = Set<String>()
         var hits: [SearchHit] = []
         for item in chosen {
