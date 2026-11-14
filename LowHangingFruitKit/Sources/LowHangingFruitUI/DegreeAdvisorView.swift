@@ -10,12 +10,17 @@ struct DegreeAdvisorMessage: Identifiable, Equatable {
     var planBefore: DegreePlan?
     var undone: Bool
     var failed: Bool
+    var notice: String? = nil
 }
 
 /// The degree screen's chat sheet. A message sends the audit and plan as text
 /// to smooth's server, only when the student sends it; nothing is stored there.
 /// Edits the model proposes are applied at once, with an undo on the latest
 /// one, because the plan is the student's own sketch and one tap restores it.
+/// When the model needs a program's audit it does not have (a concentration the
+/// student has not declared), the phone reads Penn's what-if for it, swaps it
+/// in and asks again within the same send; `activeAudits` keeps that audit for
+/// the next question.
 /// The wrong fix would be a confirmation step on every edit, which undoes the
 /// ask that it add courses for you.
 struct DegreeAdvisorView: View {
@@ -28,6 +33,8 @@ struct DegreeAdvisorView: View {
 
     @State private var draft = ""
     @State private var waiting = false
+    @State private var stage: String?
+    @State private var activeAudits: [DegreeLabeledAudit]?
 
     nonisolated static func starters(hasSeveralDegrees: Bool, nextTermLabel: String?) -> [String] {
         let label = nextTermLabel ?? "next semester"
@@ -62,7 +69,9 @@ struct DegreeAdvisorView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 20)
                     .padding(.top, 8)
+                    .padding(.bottom, 10)
                     .accessibilityAddTraits(.isHeader)
+                Divider().overlay(Color.smoothRule.opacity(0.6))
                 conversation
                 composer
             }
@@ -79,6 +88,16 @@ struct DegreeAdvisorView: View {
         }
         .environmentObject(state)
         .lhfSheetTheme()
+        .task {
+            // The model can only ask for a what-if audit ("plan toward a
+            // finance concentration") from the list of programs the phone
+            // holds, and that list is otherwise loaded only by the what-if
+            // tab. Opening the chat is the student asking for planning help,
+            // so it is loaded here too; it returns at once when cached.
+            if state.degree.programs.isEmpty {
+                _ = await state.loadDegreePrograms()
+            }
+        }
     }
 
     // MARK: Conversation
@@ -95,16 +114,23 @@ struct DegreeAdvisorView: View {
                             .id(message.id)
                     }
                     if waiting {
-                        ProgressView()
-                            .controlSize(.small)
-                            .id("waiting")
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            if let stage {
+                                Text(stage)
+                                    .font(.lhfSans(12))
+                                    .foregroundStyle(Color.smoothMuted)
+                            }
+                        }
+                        .id("waiting")
                     }
                 }
                 .padding(20)
             }
             .onChange(of: messages.count) { _, _ in
                 if let last = messages.last {
-                    withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                    withAnimation { proxy.scrollTo(last.id, anchor: last.isUser ? .bottom : .top) }
                 }
             }
             .onChange(of: waiting) { _, isWaiting in
@@ -150,8 +176,18 @@ struct DegreeAdvisorView: View {
             }
         } else {
             VStack(alignment: .leading, spacing: 8) {
+                if let notice = message.notice {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 11))
+                        Text(notice)
+                            .font(.lhfSans(12))
+                    }
+                    .foregroundStyle(Color.smoothMuted)
+                }
                 Text(message.text)
                     .font(.lhfSans(14))
+                    .lineSpacing(3)
                     .foregroundStyle(message.failed ? Color.smoothMuted : Color.smoothInk)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -238,12 +274,17 @@ struct DegreeAdvisorView: View {
                                              changes: [], planBefore: nil, undone: false, failed: false))
         draft = ""
         waiting = true
-        let sent = audits
+        let sent = activeAudits ?? audits
+        stage = nil
         Task {
-            let reply = await state.askDegreeAdvisor(question: question, turns: turns, audits: sent)
+            let reply = await state.askDegreeAdvisor(question: question, turns: turns, audits: sent,
+                                                     onStage: { stage = $0 })
+            if let used = reply.audits { activeAudits = used }
+            stage = nil
             messages.append(DegreeAdvisorMessage(id: UUID(), isUser: false, text: reply.answer,
                                                  changes: reply.changes, planBefore: reply.planBefore,
-                                                 undone: false, failed: reply.failed))
+                                                 undone: false, failed: reply.failed,
+                                                 notice: reply.notice))
             waiting = false
         }
     }

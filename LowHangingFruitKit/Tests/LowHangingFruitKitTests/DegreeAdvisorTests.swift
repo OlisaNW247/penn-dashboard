@@ -242,7 +242,61 @@ struct DegreeAdvisorTests {
         let r = DegreeAdvisor.request(question: "q", turns: [], brief: simpleBrief(addable: []), now: now)
         let data = try JSONEncoder().encode(r)
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        #expect(Set(object?.keys.map { $0 } ?? []) == ["question", "history", "context", "terms", "addable", "now"])
+        #expect(Set(object?.keys.map { $0 } ?? []) == ["question", "history", "context", "terms", "addable", "programs", "now"])
+    }
+
+    private func entry(_ code: String, _ kind: DegreeProgramKind, degreeID: String?) -> DegreeProgramEntry {
+        DegreeProgramEntry(
+            listing: PathProgramListing(code: code, title: code), kind: kind, name: code.lowercased(),
+            degreeCode: "bs", degreeID: degreeID, degreeLabel: degreeID == nil ? "" : "deg",
+            collegeName: "", isSibling: degreeID != nil)
+    }
+
+    @Test("programs keep only entries within a degree, with code, name and kind")
+    func programsFromEntries() {
+        let entries = [
+            entry("FNCS-BS", .concentration, degreeID: "d1"),
+            entry("MATH-MIN", .minor, degreeID: nil),
+            entry("CIS-BSE", .major, degreeID: "d2"),
+        ]
+        let out = DegreeAdvisor.programs(from: entries)
+        #expect(out == [
+            DegreeAdvisorProgram(code: "FNCS-BS", name: "fncs-bs", kind: DegreeProgramKind.concentration.tag),
+            DegreeAdvisorProgram(code: "CIS-BSE", name: "cis-bse", kind: DegreeProgramKind.major.tag),
+        ])
+    }
+
+    @Test("programs are capped")
+    func programsCap() {
+        let entries = (0..<(DegreeAdvisor.maxPrograms + 20)).map { entry("P\($0)-BS", .major, degreeID: "d") }
+        #expect(DegreeAdvisor.programs(from: entries).count == DegreeAdvisor.maxPrograms)
+    }
+
+    @Test("a request built with programs carries them")
+    func requestPrograms() throws {
+        let programs = [DegreeAdvisorProgram(code: "FNCS-BS", name: "finance", kind: "concentration")]
+        let r = DegreeAdvisor.request(question: "q", turns: [], brief: simpleBrief(addable: []),
+                                      programs: programs, now: now)
+        #expect(r.programs == programs)
+        let data = try JSONEncoder().encode(r)
+        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let list = object?["programs"] as? [[String: Any]]
+        #expect(list?.first?["code"] as? String == "FNCS-BS")
+    }
+
+    @Test("a response decodes whatIf and model when present, nil when absent or blank")
+    func responseWhatIf() throws {
+        let decoder = JSONDecoder()
+        let full = try decoder.decode(DegreeAdvisorResponse.self, from: Data(
+            #"{"answer":"a","actions":[],"whatIf":"FNCS-BS","model":"m/x"}"#.utf8))
+        #expect(full.whatIf == "FNCS-BS")
+        #expect(full.model == "m/x")
+        let bare = try decoder.decode(DegreeAdvisorResponse.self, from: Data(#"{"answer":"a"}"#.utf8))
+        #expect(bare.whatIf == nil)
+        #expect(bare.model == nil)
+        let blank = try decoder.decode(DegreeAdvisorResponse.self, from: Data(
+            #"{"answer":"a","actions":[],"whatIf":"  ","model":null}"#.utf8))
+        #expect(blank.whatIf == nil)
     }
 
     // MARK: Response

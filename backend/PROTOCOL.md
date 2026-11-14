@@ -1127,18 +1127,30 @@ discussed today have been posted." into an overdue assignment.
 
 ## `degree-advisor`
 
-Request `{ "question", "history": [{ "role": "user"|"assistant", "content" }], "context", "terms": [{ "code", "label" }], "addable": [course code], "now": ISO8601 }`.
+Request `{ "question", "history": [{ "role": "user"|"assistant", "content" }], "context", "terms": [{ "code", "label" }], "addable": [course code], "programs"?: [{ "code", "name", "kind" }], "now": ISO8601 }`.
 `context` is a text document the phone builds: Penn's audit for each of the
 student's degrees, their semesters and their own plan. `terms` and `addable`
 are the term codes (six digits, e.g. `202730`) and course codes (e.g.
-`CIS 4710`) the phone will accept as plan edits.
+`CIS 4710`) the phone will accept as plan edits. `programs` is optional (a
+version-1 phone sends none; missing reads as `[]`): the programs the phone can
+fetch a what-if audit for, the student's concentration options and sibling
+majors, each `code` 1 to 40 characters, `name` 1 to 80, `kind` 1 to 20, at most
+80 of them.
 
-Response `{ "answer": string, "actions": [ { "op": "add"|"remove"|"move", "code", "term", "toTerm": string|null } ] }`.
-`answer` is at most 2000 characters (the prompt asks for 120 words); `actions`
-is empty for a plain question. The server drops any action the model should not
+Response `{ "actions": [ { "op": "add"|"remove"|"move", "code", "term", "toTerm": string|null } ], "whatIf": string|null, "answer": string, "model": string }`.
+`answer` is at most 2000 characters (the prompt asks for 150 words and not to
+list the added codes, which the app shows itself); `actions` is empty for a
+plain question. The schema orders the fields `actions`, `whatIf`, `answer` so
+the model decides before it describes. `model` is the id that actually answered
+(the primary, or the fallback when it was used, including after a 400/404 retry).
+`whatIf` is the `code` of one entry of `programs` that the model wants audited
+before it can plan, else null; the server keeps it only when it equals a listed
+code, and then forces `actions` to `[]`. **What-if round trip:** when `whatIf`
+is set, the phone fetches Penn's audit for that program and sends the question
+again with that audit in `context` and `programs: []`. The server drops any action the model should not
 have made: an `add` of a code not in `addable`, a `term` or `toTerm` not in
 `terms`, a `move` whose `toTerm` is missing or equal to `term`, duplicates, and
-anything past 24. Codes come back upper-cased with single spaces. `toTerm` is
+anything past 60. Codes come back upper-cased with single spaces. `toTerm` is
 null except for `move`. The phone validates again; the server's check exists
 because the model's output is untrusted.
 
@@ -1161,8 +1173,9 @@ it.
 
 Model `LHF_DEGREE_MODEL` (default `anthropic/claude-sonnet-5.5`), fallback
 `LHF_DEGREE_FALLBACK_MODEL` (default `anthropic/claude-haiku-5.5`), provider
-order `LHF_PROVIDER_ORDER`. Strict JSON schema, `reasoning: { effort: "low" }`,
-1500 max tokens, temperature 0.2.
+order `LHF_PROVIDER_ORDER`. Strict JSON schema, `reasoning: { effort: "medium" }`,
+4000 max tokens, temperature 0.2 (a whole-plan answer is up to 60 actions;
+version 1's low effort and 1500 tokens produced a plan of two courses).
 
 ## `map-categories`
 

@@ -49,23 +49,40 @@ public struct DegreeAdvisorTerm: Codable, Sendable, Hashable {
     }
 }
 
+/// A program the phone could fetch a what-if audit for, offered to the server
+/// so the model can ask for it by code.
+public struct DegreeAdvisorProgram: Codable, Sendable, Hashable {
+    public let code: String
+    public let name: String
+    public let kind: String
+
+    public init(code: String, name: String, kind: String) {
+        self.code = code
+        self.name = name
+        self.kind = kind
+    }
+}
+
 public struct DegreeAdvisorRequest: Encodable, Sendable, Equatable {
     public let question: String
     public let history: [DegreeAdvisorTurn]
     public let context: String
     public let terms: [DegreeAdvisorTerm]
     public let addable: [String]
+    public let programs: [DegreeAdvisorProgram]
     public let now: Date
 
     public init(
         question: String, history: [DegreeAdvisorTurn], context: String,
-        terms: [DegreeAdvisorTerm], addable: [String], now: Date
+        terms: [DegreeAdvisorTerm], addable: [String],
+        programs: [DegreeAdvisorProgram] = [], now: Date
     ) {
         self.question = question
         self.history = history
         self.context = context
         self.terms = terms
         self.addable = addable
+        self.programs = programs
         self.now = now
     }
 }
@@ -89,13 +106,22 @@ public struct DegreeAdvisorAction: Codable, Sendable, Hashable {
 public struct DegreeAdvisorResponse: Decodable, Sendable, Equatable {
     public let answer: String
     public let actions: [DegreeAdvisorAction]
+    /// The `code` of a program the server wants the audit for, or nil.
+    public let whatIf: String?
+    /// The model id that answered; a diagnostics breadcrumb, never shown.
+    public let model: String?
 
-    public init(answer: String, actions: [DegreeAdvisorAction]) {
+    public init(
+        answer: String, actions: [DegreeAdvisorAction],
+        whatIf: String? = nil, model: String? = nil
+    ) {
         self.answer = answer
         self.actions = actions
+        self.whatIf = whatIf
+        self.model = model
     }
 
-    private enum CodingKeys: String, CodingKey { case answer, actions }
+    private enum CodingKeys: String, CodingKey { case answer, actions, whatIf, model }
 
     /// Decodes one action without ever throwing, so a single bad element
     /// (an op this build does not know, a number where a string belongs) costs
@@ -115,6 +141,11 @@ public struct DegreeAdvisorResponse: Decodable, Sendable, Equatable {
         self.answer = (try container.decodeIfPresent(String.self, forKey: .answer)) ?? ""
         let lossy: [Lossy]? = try? container.decodeIfPresent([Lossy].self, forKey: .actions)
         self.actions = (lossy ?? []).compactMap { $0.value }
+        let rawWhatIf: String? = try? container.decodeIfPresent(String.self, forKey: .whatIf)
+        let trimmedWhatIf = rawWhatIf?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        self.whatIf = trimmedWhatIf.isEmpty ? nil : trimmedWhatIf
+        let rawModel: String? = try? container.decodeIfPresent(String.self, forKey: .model)
+        self.model = rawModel
     }
 }
 
@@ -171,6 +202,23 @@ public enum DegreeAdvisor {
     public static let maxContext = 60_000
     public static let maxTerms = 8
     public static let maxAddable = 800
+    public static let maxPrograms = 80
+
+    /// The programs the server may ask for an audit of: only catalogue rows
+    /// that are options within one of the student's own degrees (`degreeID`
+    /// non-nil: their concentration options and sibling majors). A what-if for
+    /// such a row replaces exactly one of the student's degrees, so the
+    /// document stays "one audit per degree". A minor or an unrelated major has
+    /// no degree to stand in for, and guessing one would put a wrong audit
+    /// under a right name.
+    public static func programs(from entries: [DegreeProgramEntry]) -> [DegreeAdvisorProgram] {
+        var out: [DegreeAdvisorProgram] = []
+        for entry in entries where entry.degreeID != nil {
+            if out.count >= maxPrograms { break }
+            out.append(DegreeAdvisorProgram(code: entry.listing.code, name: entry.name, kind: entry.kind.tag))
+        }
+        return out
+    }
 
     private static let optionCaps = [25, 12, 6, 0]
     private static let worthLimit = 60
@@ -414,7 +462,8 @@ public enum DegreeAdvisor {
     // MARK: Request
 
     public static func request(
-        question: String, turns: [DegreeAdvisorTurn], brief: DegreeAdvisorBrief, now: Date
+        question: String, turns: [DegreeAdvisorTurn], brief: DegreeAdvisorBrief,
+        programs: [DegreeAdvisorProgram] = [], now: Date
     ) -> DegreeAdvisorRequest {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         let cut = String(trimmed.prefix(maxQuestion))
@@ -427,7 +476,8 @@ public enum DegreeAdvisor {
         }
         return DegreeAdvisorRequest(
             question: cut, history: kept, context: brief.context, terms: brief.terms,
-            addable: brief.addable.keys.sorted(), now: now)
+            addable: brief.addable.keys.sorted(),
+            programs: Array(programs.prefix(maxPrograms)), now: now)
     }
 
     // MARK: Applying an answer's edits

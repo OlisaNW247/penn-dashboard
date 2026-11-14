@@ -218,6 +218,8 @@ struct DegreeCopyTests {
         #expect(source.contains("sends your audit and plan to smooth's server to answer. nothing is stored."))
         #expect(source.contains("askDegreeAdvisor("))
         #expect(source.contains("undoDegreeAdvisor("))
+        #expect(source.contains("activeAudits"))
+        #expect(source.contains("onStage:"))
         #expect(source.contains("DegreeAdvisor.summary("))
         #expect(!source.lowercased().contains("recommend"))
         #expect(try uiSource("DegreePlanView.swift").contains("DegreeContribution.grouped("))

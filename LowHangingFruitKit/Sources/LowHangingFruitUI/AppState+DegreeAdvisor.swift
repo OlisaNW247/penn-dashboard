@@ -15,6 +15,21 @@ struct DegreeAdvisorReply: Sendable, Equatable {
     /// The plan as it was before the edits; non-nil only when the plan changed.
     let planBefore: DegreePlan?
     let failed: Bool
+    /// Non-nil only when a what-if audit was fetched: the audits the answer was
+    /// planned against, for the view to keep using on the next question.
+    let audits: [DegreeLabeledAudit]?
+    /// A line for the chat when a what-if was read, e.g. "read path@penn's audit for finance".
+    let notice: String?
+
+    init(answer: String, changes: [DegreeAdvisorChange], planBefore: DegreePlan?, failed: Bool,
+         audits: [DegreeLabeledAudit]? = nil, notice: String? = nil) {
+        self.answer = answer
+        self.changes = changes
+        self.planBefore = planBefore
+        self.failed = failed
+        self.audits = audits
+        self.notice = notice
+    }
 }
 
 extension AppState {
@@ -24,41 +39,138 @@ extension AppState {
         degreeFeatureAvailable && (isUsingFixtureData || BackendServices.client != nil)
     }
 
-    /// One question. `audits` is what the screen is drawing, so a what-if on
-    /// screen is what the advisor reasons about. Edits are applied at once to
-    /// the plan as it is after the network round trip (the student may have
-    /// dragged a course meanwhile), through the same commit the other plan
-    /// edits use.
+    /// One question, in up to two passes. `audits` is what the screen is
+    /// drawing, so a what-if on screen is what the advisor reasons about.
+    ///
+    /// Pass one sends the question with the list of programs the phone could
+    /// fetch an audit for. If the server answers `whatIf` (a program code
+    /// instead of a plan), the phone fetches that what-if from Penn, swaps it
+    /// in for the degree it stands in for, and asks the same question again.
+    /// The phone does the fetching and not the server because only the phone
+    /// holds the Penn session; the server never sees a credential. The second
+    /// request sends `programs: []`, so the model cannot ask again: that is the
+    /// loop guard, and a send costs at most one Penn read and two requests.
+    /// Edits are applied at once to the plan as it is after the network round
+    /// trip (the student may have dragged a course meanwhile), through the same
+    /// commit the other plan edits use.
     func askDegreeAdvisor(question: String, turns: [DegreeAdvisorTurn],
-                          audits: [DegreeLabeledAudit]) async -> DegreeAdvisorReply {
+                          audits: [DegreeLabeledAudit],
+                          onStage: @MainActor (String) -> Void = { _ in }) async -> DegreeAdvisorReply {
         loadDegreePlanIfNeeded()
         if isUsingFixtureData {
             return DegreeAdvisorReply(
                 answer: "this is the demo. connect canvas at penn to ask about your own audit.",
-                changes: [], planBefore: nil, failed: false)
+                changes: [], planBefore: nil, failed: false, audits: nil, notice: nil)
         }
         guard let client = BackendServices.client else {
             return DegreeAdvisorReply(answer: Self.degreeAdvisorFailureLine(BackendError.notConfigured),
-                                      changes: [], planBefore: nil, failed: true)
+                                      changes: [], planBefore: nil, failed: true, audits: nil, notice: nil)
         }
         let now = Date()
         let brief = DegreeAdvisor.brief(audits: audits, plan: degreePlan,
                                         history: degree.history, now: now)
-        let request = DegreeAdvisor.request(question: question, turns: turns, brief: brief, now: now)
+        // The catalogue is only used if already loaded: asking for it here
+        // would start a Penn sign-in before the student has asked for anything
+        // that needs one. An empty catalogue means no what-if can be offered.
+        let catalogue = degree.programs
+        let entries = catalogue.isEmpty ? [] : degreeProgramEntries(catalogue)
+        let programs = DegreeAdvisor.programs(from: entries)
+        let request = DegreeAdvisor.request(question: question, turns: turns, brief: brief,
+                                            programs: programs, now: now)
+        let first: DegreeAdvisorResponse
         do {
-            let response = try await client.degreeAdvisor(request)
-            let before = degreePlan
-            let outcome = DegreeAdvisor.apply(response.actions, to: before, brief: brief)
-            let changed = outcome.plan != before
-            if changed { commitDegreePlan(outcome.plan) }
-            return DegreeAdvisorReply(answer: response.answer,
-                                      changes: changed ? outcome.applied : [],
-                                      planBefore: changed ? before : nil,
-                                      failed: false)
+            first = try await client.degreeAdvisor(request)
         } catch {
             return DegreeAdvisorReply(answer: Self.degreeAdvisorFailureLine(error),
-                                      changes: [], planBefore: nil, failed: true)
+                                      changes: [], planBefore: nil, failed: true, audits: nil, notice: nil)
         }
+        Self.noteDegreeAdvisorModel(first.model)
+
+        guard let wanted = first.whatIf,
+              let entry = entries.first(where: { $0.listing.code == wanted && $0.degreeID != nil })
+        else {
+            return finishDegreeAdvisor(first, brief: brief, audits: nil, notice: nil)
+        }
+
+        onStage("reading path@penn for \(entry.name)…")
+        guard let whatIf = await fetchDegreeAdvisorWhatIf(entry) else {
+            return DegreeAdvisorReply(
+                answer: "couldn't read path@penn's audit for \(entry.name).",
+                changes: [], planBefore: nil, failed: true, audits: nil, notice: nil)
+        }
+        let degreeID = entry.degreeID ?? ""
+        let swapped = Self.degreeAdvisorAudits(audits, replacing: degreeID, with: whatIf, name: entry.name)
+        let notice = "read path@penn's audit for \(entry.name)"
+
+        onStage("planning…")
+        let secondBrief = DegreeAdvisor.brief(audits: swapped, plan: degreePlan,
+                                              history: degree.history, now: now)
+        let second = DegreeAdvisor.request(question: question, turns: turns, brief: secondBrief,
+                                           programs: [], now: now)
+        do {
+            let response = try await client.degreeAdvisor(second)
+            Self.noteDegreeAdvisorModel(response.model)
+            return finishDegreeAdvisor(response, brief: secondBrief, audits: swapped, notice: notice)
+        } catch {
+            return DegreeAdvisorReply(answer: Self.degreeAdvisorFailureLine(error),
+                                      changes: [], planBefore: nil, failed: true,
+                                      audits: swapped, notice: nil)
+        }
+    }
+
+    /// Applies a response's edits to the live plan and builds the reply.
+    private func finishDegreeAdvisor(_ response: DegreeAdvisorResponse, brief: DegreeAdvisorBrief,
+                                     audits: [DegreeLabeledAudit]?, notice: String?) -> DegreeAdvisorReply {
+        let before = degreePlan
+        let outcome = DegreeAdvisor.apply(response.actions, to: before, brief: brief)
+        let changed = outcome.plan != before
+        if changed { commitDegreePlan(outcome.plan) }
+        return DegreeAdvisorReply(answer: response.answer,
+                                  changes: changed ? outcome.applied : [],
+                                  planBefore: changed ? before : nil,
+                                  failed: false, audits: audits, notice: notice)
+    }
+
+    /// Fetches the what-if audit for one catalogue entry from Penn and returns
+    /// it, or nil when it could not be read.
+    private func fetchDegreeAdvisorWhatIf(_ entry: DegreeProgramEntry) async -> DegreeAudit? {
+        if entry.isSibling {
+            let ok = await runDegreeEntry(entry)
+            guard ok, let audit = degree.whatIfs.first else { return nil }
+            return audit
+        }
+        // A concentration of the student's own major: select the degree it
+        // belongs to, then run the page's add-concentration change.
+        if let id = entry.degreeID, id != selectedStudentDegree?.id {
+            await selectDegree(id)
+        }
+        let plans = await degreeWhatIfPlans(for: entry.listing.code)
+        guard let plan = plans.first(where: { $0.change == .addConcentration })
+                ?? plans.first(where: { $0.change == .newProgram })
+        else { return nil }
+        await runWhatIf(plan)
+        guard let audit = degree.whatIfs.first, audit.goals == plan.goals else { return nil }
+        return audit
+    }
+
+    /// The audits with the one for `degreeID` replaced by a what-if, labelled so
+    /// the model knows it is not declared; appended when no entry has that id.
+    nonisolated static func degreeAdvisorAudits(_ audits: [DegreeLabeledAudit], replacing degreeID: String,
+                                                with audit: DegreeAudit, name: String) -> [DegreeLabeledAudit] {
+        let swap = DegreeLabeledAudit(degreeID: degreeID, label: "\(name) (what if, not declared)", audit: audit)
+        var out = audits
+        if let index = out.firstIndex(where: { $0.degreeID == degreeID }) {
+            out[index] = swap
+        } else {
+            out.append(swap)
+        }
+        return out
+    }
+
+    /// A breadcrumb readable off the phone: which model answered. An id only.
+    private nonisolated static func noteDegreeAdvisorModel(_ model: String?) {
+        guard let model, !model.isEmpty else { return }
+        UserDefaults.lhf.set(model, forKey: "lastDegreeAdvisorModelV1")
     }
 
     /// Puts back the plan a reply replaced. It restores unconditionally: the

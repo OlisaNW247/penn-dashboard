@@ -350,6 +350,8 @@ struct DegreeAppStateTests {
         #expect(!reply.failed)
         #expect(reply.changes.isEmpty)
         #expect(reply.planBefore == nil)
+        #expect(reply.audits == nil)
+        #expect(reply.notice == nil)
         #expect(reply.answer == "this is the demo. connect canvas at penn to ask about your own audit.")
         #expect(state.degreePlan == before)
     }
@@ -375,6 +377,39 @@ struct DegreeAppStateTests {
         let source = try String(contentsOf: path, encoding: .utf8)
         #expect(source.contains("DegreeAdvisorView("))
         #expect(source.contains("degreeAdvisorAvailable"))
+    }
+
+    @Test("the advisor's source reads the what-if once and cannot loop")
+    func advisorWhatIfSource() throws {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<3 { url.deleteLastPathComponent() }
+        let path = url.appendingPathComponent("Sources/LowHangingFruitUI/AppState+DegreeAdvisor.swift")
+        let source = try String(contentsOf: path, encoding: .utf8)
+        #expect(source.contains("runDegreeEntry("))
+        #expect(source.contains("programs: []"))
+        #expect(source.contains("lastDegreeAdvisorModelV1"))
+    }
+
+    @Test("a what-if replaces the audit of its degree, appends when absent, and leaves the rest")
+    func advisorAuditSwap() {
+        func audit(_ percent: Double) -> DegreeAudit {
+            DegreeAudit(goals: DegreeGoals(), isWhatIf: false, percentComplete: percent, degreeLabel: nil,
+                        catalogYearLabel: nil, blocks: [], courses: [],
+                        fetchedAt: Date(timeIntervalSince1970: 0))
+        }
+        let a = DegreeLabeledAudit(degreeID: "a", label: "cs", audit: audit(10))
+        let b = DegreeLabeledAudit(degreeID: "b", label: "wharton", audit: audit(20))
+        let whatIf = audit(55)
+        let swapped = AppState.degreeAdvisorAudits([a, b], replacing: "b", with: whatIf, name: "finance")
+        #expect(swapped.count == 2)
+        #expect(swapped[0] == a)
+        #expect(swapped[1].degreeID == "b")
+        #expect(swapped[1].label == "finance (what if, not declared)")
+        #expect(swapped[1].audit == whatIf)
+        let appended = AppState.degreeAdvisorAudits([a], replacing: "z", with: whatIf, name: "finance")
+        #expect(appended.count == 2)
+        #expect(appended[0] == a)
+        #expect(appended[1].degreeID == "z")
     }
 
     @Test("each backend failure has its own line")

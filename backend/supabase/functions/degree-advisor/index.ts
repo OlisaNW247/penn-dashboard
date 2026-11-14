@@ -17,7 +17,7 @@ import { HttpError, corsHeaders, errorResponse, json, readJSON } from "../_share
 import { enforceMinimumVersion } from "../_shared/version.ts";
 import { requireUser } from "../_shared/auth.ts";
 import { limitsFromEnv, reserveUsage } from "../_shared/quota.ts";
-import { chatCompletionJSON, UpstreamError } from "../_shared/openrouter.ts";
+import { chatCompletionJSONWithUsage, UpstreamError } from "../_shared/openrouter.ts";
 import {
   buildDegreeAdvice,
   buildDegreeAdvisorMessages,
@@ -64,7 +64,7 @@ export async function handleDegreeAdvisor(req: Request): Promise<Response> {
       // question into "couldn't reach smooth" until someone read the logs.
       // The retry names the fallback as the only model, so it cannot loop.
       const complete = (primary: string, fallback: string | undefined) =>
-        chatCompletionJSON({
+        chatCompletionJSONWithUsage({
           fetchImpl: fetch,
           apiKey,
           model: primary,
@@ -72,25 +72,27 @@ export async function handleDegreeAdvisor(req: Request): Promise<Response> {
           provider: providerFromEnv(),
           messages: buildDegreeAdvisorMessages(body),
           jsonSchema: DEGREE_ADVISOR_SCHEMA,
-          reasoning: { effort: "low" },
-          maxTokens: 1500,
+          // A whole-plan answer is up to 60 actions; low effort and 1,500
+          // tokens (version 1) produced a plan of two courses.
+          reasoning: { effort: "medium" },
+          maxTokens: 4000,
           temperature: 0.2,
           // The answer is for this phone alone, so when the client leaves
           // the model call is cut off rather than paid for and discarded.
           signal: req.signal,
         });
 
-      let text: string;
+      let completion: { content: string; model: string };
       try {
         try {
-          text = await complete(model, fallbackModel);
+          completion = await complete(model, fallbackModel);
         } catch (err) {
           const status = err instanceof UpstreamError ? err.status : undefined;
           const refused = status === 400 || status === 404;
           if (!refused || fallbackModel === model || req.signal.aborted) throw err;
           // Model ids only, never request content.
           console.warn(`degree-advisor: ${model} refused with ${status}, trying ${fallbackModel}`);
-          text = await complete(fallbackModel, undefined);
+          completion = await complete(fallbackModel, undefined);
         }
       } catch (err) {
         const status = err instanceof UpstreamError ? err.status : undefined;
@@ -100,7 +102,7 @@ export async function handleDegreeAdvisor(req: Request): Promise<Response> {
 
       let advice;
       try {
-        advice = buildDegreeAdvice(text, body);
+        advice = buildDegreeAdvice(completion.content, body);
       } catch {
         // Unusable output is a failure: the unit is given back (not kept).
         console.error("degree-advisor: unusable model output");
@@ -108,7 +110,7 @@ export async function handleDegreeAdvisor(req: Request): Promise<Response> {
       }
 
       keepReservation = true;
-      return json(200, advice);
+      return json(200, { ...advice, model: completion.model });
     } finally {
       if (!keepReservation) {
         await (req.signal.aborted ? lease.settle(0, 0) : lease.release());
