@@ -171,8 +171,25 @@ audit.
   out only the fields listed above, so your grades and GPA are never read.
   Nothing is saved in the Keychain for this.
 - **Where it stays:** on this phone, in a file in the app's own storage.
-  Nothing about your degree goes to our server, to a paired laptop, to iCloud
-  or to "the tree".
+  Nothing about your degree goes to a paired laptop, to iCloud or to "the
+  tree", and nothing goes to our server unless you use "plan with ai"
+  (next).
+- **Plan with AI (the one time degree data leaves the phone):** the sparkle
+  button on the degree screen opens a chat that can answer questions about
+  your audit and add, move or remove courses in your plan. Each message you
+  send there goes to our server with a text summary of what the screen
+  shows: your degrees (program and major codes and names), Penn's
+  requirements and how complete each is, the course codes and titles you
+  have taken, are registered for and have planned, by semester, the options
+  Penn lists as still open, and the earlier messages of that chat. It is
+  sent under the same anonymous account as "the tree", without your name,
+  your Penn id, a grade or a GPA (Smooth never reads those). Our server
+  passes it to a language model to write the answer and **stores none of
+  it**: not the question, the summary or the answer; only the per-day
+  request count every "tree" question also adds to. Nothing is sent until
+  you send a message, and the chat says so before your first one. If you
+  never open it, nothing about your degree leaves the phone. Changes the
+  chat makes to your plan can be undone with one tap.
 - **Searching programs:** the search in "what if" runs on this phone, over
   Penn's public list of programs. On an iPhone with Apple Intelligence,
   when a search finds almost nothing, Apple's on-device model is asked for
@@ -183,8 +200,9 @@ audit.
   as the audit reports them, and the screen always links to Path@Penn.
 - **Your plan:** the "plan" tab is a table of semesters you fill in yourself,
   by typing a course code or picking from the options your audit still lists
-  as open. It is kept in its own file on this phone. Smooth sends it nowhere:
-  not to Penn, our server, a paired laptop or "the tree". Because you wrote
+  as open. It is kept in its own file on this phone. Smooth sends it nowhere
+  on its own: not to Penn, a paired laptop or "the tree", and to our server
+  only inside a "plan with ai" message (above). Because you wrote
   it and Penn cannot give it back, it is included in this phone's ordinary
   backup if you back the phone up (the audit itself is not).
 - **How to remove it:** disconnect Canvas. That deletes the audit file, your

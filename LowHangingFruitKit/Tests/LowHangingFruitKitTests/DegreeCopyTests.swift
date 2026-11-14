@@ -8,7 +8,7 @@ import LowHangingFruitKit
 /// status sentence read from `DegreeStatus.line` rather than written here.
 @Suite("Degree copy")
 struct DegreeCopyTests {
-    private static let files = ["DegreeProgressView.swift", "DegreeWhatIfSheet.swift", "DegreePlanView.swift", "DegreeSemesterTable.swift"]
+    private static let files = ["DegreeProgressView.swift", "DegreeWhatIfSheet.swift", "DegreePlanView.swift", "DegreeSemesterTable.swift", "DegreeAdvisorView.swift"]
 
     private func uiSource(_ filename: String) throws -> String {
         let sources = URL(fileURLWithPath: #filePath)
@@ -209,5 +209,31 @@ struct DegreeCopyTests {
         for source in [table, sheet] {
             #expect(!source.contains("\"recommended"))
         }
+    }
+
+    @Test("the advisor sheet says what it sends and can undo")
+    func advisorSheet() throws {
+        let source = try uiSource("DegreeAdvisorView.swift")
+        #expect(source.contains("Text(\"plan with ai\")"))
+        #expect(source.contains("sends your audit and plan to smooth's server to answer. nothing is stored."))
+        #expect(source.contains("askDegreeAdvisor("))
+        #expect(source.contains("undoDegreeAdvisor("))
+        #expect(source.contains("DegreeAdvisor.summary("))
+        #expect(!source.lowercased().contains("recommend"))
+        #expect(try uiSource("DegreePlanView.swift").contains("DegreeContribution.grouped("))
+    }
+
+    @Test("the advisor's starter chips name the next term, or fall back")
+    func advisorStarters() {
+        let both = DegreeAdvisorView.starters(hasSeveralDegrees: true, nextTermLabel: "spring 2027")
+        #expect(both == ["what should i take in spring 2027 for both degrees?",
+                         "fill spring 2027 with classes that count",
+                         "what's left in each degree?"])
+        let one = DegreeAdvisorView.starters(hasSeveralDegrees: false, nextTermLabel: "spring 2027")
+        #expect(one == ["what should i take in spring 2027?",
+                        "fill spring 2027 with classes that count",
+                        "what's left to finish?"])
+        let none = DegreeAdvisorView.starters(hasSeveralDegrees: false, nextTermLabel: nil)
+        #expect(none.first == "what should i take in next semester?")
     }
 }

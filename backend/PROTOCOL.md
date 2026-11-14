@@ -1125,6 +1125,45 @@ is informational and yields no task, even when it names course material by
 title -- this is the fix for the real failure that turned "The slides
 discussed today have been posted." into an overdue assignment.
 
+## `degree-advisor`
+
+Request `{ "question", "history": [{ "role": "user"|"assistant", "content" }], "context", "terms": [{ "code", "label" }], "addable": [course code], "now": ISO8601 }`.
+`context` is a text document the phone builds: Penn's audit for each of the
+student's degrees, their semesters and their own plan. `terms` and `addable`
+are the term codes (six digits, e.g. `202730`) and course codes (e.g.
+`CIS 4710`) the phone will accept as plan edits.
+
+Response `{ "answer": string, "actions": [ { "op": "add"|"remove"|"move", "code", "term", "toTerm": string|null } ] }`.
+`answer` is at most 2000 characters (the prompt asks for 120 words); `actions`
+is empty for a plain question. The server drops any action the model should not
+have made: an `add` of a code not in `addable`, a `term` or `toTerm` not in
+`terms`, a `move` whose `toTerm` is missing or equal to `term`, duplicates, and
+anything past 24. Codes come back upper-cased with single spaces. `toTerm` is
+null except for `move`. The phone validates again; the server's check exists
+because the model's output is untrusted.
+
+Caps (anything over, or malformed, is 400 `bad_request`, "malformed
+degree-advisor request"; unknown extra keys are ignored): `question` 1 to 1000
+characters after trim; `history` 0 to 6 entries, 6000 characters of content in
+all; `context` 1 to 60000; `terms` 0 to 12; `addable` 0 to 800.
+
+Errors as `extract-announcement`: 401, 426 (`update_required`), 429
+`{ "error": "quota_exceeded", "resetAt" }`, 502 `upstream` (including model
+output that cannot be read, which gives the unit back). It shares the per-user
+daily quota with `ask`; one request is one unit, kept once the model has
+answered.
+
+Nothing is stored: no table, no migration, and the question, the document and
+the answer are never logged (log lines carry statuses and model ids only). What
+leaves the phone for this call is the question, the earlier turns, the document
+and the code lists; the owner accepted that degree data goes to the server for
+it.
+
+Model `LHF_DEGREE_MODEL` (default `anthropic/claude-sonnet-5.5`), fallback
+`LHF_DEGREE_FALLBACK_MODEL` (default `anthropic/claude-haiku-5.5`), provider
+order `LHF_PROVIDER_ORDER`. Strict JSON schema, `reasoning: { effort: "low" }`,
+1500 max tokens, temperature 0.2.
+
 ## `map-categories`
 
 The problem this solves: Grade Watcher's grading scheme needs to know

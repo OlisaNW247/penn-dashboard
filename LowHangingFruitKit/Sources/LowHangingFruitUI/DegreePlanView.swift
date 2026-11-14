@@ -111,6 +111,8 @@ struct DegreePlanAddSheet: View {
     }
 
     @State private var suggestions: [DegreeSuggestion] = []
+    /// `filtered` laid out per degree; recomputed in `.task`, never in `body`.
+    @State private var groups: [DegreeSuggestionGroup] = []
 
     /// Case-insensitive, spaces ignored on both sides, so "cis12" finds "CIS 1200".
     nonisolated static func matches(_ suggestion: DegreeSuggestion, query: String) -> Bool {
@@ -148,6 +150,10 @@ struct DegreePlanAddSheet: View {
             .task {
                 suggestions = DegreeContribution.suggestions(
                     plan: plan, audits: audits, history: state.degree.history)
+                groups = DegreeContribution.grouped(filtered, audits: audits)
+            }
+            .task(id: trimmed) {
+                groups = DegreeContribution.grouped(filtered, audits: audits)
             }
             .padding(20)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -243,17 +249,24 @@ struct DegreePlanAddSheet: View {
 
     @ViewBuilder
     private var options: some View {
-        let list = filtered
-        if !list.isEmpty {
+        if !groups.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Text("counts toward your degree")
                     .font(.lhfSans(13, weight: .semibold))
                     .foregroundStyle(Color.smoothInk)
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(list) { suggestion in
-                            suggestionRow(suggestion)
-                            Divider().overlay(Color.smoothRule.opacity(0.6))
+                        ForEach(groups) { group in
+                            if !group.title.isEmpty {
+                                Text(group.title)
+                                    .font(.lhfSans(12, weight: .semibold))
+                                    .foregroundStyle(Color.smoothMuted)
+                                    .padding(.top, 10)
+                            }
+                            ForEach(group.suggestions) { suggestion in
+                                suggestionRow(suggestion)
+                                Divider().overlay(Color.smoothRule.opacity(0.6))
+                            }
                         }
                     }
                 }

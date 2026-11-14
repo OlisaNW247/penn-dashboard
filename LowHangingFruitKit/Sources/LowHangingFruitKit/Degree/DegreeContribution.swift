@@ -59,7 +59,50 @@ public struct DegreeSuggestion: Sendable, Equatable, Identifiable {
     }
 }
 
+/// A heading and the suggestions under it in the add sheet.
+public struct DegreeSuggestionGroup: Sendable, Equatable, Identifiable {
+    /// "both", a degree id, or "" for a single unlabeled group.
+    public let id: String
+    /// "both degrees", the degree's label lowercased, or "" when there is
+    /// nothing to tell apart.
+    public let title: String
+    public let suggestions: [DegreeSuggestion]
+
+    public init(id: String, title: String, suggestions: [DegreeSuggestion]) {
+        self.id = id
+        self.title = title
+        self.suggestions = suggestions
+    }
+}
+
 public enum DegreeContribution {
+    /// Splits ranked suggestions by the degrees they count in. Ranked purely by
+    /// points, a student with two degrees saw one degree fill the screen,
+    /// because that degree's requirements were each worth more points; the
+    /// owner read that as the list ignoring his second degree. Each group
+    /// keeps the ranked order it was given. With fewer than two audits there
+    /// is nothing to tell apart and one untitled group comes back.
+    public static func grouped(
+        _ suggestions: [DegreeSuggestion], audits: [DegreeLabeledAudit]
+    ) -> [DegreeSuggestionGroup] {
+        if audits.count < 2 {
+            return suggestions.isEmpty ? [] : [DegreeSuggestionGroup(id: "", title: "", suggestions: suggestions)]
+        }
+        var out: [DegreeSuggestionGroup] = []
+        let both = suggestions.filter { Set($0.gains.map { $0.degreeID }).count >= 2 }
+        if !both.isEmpty { out.append(DegreeSuggestionGroup(id: "both", title: "both degrees", suggestions: both)) }
+        for entry in audits {
+            let own = suggestions.filter { suggestion in
+                let ids = Set(suggestion.gains.map { $0.degreeID })
+                return ids.count == 1 && ids.contains(entry.degreeID)
+            }
+            if !own.isEmpty {
+                out.append(DegreeSuggestionGroup(id: entry.degreeID, title: entry.label.lowercased(), suggestions: own))
+            }
+        }
+        return out
+    }
+
     /// One audit with its plan-free projection and ring start, computed once.
     private struct Baseline {
         let labeled: DegreeLabeledAudit

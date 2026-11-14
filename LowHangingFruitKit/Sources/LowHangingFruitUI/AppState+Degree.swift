@@ -776,7 +776,7 @@ extension AppState {
     /// must never be written to disk. A failed save costs only the next
     /// launch's copy; the in-memory plan is still right, so it is not an error
     /// the student sees.
-    private func commitDegreePlan(_ plan: DegreePlan) {
+    func commitDegreePlan(_ plan: DegreePlan) {
         guard plan != degreePlan else { return }
         degreePlan = plan
         guard !isUsingFixtureData else { return }

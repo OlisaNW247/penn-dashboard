@@ -87,8 +87,17 @@ scripts. The audit is kept on the phone (`degree-audit.json`); nothing is
 stored in the Keychain for it. The page's sign-in token, Penn's id for the
 student, the name, the pronoun, the rendered audit and any sentence about a
 GPA or grades never cross from the page into the app, and nothing about the
-degree goes to the server, the laptop or the tree (`docs/PRIVACY.md` →
-"Degree progress"). There is no analytics, tracking,
+degree goes to the laptop or the tree. **Since 2026-11-14 (`degree-progress`
+only, the owner's call: "don't mind saving user degree data to the server")
+there is one way degree data reaches the server: the degree screen's "plan
+with ai" chat.** Each message the student sends there carries a text summary
+of the audits on screen (degree and major codes and names, Penn's
+requirements and their state, course codes and titles taken, registered and
+planned by semester, the options Penn lists) and the chat's last turns to
+the `degree-advisor` function, under the anonymous account, with no name,
+id, grade or GPA. The function hands it to a model and stores none of it.
+Nothing is sent until a message is sent, and the chat says so first
+(`docs/PRIVACY.md` → "Degree progress" → "Plan with AI"). There is no analytics, tracking,
 or third-party SDK. Don't say "everything is on-device" (untrue since
 `assistant-ui`) or "no server" (untrue since the backend). `docs/PRIVACY.md`
 is the student-facing version and must change in the same commit as any

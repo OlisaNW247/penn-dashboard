@@ -199,6 +199,8 @@ struct DegreeProgressView: View {
     @State private var expanded: Set<String> = []
     @State private var selectedWhatIf = 0
     @State private var showSheet = false
+    @State private var advisorMessages: [DegreeAdvisorMessage] = []
+    @State private var showAdvisor = false
     /// The catalogue row whose what-if is running, if any.
     @State private var runningOption: String?
     /// The goals each option filed in this view, by catalogue code. Not
@@ -226,6 +228,20 @@ struct DegreeProgressView: View {
                 .padding(.bottom, 32)
             }
             .refreshable { await state.refreshDegreeAudit(force: true) }
+            .overlay(alignment: .bottomTrailing) {
+                if state.degreeAdvisorAvailable {
+                    Button { showAdvisor = true } label: {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(Color.smoothInk)
+                            .frame(width: 52, height: 52)
+                            .background(Color.smoothGrape, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(20)
+                    .accessibilityLabel("plan with ai")
+                }
+            }
         }
         .background(Color.smoothPaper.ignoresSafeArea())
         .navigationTitle("")
@@ -246,6 +262,10 @@ struct DegreeProgressView: View {
         }
         .sheet(isPresented: $showSheet) {
             DegreeWhatIfSheet()
+                .environmentObject(state)
+        }
+        .sheet(isPresented: $showAdvisor) {
+            DegreeAdvisorView(messages: $advisorMessages, audits: advisorAudits())
                 .environmentObject(state)
         }
     }
@@ -717,6 +737,17 @@ struct DegreeProgressView: View {
                 }, projection: projection)
             }
         }
+    }
+
+    /// The audits the chat reasons about: what the current tab is drawing, so
+    /// a what-if on screen is the one the advisor plans against.
+    private func advisorAudits() -> [DegreeLabeledAudit] {
+        let list = state.degree.whatIfs
+        if tab == .whatIf, !list.isEmpty {
+            let target = list[min(selectedWhatIf, list.count - 1)]
+            return tableAudits(replacingSelectedWith: target)
+        }
+        return state.degreeAudits
     }
 
     /// For a dual-degree student the table plans toward both audits; a what-if

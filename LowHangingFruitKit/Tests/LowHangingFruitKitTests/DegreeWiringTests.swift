@@ -339,6 +339,55 @@ struct DegreeAppStateTests {
         #expect(source.contains("optionScores"))
     }
 
+    @Test("in fixture mode the advisor answers with the demo line, no changes and no edit", .enabled(if: FeatureFlags.degreeProgress))
+    func fixtureAdvisor() async throws {
+        let state = try makeState()
+        state.forceFixtureDataForTesting(true)
+        #expect(state.degreeAdvisorAvailable)
+        state.loadDegreePlanIfNeeded()
+        let before = state.degreePlan
+        let reply = await state.askDegreeAdvisor(question: "what is left?", turns: [], audits: state.degreeAudits)
+        #expect(!reply.failed)
+        #expect(reply.changes.isEmpty)
+        #expect(reply.planBefore == nil)
+        #expect(reply.answer == "this is the demo. connect canvas at penn to ask about your own audit.")
+        #expect(state.degreePlan == before)
+    }
+
+    @Test("undoing an advisor edit puts the earlier plan back", .enabled(if: FeatureFlags.degreeProgress))
+    func advisorUndo() throws {
+        let state = try makeState()
+        state.forceFixtureDataForTesting(true)
+        state.loadDegreePlanIfNeeded()
+        let before = state.degreePlan
+        let term = try #require(before.terms.first?.termCode)
+        state.addPlannedCourse(code: "ZZZZ 9999", title: nil, credits: 1, to: term)
+        #expect(state.degreePlan != before)
+        state.undoDegreeAdvisor(to: before)
+        #expect(state.degreePlan == before)
+    }
+
+    @Test("the degree screen offers the advisor only when it is available")
+    func advisorWiringSource() throws {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<3 { url.deleteLastPathComponent() }
+        let path = url.appendingPathComponent("Sources/LowHangingFruitUI/DegreeProgressView.swift")
+        let source = try String(contentsOf: path, encoding: .utf8)
+        #expect(source.contains("DegreeAdvisorView("))
+        #expect(source.contains("degreeAdvisorAvailable"))
+    }
+
+    @Test("each backend failure has its own line")
+    func advisorFailureLines() {
+        #expect(AppState.degreeAdvisorFailureLine(BackendError.quotaExceeded(resetAt: nil)) == "that's today's limit. try again tomorrow.")
+        #expect(AppState.degreeAdvisorFailureLine(BackendError.http(426)) == "update smooth to use this.")
+        #expect(AppState.degreeAdvisorFailureLine(BackendError.http(502)) == "couldn't reach smooth.")
+        #expect(AppState.degreeAdvisorFailureLine(BackendError.transport) == "couldn't reach smooth.")
+        #expect(AppState.degreeAdvisorFailureLine(BackendError.unauthorized) == "couldn't reach smooth.")
+        #expect(AppState.degreeAdvisorFailureLine(BackendError.decoding) == "couldn't reach smooth.")
+        #expect(AppState.degreeAdvisorFailureLine(BackendError.notConfigured) == "couldn't reach smooth.")
+    }
+
     @Test("in fixture mode the catalogue is classified against both sample degrees", .enabled(if: FeatureFlags.degreeProgress))
     func fixtureProgramEntries() async throws {
         let state = try makeState()

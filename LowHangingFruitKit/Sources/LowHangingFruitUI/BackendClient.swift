@@ -84,6 +84,15 @@ struct BackendClient: Sendable {
         try await post("extract-announcement", body: request)
     }
 
+    // MARK: - degree-advisor
+
+    /// The degree screen's chat. What travels: the student's audit as text, the
+    /// planned courses, the question and the last few turns of the chat; no
+    /// name, no id, no grade. The server answers and stores none of it.
+    func degreeAdvisor(_ request: DegreeAdvisorRequest) async throws -> DegreeAdvisorResponse {
+        try await post("degree-advisor", body: request)
+    }
+
     // MARK: - delete-account
 
     /// Deletes the caller's server-side rows and auth user
