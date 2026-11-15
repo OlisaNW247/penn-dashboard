@@ -1982,7 +1982,14 @@ end to end) or pass `-LHFForceUpdateWall`.
 
 ### ask: the model, the hedge, and the loop that tunes them
 
-`backend/supabase/functions/ask/index.ts` streams the answer. Primary
+`backend/supabase/functions/ask/index.ts` streams the answer. **Since
+2026-11-15 17:25 UTC the primary is `anthropic/claude-haiku-5.5`** (`ask`
+v24 from `v10`, then the secrets `LHF_MODEL=anthropic/claude-haiku-5.5` and
+`LHF_ASK_REASONING={"enabled":false}`, both at Olisa's tap). A tagged
+production probe right after (`prod-haiku-check`, 3 runs of `meeting`):
+3/3 answered from the Ed post, 0 reasoning tokens, 22,605 of 23,111 prompt
+tokens cached from the second request, first word 2.7 s cold and 1.3-1.6 s
+warm. To go back, delete `LHF_MODEL` (no redeploy). Before it: primary
 model `openai/gpt-4.1-mini` (`LHF_MODEL`), no reasoning field; if it has
 produced no content delta by 5 s, `z-ai/glm-5.3-flash` at
 `reasoning.effort: low` (`LHF_ASK_FALLBACK_MODEL`) starts alongside and
