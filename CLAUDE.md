@@ -1264,7 +1264,27 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v10` at `0aab3af` (2026-11-15): 3700 tests / 356 suites, all
+**Current on `v10` (2026-11-15, the own-section read, Olisa's Mac, macOS
+27.0, Xcode 27.2): 3710 tests / 358 suites, all green, `swift test
+--no-parallel` alone on the machine, 35.8 s of tests, 87 s wall; the iOS
+Debug `xcodebuild` for `generic/platform=iOS` with `CODE_SIGNING_ALLOWED=NO`
+succeeded.** +10 tests and +2 suites over 3700 / 356: `CanvasOwnSectionsTests`
+(the decoder, the section-number rule, the paged read) and
+`CanvasOwnSectionsSummaryTests` (the name's number wins; the read fills a
+name with none). Not on a phone yet.
+
+**Before it, on `v10` at `e40e58f` (2026-11-15, Olisa's Mac, Mac18,1, macOS
+27.0, Xcode 27.2): 3700 tests / 356 suites, all green, `swift test
+--no-parallel` alone on the machine (`pgrep` empty first), 35.5 s of tests,
+92 s wall with the build.** The same count as the runner at `0aab3af`
+(the commits since touch only docs). The iOS Debug `xcodebuild` for
+`generic/platform=iOS` with `CODE_SIGNING_ALLOWED=NO` succeeded (373 compile
+steps, the widget included), so the iOS-only files and the widget compile
+too; the signed Debug device build of the same tree (3.4.1 (20)) succeeded
+and was installed on Olisa's iPhone 17 (iOS 26.6.2) at 17:59 UTC. Nothing
+needed fixing.
+
+**Before it, on `v10` at `0aab3af` (2026-11-15): 3700 tests / 356 suites, all
 green, `swift test --no-parallel` on the GitHub macOS runner (101 s, run
 43740178602); Deno 716; extension green.** The first compile of the
 2026-11-14 tree work: Marco's held course-material sync (`c5f8d2a`), the room
@@ -3570,6 +3590,43 @@ it holds work that exists nowhere else.
 none is a ship line.
 
 ## Known gaps
+
+- **ask could not give the owner his accounting class time, because the
+  site's name carries no section number** (2026-11-15, Olisa's iPhone 17, a
+  screen recording of the tree; the recording itself could not be read from
+  the Mac, macOS blocks the Messages folder). His ACCT 1010 site is named
+  "ACCT 1010 (Hail) - Fall 2026"; `CourseCode.parse` found no section, so
+  `courses.section` stayed empty and ask's COURSE STRUCTURE block listed all
+  eight ACCT 1010 lectures (Penn Labs' 2026C entry, read from the Mac the
+  same day) at four time slots with none marked as his. Hail teaches 001
+  (Tue/Thu 8:30-9:59) and 002 (10:15-11:44), both JMHH 240, so the
+  instructor narrows it to two and no further. Fixed the same day, not on a
+  phone: `CanvasOwnSections` reads `GET /api/v1/courses?include[]=sections
+  &enrollment_state=active` with the student's session from
+  `refreshCourseIntel`, keeps a number only when the student's sections
+  name this site's own code and settle on exactly one number, and
+  `canvasCourseSummaries` uses it only when the name has none
+  (`canvasOwnSectionByCourseIDV1`, cleared on disconnect). Penn's real
+  section-name format has never been seen; the parser takes "ACCT 1010-002",
+  "ACCT 1010 002", "ACCT-1010-002" and "ACCT1010002". **It reaches the server
+  only through the manifest, which still fails on his phone** (next bullet),
+  so ask will not know the section until that is fixed. To check: after a
+  sync, `course-knowledge.json`'s `courses` entry for 1946774 should carry a
+  `section`.
+- **The course-material manifest still fails on Olisa's phone, every
+  Canvas request cancelled** (2026-11-15). The summary at 13:54 Eastern
+  read `ok · courses 8 · fetched 0 · partial 8 · docs 1319 · manifest
+  failed · uploaded 0 · errors 25 · error kinds: assignments 8 · modules 8 ·
+  pages 8 · announcements 1 · ed notes 1 · ed: matched 0 · read 0 ·
+  restored 8 · dropped 0 · first failure other · couldn't read ed account:
+  cancelled`, the same shape as 11:37 on the previous build. Every endpoint
+  of every course failing at once with `cancelled` reads as the whole run's
+  task being cancelled, not as eight servers failing; not investigated,
+  and no fix guessed. Caveat: at 13:12 another session switched the shared
+  checkout to `degree-progress`, so which build ran the 13:54 sync (the v10
+  Debug build installed at 12:59, or a later `degree-progress` one) is not
+  certain. A separate puzzle: the 12:51 run on the old build saved the
+  knowledge file but its summary line kept only an "already syncing" skip.
 
 - **A finished item whose completion is Canvas's alone has no swipe back
   in prev** (since 2026-11-06, `AppState.completionIsLockedByCanvas`,
