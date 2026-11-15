@@ -66,3 +66,24 @@ for (let i = 0; i < urls.length; i += 4) {
 }
 await writeFile(join(out, "fetch-log.json"), JSON.stringify(log, null, 2));
 for (const l of log) console.log(`${l.status ?? "ERR"} ${l.bytes ?? 0}B ${l.name}`);
+
+// Shape report: printed to the job log, because the session that reads it
+// cannot download artifacts. Keys and first items only.
+import { readFile } from "node:fs/promises";
+async function shape(name, n = 1) {
+  try {
+    const v = JSON.parse(await readFile(join(out, "raw", name), "utf8"));
+    const list = Array.isArray(v) ? v : (v.results ?? v.courses ?? null);
+    console.log(`\n### ${name}: ${Array.isArray(v) ? "array " + v.length : "object keys " + Object.keys(v).join(",")}`);
+    if (list) console.log(JSON.stringify(list.slice(0, n), null, 1).slice(0, 4000));
+    else console.log(JSON.stringify(v, null, 1).slice(0, 4000));
+  } catch (err) {
+    console.log(`\n### ${name}: unreadable ${err}`);
+  }
+}
+await shape("pcx-BEPP-2500-2027A.json");
+await shape("pcx-CIS-4000-2026C.json");
+await shape("pcx-search-wuge-2027A.json", 2);
+await shape("pcx-attributes.json", 5);
+await shape("pcx-courses-2027A.json", 2);
+await shape("cis-tech-electives.json", 3);
