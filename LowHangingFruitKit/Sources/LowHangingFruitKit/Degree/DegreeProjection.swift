@@ -136,7 +136,12 @@ public struct DegreeProjection: Sendable, Equatable {
     }
 
     fileprivate static func isRequirement(_ rule: AuditRule) -> Bool {
-        (rule.status == .open || rule.status == .inProgress) && !rule.advice.isEmpty
+        guard rule.status == .open || rule.status == .inProgress else { return false }
+        // A rule with no children and no options is a requirement Penn only
+        // describes in words; it holds the courses the chat placed for it. It
+        // changes no denominator (the tally counts every open rule already) and
+        // with nothing planned it has no entry.
+        return !rule.advice.isEmpty || rule.children.isEmpty
     }
 
     public static func make(plan: DegreePlan, audit: DegreeAudit?) -> DegreeProjection {
@@ -151,7 +156,9 @@ public struct DegreeProjection: Sendable, Equatable {
                 let code = DegreePlanMath.normalizedCode(course.code)
                 if code.isEmpty || layout.taken.contains(code) { continue }
                 if seen.insert(code).inserted {
-                    candidates.append(PlannedCourse(code: code, title: course.title, credits: course.credits))
+                    candidates.append(PlannedCourse(
+                        code: code, title: course.title, credits: course.credits,
+                        pickRuleKey: course.pickRuleKey, pickLabel: course.pickLabel))
                 }
             }
         }
@@ -169,7 +176,15 @@ public struct DegreeProjection: Sendable, Equatable {
         var unplaced: [String] = []
         var counted: [String: String] = [:]
         for course in candidates {
-            let listing = layout.listing[course.code] ?? []
+            var listing: [Int]
+            if let key = course.pickRuleKey, let index = layout.keyIndex[key] {
+                // Placed by the chat for this requirement: laid here first, and
+                // as overflow here when it has no room.
+                listing = [index]
+            } else {
+                listing = layout.listing[course.code] ?? []
+                if listing.isEmpty { listing = layout.patternListing(for: course.code) }
+            }
             guard let firstListing = listing.first else {
                 unplaced.append(course.code)
                 continue
@@ -250,12 +265,26 @@ struct DegreeProjectionLayout: Sendable {
         let label: String
         let usesCredits: Bool
         let remaining: Double
+        /// Wildcard advice codes ("MGMT @") this requirement lists.
+        let patterns: [String]
     }
 
     let taken: Set<String>
     let requirements: [Requirement]
     /// Normalized code -> indices into `requirements` that list it, Penn's order.
     let listing: [String: [Int]]
+    /// Requirement key -> index into `requirements`.
+    let keyIndex: [String: Int]
+
+    /// Indices of the requirements whose wildcard patterns match `code`, Penn's order.
+    func patternListing(for code: String) -> [Int] {
+        var out: [Int] = []
+        for (index, requirement) in requirements.enumerated()
+        where requirement.patterns.contains(where: { DegreePlanMath.matchesPattern(code, $0) }) {
+            out.append(index)
+        }
+        return out
+    }
 
     init(audit: DegreeAudit) {
         var taken = Set<String>()
@@ -263,6 +292,7 @@ struct DegreeProjectionLayout: Sendable {
 
         var requirements: [Requirement] = []
         var listing: [String: [Int]] = [:]
+        var keyIndex: [String: Int] = [:]
         func collect(_ rules: [AuditRule], blockID: String, blockTitle: String) {
             for rule in rules {
                 if DegreeProjection.isRequirement(rule) {
@@ -281,13 +311,19 @@ struct DegreeProjectionLayout: Sendable {
                         remaining = 1
                     }
                     let index = requirements.count
+                    let ruleKey = DegreeProjection.key(blockID: blockID, ruleID: rule.id)
+                    let patterns = rule.advice.map { $0.code }.filter { $0.contains("@") }
                     requirements.append(Requirement(
-                        key: DegreeProjection.key(blockID: blockID, ruleID: rule.id),
+                        key: ruleKey,
                         label: rule.label.isEmpty ? blockTitle : rule.label,
                         usesCredits: usesCredits,
-                        remaining: remaining))
+                        remaining: remaining,
+                        patterns: patterns))
+                    if keyIndex[ruleKey] == nil { keyIndex[ruleKey] = index }
                     var listedHere = Set<String>()
                     for option in rule.advice {
+                        // A wildcard is a pattern, never a course.
+                        if option.code.contains("@") { continue }
                         let code = DegreePlanMath.normalizedCode(option.code)
                         if code.isEmpty || !listedHere.insert(code).inserted { continue }
                         listing[code, default: []].append(index)
@@ -301,6 +337,7 @@ struct DegreeProjectionLayout: Sendable {
         self.taken = taken
         self.requirements = requirements
         self.listing = listing
+        self.keyIndex = keyIndex
     }
 }
 

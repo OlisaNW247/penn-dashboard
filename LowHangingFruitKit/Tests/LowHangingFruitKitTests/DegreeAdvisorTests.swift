@@ -109,7 +109,8 @@ struct DegreeAdvisorTests {
         let parent = rule("p", .open, needCredits: 3, children: [child])
         let text = brief([labeled("x", audit([parent]))]).context
         #expect(text.contains("- open | rule p | need 3 cu"))
-        #expect(text.contains("\n  - open | rule c | need 2 courses"))
+        // A childless open rule with no options is a word requirement, so it carries a tag.
+        #expect(text.contains("\n  - [R1] open | rule c | need 2 courses"))
     }
 
     @Test("options are capped at 25 with a count of the rest")
@@ -242,7 +243,7 @@ struct DegreeAdvisorTests {
         let r = DegreeAdvisor.request(question: "q", turns: [], brief: simpleBrief(addable: []), now: now)
         let data = try JSONEncoder().encode(r)
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        #expect(Set(object?.keys.map { $0 } ?? []) == ["question", "history", "context", "terms", "addable", "programs", "now"])
+        #expect(Set(object?.keys.map { $0 } ?? []) == ["question", "history", "context", "terms", "addable", "programs", "requirements", "now"])
     }
 
     private func entry(_ code: String, _ kind: DegreeProgramKind, degreeID: String?) -> DegreeProgramEntry {
@@ -474,5 +475,198 @@ struct DegreeAdvisorTests {
         #expect(groups[1].suggestions.map { $0.course.code } == ["A 1", "C 1"])
         let all = DegreeContribution.grouped([suggestion("E 1", ["x"]), suggestion("F 1", ["y"])], audits: audits)
         #expect(all.map { $0.id } == ["x", "y"])
+    }
+
+    // MARK: Word requirements, picks, finish
+
+    private func word(
+        _ id: String, _ status: RuleStatus = .open, patterns: [String] = [], words: String? = nil,
+        needCourses: Int? = nil, needCredits: Double? = nil, children: [AuditRule] = []
+    ) -> AuditRule {
+        AuditRule(id: id, label: "rule \(id)", ruleType: "Subset", percentComplete: nil, status: status,
+                  needCourses: needCourses, needCredits: needCredits, appliedCount: nil, appliedCredits: nil,
+                  applied: [], advice: patterns.map { AdviceCourse(code: $0, title: nil, credits: nil) },
+                  adviceText: words, children: children)
+    }
+
+    @Test("tags go to childless open or in-progress rules with no concrete option, depth first")
+    func tagging() {
+        let tree = [
+            word("a"),
+            word("p", children: [word("c", .inProgress)]),
+            word("w", patterns: ["MGMT @"]),
+            word("mixed", patterns: ["MGMT @", "CIS 1000"]),
+            word("done", .met),
+            word("note", .info),
+        ]
+        let tagged = DegreeAdvisor.tagRequirements([labeled("x", audit(tree))])
+        #expect(tagged.map { $0.info.requirement.tag } == ["R1", "R2", "R3"])
+        #expect(tagged.map { $0.info.label } == ["rule a", "rule c", "rule w"])
+        #expect(tagged[2].info.requirement.patterns == ["MGMT @"])
+        #expect(tagged[0].info.ruleKey == DegreeProjection.key(blockID: "B", ruleID: "a"))
+        #expect(tagged[0].info.degreeID == "x")
+    }
+
+    @Test("the document marks tagged rules and prints penn's words on any rule")
+    func documentTagsAndWords() {
+        let tree = [
+            word("w", patterns: ["MGMT @"], words: "  Take any\n 300-level   MGMT course  ", needCourses: 2),
+            word("m", .met, words: "all done"),
+        ]
+        let text = brief([labeled("x", audit(tree))]).context
+        #expect(text.contains("- [R1] open | rule w | need 2 courses | options: MGMT @ | penn's words: Take any 300-level MGMT course"))
+        #expect(text.contains("- met | rule m | penn's words: all done"))
+        let long = brief([labeled("x", audit([word("l", words: String(repeating: "a", count: 500))]))]).context
+        let line = long.split(separator: "\n").first { $0.contains("penn's words:") }.map(String.init) ?? ""
+        #expect(line.hasSuffix(String(repeating: "a", count: 200)))
+        #expect(!line.hasSuffix(String(repeating: "a", count: 201)))
+    }
+
+    @Test("FINISH names the eighth fall or spring semester from the first, ignoring summers")
+    func finishSection() {
+        let a = labeled("x", audit([]))
+        let text = brief([a], history: ["202510": ["A 1"], "202530": ["B 1"]]).context
+        #expect(text.contains("\nFINISH\nexpected final semester: fall 2028 (eight fall and spring semesters from spring 2025, the first in SEMESTERS; the student may say otherwise)"))
+        let marks = ["SEMESTERS\n", "FINISH\n", "PLAN\n"]
+        let places = marks.compactMap { text.range(of: $0)?.lowerBound }
+        #expect(places.count == 3 && places == places.sorted())
+        let summer = brief([a], history: ["202420": ["A 1"], "202530": ["B 1"]]).context
+        #expect(summer.contains("expected final semester: spring 2029 (eight fall and spring semesters from fall 2025"))
+        #expect(!brief([a]).context.contains("FINISH"))
+        #expect(!brief([a], history: ["202420": ["A 1"]]).context.contains("FINISH"))
+    }
+
+    @Test("the request carries the requirements sorted by tag, with the wire fields")
+    func requestRequirements() throws {
+        let tree = [word("a", needCourses: 4), word("b", patterns: ["MGMT @", "@ @"], needCredits: 2)]
+        let b = brief([labeled("x", audit(tree))])
+        #expect(Set(b.requirements.keys) == ["R1", "R2"])
+        let r = DegreeAdvisor.request(question: "q", turns: [], brief: b, now: now)
+        #expect(r.requirements.map { $0.tag } == ["R1", "R2"])
+        #expect(r.requirements[0].need == "need 4 courses")
+        #expect(r.requirements[1].need == "need 2 cu")
+        #expect(r.requirements[1].degree == "Deg x")
+        let data = try JSONEncoder().encode(r)
+        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let list = object?["requirements"] as? [[String: Any]]
+        #expect(list?.count == 2)
+        #expect(Set(list?.first?.keys.map { $0 } ?? []) == ["tag", "label", "degree", "need", "patterns"])
+        #expect(list?.last?["patterns"] as? [String] == ["MGMT @", "@ @"])
+    }
+
+    @Test("an action decodes for, title and credits when present and leaves them nil when absent")
+    func actionExtras() throws {
+        let json = #"""
+        {"answer":"a","actions":[
+          {"op":"add","code":"MGMT 2010","term":"202710","toTerm":null,"for":"R2","title":"Mgmt","credits":1.5},
+          {"op":"add","code":"CIS 1","term":"202710"},
+          {"op":"add","code":"CIS 2","term":"202710","credits":"lots"}]}
+        """#
+        let r = try JSONDecoder().decode(DegreeAdvisorResponse.self, from: Data(json.utf8))
+        #expect(r.actions.count == 3)
+        #expect(r.actions[0].requirement == "R2")
+        #expect(r.actions[0].title == "Mgmt")
+        #expect(r.actions[0].credits == 1.5)
+        #expect(r.actions[1].requirement == nil && r.actions[1].title == nil && r.actions[1].credits == nil)
+        #expect(r.actions[2].credits == nil)
+    }
+
+    private func pickBrief(patterns: [String] = ["MGMT @"], courses: [AuditCourse] = []) -> DegreeAdvisorBrief {
+        brief([labeled("x", audit([word("w", patterns: patterns, needCourses: 2)], courses: courses))],
+              plan([("202710", [])]))
+    }
+
+    private func pick(_ code: String, for tag: String? = "R1", term: String = "202710") -> DegreeAdvisorAction {
+        DegreeAdvisorAction(op: .add, code: code, term: term, toTerm: nil, requirement: tag, title: " Mgmt Elective ", credits: 1.5)
+    }
+
+    @Test("a valid pick is filed with its title, credits and requirement")
+    func pickAccepted() {
+        let out = DegreeAdvisor.apply([pick("mgmt2010")], to: plan([("202710", [])]), brief: pickBrief())
+        #expect(out.skipped == 0)
+        let course = out.plan.terms.first?.courses.first
+        #expect(course?.code == "MGMT 2010")
+        #expect(course?.title == "Mgmt Elective")
+        #expect(course?.credits == 1.5)
+        #expect(course?.pickRuleKey == DegreeProjection.key(blockID: "B", ruleID: "w"))
+        #expect(course?.pickLabel == "rule w")
+    }
+
+    @Test("a pick with no patterns on its requirement is accepted for any well-formed code")
+    func pickNoPatterns() {
+        let out = DegreeAdvisor.apply([pick("ACCT 1010")], to: plan([("202710", [])]), brief: pickBrief(patterns: []))
+        #expect(out.skipped == 0)
+    }
+
+    @Test("a pick is skipped for a wrong tag, a bad shape, a pattern miss, a taken or a planned course")
+    func pickRejected() {
+        let base = plan([("202710", [])])
+        let b = pickBrief(courses: [taken("MGMT 3010")])
+        #expect(DegreeAdvisor.apply([pick("MGMT 2010", for: "R9")], to: base, brief: b).skipped == 1)
+        #expect(DegreeAdvisor.apply([pick("MGMT 2010", for: nil)], to: base, brief: b).skipped == 1)
+        #expect(DegreeAdvisor.apply([pick("MGMT 20")], to: base, brief: b).skipped == 1)
+        #expect(DegreeAdvisor.apply([pick("MGMTXX 2010")], to: base, brief: b).skipped == 1)
+        #expect(DegreeAdvisor.apply([pick("M 2010")], to: base, brief: b).skipped == 1)
+        #expect(DegreeAdvisor.apply([pick("ACCT 1010")], to: base, brief: b).skipped == 1)
+        #expect(DegreeAdvisor.apply([pick("MGMT 3010")], to: base, brief: b).skipped == 1)
+        #expect(DegreeAdvisor.apply([pick("MGMT 2010", term: "209910")], to: base, brief: b).skipped == 1)
+        let twice = DegreeAdvisor.apply([pick("MGMT 2010"), pick("MGMT 2010")], to: base, brief: b)
+        #expect(twice.applied.count == 1 && twice.skipped == 1)
+    }
+
+    @Test("an addable course added with a valid tag records the pick fields; without one it does not")
+    func addableWithTag() {
+        let tree = [word("w", patterns: ["MGMT @"]), word("c", patterns: ["CIS 1000"])]
+        let b = brief([labeled("x", audit(tree))], plan([("202710", [])]))
+        // "CIS 1000" is a concrete option, so it is addable; the wildcard rule is R1.
+        #expect(b.addable["CIS 1000"] != nil)
+        let tagged = DegreeAdvisor.apply([pick("CIS 1000", for: "R1")], to: plan([("202710", [])]), brief: b)
+        #expect(tagged.plan.terms.first?.courses.first?.pickLabel == "rule w")
+        let plain = DegreeAdvisor.apply([pick("CIS 1000", for: nil)], to: plan([("202710", [])]), brief: b)
+        #expect(plain.plan.terms.first?.courses.first?.pickLabel == nil)
+    }
+
+    @Test("wildcard advice codes are never addable or suggested")
+    func wildcardsExcluded() {
+        let a = labeled("x", audit([word("w", patterns: ["MGMT @", "CIS 1000"])]))
+        let b = brief([a])
+        #expect(Set(b.addable.keys) == ["CIS 1000"])
+        let ranked = DegreeContribution.suggestions(plan: .empty, audits: [a], history: [:])
+        #expect(ranked.map { $0.course.code } == ["CIS 1000"])
+    }
+
+    @Test("an old planned course without pick fields decodes; one with them round-trips")
+    func plannedCourseCoding() throws {
+        let old = try JSONDecoder().decode(PlannedCourse.self, from: Data(#"{"code":"A 1","credits":1}"#.utf8))
+        #expect(old.pickRuleKey == nil && old.pickLabel == nil && old.title == nil)
+        let picked = PlannedCourse(code: "A 1", title: "t", credits: 2, pickRuleKey: "B|w", pickLabel: "rule w")
+        let back = try JSONDecoder().decode(PlannedCourse.self, from: JSONEncoder().encode(picked))
+        #expect(back == picked)
+    }
+
+    @Test("adding and moving keep the pick fields")
+    func picksSurviveEdits() {
+        let picked = PlannedCourse(code: "MGMT 2010", title: nil, credits: 1, pickRuleKey: "B|w", pickLabel: "rule w")
+        let base = plan([("202710", []), ("202730", [])])
+        let added = DegreePlanMath.adding(picked, to: "202710", in: base)
+        let moved = DegreePlanMath.moving(courseCode: "MGMT 2010", to: "202730", before: nil, in: added)
+        #expect(moved.terms[1].courses.first?.pickLabel == "rule w")
+        #expect(moved.terms[1].courses.first?.pickRuleKey == "B|w")
+    }
+
+    @Test("matchesPattern follows the wildcard rules")
+    func patternTable() {
+        let rows: [(String, String, Bool)] = [
+            ("MGMT 2010", "MGMT @", true), ("MGMT 2010", "@ @", true), ("ACCT 2010", "MGMT @", false),
+            ("MGMT 2010", "MGMT 2@@", true), ("MGMT 3010", "MGMT 2@@", false),
+            ("MGMT 2010", "MGMT 2010", true), ("MGMT 2011", "MGMT 2010", false),
+            ("mgmt2010", "MGMT @", true), ("MGMT 2010", "MGMT", true), ("ACCT 2010", "MGMT", false),
+            ("MGMT 2010", "MGMT 2@1", false), ("MGMT 2010", "MGMT x", false),
+            ("MGMT 2010", "MGMT @@@@", true), ("MGMT 2010", "MGMT 20@@", true),
+            ("MGMT 2010", "MGMT 21@@", false), ("MGMT 2010", "MGMT 1 2", false), ("", "@ @", false),
+        ]
+        for (code, pattern, expected) in rows {
+            #expect(DegreePlanMath.matchesPattern(code, pattern) == expected, "\(code) vs \(pattern)")
+        }
     }
 }

@@ -15,12 +15,36 @@ public struct PlannedCourse: Codable, Sendable, Hashable, Identifiable {
     public let code: String
     public let title: String?
     public let credits: Double
+    /// Set only for a course the chat placed for a named requirement: the
+    /// projection key (`DegreeProjection.key`) of that requirement, and its
+    /// label, so the table can say "your pick" for a course the audit does not
+    /// list among Penn's options.
+    public let pickRuleKey: String?
+    public let pickLabel: String?
     public var id: String { code }
 
-    public init(code: String, title: String?, credits: Double) {
+    public init(
+        code: String, title: String?, credits: Double,
+        pickRuleKey: String? = nil, pickLabel: String? = nil
+    ) {
         self.code = code
         self.title = title
         self.credits = credits
+        self.pickRuleKey = pickRuleKey
+        self.pickLabel = pickLabel
+    }
+
+    private enum CodingKeys: String, CodingKey { case code, title, credits, pickRuleKey, pickLabel }
+
+    /// The pick fields are decoded if present so a `degree-plan.json` written
+    /// before they existed still loads: a failed decode quarantines the file.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.code = try container.decode(String.self, forKey: .code)
+        self.title = try container.decodeIfPresent(String.self, forKey: .title)
+        self.credits = try container.decode(Double.self, forKey: .credits)
+        self.pickRuleKey = try container.decodeIfPresent(String.self, forKey: .pickRuleKey)
+        self.pickLabel = try container.decodeIfPresent(String.self, forKey: .pickLabel)
     }
 }
 
@@ -110,6 +134,9 @@ public enum DegreePlanMath {
         }
     }
 
+    /// `YYYYTT` for a term.
+    public static func termCode(of term: Term) -> String { code(of: term) }
+
     private static func code(of term: Term) -> String {
         "\(term.year)\(term.season.rawValue)"
     }
@@ -130,6 +157,33 @@ public enum DegreePlanMath {
     public static func termLabel(_ code: String) -> String {
         guard let term = Term(code: code) else { return code }
         return "\(term.season.name.lowercased()) \(term.year)"
+    }
+
+    /// Whether `code` fits an audit's wildcard pattern such as "MGMT @",
+    /// "MGMT 2@@" or "@ @". The subject is "@" (any) or equal; the number is
+    /// all "@" (any), digits then "@"s (a prefix), or plain digits (exact).
+    /// A pattern with no number part matches on subject alone; any other shape
+    /// matches nothing, because a guess here would plan a course Penn does not
+    /// accept.
+    public static func matchesPattern(_ code: String, _ pattern: String) -> Bool {
+        let codeParts = normalizedCode(code).split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        let patternParts = pattern.uppercased().split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        guard !codeParts.isEmpty, !patternParts.isEmpty, patternParts.count <= 2, codeParts.count <= 2 else {
+            return false
+        }
+        let subject = patternParts[0]
+        if subject != "@" && subject != codeParts[0] { return false }
+        guard patternParts.count == 2 else { return true }
+        guard codeParts.count == 2 else { return false }
+        let wanted = patternParts[1]
+        let number = codeParts[1]
+        if wanted.allSatisfy({ $0 == "@" }) { return true }
+        let digits = wanted.prefix(while: { $0.isASCII && $0.isNumber })
+        let rest = wanted.dropFirst(digits.count)
+        if digits.isEmpty { return false }
+        if rest.isEmpty { return number == String(digits) }
+        guard rest.allSatisfy({ $0 == "@" }) else { return false }
+        return number.hasPrefix(String(digits))
     }
 
     // MARK: Editing the plan
@@ -173,7 +227,9 @@ public enum DegreePlanMath {
         guard let index = plan.terms.firstIndex(where: { $0.termCode == termCode }) else { return plan }
         guard plan.terms[index].courses.count < maxCoursesPerTerm else { return plan }
         var out = plan
-        out.terms[index].courses.append(PlannedCourse(code: code, title: course.title, credits: course.credits))
+        out.terms[index].courses.append(PlannedCourse(
+            code: code, title: course.title, credits: course.credits,
+            pickRuleKey: course.pickRuleKey, pickLabel: course.pickLabel))
         return out
     }
 

@@ -63,6 +63,47 @@ public struct DegreeAdvisorProgram: Codable, Sendable, Hashable {
     }
 }
 
+/// A requirement Penn describes only in words (open or in progress, no
+/// children, no concrete course among its options). The model may place a
+/// course of its own choosing for one, naming it by `tag`.
+public struct DegreeAdvisorRequirement: Codable, Sendable, Hashable {
+    /// "R1", "R2", in document order.
+    public let tag: String
+    public let label: String
+    /// The audit's label.
+    public let degree: String
+    /// "need 4 courses", "need 2 cu" or "".
+    public let need: String
+    /// Wildcard advice codes ("MGMT @"); a pick must match one when there are any.
+    public let patterns: [String]
+
+    public init(tag: String, label: String, degree: String, need: String, patterns: [String]) {
+        self.tag = tag
+        self.label = label
+        self.degree = degree
+        self.need = need
+        self.patterns = patterns
+    }
+}
+
+/// The phone's side of a tagged requirement: the wire value plus what the
+/// phone needs to file a pick (never sent).
+public struct DegreeAdvisorRequirementInfo: Sendable, Hashable {
+    public let requirement: DegreeAdvisorRequirement
+    /// `DegreeProjection.key(blockID:ruleID:)`.
+    public let ruleKey: String
+    public let degreeID: String
+    /// The rule's full label (the block's title when it has none).
+    public let label: String
+
+    public init(requirement: DegreeAdvisorRequirement, ruleKey: String, degreeID: String, label: String) {
+        self.requirement = requirement
+        self.ruleKey = ruleKey
+        self.degreeID = degreeID
+        self.label = label
+    }
+}
+
 public struct DegreeAdvisorRequest: Encodable, Sendable, Equatable {
     public let question: String
     public let history: [DegreeAdvisorTurn]
@@ -70,12 +111,14 @@ public struct DegreeAdvisorRequest: Encodable, Sendable, Equatable {
     public let terms: [DegreeAdvisorTerm]
     public let addable: [String]
     public let programs: [DegreeAdvisorProgram]
+    public let requirements: [DegreeAdvisorRequirement]
     public let now: Date
 
     public init(
         question: String, history: [DegreeAdvisorTurn], context: String,
         terms: [DegreeAdvisorTerm], addable: [String],
-        programs: [DegreeAdvisorProgram] = [], now: Date
+        programs: [DegreeAdvisorProgram] = [],
+        requirements: [DegreeAdvisorRequirement] = [], now: Date
     ) {
         self.question = question
         self.history = history
@@ -83,6 +126,7 @@ public struct DegreeAdvisorRequest: Encodable, Sendable, Equatable {
         self.terms = terms
         self.addable = addable
         self.programs = programs
+        self.requirements = requirements
         self.now = now
     }
 }
@@ -94,12 +138,41 @@ public struct DegreeAdvisorAction: Codable, Sendable, Hashable {
     public let code: String
     public let term: String
     public let toTerm: String?
+    /// A requirement tag ("R3"): the requirement a course was placed for.
+    public let requirement: String?
+    public let title: String?
+    public let credits: Double?
 
-    public init(op: DegreeAdvisorOp, code: String, term: String, toTerm: String?) {
+    public init(
+        op: DegreeAdvisorOp, code: String, term: String, toTerm: String?,
+        requirement: String? = nil, title: String? = nil, credits: Double? = nil
+    ) {
         self.op = op
         self.code = code
         self.term = term
         self.toTerm = toTerm
+        self.requirement = requirement
+        self.title = title
+        self.credits = credits
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case op, code, term, toTerm
+        case requirement = "for"
+        case title, credits
+    }
+
+    /// Lenient about everything but the three fields an action cannot do
+    /// without: a wrong type in an optional field costs that field only.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.op = try container.decode(DegreeAdvisorOp.self, forKey: .op)
+        self.code = try container.decode(String.self, forKey: .code)
+        self.term = try container.decode(String.self, forKey: .term)
+        self.toTerm = (try? container.decodeIfPresent(String.self, forKey: .toTerm)) ?? nil
+        self.requirement = (try? container.decodeIfPresent(String.self, forKey: .requirement)) ?? nil
+        self.title = (try? container.decodeIfPresent(String.self, forKey: .title)) ?? nil
+        self.credits = (try? container.decodeIfPresent(Double.self, forKey: .credits)) ?? nil
     }
 }
 
@@ -156,11 +229,20 @@ public struct DegreeAdvisorBrief: Sendable, Equatable {
     public let terms: [DegreeAdvisorTerm]
     /// Key: `DegreePlanMath.normalizedCode(code)`.
     public let addable: [String: AdviceCourse]
+    /// Key: the tag ("R1").
+    public let requirements: [String: DegreeAdvisorRequirementInfo]
+    /// Normalized codes taken or registered in any audit or in the history.
+    public let taken: Set<String>
 
-    public init(context: String, terms: [DegreeAdvisorTerm], addable: [String: AdviceCourse]) {
+    public init(
+        context: String, terms: [DegreeAdvisorTerm], addable: [String: AdviceCourse],
+        requirements: [String: DegreeAdvisorRequirementInfo] = [:], taken: Set<String> = []
+    ) {
         self.context = context
         self.terms = terms
         self.addable = addable
+        self.requirements = requirements
+        self.taken = taken
     }
 }
 
@@ -203,6 +285,66 @@ public enum DegreeAdvisor {
     public static let maxTerms = 8
     public static let maxAddable = 800
     public static let maxPrograms = 80
+    public static let maxRequirements = 120
+    public static let maxAdviceText = 200
+    /// Fall and spring semesters in a degree, counted from the first.
+    public static let finishSemesters = 8
+
+    /// A wildcard advice code such as "MGMT @" or "@ @".
+    static func isWildcard(_ code: String) -> Bool { code.contains("@") }
+
+    /// A rule Penn describes in words: open or in progress, no children, and no
+    /// concrete course among its options (none at all, or only wildcards).
+    static func isWordRequirement(_ rule: AuditRule) -> Bool {
+        guard rule.status == .open || rule.status == .inProgress, rule.children.isEmpty else { return false }
+        return rule.advice.allSatisfy { isWildcard($0.code) }
+    }
+
+    /// Every word requirement of every audit, tagged R1, R2, ... in document
+    /// order (audits in order, blocks, rules depth first). `renderKey` is
+    /// unique per audit position, for the document.
+    struct TaggedRequirement {
+        let renderKey: String
+        let info: DegreeAdvisorRequirementInfo
+    }
+
+    static func tagRequirements(_ audits: [DegreeLabeledAudit]) -> [TaggedRequirement] {
+        var out: [TaggedRequirement] = []
+        for (auditIndex, entry) in audits.enumerated() {
+            func walk(_ rules: [AuditRule], block: AuditBlock) {
+                for rule in rules {
+                    if isWordRequirement(rule) {
+                        let tag = "R\(out.count + 1)"
+                        let label = rule.label.isEmpty ? block.title : rule.label
+                        var need = ""
+                        if let credits = rule.needCredits {
+                            need = "need \(number(credits)) cu"
+                        } else if let courses = rule.needCourses {
+                            need = "need \(courses) courses"
+                        }
+                        var patterns: [String] = []
+                        for option in rule.advice where patterns.count < 20 {
+                            let text = String(option.code.trimmingCharacters(in: .whitespaces).prefix(20))
+                            if !text.isEmpty { patterns.append(text) }
+                        }
+                        let wire = DegreeAdvisorRequirement(
+                            tag: tag, label: String(label.prefix(160)),
+                            degree: String(name(entry).prefix(80)),
+                            need: String(need.prefix(40)), patterns: patterns)
+                        out.append(TaggedRequirement(
+                            renderKey: "\(auditIndex)|\(block.id)|\(rule.id)",
+                            info: DegreeAdvisorRequirementInfo(
+                                requirement: wire,
+                                ruleKey: DegreeProjection.key(blockID: block.id, ruleID: rule.id),
+                                degreeID: entry.degreeID, label: label)))
+                    }
+                    walk(rule.children, block: block)
+                }
+            }
+            for block in entry.audit.blocks { walk(block.rules, block: block) }
+        }
+        return out
+    }
 
     /// The programs the server may ask for an audit of: only catalogue rows
     /// that are options within one of the student's own degrees (`degreeID`
@@ -231,9 +373,26 @@ public enum DegreeAdvisor {
     ) -> DegreeAdvisorBrief {
         let terms = futureTerms(plan: plan, now: now, calendar: calendar)
         let addable = addableCourses(audits: audits, plan: plan, history: history)
+        let tagged = tagRequirements(audits)
+        var tags: [String: String] = [:]
+        var infos: [String: DegreeAdvisorRequirementInfo] = [:]
+        for item in tagged {
+            tags[item.renderKey] = item.info.requirement.tag
+            infos[item.info.requirement.tag] = item.info
+        }
+        var taken = Set<String>()
+        for entry in audits {
+            for course in entry.audit.courses { taken.insert(DegreePlanMath.normalizedCode(course.code)) }
+        }
+        for key in history.keys.sorted() {
+            for code in history[key] ?? [] { taken.insert(DegreePlanMath.normalizedCode(code)) }
+        }
+        taken.remove("")
         let context = buildContext(
-            audits: audits, plan: plan, history: history, terms: terms, now: now, calendar: calendar)
-        return DegreeAdvisorBrief(context: context, terms: terms, addable: addable)
+            audits: audits, plan: plan, history: history, terms: terms, tags: tags,
+            now: now, calendar: calendar)
+        return DegreeAdvisorBrief(
+            context: context, terms: terms, addable: addable, requirements: infos, taken: taken)
     }
 
     private static func futureTerms(plan: DegreePlan, now: Date, calendar: Calendar) -> [DegreeAdvisorTerm] {
@@ -270,7 +429,7 @@ public enum DegreeAdvisor {
         func walk(_ rules: [AuditRule]) {
             for rule in rules {
                 if rule.status == .open || rule.status == .inProgress {
-                    for option in rule.advice {
+                    for option in rule.advice where !isWildcard(option.code) {
                         let key = DegreePlanMath.normalizedCode(option.code)
                         if key.isEmpty || excluded.contains(key) || out[key] != nil { continue }
                         if out.count >= maxAddable { return }
@@ -290,13 +449,13 @@ public enum DegreeAdvisor {
 
     private static func buildContext(
         audits: [DegreeLabeledAudit], plan: DegreePlan, history: [String: [String]],
-        terms: [DegreeAdvisorTerm], now: Date, calendar: Calendar
+        terms: [DegreeAdvisorTerm], tags: [String: String], now: Date, calendar: Calendar
     ) -> String {
         let shared = sharedSections(
             audits: audits, plan: plan, history: history, terms: terms, now: now, calendar: calendar)
         var last = ""
         for cap in optionCaps {
-            let text = render(audits: audits, optionCap: cap, shared: shared)
+            let text = render(audits: audits, optionCap: cap, shared: shared, tags: tags)
             last = text
             if text.count <= maxContext { return text }
         }
@@ -317,6 +476,7 @@ public enum DegreeAdvisor {
     private struct Shared {
         let degrees: [String]
         let semesters: [String]
+        let finish: [String]
         let plan: [String]
         let worth: [String]
     }
@@ -356,6 +516,29 @@ public enum DegreeAdvisor {
             semesters.append("\(DegreePlanMath.termLabel(code)) (\(kind)): \(list.joined(separator: ", "))")
         }
 
+        // The expected last semester: eight fall and spring semesters counting
+        // the first one the history shows. Summers are not counted. A
+        // convention, not Penn's word, and the line tells the model so.
+        var finish: [String] = []
+        let firstTerm = history.keys.compactMap { key -> Term? in
+            guard let term = Term(code: key), term.season != .summer,
+                  !(history[key] ?? []).isEmpty else { return nil }
+            return term
+        }.min()
+        if let firstTerm {
+            let firstCode = DegreePlanMath.termCode(of: firstTerm)
+            var lastCode = firstCode
+            for _ in 1..<finishSemesters {
+                guard let next = DegreePlanMath.nextTermCode(after: lastCode) else { break }
+                lastCode = next
+            }
+            finish.append(
+                "expected final semester: \(DegreePlanMath.termLabel(lastCode)) "
+                    + "(eight fall and spring semesters from "
+                    + "\(DegreePlanMath.termLabel(firstCode)), the first in SEMESTERS; "
+                    + "the student may say otherwise)")
+        }
+
         var planLines: [String] = []
         for term in terms {
             let planned = plan.terms.first(where: { $0.termCode == term.code })?.courses ?? []
@@ -380,10 +563,12 @@ public enum DegreeAdvisor {
                 "\(DegreePlanMath.normalizedCode(suggestion.course.code)) +\(number(suggestion.points)) | "
                     + gains.joined(separator: "; "))
         }
-        return Shared(degrees: degrees, semesters: semesters, plan: planLines, worth: worth)
+        return Shared(degrees: degrees, semesters: semesters, finish: finish, plan: planLines, worth: worth)
     }
 
-    private static func render(audits: [DegreeLabeledAudit], optionCap: Int, shared: Shared) -> String {
+    private static func render(
+        audits: [DegreeLabeledAudit], optionCap: Int, shared: Shared, tags: [String: String]
+    ) -> String {
         var lines: [String] = []
         lines.append("DEGREES")
         lines.append(contentsOf: shared.degrees)
@@ -392,12 +577,18 @@ public enum DegreeAdvisor {
             lines.append("DEGREE \(index + 1): \(name(entry))")
             for block in entry.audit.blocks where !block.rules.isEmpty {
                 lines.append("[\(block.title)]")
-                appendRules(block.rules, depth: 0, optionCap: optionCap, into: &lines)
+                appendRules(block.rules, depth: 0, optionCap: optionCap,
+                            tagPrefix: "\(index)|\(block.id)|", tags: tags, into: &lines)
             }
         }
         lines.append("")
         lines.append("SEMESTERS")
         lines.append(contentsOf: shared.semesters)
+        if !shared.finish.isEmpty {
+            lines.append("")
+            lines.append("FINISH")
+            lines.append(contentsOf: shared.finish)
+        }
         lines.append("")
         lines.append("PLAN")
         lines.append(contentsOf: shared.plan)
@@ -408,10 +599,16 @@ public enum DegreeAdvisor {
         return lines.joined(separator: "\n")
     }
 
-    private static func appendRules(_ rules: [AuditRule], depth: Int, optionCap: Int, into lines: inout [String]) {
+    private static func appendRules(
+        _ rules: [AuditRule], depth: Int, optionCap: Int, tagPrefix: String, tags: [String: String],
+        into lines: inout [String]
+    ) {
         let indent = String(repeating: "  ", count: depth)
         for rule in rules {
-            var parts: [String] = [statusWord(rule.status), rule.label.isEmpty ? "requirement" : rule.label]
+            let tagText = tags[tagPrefix + rule.id].map { "[\($0)] " } ?? ""
+            var parts: [String] = [
+                tagText + statusWord(rule.status), rule.label.isEmpty ? "requirement" : rule.label,
+            ]
             if rule.status != .met {
                 if let credits = rule.needCredits {
                     parts.append("need \(number(credits)) cu")
@@ -429,8 +626,13 @@ public enum DegreeAdvisor {
                 if rule.advice.count > optionCap { text += ", +\(rule.advice.count - optionCap) more" }
                 parts.append(text)
             }
+            if let words = rule.adviceText {
+                let flat = words.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+                if !flat.isEmpty { parts.append("penn's words: " + String(flat.prefix(maxAdviceText))) }
+            }
             lines.append(indent + "- " + parts.joined(separator: " | "))
-            appendRules(rule.children, depth: depth + 1, optionCap: optionCap, into: &lines)
+            appendRules(rule.children, depth: depth + 1, optionCap: optionCap,
+                        tagPrefix: tagPrefix, tags: tags, into: &lines)
         }
     }
 
@@ -477,7 +679,18 @@ public enum DegreeAdvisor {
         return DegreeAdvisorRequest(
             question: cut, history: kept, context: brief.context, terms: brief.terms,
             addable: brief.addable.keys.sorted(),
-            programs: Array(programs.prefix(maxPrograms)), now: now)
+            programs: Array(programs.prefix(maxPrograms)),
+            requirements: requirementList(brief), now: now)
+    }
+
+    /// The brief's requirements as the wire carries them: ascending by tag
+    /// number, at most `maxRequirements`.
+    static func requirementList(_ brief: DegreeAdvisorBrief) -> [DegreeAdvisorRequirement] {
+        func number(_ tag: String) -> Int { Int(tag.dropFirst()) ?? Int.max }
+        let sorted = brief.requirements.values
+            .map { $0.requirement }
+            .sorted { number($0.tag) < number($1.tag) }
+        return Array(sorted.prefix(maxRequirements))
     }
 
     // MARK: Applying an answer's edits
@@ -519,13 +732,33 @@ public enum DegreeAdvisor {
 
         switch action.op {
         case .add:
-            guard let course = brief.addable[code], termCodes.contains(action.term),
+            guard termCodes.contains(action.term),
                   !DegreePlanMath.isPlanned(code, in: plan),
                   let extended = ensuringTerm(action.term, in: plan, brief: brief)
             else { return nil }
-            let added = DegreePlanMath.adding(
-                PlannedCourse(code: code, title: course.title, credits: course.credits ?? 1),
-                to: action.term, in: extended)
+            let tag = action.requirement?.trimmingCharacters(in: .whitespaces).uppercased()
+            let info = tag.flatMap { brief.requirements[$0] }
+            let planned: PlannedCourse
+            if let course = brief.addable[code] {
+                planned = PlannedCourse(
+                    code: code, title: course.title, credits: course.credits ?? 1,
+                    pickRuleKey: info?.ruleKey, pickLabel: info?.label)
+            } else {
+                // A pick: a course of the model's own naming, accepted only for
+                // a word requirement it names, in a code shape Penn uses, that
+                // fits the requirement's wildcards and is not already taken.
+                guard let info, isPickCode(code), !brief.taken.contains(code),
+                      info.requirement.patterns.isEmpty
+                        || info.requirement.patterns.contains(where: { DegreePlanMath.matchesPattern(code, $0) })
+                else { return nil }
+                let title = action.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+                var credits = 1.0
+                if let given = action.credits, given.isFinite, given > 0, given <= 4 { credits = given }
+                planned = PlannedCourse(
+                    code: code, title: (title?.isEmpty ?? true) ? nil : String(title!.prefix(120)),
+                    credits: credits, pickRuleKey: info.ruleKey, pickLabel: info.label)
+            }
+            let added = DegreePlanMath.adding(planned, to: action.term, in: extended)
             guard isPlanned(code, in: action.term, plan: added) else { return nil }
             return (added, DegreeAdvisorChange(
                 op: .add, code: code, termLabel: DegreePlanMath.termLabel(action.term), toTermLabel: nil))
@@ -547,6 +780,17 @@ public enum DegreeAdvisor {
                 op: .move, code: code, termLabel: DegreePlanMath.termLabel(action.term),
                 toTermLabel: DegreePlanMath.termLabel(target)))
         }
+    }
+
+    /// Two to five letters, a space, four digits: "MGMT 2010".
+    static func isPickCode(_ code: String) -> Bool {
+        let parts = code.split(separator: " ", omittingEmptySubsequences: false)
+        guard parts.count == 2 else { return false }
+        let letters = parts[0]
+        let digits = parts[1]
+        return (2...5).contains(letters.count)
+            && letters.allSatisfy { $0.isASCII && $0.isLetter && $0.isUppercase }
+            && digits.count == 4 && digits.allSatisfy { $0.isASCII && $0.isNumber }
     }
 
     private static func isPlanned(_ code: String, in termCode: String, plan: DegreePlan) -> Bool {

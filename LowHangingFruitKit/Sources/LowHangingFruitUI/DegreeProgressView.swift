@@ -264,7 +264,14 @@ struct DegreeProgressView: View {
             DegreeWhatIfSheet()
                 .environmentObject(state)
         }
-        .sheet(isPresented: $showAdvisor) {
+        .sheet(isPresented: $showAdvisor, onDismiss: {
+            // When the chat read a what-if, the table has to judge the courses
+            // it placed against that same audit, or they read as not counting.
+            if advisorMessages.contains(where: { $0.notice != nil }), !state.degree.whatIfs.isEmpty {
+                tab = .whatIf
+                selectedWhatIf = 0
+            }
+        }) {
             DegreeAdvisorView(messages: $advisorMessages, audits: advisorAudits())
                 .environmentObject(state)
         }

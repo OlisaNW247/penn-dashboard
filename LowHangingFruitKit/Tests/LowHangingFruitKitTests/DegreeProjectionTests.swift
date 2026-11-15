@@ -213,4 +213,55 @@ struct DegreeProjectionTests {
             last = p.ringShare
         }
     }
+
+    @Test("a pick is counted against the word requirement it names, and fills it")
+    func pickInWordRequirement() {
+        let word = rule("w", .open, needCourses: 1)
+        let a = audit([word])
+        let key = DegreeProjection.key(blockID: "B", ruleID: "w")
+        let picked = DegreePlan(terms: [PlannedTerm(termCode: "202710", courses: [
+            PlannedCourse(code: "MGMT 2010", title: nil, credits: 1, pickRuleKey: key, pickLabel: "rule w"),
+        ])])
+        let p = DegreeProjection.make(plan: picked, audit: a)
+        #expect(p.counted["MGMT 2010"] == "rule w")
+        #expect(p.unplaced.isEmpty)
+        #expect(close(p.rule(blockID: "B", ruleID: "w")?.fill ?? 0, 1))
+        // The same course without the pick has nowhere to go.
+        let plain = DegreeProjection.make(plan: plan(["MGMT 2010"]), audit: a)
+        #expect(plain.unplaced == ["MGMT 2010"])
+        // A word requirement nothing was placed for has no entry.
+        #expect(DegreeProjection.make(plan: plan(["MGMT 2010"]), audit: a).rule(blockID: "B", ruleID: "w") == nil)
+    }
+
+    @Test("a pick past a full requirement is overflow there and adds nothing more")
+    func pickOverflow() {
+        let a = audit([rule("w", .open, needCourses: 1)])
+        let key = DegreeProjection.key(blockID: "B", ruleID: "w")
+        let two = DegreePlan(terms: [PlannedTerm(termCode: "202710", courses: [
+            PlannedCourse(code: "MGMT 2010", title: nil, credits: 1, pickRuleKey: key, pickLabel: "w"),
+            PlannedCourse(code: "MGMT 2020", title: nil, credits: 1, pickRuleKey: key, pickLabel: "w"),
+        ])])
+        let p = DegreeProjection.make(plan: two, audit: a)
+        #expect(p.counted.keys.sorted() == ["MGMT 2010"])
+        #expect(p.rule(blockID: "B", ruleID: "w")?.planned.count == 2)
+        #expect(close(p.rule(blockID: "B", ruleID: "w")?.fill ?? 0, 1))
+    }
+
+    @Test("a course matching a wildcard option is laid there, and a wildcard is never a listed course")
+    func wildcardMatch() {
+        let a = audit([rule("w", .open, advice: ["MGMT @"], needCourses: 2),
+                       rule("o", .open, advice: ["CIS 1000"])])
+        let p = DegreeProjection.make(plan: plan(["MGMT 2010", "ACCT 1010", "CIS 1000"]), audit: a)
+        #expect(p.counted["MGMT 2010"] == "rule w")
+        #expect(p.counted["CIS 1000"] == "rule o")
+        #expect(p.unplaced == ["ACCT 1010"])
+        #expect(close(p.rule(blockID: "B", ruleID: "w")?.fill ?? 0, 0.5))
+    }
+
+    @Test("a concrete listing wins over a wildcard match")
+    func concreteBeatsWildcard() {
+        let a = audit([rule("w", .open, advice: ["MGMT @"]), rule("o", .open, advice: ["MGMT 2010"])])
+        let p = DegreeProjection.make(plan: plan(["MGMT 2010"]), audit: a)
+        #expect(p.counted["MGMT 2010"] == "rule o")
+    }
 }

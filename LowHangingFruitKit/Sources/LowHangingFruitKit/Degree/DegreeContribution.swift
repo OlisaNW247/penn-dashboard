@@ -213,7 +213,7 @@ public enum DegreeContribution {
             for requirement in open {
                 for option in requirement.options {
                     let code = DegreePlanMath.normalizedCode(option.code)
-                    if code.isEmpty || takenAnywhere.contains(code) { continue }
+                    if code.isEmpty || option.code.contains("@") || takenAnywhere.contains(code) { continue }
                     if seen.insert(code).inserted { candidates.append(option) }
                 }
             }

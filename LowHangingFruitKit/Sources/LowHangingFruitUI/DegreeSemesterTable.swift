@@ -378,12 +378,18 @@ struct DegreeSemesterTable: View {
         // muting every planned course then would read as "none of this counts".
         let judged = !audits.isEmpty
         let total = gains.reduce(0) { $0 + $1.points }
-        let countsWord = counts ? ", counts toward your degree" : (judged ? ", not on an open requirement" : "")
+        // A course the chat placed for a named requirement keeps normal ink
+        // when the audits on screen show no gain for it: the student asked for
+        // it, and the line says which requirement it was placed for.
+        let pickLabel = course.pickLabel.flatMap { $0.isEmpty ? nil : $0 }
+        let isPick = !counts && pickLabel != nil
+        let countsWord = counts ? ", counts toward your degree"
+            : (isPick ? ", your pick" : (judged ? ", not on an open requirement" : ""))
         return VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 4) {
                 chip(code: course.code,
                      label: "\(course.code), \(creditsWord(course.credits))\(countsWord)",
-                     muted: judged && !counts)
+                     muted: judged && !counts && !isPick)
                     .draggable(code)
                 if counts, let badge = DegreeProgressMath.gainBadge(total) {
                     Text(badge)
@@ -410,6 +416,12 @@ struct DegreeSemesterTable: View {
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+            } else if let pickLabel {
+                Text("your pick · \(pickLabel)")
+                    .font(.lhfSans(11))
+                    .foregroundStyle(Color.smoothInk)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text("not on an open requirement")
                     .font(.lhfSans(11))

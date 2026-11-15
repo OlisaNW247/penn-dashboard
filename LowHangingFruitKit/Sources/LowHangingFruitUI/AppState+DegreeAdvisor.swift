@@ -69,6 +69,9 @@ extension AppState {
         let now = Date()
         let brief = DegreeAdvisor.brief(audits: audits, plan: degreePlan,
                                         history: degree.history, now: now)
+        #if DEBUG
+        Self.writeDegreeAdvisorDiagnostics(brief: brief, audits: audits)
+        #endif
         // The catalogue is only used if already loaded: asking for it here
         // would start a Penn sign-in before the student has asked for anything
         // that needs one. An empty catalogue means no what-if can be offered.
@@ -105,6 +108,9 @@ extension AppState {
         onStage("planning…")
         let secondBrief = DegreeAdvisor.brief(audits: swapped, plan: degreePlan,
                                               history: degree.history, now: now)
+        #if DEBUG
+        Self.writeDegreeAdvisorDiagnostics(brief: secondBrief, audits: swapped)
+        #endif
         let second = DegreeAdvisor.request(question: question, turns: turns, brief: secondBrief,
                                            programs: [], now: now)
         do {
@@ -166,6 +172,53 @@ extension AppState {
         }
         return out
     }
+
+    #if DEBUG
+    /// DEBUG only: the brief's document, a dump of every audit rule and the
+    /// requirement tags, in one file under Application Support, so the chat's
+    /// "why could it not fill this" can be read off the phone
+    /// (`scripts/read-advisor-brief.sh`). It holds the same text the server
+    /// gets plus rule fields the document leaves out; a Release build never
+    /// writes it.
+    private nonisolated static func writeDegreeAdvisorDiagnostics(
+        brief: DegreeAdvisorBrief, audits: [DegreeLabeledAudit]
+    ) {
+        var lines: [String] = [brief.context, "", "RULES"]
+        func dump(_ rules: [AuditRule], depth: Int) {
+            let indent = String(repeating: "  ", count: depth)
+            for rule in rules {
+                var parts = ["\(rule.status)", rule.ruleType, rule.label.isEmpty ? "requirement" : rule.label]
+                if let credits = rule.needCredits { parts.append("needCredits \(credits)") }
+                if let courses = rule.needCourses { parts.append("needCourses \(courses)") }
+                let codes = rule.advice.prefix(8).map { $0.code }.joined(separator: ", ")
+                parts.append("advice \(rule.advice.count) [\(codes)]")
+                if let words = rule.adviceText, !words.isEmpty {
+                    parts.append("adviceText: " + String(words.prefix(300)))
+                }
+                lines.append(indent + "- " + parts.joined(separator: " | "))
+                dump(rule.children, depth: depth + 1)
+            }
+        }
+        for entry in audits {
+            lines.append("DEGREE \(entry.label)")
+            for block in entry.audit.blocks {
+                lines.append("[\(block.title)]")
+                dump(block.rules, depth: 0)
+            }
+        }
+        lines.append("")
+        lines.append("REQUIREMENT TAGS")
+        for info in brief.requirements.values.sorted(by: { $0.requirement.tag < $1.requirement.tag }) {
+            lines.append("\(info.requirement.tag) | \(info.requirement.degree) | \(info.requirement.label)")
+        }
+        guard let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        else { return }
+        let directory = base.appendingPathComponent("LowHangingFruit", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appendingPathComponent("degree-advisor-last.txt")
+        try? lines.joined(separator: "\n").write(to: file, atomically: true, encoding: .utf8)
+    }
+    #endif
 
     /// A breadcrumb readable off the phone: which model answered. An id only.
     private nonisolated static func noteDegreeAdvisorModel(_ model: String?) {
