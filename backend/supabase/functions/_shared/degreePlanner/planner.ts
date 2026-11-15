@@ -1062,7 +1062,7 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
       if (chosen.id === "approved") notes.push(`this fits by ${termLabel(req.targetTerm)} only with ${fmt(chosen.maxLoad)} cu semesters, which need approval`);
       else if (chosen.id === "summer" && chosen.summer) notes.push(`this fits by ${termLabel(req.targetTerm)} only with summer courses`);
     } else if (chosen.finishTerm) {
-      notes.push(`this does not fit by ${termLabel(req.targetTerm)}; the earliest finish is ${termLabel(chosen.finishTerm)} at ${fmt(chosen.maxLoad)} cu a semester`);
+      notes.push(`this does not fit by ${termLabel(req.targetTerm)}; the earliest finish is ${termLabel(chosen.finishTerm)} at ${fmt(chosen.maxLoad)} cu a semester${chosen.summer ? " with summer courses" : ""}`);
     } else {
       notes.push(`this does not fit by ${termLabel(req.targetTerm)} or within ${HORIZON} terms`);
     }
