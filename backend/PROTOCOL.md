@@ -1218,8 +1218,9 @@ before answering 502; no retry if the client has gone.
 A phone that has Penn's audits in structured form adds one optional request key:
 `structured: { "audits": [{ "degreeId": string (1..120), "label": string (0..120), "audit": <DegreeAudit JSON object> }] (1..6), "history": { "<termCode>": [course code] }, "currentTerm": "202630" }`.
 The raw JSON of `structured` is capped at 1,500,000 characters; any wrong shape,
-an over-cap size, or a `currentTerm` that is not six digits makes the body
-malformed (400). `history` may be omitted (reads as `{}`). A phone that sends no
+an over-cap size, or a `currentTerm` that is not a Penn term (six digits ending
+in 10, 20 or 30) makes the body malformed (400); `history` keys that are not
+Penn terms are dropped. `history` may be omitted (reads as `{}`). A phone that sends no
 `structured` gets exactly the behaviour documented above (same prompt, schema,
 response keys and log line).
 
@@ -1240,7 +1241,7 @@ value; an unknown intent is `question`).
 - `question`, `edit`, or any intent with a valid `whatIf`: answered exactly as
   before from the same JSON (`actions` validated and picks checked as above; no
   `plan`, no `email`).
-- `plan` and `email`: the `answer` of this call is ignored. The server runs the
+- `plan` and `email`: the `answer` of this call is never shown (the instruction asks for one neutral sentence; on the what-if path the server replaces it with "Reading Penn's audit for <program> first."). The intent call is capped at 4000 tokens. The server runs the
   deterministic planner (`_shared/degreePlanner/`): audits to requirement slots,
   public catalogue data, one plan, then a second pass with the chosen courses'
   prerequisites so they order the schedule (skipped, with a note, when the
@@ -1262,10 +1263,26 @@ courses: [{ code, title, credits, countsToward: [string], approval:
 "automatic"|"petition"|"check", note? }] }], unfilled: [{ slotId, degreeLabel,
 label, reason }], petitions: [{ code, slots: [string], savesCredits }], notes:
 [string] }`. When `plan` is present the phone replaces its future semesters with
-`plan.schedule` and ignores `actions`. If the planner throws, the response is the
-first call's `answer` with no `plan` (log line `degree-advisor: engine failed`);
+`plan.schedule` and ignores `actions`. If the planner throws, the response is the fixed sentence "I couldn't build the plan just now. Try again in a moment." with no `plan` (log line `degree-advisor: engine failed`);
 if only the explaining call fails, the plan is returned with a one-sentence
 numeric summary as the answer.
+
+**Time and work bounds.** The 25-second engine budget bounds all catalogue work:
+every request's timeout is the smaller of its own and the time left, no request
+starts once the deadline has passed (what was gathered is used), and the
+caller's disconnect cuts requests off. The whole structured request is held under
+about 130 s (the phone waits 150): the intent call is cut off at 70 s from the
+start, and the explaining call is skipped, with the numeric summary used, when
+less than 20 s of the 130 remain. Hostile input is capped: at most 200
+requirement slots across all degrees (extras dropped, note "the audit was too
+large; some requirements were not planned"), 40 attribute codes, 60 subjects and
+150 explicit codes in the first catalogue pass (60 in the second), and the
+module-level catalogue cache holds 2000 entries, oldest evicted. A `waive`
+label must be 4+ characters and not a generic word; the exact label wins, else
+the single slot containing it (several: ambiguous, none waived); waived labels
+are listed in a note ("treated as done: ..."). `notes` also say when the chosen
+load needs advisor approval or special permission, when a language course from
+level 200 up assumes placement, and when nothing is left to plan.
 
 **Public data requested by the planner** (no student data, no question, no
 document; course codes, subjects and attribute codes only): Penn Labs

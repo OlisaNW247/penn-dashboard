@@ -159,3 +159,82 @@ Deno.test("engine: unfilled from requirements and the planner are merged without
   const keys = out.unfilled.map((u) => `${u.degreeLabel}|${u.label}`.toLowerCase());
   assertEquals(new Set(keys).size, keys.length);
 });
+
+// ---- deadline, caps, waive rules -------------------------------------------
+
+import { capNeeds, capSlots, MAX_SLOTS } from "../supabase/functions/_shared/degreePlanner/engine.ts";
+import type { Slot } from "../supabase/functions/_shared/degreePlanner/types.ts";
+
+Deno.test("engine: a hung catalogue is bounded by the engine budget on a fake clock", async () => {
+  clearCatalogCache();
+  let t = 0;
+  const calls: string[] = [];
+  // Every request answers only when aborted; the fake clock is past the
+  // budget after the first request is made, so nothing else may start.
+  const fetchImpl = ((input: string | URL | Request, init?: RequestInit) => {
+    calls.push(String(input));
+    t += 30_000;
+    return new Promise<Response>((_, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+      setTimeout(() => reject(new Error("aborted")), 20);
+    });
+  }) as typeof fetch;
+  const out = await runEngine({
+    structured: structured(), intent: intent(), fetchImpl, now: NOW, clock: () => t, budgetMs: 25_000,
+  });
+  assert(calls.length <= 6, `${calls.length} requests started`);
+  assert(out.plan.notes.some((n) => n.includes("catalogue could not be read")));
+});
+
+Deno.test("engine: the caller's signal reaches the catalogue requests", async () => {
+  clearCatalogCache();
+  const ctl = new AbortController();
+  ctl.abort();
+  const calls: string[] = [];
+  await runEngine({
+    structured: structured(), intent: intent(), fetchImpl: pennFetch(calls), now: NOW, signal: ctl.signal,
+  });
+  assertEquals(calls.length, 0);
+});
+
+Deno.test("engine: slot and lookup caps are deterministic", () => {
+  const mk = (n: number, id: string) => ({
+    id, label: id, college: "EU",
+    slots: Array.from({ length: n }, (_, i) => ({ id: `${id}${i}` })) as unknown as Slot[],
+    applied: [],
+  });
+  const c = capSlots([mk(150, "a"), mk(150, "b")] as never);
+  assertEquals(c.dropped, true);
+  assertEquals(c.degrees.reduce((n, d) => n + d.slots.length, 0), MAX_SLOTS);
+  assertEquals(c.degrees[1].slots.length, 50);
+  assertEquals(capSlots([mk(10, "a")] as never).dropped, false);
+
+  const many = (n: number, p: string) => Array.from({ length: n }, (_, i) => `${p}${String(i).padStart(3, "0")}`);
+  const n = capNeeds({ attributes: many(100, "A"), subjects: many(100, "S"), codes: many(300, "C") });
+  assertEquals([n.attributes.length, n.subjects.length, n.codes.length, n.truncated], [40, 60, 150, true]);
+  assertEquals(n.attributes[0], "A000");
+  assertEquals(capNeeds({ attributes: ["A"], subjects: [], codes: [] }).truncated, false);
+});
+
+Deno.test("engine: waive labels must be specific, and ambiguity waives nothing", () => {
+  const r = degreesFromAudits(structured().audits);
+  const w = waivedSlotIds(r.degrees, ["elective", "Courses", "abc", "foreign language"]);
+  assertEquals(w.unmatched, ["elective", "Courses", "abc"]);
+  assertEquals(w.ids.length, 1);
+  assertEquals(w.waivedLabels.length, 1);
+
+  const slot = (id: string, label: string) => ({ id, label }) as unknown as Slot;
+  const deg = [{ id: "d", label: "d", college: "WU", applied: [], slots: [slot("1", "Business Breadth I"), slot("2", "Business Breadth II"), slot("3", "Humanities")] }];
+  const amb = waivedSlotIds(deg as never, ["business breadth", "humanities", "Business Breadth II"]);
+  assertEquals(amb.ambiguous, ["business breadth"]);
+  assertEquals(amb.ids.sort(), ["2", "3"]);
+  assertEquals(amb.waivedLabels.sort(), ["Business Breadth II", "Humanities"]);
+});
+
+Deno.test("engine: waived requirements are listed in a note", async () => {
+  clearCatalogCache();
+  const out = await runEngine({
+    structured: structured(), intent: intent({ waive: ["Foreign Language"] }), fetchImpl: pennFetch(), now: NOW,
+  });
+  assert(out.plan.notes.some((n) => n.startsWith("treated as done: ") && n.includes("Foreign Language")));
+});

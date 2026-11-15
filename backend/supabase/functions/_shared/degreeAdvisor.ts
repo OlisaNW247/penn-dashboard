@@ -85,6 +85,8 @@ export const MAX_STRUCTURED_CHARS = 1_500_000;
 export const MAX_STRUCTURED_AUDITS = 6;
 
 const TERM_CODE = /^\d{6}$/;
+/** Penn terms end in 10 (spring), 20 (summer) or 30 (fall). */
+const PENN_TERM = /^\d{4}(10|20|30)$/;
 const REQUIREMENT_TAG = /^R\d{1,3}$/;
 const COURSE_SHAPE = /^[A-Z]{2,5} \d{4}$/;
 
@@ -235,11 +237,12 @@ function parseStructured(value: unknown): DegreeAdvisorStructured | undefined {
   if (v.history !== undefined) {
     if (typeof v.history !== "object" || v.history === null || Array.isArray(v.history)) return undefined;
     for (const [term, codes] of Object.entries(v.history as Record<string, unknown>)) {
+      if (!PENN_TERM.test(term)) continue;
       if (!Array.isArray(codes) || codes.some((c) => typeof c !== "string")) return undefined;
       history[term] = codes as string[];
     }
   }
-  if (typeof v.currentTerm !== "string" || !TERM_CODE.test(v.currentTerm)) return undefined;
+  if (typeof v.currentTerm !== "string" || !PENN_TERM.test(v.currentTerm)) return undefined;
   return { audits, history, currentTerm: v.currentTerm };
 }
 
@@ -310,7 +313,7 @@ export interface DegreeIntentParams {
 
 /** Added to the base instructions when the phone sent `structured`. */
 export const DEGREE_ADVISOR_INTENT_INSTRUCTIONS = [
-  "INTENT: a deterministic planner builds whole plans from Penn's audits; you only read the request. Set `intent` to one of: \"plan\" when the student asks to build, fill, complete or check whether a plan or a finish date works; \"email\" when they ask for an email to their advisor (the plan is run for it too); \"edit\" when they ask to add, move or remove a few specific courses; \"question\" for everything else. For \"plan\" and \"email\" your `answer` is ignored (write a short placeholder) and `actions` must be empty.",
+  "INTENT: a deterministic planner builds whole plans from Penn's audits; you only read the request. Set `intent` to one of: \"plan\" when the student asks to build, fill, complete or check whether a plan or a finish date works; \"email\" when they ask for an email to their advisor (the plan is run for it too); \"edit\" when they ask to add, move or remove a few specific courses; \"question\" for everything else. For \"plan\" and \"email\" `actions` must be empty and your `answer` is only shown if the plan cannot be built, so write one short, neutral sentence that is true either way (for example \"I'll build that plan from your audits.\"), never a claim about the result.",
   "PLAN PARAMETERS (only for \"plan\" and \"email\"; otherwise null or empty): `targetTerm` is the last semester the student wants to finish in, as a six-digit Penn term code (spring YYYY10, summer YYYY20, fall YYYY30): \"by spring 2028\" is \"202810\". For \"on time\" or \"graduate on time\", use the semester named on the FINISH line of the DOCUMENT converted to a term code, or null when there is no FINISH line. `maxLoad` is the credit units per semester the student says they can take (\"I can do 7\" is 7), else null. `allowSummer` is false if they rule out summer, true if they ask for it, else null. `waive` lists short labels of requirements the student says are already handled (for example \"Foreign Language Proficiency\" when they say they passed a placement exam). `avoid` and `prefer` are course codes (\"CIS 4710\") they want left out or favoured.",
 ].join("\n\n");
 
@@ -643,6 +646,9 @@ export function finalizeDegreeAdvice(
 /** Used only when the explaining call fails: the numbers, no model. Keeps the
  *  student's plan on screen with a true sentence rather than a 502. */
 export function plainPlanSummary(plan: PlanResult): string {
+  if (plan.schedule.length === 0 && plan.remainingCredits <= 1e-6 && plan.unfilled.length === 0) {
+    return "Nothing is left to plan: Penn's audits show no remaining requirements to fill.";
+  }
   const chosen = plan.scenarios.find((s) => s.id === plan.chosen) ?? plan.scenarios[0];
   const parts: string[] = [];
   if (chosen && chosen.finishTerm) {

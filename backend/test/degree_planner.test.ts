@@ -498,3 +498,43 @@ for (const [wild, budgetMs] of [[4, 1000], [34, 3000]] as const) {
     assert.equal(r.unfilled.length, 0);
   });
 }
+
+// ---- loads above standard, language placement, nothing left ----------------
+
+Deno.test("planner: loads above the standard are flagged for approval or permission", () => {
+  const mid = plan(lightRequest({ maxLoad: 6 }), catalog());
+  assert.equal(mid.chosen, "student");
+  assert.ok(mid.notes.some((n) => n === "6 cu semesters need your advisor's approval"), mid.notes.join("|"));
+  const high = plan(lightRequest({ maxLoad: 7 }), catalog());
+  assert.ok(
+    high.notes.some((n) => n === "7 cu a semester is above Penn's 6.5 cu limit for dual-degree students and needs special permission"),
+    high.notes.join("|"),
+  );
+  const std = plan(request(), catalog());
+  assert.equal(std.chosen, "standard");
+  assert.ok(!std.notes.some((n) => n.includes("advisor's approval") || n.includes("special permission")));
+});
+
+Deno.test("planner: a language course from level 200 up assumes placement", () => {
+  const cat = catalog();
+  cat.courses["SPAN 0200"] = course("SPAN 0200", 1, ["WUFL"]);
+  delete cat.courses["SPAN 0100"];
+  cat.attributeIndex["WUFL"] = ["SPAN 0200"];
+  const onlyLanguage = (taken: string[]) => request({
+    waive: degrees().flatMap((d) => d.slots.map((x) => x.id)).filter((id) => id !== "wh|b|Foreign Language"),
+    taken,
+  });
+  const r = plan(onlyLanguage([]), cat);
+  const placed = r.schedule.flatMap((t) => t.courses.map((c) => c.code));
+  assert.ok(placed.includes("SPAN 0200"));
+  assert.ok(r.notes.some((n) => n.startsWith("SPAN 0200 assumes you place into it") && n.includes("SPAN 0100")));
+  // Already in the subject: no note.
+  const r2 = plan(onlyLanguage(["SPAN 0100"]), cat);
+  assert.ok(!r2.notes.some((n) => n.includes("placement exam")));
+});
+
+Deno.test("planner: a plan with nothing left says so", () => {
+  const r = plan(request({ degrees: [{ id: "cs", label: CS, college: "EU", slots: [], applied: [] }] }), catalog());
+  assert.equal(r.schedule.length, 0);
+  assert.ok(r.notes.includes("nothing is left to plan"));
+});

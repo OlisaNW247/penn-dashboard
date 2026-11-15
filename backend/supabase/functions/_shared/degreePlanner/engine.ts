@@ -14,6 +14,16 @@ import type { CatalogSnapshot, Degree, PlanResult, Slot, Unfilled } from "./type
 export const ENGINE_BUDGET_MS = 25_000;
 /** A second catalogue pass needs at least this much of the budget left. */
 const SECOND_PASS_MIN_MS = 4_000;
+/** Work caps. The audits come from the phone, so a hostile or corrupt one
+ *  must not be able to make the server fetch or plan without bound. */
+export const MAX_ATTRIBUTES = 40;
+export const MAX_SUBJECTS = 60;
+export const MAX_EXPLICIT_CODES = 150;
+export const MAX_SLOTS = 200;
+export const MAX_SECOND_PASS_CODES = 60;
+const GENERIC_WAIVE_WORDS = new Set([
+  "elective", "electives", "requirement", "requirements", "course", "courses", "general",
+]);
 
 export interface EngineIntent {
   targetTerm: string | null;
@@ -33,6 +43,8 @@ export interface EngineInput {
   budgetMs?: number;
   /** Test seam for the clock; defaults to Date.now. */
   clock?: () => number;
+  /** The caller going away cuts off every catalogue request. */
+  signal?: AbortSignal;
 }
 
 export interface EngineOutput {
@@ -68,26 +80,81 @@ function collectNeeds(degrees: Degree[]): { attributes: string[]; subjects: stri
   return { attributes: [...attributes].sort(), subjects: [...subjects].sort(), codes: [...codes].sort() };
 }
 
-/** Case-insensitive substring match either way on the slot's label. */
-export function waivedSlotIds(degrees: Degree[], labels: string[]): { ids: string[]; unmatched: string[] } {
+/** Keeps the first MAX_SLOTS slots across all degrees, in audit order. */
+export function capSlots(degrees: Degree[]): { degrees: Degree[]; dropped: boolean } {
+  let budget = MAX_SLOTS;
+  let dropped = false;
+  const out = degrees.map((d) => {
+    if (d.slots.length <= budget) {
+      budget -= d.slots.length;
+      return d;
+    }
+    dropped = true;
+    const kept = d.slots.slice(0, budget);
+    budget = 0;
+    return { ...d, slots: kept };
+  });
+  return { degrees: out, dropped };
+}
+
+/** Caps what the first catalogue pass asks for (inputs are already sorted, so
+ *  what is dropped is deterministic). */
+export function capNeeds(
+  needs: { attributes: string[]; subjects: string[]; codes: string[] },
+): { attributes: string[]; subjects: string[]; codes: string[]; truncated: boolean } {
+  return {
+    attributes: needs.attributes.slice(0, MAX_ATTRIBUTES),
+    subjects: needs.subjects.slice(0, MAX_SUBJECTS),
+    codes: needs.codes.slice(0, MAX_EXPLICIT_CODES),
+    truncated: needs.attributes.length > MAX_ATTRIBUTES || needs.subjects.length > MAX_SUBJECTS ||
+      needs.codes.length > MAX_EXPLICIT_CODES,
+  };
+}
+
+/** Matches the model's short labels to requirement slots. A label must be
+ *  specific (4+ characters, not a generic word) because a loose match once
+ *  waived every slot whose label happened to contain "elective". Per label the
+ *  exact label wins; otherwise the single slot whose label contains it; two or
+ *  more such slots are ambiguous and waive nothing. */
+export function waivedSlotIds(
+  degrees: Degree[],
+  labels: string[],
+): { ids: string[]; unmatched: string[]; ambiguous: string[]; waivedLabels: string[] } {
   const ids = new Set<string>();
+  const waivedLabels: string[] = [];
   const unmatched: string[] = [];
+  const ambiguous: string[] = [];
+  const all = degrees.flatMap((d) => d.slots as Slot[]);
   for (const raw of labels) {
     const w = raw.trim().toLowerCase();
     if (!w) continue;
-    let hit = false;
-    for (const d of degrees) {
-      for (const s of d.slots as Slot[]) {
-        const l = s.label.toLowerCase();
-        if (l.includes(w) || w.includes(l)) {
-          ids.add(s.id);
-          hit = true;
-        }
+    if (w.length < 4 || GENERIC_WAIVE_WORDS.has(w)) {
+      unmatched.push(raw.trim());
+      continue;
+    }
+    const exact = all.filter((s) => s.label.trim().toLowerCase() === w);
+    let pool = exact.length > 0 ? exact : all.filter((s) => s.label.toLowerCase().includes(w));
+    if (pool.length === 0) {
+      // The model's label may be longer than Penn's ("Foreign Language
+      // Proficiency (placement exam)"); a slot label that is itself specific
+      // and sits inside it counts, under the same one-match rule.
+      pool = all.filter((s) => {
+        const l = s.label.trim().toLowerCase();
+        return l.length >= 4 && !GENERIC_WAIVE_WORDS.has(l) && w.includes(l);
+      });
+    }
+    if (pool.length === 0) {
+      unmatched.push(raw.trim());
+    } else if (exact.length === 0 && pool.length > 1) {
+      ambiguous.push(raw.trim());
+    } else {
+      for (const s of pool) {
+        if (!ids.has(s.id)) waivedLabels.push(s.label);
+        ids.add(s.id);
       }
     }
-    if (!hit) unmatched.push(raw.trim());
   }
-  return { ids: [...ids], unmatched };
+  return { ids: [...ids], unmatched, ambiguous, waivedLabels };
 }
 
 export async function runEngine(input: EngineInput): Promise<EngineOutput> {
@@ -98,11 +165,22 @@ export async function runEngine(input: EngineInput): Promise<EngineOutput> {
 
   const { structured, intent } = input;
   const req = degreesFromAudits(structured.audits);
+  const extraNotes: string[] = [];
+  // At most MAX_SLOTS requirements across all degrees, in audit order; the
+  // rest are dropped and the plan says so.
+  const capped = capSlots(req.degrees);
+  req.degrees = capped.degrees;
+  const slotsDropped = capped.dropped;
+  if (slotsDropped) extraNotes.push("the audit was too large; some requirements were not planned");
   const taken = new Set(req.taken);
   for (const codes of Object.values(structured.history)) for (const c of codes) taken.add(normCode(c));
 
-  const needs = collectNeeds(req.degrees);
-  const extraNotes: string[] = [];
+  const capNeed = capNeeds(collectNeeds(req.degrees));
+  const needs = capNeed;
+  if (capNeed.truncated) {
+    extraNotes.push("the audit listed more courses than could be looked up, so some options were not considered");
+  }
+  const deadline = started + budget;
 
   let catalog: CatalogSnapshot = { courses: {}, attributeIndex: {}, cisTechElective: {}, semesters: [] };
   try {
@@ -112,7 +190,10 @@ export async function runEngine(input: EngineInput): Promise<EngineOutput> {
       attributes: needs.attributes,
       subjects: needs.subjects,
       codes: needs.codes,
-      timeoutMs: Math.max(1000, Math.min(8000, remaining())),
+      timeoutMs: 8000,
+      deadline,
+      signal: input.signal,
+      clock,
     });
   } catch { /* buildCatalogSnapshot does not throw; belt and braces */ }
 
@@ -127,6 +208,10 @@ export async function runEngine(input: EngineInput): Promise<EngineOutput> {
   for (const label of waive.unmatched) {
     extraNotes.push(`could not match "${label}" to a requirement, so it was not waived`);
   }
+  for (const label of waive.ambiguous) {
+    extraNotes.push(`"${label}" matches more than one requirement, so it was not waived`);
+  }
+  if (waive.waivedLabels.length > 0) extraNotes.push(`treated as done: ${waive.waivedLabels.join(", ")}`);
 
   const request = {
     degrees: req.degrees,
@@ -154,8 +239,11 @@ export async function runEngine(input: EngineInput): Promise<EngineOutput> {
           now: input.now,
           attributes: [],
           subjects: [],
-          codes: chosenCodes,
-          timeoutMs: Math.max(1000, Math.min(4000, remaining())),
+          codes: chosenCodes.slice(0, MAX_SECOND_PASS_CODES),
+          timeoutMs: 4000,
+          deadline,
+          signal: input.signal,
+          clock,
         });
         let merged = false;
         for (const [code, d] of Object.entries(detail.courses)) {

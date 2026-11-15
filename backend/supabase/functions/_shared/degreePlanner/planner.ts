@@ -1076,6 +1076,34 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
   const used = schedule.some((t) => seasonOf(t.term) === "summer");
   if (used) notes.push("summer terms are used");
 
+  // Loads above the standard one are never automatic, whichever scenario was
+  // chosen (a student's own "I can do 7" included), so the plan says who has
+  // to say yes. Course approvals stay as they are.
+  if (chosen.maxLoad > policy.loads.standard + EPS) {
+    notes.push(chosen.maxLoad > policy.loads.approved + EPS
+      ? `${fmt(chosen.maxLoad)} cu a semester is above Penn's ${fmt(policy.loads.approved)} cu limit for dual-degree students and needs special permission`
+      : `${fmt(chosen.maxLoad)} cu semesters need your advisor's approval`);
+  }
+
+  // Penn Labs' prerequisites field is empty for most language courses, so the
+  // prerequisite pass cannot tell that SPAN 0200 is not a first course. A
+  // course from level 200 up, chosen for the language requirement by a
+  // student with nothing in that subject behind them, depends on placement.
+  const takenSubjects = new Set([...taken].map((k) => parseAlias(k).subject));
+  const langNoted = new Set<string>();
+  for (const it of items) {
+    if (!termOf.has(it.ci)) continue;
+    if (!it.slots.some((si) => slots[si].slot.group === "wharton.language")) continue;
+    const c = it.course;
+    if (!Number.isFinite(c.num) || c.num % 1000 < 200 || takenSubjects.has(c.subject)) continue;
+    if (langNoted.has(c.code)) continue;
+    langNoted.add(c.code);
+    notes.push(`${c.code} assumes you place into it with Penn's language placement exam; otherwise start with ${c.subject} 0100 (or the first course in the sequence)`);
+  }
+  if (schedule.length === 0 && remainingCredits <= EPS && unfilled.length === 0) {
+    notes.push("nothing is left to plan");
+  }
+
   return {
     remainingCredits,
     remainingCreditsWithoutOverlap,

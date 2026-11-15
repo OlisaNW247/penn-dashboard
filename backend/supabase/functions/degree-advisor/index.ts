@@ -39,6 +39,15 @@ import {
 import { type EngineOutput, runEngine } from "../_shared/degreePlanner/engine.ts";
 
 /** Test seam: tests replace `run` to force an engine failure. */
+/** The phone waits 150 s. Structured requests (intent call, engine, explaining
+ *  call) are held under this much in all, so a slow model produces a plain
+ *  summary or an error the phone can read rather than a client-side timeout. */
+export const STRUCTURED_TOTAL_MS = 130_000;
+/** The intent call may take at most this long from the request's start. */
+const INTENT_CALL_MS = 70_000;
+/** An explaining call is not started with less than this left. */
+const EXPLAIN_MIN_MS = 20_000;
+
 export const engineHooks: { run: typeof runEngine } = { run: runEngine };
 
 export async function handleDegreeAdvisor(req: Request): Promise<Response> {
@@ -83,6 +92,8 @@ export async function handleDegreeAdvisor(req: Request): Promise<Response> {
         messages: AdvisorMessage[];
         schema: { name: string; schema: Record<string, unknown> };
         maxTokens: number;
+        /** Absolute time after which the call is cut off (structured only). */
+        deadlineAt?: number;
       }
       let modelMs = 0;
       const complete = async (primary: string, fallback: string | undefined, spec: CallSpec) => {
@@ -111,7 +122,9 @@ export async function handleDegreeAdvisor(req: Request): Promise<Response> {
           temperature: 0.2,
           // The answer is for this phone alone, so when the client leaves
           // the model call is cut off rather than paid for and discarded.
-          signal: req.signal,
+          signal: spec.deadlineAt === undefined
+            ? req.signal
+            : AbortSignal.any([req.signal, AbortSignal.timeout(Math.max(1, spec.deadlineAt - Date.now()))]),
         });
       const completeWithRetry = async (spec: CallSpec): Promise<JSONCompletion> => {
         try {
@@ -126,10 +139,14 @@ export async function handleDegreeAdvisor(req: Request): Promise<Response> {
         }
       };
 
+      const requestStart = Date.now();
       const firstSpec: CallSpec = {
         messages: buildDegreeAdvisorMessages(body),
         schema: body.structured ? DEGREE_ADVISOR_STRUCTURED_SCHEMA : DEGREE_ADVISOR_SCHEMA,
-        maxTokens: 10000,
+        // The structured reading is a few short fields; the old path keeps
+        // its larger cap because it can carry a whole plan's actions.
+        maxTokens: body.structured ? 4000 : 10000,
+        ...(body.structured ? { deadlineAt: requestStart + INTENT_CALL_MS } : {}),
       };
 
       let completion: JSONCompletion;
@@ -183,6 +200,7 @@ export async function handleDegreeAdvisor(req: Request): Promise<Response> {
               intent: intent.params,
               fetchImpl: fetch,
               now: new Date(),
+              signal: req.signal,
             });
           } catch {
             console.error("degree-advisor: engine failed");
@@ -190,11 +208,9 @@ export async function handleDegreeAdvisor(req: Request): Promise<Response> {
           const engineMs = Date.now() - e0;
 
           if (!out) {
-            // Fall back to the first call's own words and no plan.
-            let answer = "I couldn't build the plan just now. Try again in a moment.";
-            try {
-              answer = buildDegreeAdvice(completion.content, body).answer;
-            } catch { /* keep the default */ }
+            // The first call's `answer` for a plan or email is only a
+            // placeholder, so it is never shown here.
+            const answer = "I couldn't build the plan just now. Try again in a moment.";
             keepReservation = true;
             console.log(
               `degree-advisor: round ${body.round} intent ${intent.intent} model ${completion.model} ` +
@@ -210,10 +226,16 @@ export async function handleDegreeAdvisor(req: Request): Promise<Response> {
             messages: buildDegreeExplainMessages(body, plan, intent.params, wantsEmail),
             schema: DEGREE_ADVISOR_EXPLAIN_SCHEMA,
             maxTokens: 4000,
+            deadlineAt: requestStart + STRUCTURED_TOTAL_MS,
           };
           let explained: DegreeExplanation | undefined;
           let explainModel = completion.model;
-          try {
+          // With too little time left the prose is skipped: the plan is real
+          // and plainPlanSummary says it with numbers.
+          const explainTimeLeft = requestStart + STRUCTURED_TOTAL_MS - Date.now();
+          if (explainTimeLeft < EXPLAIN_MIN_MS) {
+            console.warn("degree-advisor: skipping explanation, not enough time left");
+          } else try {
             let c = await completeWithRetry(explainSpec);
             try {
               explained = parseDegreeExplanation(c.content, wantsEmail);
@@ -259,6 +281,14 @@ export async function handleDegreeAdvisor(req: Request): Promise<Response> {
           : new Map();
         keptCount = verified.size;
         advice = finalizeDegreeAdvice(d, verified);
+        // For a plan or email the model's `answer` is only a placeholder; on
+        // the what-if round trip the phone shows it above "read path@penn's
+        // audit", so say what is actually happening instead. The phone's
+        // re-ask (which carries the same question) is untouched.
+        if (body.structured && intent && advice.whatIf && (intent.intent === "plan" || intent.intent === "email")) {
+          const program = body.programs.find((p) => p.code === advice!.whatIf);
+          advice = { ...advice, answer: `Reading Penn's audit for ${program?.name ?? "that program"} first.` };
+        }
         if (body.structured && intent) {
           console.log(
             `degree-advisor: round ${body.round} intent ${intent.intent} model ${completion.model} ms ${modelMs} ` +

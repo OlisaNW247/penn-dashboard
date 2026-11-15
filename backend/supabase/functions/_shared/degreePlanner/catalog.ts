@@ -30,6 +30,15 @@ export interface CatalogOptions {
   /** Specific codes to keep and to fetch detail for. */
   codes: string[];
   timeoutMs?: number;
+  /** Absolute time (ms on `clock`) after which no further request starts and
+   *  a running one is cut off. Without it every request only has its own
+   *  per-request timeout, so many sequential jobs could outlive the caller's
+   *  whole budget by far (a 25 s budget once meant minutes in the worst case). */
+  deadline?: number;
+  /** Cuts off every request when the caller goes away. */
+  signal?: AbortSignal;
+  /** Test seam for the clock `deadline` is read against; defaults to Date.now. */
+  clock?: () => number;
 }
 
 // ---------------------------------------------------------------------------
@@ -75,6 +84,25 @@ export function catalogSemesters(now: Date): string[] {
 }
 
 const cache = new Map<string, { at: number; value: unknown }>();
+/** The cache is module-level and its keys come partly from the request
+ *  (attribute codes, course codes), so it is bounded: oldest entries go
+ *  first. A hostile audit must not be able to grow a warm isolate forever. */
+export const MAX_CACHE_ENTRIES = 2000;
+
+function remember(url: string, at: number, value: unknown): void {
+  cache.delete(url);
+  cache.set(url, { at, value });
+  while (cache.size > MAX_CACHE_ENTRIES) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) break;
+    cache.delete(oldest);
+  }
+}
+
+/** Cache size (tests). */
+export function catalogCacheSize(): number {
+  return cache.size;
+}
 
 /** Clears the module cache (tests). */
 export function clearCatalogCache(): void {
@@ -89,25 +117,46 @@ async function getJSON(
   const nowMs = opts.now.getTime();
   const hit = cache.get(url);
   if (hit && nowMs - hit.at < CACHE_TTL_MS && nowMs >= hit.at) return hit.value;
+  // Once the caller's deadline has passed (or the caller left) a job is
+  // skipped without a request: the snapshot keeps what was gathered.
+  if (opts.signal?.aborted) return undefined;
+  let allowed = timeoutMs;
+  if (opts.deadline !== undefined) {
+    const left = opts.deadline - (opts.clock ?? Date.now)();
+    if (left <= 0) return undefined;
+    allowed = Math.min(timeoutMs, left);
+  }
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(), allowed);
+  const onAbort = () => controller.abort();
+  opts.signal?.addEventListener("abort", onAbort, { once: true });
+  // A fetch that ignores its signal must still not hold the job: race the
+  // request against the controller as well.
+  const aborted = new Promise<undefined>((resolve) => {
+    controller.signal.addEventListener("abort", () => resolve(undefined), { once: true });
+  });
   try {
-    const res = await opts.fetchImpl(url, {
-      method: "GET",
-      headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      try { await res.body?.cancel(); } catch { /* ignore */ }
-      return undefined;
-    }
-    const value = await res.json();
-    cache.set(url, { at: nowMs, value });
-    return value;
+    const work = (async () => {
+      const res = await opts.fetchImpl(url, {
+        method: "GET",
+        headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        try { await res.body?.cancel(); } catch { /* ignore */ }
+        return undefined;
+      }
+      const value = await res.json();
+      remember(url, nowMs, value);
+      return value as unknown;
+    })();
+    work.catch(() => {});
+    return await Promise.race([work, aborted]);
   } catch {
     return undefined;
   } finally {
     clearTimeout(timer);
+    opts.signal?.removeEventListener("abort", onAbort);
   }
 }
 

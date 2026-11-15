@@ -753,7 +753,7 @@ Deno.test("degree-advisor: a what-if from a structured phone is returned as befo
   }
 });
 
-Deno.test("degree-advisor: an engine failure falls back to the first call's answer", async () => {
+Deno.test("degree-advisor: an engine failure answers with the default sentence, never the placeholder", async () => {
   const s = structuredStub({ intent: intentReply({ answer: "I will plan that." }) });
   const real = engineHooks.run;
   engineHooks.run = () => Promise.reject(new Error("boom"));
@@ -761,7 +761,7 @@ Deno.test("degree-advisor: an engine failure falls back to the first call's answ
     const res = await post(valid({ structured: structuredBody() }));
     assert.equal(res.status, 200);
     const out = await res.json();
-    assert.equal(out.answer, "I will plan that.");
+    assert.equal(out.answer, "I couldn't build the plan just now. Try again in a moment.");
     assert.equal(out.plan, undefined);
     assert.deepEqual(out.actions, []);
     assert.deepEqual(s.sent.map((x) => x.schema), ["degree_intent"]);
@@ -779,6 +779,65 @@ Deno.test("degree-advisor: a phone without structured is byte-for-byte the old r
     assert.deepEqual(s.sent.map((x) => x.schema), ["degree_advice"]);
     assert.equal(s.sent[0].messages[0].content, DEGREE_ADVISOR_INSTRUCTIONS);
     assert.deepEqual(s.penn, []);
+  } finally {
+    s.restore();
+  }
+});
+
+// ---- review fixes: terms, summary, token cap, whatIf wording ---------------
+
+Deno.test("degree-advisor: structured terms must be Penn terms, bad history keys are dropped", () => {
+  for (const bad of ["202640", "202600", "202635"]) {
+    assert.equal(parseDegreeAdvisorBody(valid({ structured: structuredBody({ currentTerm: bad }) })), undefined, bad);
+  }
+  for (const ok of ["202610", "202620", "202630"]) {
+    assert.ok(parseDegreeAdvisorBody(valid({ structured: structuredBody({ currentTerm: ok }) })), ok);
+  }
+  const parsed = parseDegreeAdvisorBody(valid({
+    structured: structuredBody({ history: { "202530": ["CIS 1200"], "202545": ["CIS 1210"], "junk": ["X 1"] } }),
+  }))!;
+  assert.deepEqual(Object.keys(parsed.structured!.history), ["202530"]);
+});
+
+Deno.test("degree-advisor: plainPlanSummary says when nothing is left", async () => {
+  const { plainPlanSummary } = await import("../supabase/functions/_shared/degreeAdvisor.ts");
+  const empty = {
+    remainingCredits: 0, remainingCreditsWithoutOverlap: 0,
+    scenarios: [{ id: "standard", label: "x", maxLoad: 5.5, summer: false, finishTerm: "202630", meetsTarget: true }],
+    chosen: "standard", schedule: [], unfilled: [], petitions: [], notes: ["nothing is left to plan"],
+  };
+  const text = plainPlanSummary(empty as never);
+  assert.ok(text.startsWith("Nothing is left to plan"));
+  assert.ok(!/finish/i.test(text));
+});
+
+Deno.test("degree-advisor: the intent call is capped at 4000 tokens, the old path keeps 10000", async () => {
+  const s = structuredStub({ intent: intentReply({ intent: "question", answer: "hi" }) });
+  const base = globalThis.fetch;
+  const caps: number[] = [];
+  globalThis.fetch = (async (input: Request | URL | string, init?: RequestInit) => {
+    if (String(input instanceof Request ? input.url : input).startsWith("https://openrouter.ai/")) {
+      caps.push(JSON.parse(String(init?.body ?? "{}")).max_tokens);
+    }
+    return base(input as any, init);
+  }) as typeof fetch;
+  try {
+    await post(valid({ structured: structuredBody() }));
+    assert.deepEqual(caps, [4000]);
+  } finally {
+    globalThis.fetch = base;
+    s.restore();
+  }
+});
+
+Deno.test("degree-advisor: a plan intent that goes down the whatIf path shows a neutral sentence", async () => {
+  const s = structuredStub({ intent: intentReply({ whatIf: "FNCS-BS", answer: "Here is your finished plan!" }) });
+  try {
+    const out = await (await post(valid({
+      structured: structuredBody(), programs: [{ code: "FNCS-BS", name: "Finance BS", kind: "concentration" }],
+    }))).json();
+    assert.equal(out.whatIf, "FNCS-BS");
+    assert.equal(out.answer, "Reading Penn's audit for Finance BS first.");
   } finally {
     s.restore();
   }

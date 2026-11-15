@@ -148,3 +148,73 @@ Deno.test("module cache: a second build within 6 h does not refetch", async () =
   await buildCatalogSnapshot({ ...opts, now: new Date(NOW.getTime() + 7 * 3600 * 1000) });
   assert(calls.length > first);
 });
+
+// ---- deadline, abort and cache bound ---------------------------------------
+
+import { catalogCacheSize, MAX_CACHE_ENTRIES } from "../supabase/functions/_shared/degreePlanner/catalog.ts";
+
+/** A fetch that never answers until its signal aborts, then rejects. */
+function hangingFetch(calls: string[]): typeof fetch {
+  return ((input: string | URL | Request, init?: RequestInit) => {
+    calls.push(String(input));
+    return new Promise<Response>((_, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+    });
+  }) as typeof fetch;
+}
+
+Deno.test("catalog: a passed deadline makes no request at all", async () => {
+  clearCatalogCache();
+  const calls: string[] = [];
+  let t = 1_000;
+  const snap = await buildCatalogSnapshot({
+    fetchImpl: fakeFetch(routes(), calls), now: NOW, attributes: ["WUGE"], subjects: ["CIS"], codes: ["CIS 2400"],
+    deadline: 500, clock: () => t,
+  });
+  assertEquals(calls.length, 0);
+  assertEquals(Object.keys(snap.courses).length, 0);
+  t += 1;
+});
+
+Deno.test("catalog: the deadline cuts a hung request off and skips the remaining jobs", async () => {
+  clearCatalogCache();
+  const calls: string[] = [];
+  const started = Date.now();
+  const snap = await buildCatalogSnapshot({
+    fetchImpl: hangingFetch(calls), now: NOW, attributes: ["WUGE", "WUTI"], subjects: ["CIS"], codes: ["CIS 2400"],
+    timeoutMs: 8000, deadline: Date.now() + 150,
+  });
+  const took = Date.now() - started;
+  assert(took < 1500, `returned in ${took} ms, long before the 8 s per-request timeout`);
+  assertEquals(Object.keys(snap.courses).length, 0);
+  // Only the first wave (up to six in parallel) was ever started.
+  assert(calls.length <= 6, `${calls.length} requests started`);
+});
+
+Deno.test("catalog: an aborted signal cuts requests off and stops new ones", async () => {
+  clearCatalogCache();
+  const calls: string[] = [];
+  const ctl = new AbortController();
+  const run = buildCatalogSnapshot({
+    fetchImpl: hangingFetch(calls), now: NOW, attributes: ["WUGE"], subjects: ["CIS"], codes: [],
+    timeoutMs: 8000, signal: ctl.signal,
+  });
+  setTimeout(() => ctl.abort(), 50);
+  const started = Date.now();
+  await run;
+  assert(Date.now() - started < 1500);
+  const before = calls.length;
+  await buildCatalogSnapshot({
+    fetchImpl: hangingFetch(calls), now: NOW, attributes: ["WUGE"], subjects: ["CIS"], codes: [], signal: ctl.signal,
+  });
+  assertEquals(calls.length, before, "an already-aborted signal starts nothing");
+});
+
+Deno.test("catalog: the module cache is bounded and evicts the oldest", async () => {
+  clearCatalogCache();
+  const attrs = Array.from({ length: 1100 }, (_, i) => `A${String(i).padStart(4, "0")}`);
+  const empty = (() => Promise.resolve(new Response("[]", { status: 200 }))) as typeof fetch;
+  await buildCatalogSnapshot({ fetchImpl: empty, now: NOW, attributes: attrs, subjects: [], codes: [] });
+  assert(catalogCacheSize() <= MAX_CACHE_ENTRIES, `cache holds ${catalogCacheSize()}`);
+  assert(catalogCacheSize() > 1000);
+});
