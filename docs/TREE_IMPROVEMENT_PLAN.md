@@ -690,3 +690,15 @@ cd LowHangingFruitKit && LHF_BENCH_KNOWLEDGE=~/lhf-bench/course-knowledge.json s
   5-second hedge is fixed. Low effort alone did not close the gap. The
   three server fixes are written for a canary deploy; the switch is then
   one secret edit (`LHF_MODEL`).
+- **2026-11-14/15: steps 3 to 6 of the time-frame research landed on `v10`,
+  and Haiku is ready for production.** Server: the room on the catalog
+  wire, one labelled date line, a sentence on resolving "today/tomorrow",
+  profiles as Markdown (`9fdf8b4`, Deno 716). Phone, blind then compiled on
+  the runner: dated passage labels with relative age and a kind-word index
+  line (`ec12121`, narrowed in `429df16` after the runner showed the course
+  code letting old posts back into class-meeting answers), per-intent slot
+  budgets, the computed weekly-schedule line with an authority rule last,
+  and the due-in-range list (`0f093a6`). Marco's manifest-cancellation fix
+  cherry-picked (`c5f8d2a`). Canary v18 with Haiku and reasoning off: first
+  word 1.1 s, meeting 10/10 from the post, citations 10/10; CLAUDE.md -> ask
+  section has the numbers and the switch order.

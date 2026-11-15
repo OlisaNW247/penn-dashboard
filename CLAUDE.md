@@ -2062,6 +2062,30 @@ rule is ten seconds, not five; `probe.hedgeAfterMs` still wins. Nothing the
 phone sends changed. After deploying, read `usage.cachedTokens` on a canary
 run: it should be well above zero from the second request on.
 
+**2026-11-14/15: Haiku 5.5 measured with caching live, and the answer is
+reasoning off.** `ask-canary` v18 (deployed 2026-11-14 17:39 UTC from
+`ec12121` at Olisa's tap: the cache breakpoint, the reasoning default and
+the hedge env of 2026-11-05, plus that day's prompt pass) was probed from
+the runner with `probe.model = anthropic/claude-haiku-5.5` and
+`hedgeAfterMs 30000`, ten runs per set. With the default `{effort: low}`:
+`cachedTokens` 22,606 of ~23,100 on every request after the first (the
+breakpoint works), but first word still 4.0 s mean, about 400 hidden
+reasoning tokens per answer; the three citations answers that happened to
+reason little started in 1.0-1.3 s, which is what pointed at reasoning and
+away from the prompt read. With `--reasoning {"enabled":false}`: first word
+**1.1 s mean** (0.9-2.1 s), total about 2 s, 0 reasoning tokens, `meeting`
+10/10 from the post and 0/10 from the schedule, `citations` 10/10 with a
+known title in the sources. That is faster than `gpt-4.1-mini` live (2.9 s
+first word over the last 14 days of real traffic) and keeps Haiku's better
+answers. OpenRouter accepts `enabled: false` for Haiku (it refused it for
+`glm-5.3-flash`, an always-thinking model, on 2026-09-14). The production
+switch: deploy `ask` from `v10` with `--production`, **then** set
+`LHF_MODEL=anthropic/claude-haiku-5.5` and `LHF_ASK_REASONING={"enabled":false}`
+(in that order: the live `ask` v21 predates the env readers and the cache
+marker, so the secrets alone would run Haiku uncached and thinking). The
+5-second hedge can stay at its default; `LHF_HEDGE_AFTER_MS` is not needed.
+The fallback keeps `glm-5.3-flash` at low effort.
+
 **2026-11-02: the citation contract and the recording fixes went live,
 at Olisa's go.** `ask-canary` v8 (deployed with `--also ask` from `v8`
 `dfb9d7f`, so it serves the new `prompt.ts`) answered the 20-run
