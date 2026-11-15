@@ -1264,6 +1264,18 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
+**Current on `v10` at `0aab3af` (2026-11-15): 3700 tests / 356 suites, all
+green, `swift test --no-parallel` on the GitHub macOS runner (101 s, run
+43740178602); Deno 716; extension green.** The first compile of the
+2026-11-14 tree work: Marco's held course-material sync (`c5f8d2a`), the room
+on `ClassMeeting` (`9fdf8b4`), dated excerpt labels (`ec12121`), per-intent
+budgets, the weekly-schedule line and the due list (`0f093a6`). Two runner
+rounds were red on the way: the indexed situating line let old posts back
+into class-meeting blocks and broke the Ed/announcement and file/page
+scoring parity, so it was removed (`429df16`, `0aab3af`; -2 tests that
+pinned it), and a wrong "fix" of mine for `CourseSummary.section` was
+reverted (`7883f94`). No iOS `xcodebuild`, no phone.
+
 **Current on `v10` (2026-11-07, evening, every post listed, the 3-day grace):
 3674 tests / 351 suites, all green, `swift test --no-parallel` on Marco's Mac
 (85 s); the signed iOS Debug device build (3.4.1 (20)) is on his phone and
