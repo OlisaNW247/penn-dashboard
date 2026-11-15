@@ -151,7 +151,7 @@ with the backend unreachable, ask answers on-device:
 items, retrieves policy and content answers from synced course materials
 (`CourseKnowledgeCollector` → `CourseKnowledgeStore`), and on iOS 26 /
 macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
-(`OnDeviceLanguageModel`). A twelfth function, `degree-advisor`, is in the tree on `degree-progress` and **live since 2026-11-14 at about 17:49 UTC** (version 1 from `b5b0762`; **version 2 since about 18:40 UTC the same day, from `1b92d58`**, the what-if round trip, both at Olisa's go; Degree → Plan with AI); only a `degree-progress` build calls it. Eleven Edge Functions are in
+(`OnDeviceLanguageModel`). A twelfth function, `degree-advisor`, is in the tree on `degree-progress` and **live since 2026-11-14 at about 17:49 UTC** (version 1 from `b5b0762`; **version 2 since about 18:40 UTC the same day, from `1b92d58`**, the what-if round trip, both at Olisa's go **version 5 since 2026-11-15 about 17:35 UTC, from `d2e0a49`**, the picks, at his go (versions 3 and 4 were not deployed from this session; `ask` read 24 and `sync` 31 at the same moment); Degree → Plan with AI); only a `degree-progress` build calls it. Eleven Edge Functions are in
 `backend/supabase/functions/` (all eleven are deployed; `extract-facts` was
 the last, on 2026-11-05): `ask`,
 `ask-canary`, `delete-account`, `device-sync`, `discover-websites`,
@@ -1183,7 +1183,9 @@ Keep this current. It is the fastest way for a new session to know what exists.
     nobody has seen what Penn's word-only rules hold: whether they carry
     wildcards, `infoText`, or nothing. Whether Penn counts a pick is
     Penn's to say, and the answer tells the student to run the plan in
-    Path@Penn.
+    Path@Penn. Compiled green at the first attempt: 4022 tests / 382
+    suites, the unsigned iOS build, Deno 747 (run 43740485434 at
+    `8023e78`); not yet on a phone.
     **The add sheet's list is grouped** (`DegreeContribution.grouped`): "both
     degrees" first, then each degree under its name, ranked inside. Ranked by
     points alone, his five engineering rows (+2% each) sat above two Wharton
