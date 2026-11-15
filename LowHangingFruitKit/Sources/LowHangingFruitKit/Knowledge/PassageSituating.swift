@@ -1,18 +1,14 @@
 import Foundation
 
-/// Where a passage sits in time and in the course, written once and used twice:
-/// as the label the phone puts on every excerpt it sends (`BackendAssistantResponder`),
-/// and as the situating terms the BM25 index adds to every passage of a document
-/// (`CourseSearch`). Step 4 of `docs/TREE_CONTEXT_RESEARCH_2026-11-02.md` Part 3.
+/// Where a passage sits in time: the date and age on the label the phone puts
+/// on every excerpt it sends (`BackendAssistantResponder`). Step 4 of
+/// `docs/TREE_CONTEXT_RESEARCH_2026-11-02.md` Part 3, label half only: the
+/// indexed situating line was tried and removed (see `CourseSearch.init`).
 ///
 /// Why: a post and a syllabus that disagree can only be resolved by "newer wins"
 /// if the model can see both ages, and the old label gave a month and day with
 /// no year and no distance from now ("posted Oct 3"), and nothing at all for a
-/// syllabus. Why the index half: a query like "cis 2620 syllabus late policy"
-/// shares no word with a passage whose body says only "late work loses ten
-/// percent", so the passage was findable only through the 12-term title hint.
-/// This is Contextual Retrieval without a model: the situating text is built
-/// from fields the document already has, indexed, never stored.
+/// syllabus.
 ///
 /// Everything here reads `askedAt` or a document's own dates, never the clock,
 /// and an `en_US_POSIX` Gregorian calendar, so the same inputs give the same
@@ -73,26 +69,6 @@ public enum PassageSituating {
         guard let date = document.shownPostedAt else { return nil }
         let word = isPostedKind(document.kind) ? "posted" : "updated"
         return "\(word) \(dayWithAge(date, askedAt: askedAt, in: timeZone))"
-    }
-
-    /// `<kind word> "<title>"`, the one situating line indexed with every
-    /// passage of `document`, so "late policy announcement" or "syllabus
-    /// grading" reaches a passage whose body never says which kind of
-    /// document it sits in.
-    ///
-    /// Deliberately not the course code and not the date (2026-11-15: the
-    /// first runner compile of this file failed four tests over exactly
-    /// that). The course code put "cis" and "2620" on every passage of the
-    /// course, so a class-meeting question naming the course matched every
-    /// old Ed post and let a 20-day-old one back into the block through the
-    /// search fill, which the meeting rule exists to keep out; and the scope
-    /// filter (`courseIDs`, from `FollowUpRetrieval`) already restricts a
-    /// question that names a course to that course, so the code bought
-    /// nothing. The date's digits ("2026", "11", "01") matched questions with
-    /// numbers in them ("exam 2", "hw 11"), and the label the model reads
-    /// already carries the date.
-    public static func indexLine(for document: CourseDocument) -> String {
-        "\(document.kind.label) \"\(document.title)\""
     }
 
     private static func calendar(in timeZone: TimeZone) -> Calendar {

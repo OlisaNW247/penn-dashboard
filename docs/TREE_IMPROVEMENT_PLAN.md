@@ -694,9 +694,10 @@ cd LowHangingFruitKit && LHF_BENCH_KNOWLEDGE=~/lhf-bench/course-knowledge.json s
   and Haiku is ready for production.** Server: the room on the catalog
   wire, one labelled date line, a sentence on resolving "today/tomorrow",
   profiles as Markdown (`9fdf8b4`, Deno 716). Phone, blind then compiled on
-  the runner: dated passage labels with relative age and a kind-word index
-  line (`ec12121`, narrowed in `429df16` after the runner showed the course
-  code letting old posts back into class-meeting answers), per-intent slot
+  the runner: dated passage labels with relative age (`ec12121`; its indexed
+  situating line was removed on 2026-11-15 after the runner showed it
+  letting old posts back into class-meeting answers and breaking the Ed /
+  announcement and file / page scoring parity), per-intent slot
   budgets, the computed weekly-schedule line with an authority rule last,
   and the due-in-range list (`0f093a6`). Marco's manifest-cancellation fix
   cherry-picked (`c5f8d2a`). Canary v18 with Haiku and reasoning off: first

@@ -63,13 +63,17 @@ public struct CourseSearch: Sendable {
         let documentsByID = Dictionary(knowledge.documents.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         self.documents = documentsByID
         // The titles go in with the passages so a page is findable by its
-        // name; see `BM25Index.init(passages:titles:)`. What is passed is the
-        // situating line (kind word and title: `PassageSituating.indexLine`),
-        // once per document and counted once per word like a title, so
-        // "syllabus late policy" reaches a passage whose body never names its
-        // kind. It lives only in the in-memory index: `CourseDocument.text`
-        // and its hash are untouched, and the index is rebuilt at launch.
-        self.index = BM25Index(passages: all, titles: documentsByID.mapValues { PassageSituating.indexLine(for: $0) })
+        // name; see `BM25Index.init(passages:titles:)`. Only the bare title:
+        // a situating line (course, kind, date) was tried on 2026-11-14 and
+        // taken out on 11-15. The course code let a class-meeting question
+        // match every old post of the course; the date digits matched "exam
+        // 2"; and even the kind word alone broke the deliberate parity of Ed
+        // with announcements and files with pages (`EdKindTests`,
+        // `FileKindTests`), because "ed discussion" and "course file" are two
+        // tokens where "announcement" and "page" are one, and BM25 normalises
+        // by length. The model reads course, kind and date in the excerpt
+        // label (`PassageSituating.dateLabel`), which is where they help.
+        self.index = BM25Index(passages: all, titles: documentsByID.mapValues(\.title))
     }
 
     public var isEmpty: Bool { index.isEmpty }
