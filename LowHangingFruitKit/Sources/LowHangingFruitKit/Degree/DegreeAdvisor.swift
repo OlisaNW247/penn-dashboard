@@ -115,13 +115,17 @@ public struct DegreeAdvisorRequest: Encodable, Sendable, Equatable {
     public let now: Date
     /// 1...3: which pass of a plan this is. Always encoded.
     public let round: Int
+    /// The audits as data for the planning engine; omitted when nil.
+    public let structured: DegreeAdvisorStructured?
 
     public init(
         question: String, history: [DegreeAdvisorTurn], context: String,
         terms: [DegreeAdvisorTerm], addable: [String],
         programs: [DegreeAdvisorProgram] = [],
-        requirements: [DegreeAdvisorRequirement] = [], now: Date, round: Int = 1
+        requirements: [DegreeAdvisorRequirement] = [], now: Date, round: Int = 1,
+        structured: DegreeAdvisorStructured? = nil
     ) {
+        self.structured = structured
         self.round = min(3, max(1, round))
         self.question = question
         self.history = history
@@ -190,12 +194,20 @@ public struct DegreeAdvisorResponse: Decodable, Sendable, Equatable {
     public let planning: Bool
     /// Pick codes the server removed because Penn's catalogue lacked them.
     public let dropped: [String]
+    /// The engine's whole schedule, when the server ran it. Nil when absent or
+    /// malformed; the answer text and actions are unaffected either way.
+    public let plan: DegreeEnginePlan?
+    /// A drafted email to an advisor, when the server wrote one.
+    public let email: String?
 
     public init(
         answer: String, actions: [DegreeAdvisorAction],
         whatIf: String? = nil, model: String? = nil,
-        planning: Bool = false, dropped: [String] = []
+        planning: Bool = false, dropped: [String] = [],
+        plan: DegreeEnginePlan? = nil, email: String? = nil
     ) {
+        self.plan = plan
+        self.email = email
         self.planning = planning
         self.dropped = dropped
         self.answer = answer
@@ -204,7 +216,7 @@ public struct DegreeAdvisorResponse: Decodable, Sendable, Equatable {
         self.model = model
     }
 
-    private enum CodingKeys: String, CodingKey { case answer, actions, whatIf, model, planning, dropped }
+    private enum CodingKeys: String, CodingKey { case answer, actions, whatIf, model, planning, dropped, plan, email }
 
     /// Decodes one action without ever throwing, so a single bad element
     /// (an op this build does not know, a number where a string belongs) costs
@@ -233,6 +245,11 @@ public struct DegreeAdvisorResponse: Decodable, Sendable, Equatable {
         self.planning = rawPlanning ?? false
         let rawDropped: [String]? = try? container.decodeIfPresent([String].self, forKey: .dropped)
         self.dropped = rawDropped ?? []
+        let box: DegreeEnginePlanBox? = try? container.decodeIfPresent(DegreeEnginePlanBox.self, forKey: .plan)
+        self.plan = box?.plan
+        let rawEmail: String? = (try? container.decodeIfPresent(String.self, forKey: .email)) ?? nil
+        let trimmedEmail = rawEmail?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        self.email = trimmedEmail.isEmpty ? nil : rawEmail
     }
 }
 
@@ -249,12 +266,15 @@ public struct DegreeAdvisorBrief: Sendable, Equatable {
     public let taken: Set<String>
     /// How many lines the STILL NEEDED section lists: needs the model can act on.
     public let fillableNeeds: Int
+    /// The audits, history and current term as data, for the planning engine.
+    public let structured: DegreeAdvisorStructured?
 
     public init(
         context: String, terms: [DegreeAdvisorTerm], addable: [String: AdviceCourse],
         requirements: [String: DegreeAdvisorRequirementInfo] = [:], taken: Set<String> = [],
-        fillableNeeds: Int = 0
+        fillableNeeds: Int = 0, structured: DegreeAdvisorStructured? = nil
     ) {
+        self.structured = structured
         self.fillableNeeds = fillableNeeds
         self.context = context
         self.terms = terms
@@ -413,7 +433,10 @@ public enum DegreeAdvisor {
             needs: needs.lines, now: now, calendar: calendar)
         return DegreeAdvisorBrief(
             context: context, terms: terms, addable: addable, requirements: infos, taken: taken,
-            fillableNeeds: needs.count)
+            fillableNeeds: needs.count,
+            structured: DegreeAdvisorStructured(
+                audits: audits, history: history,
+                currentTerm: Term(date: now, calendar: calendar).code))
     }
 
     private static func futureTerms(plan: DegreePlan, now: Date, calendar: Calendar) -> [DegreeAdvisorTerm] {
@@ -739,7 +762,8 @@ public enum DegreeAdvisor {
             question: cut, history: kept, context: brief.context, terms: brief.terms,
             addable: brief.addable.keys.sorted(),
             programs: Array(programs.prefix(maxPrograms)),
-            requirements: requirementList(brief), now: now, round: round)
+            requirements: requirementList(brief), now: now, round: round,
+            structured: brief.structured)
     }
 
     /// The brief's requirements as the wire carries them: ascending by tag

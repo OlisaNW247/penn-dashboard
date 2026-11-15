@@ -373,7 +373,11 @@ struct DegreeSemesterTable: View {
     /// line and the arc cannot disagree.
     private func plannedRow(_ course: PlannedCourse, termCode: String, gains: [DegreeGain]) -> some View {
         let code = DegreePlanMath.normalizedCode(course.code)
-        let counts = !gains.isEmpty
+        // A course the planning engine placed carries its own requirements; they
+        // stand in for the projection's "fits" lines when present.
+        let engineLines = Self.engineLines(course)
+        let counts = !gains.isEmpty || !engineLines.isEmpty
+        let approvalTag = Self.approvalTag(course.approval)
         // With no audit read yet there is nothing to judge a course against, and
         // muting every planned course then would read as "none of this counts".
         let judged = !audits.isEmpty
@@ -391,6 +395,15 @@ struct DegreeSemesterTable: View {
                      label: "\(course.code), \(creditsWord(course.credits))\(countsWord)",
                      muted: judged && !counts && !isPick)
                     .draggable(code)
+                if let approvalTag {
+                    Text(approvalTag)
+                        .font(.lhfSans(10, weight: .semibold))
+                        .foregroundStyle(Color.smoothGrapeInk)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.smoothGrape.opacity(0.22), in: Capsule())
+                        .lineLimit(1)
+                }
                 if counts, let badge = DegreeProgressMath.gainBadge(total) {
                     Text(badge)
                         .font(.lhfMono(10, weight: .semibold))
@@ -408,7 +421,15 @@ struct DegreeSemesterTable: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("remove \(course.code)")
             }
-            if counts {
+            if !engineLines.isEmpty {
+                ForEach(Array(engineLines.enumerated()), id: \.offset) { _, line in
+                    Text(line)
+                        .font(.lhfSans(11))
+                        .foregroundStyle(Color.smoothMuted)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else if counts {
                 ForEach(Array(gains.prefix(2).enumerated()), id: \.offset) { _, gain in
                     Text(Self.fitLine(DegreePlanFit(degreeLabel: gain.degreeLabel, requirement: gain.requirement)))
                         .font(.lhfSans(11))
@@ -433,6 +454,20 @@ struct DegreeSemesterTable: View {
         .contentShape(Rectangle())
         .dropDestination(for: String.self) { items, _ in
             drop(items, to: termCode, before: code)
+        }
+    }
+
+    /// The first two requirements the engine says a course counts toward.
+    nonisolated static func engineLines(_ course: PlannedCourse) -> [String] {
+        Array((course.countsToward ?? []).filter { !$0.isEmpty }.prefix(2))
+    }
+
+    /// The small tag for a course Penn does not simply accept.
+    nonisolated static func approvalTag(_ approval: String?) -> String? {
+        switch approval {
+        case "petition": return "ask advisor"
+        case "check": return "check"
+        default: return nil
         }
     }
 

@@ -11,6 +11,27 @@ struct DegreeAdvisorMessage: Identifiable, Equatable {
     var undone: Bool
     var failed: Bool
     var notice: String? = nil
+    /// The engine's schedule card, built once when the reply arrives.
+    var planLines: DegreeAdvisorPlanLines? = nil
+    var email: String? = nil
+}
+
+/// The display lines of an engine plan's card. Pure, so a test can read them
+/// and the view never builds a list in its body.
+struct DegreeAdvisorPlanLines: Equatable {
+    struct Scenario: Equatable {
+        let text: String
+        let isChosen: Bool
+        let meetsTarget: Bool
+    }
+    let scenarios: [Scenario]
+    /// "21.5 cu left · 28 without double counting"
+    let totals: String
+    let unfilled: [String]
+    let petitions: [String]
+
+    static let maxUnfilled = 4
+    static let maxPetitions = 3
 }
 
 /// The degree screen's chat sheet. A message sends the audit and plan as text
@@ -46,6 +67,45 @@ struct DegreeAdvisorView: View {
         return ["what should i take in \(label)?",
                 "fill \(label) with classes that count",
                 "what's left to finish?"]
+    }
+
+    /// One decimal at most, none when whole: "5", "5.5".
+    nonisolated static func creditsText(_ value: Double) -> String {
+        guard value.isFinite, abs(value) < 1e9 else { return "0" }
+        let rounded = (value * 10).rounded() / 10
+        if rounded == rounded.rounded() { return String(Int(rounded)) }
+        return String(format: "%.1f", rounded)
+    }
+
+    /// The card under an answer that carries an engine plan.
+    nonisolated static func planLines(_ plan: DegreeEnginePlan) -> DegreeAdvisorPlanLines {
+        let scenarios = plan.scenarios.map { scenario -> DegreeAdvisorPlanLines.Scenario in
+            var text = "\(creditsText(scenario.maxLoad)) cu · " + (scenario.summer ? "summer" : "no summer")
+            if let finish = scenario.finishTerm, !finish.isEmpty {
+                text += " → \(DegreePlanMath.termLabel(finish))"
+            }
+            return DegreeAdvisorPlanLines.Scenario(
+                text: text, isChosen: scenario.id == plan.chosen, meetsTarget: scenario.meetsTarget)
+        }
+        let totals = "\(creditsText(plan.remainingCredits)) cu left · "
+            + "\(creditsText(plan.remainingCreditsWithoutOverlap)) without double counting"
+
+        var unfilled: [String] = plan.unfilled.prefix(DegreeAdvisorPlanLines.maxUnfilled).map { item in
+            item.reason.isEmpty ? "not planned: \(item.label)" : "not planned: \(item.label) · \(item.reason)"
+        }
+        if plan.unfilled.count > DegreeAdvisorPlanLines.maxUnfilled {
+            unfilled.append("+\(plan.unfilled.count - DegreeAdvisorPlanLines.maxUnfilled) more")
+        }
+
+        var petitions: [String] = plan.petitions.prefix(DegreeAdvisorPlanLines.maxPetitions).map { item in
+            item.slots.isEmpty
+                ? "ask your advisor: \(item.code)"
+                : "ask your advisor: \(item.code) for \(item.slots.joined(separator: " + "))"
+        }
+        if plan.petitions.count > DegreeAdvisorPlanLines.maxPetitions {
+            petitions.append("+\(plan.petitions.count - DegreeAdvisorPlanLines.maxPetitions) more")
+        }
+        return DegreeAdvisorPlanLines(scenarios: scenarios, totals: totals, unfilled: unfilled, petitions: petitions)
     }
 
     private var nextTermLabel: String? {
@@ -191,11 +251,85 @@ struct DegreeAdvisorView: View {
                     .foregroundStyle(message.failed ? Color.smoothMuted : Color.smoothInk)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                if let lines = message.planLines {
+                    planCard(lines)
+                }
                 if !message.changes.isEmpty {
                     changesCard(message)
                 }
+                if let email = message.email {
+                    emailDisclosure(email)
+                }
             }
         }
+    }
+
+    private func planCard(_ lines: DegreeAdvisorPlanLines) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(Array(lines.scenarios.enumerated()), id: \.offset) { _, scenario in
+                HStack(spacing: 6) {
+                    if scenario.meetsTarget {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(Color.smoothTealInk)
+                            .accessibilityLabel("meets your target")
+                    }
+                    Text(scenario.text)
+                        .font(.lhfSans(13, weight: scenario.isChosen ? .bold : .regular))
+                        .foregroundStyle(Color.smoothInk)
+                }
+            }
+            Text(lines.totals)
+                .font(.lhfSans(13))
+                .foregroundStyle(Color.smoothInk)
+            ForEach(Array(lines.unfilled.enumerated()), id: \.offset) { _, line in
+                Text(line)
+                    .font(.lhfSans(12))
+                    .foregroundStyle(Color.smoothMuted)
+            }
+            ForEach(Array(lines.petitions.enumerated()), id: \.offset) { _, line in
+                Text(line)
+                    .font(.lhfSans(12))
+                    .foregroundStyle(Color.smoothMuted)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.v2Card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.smoothRule.opacity(0.72), lineWidth: 1)
+        }
+    }
+
+    private func emailDisclosure(_ email: String) -> some View {
+        DisclosureGroup("advisor email") {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(email)
+                    .font(.lhfSans(13))
+                    .foregroundStyle(Color.smoothInk)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button { Self.copyToPasteboard(email) } label: {
+                    Text("copy")
+                        .font(.lhfSans(13, weight: .semibold))
+                        .foregroundStyle(Color.smoothGrapeInk)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.top, 6)
+        }
+        .font(.lhfSans(13))
+        .foregroundStyle(Color.smoothInk)
+    }
+
+    private static func copyToPasteboard(_ text: String) {
+#if os(iOS)
+        UIPasteboard.general.string = text
+#elseif os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+#endif
     }
 
     private func changesCard(_ message: DegreeAdvisorMessage) -> some View {
@@ -284,7 +418,9 @@ struct DegreeAdvisorView: View {
             messages.append(DegreeAdvisorMessage(id: UUID(), isUser: false, text: reply.answer,
                                                  changes: reply.changes, planBefore: reply.planBefore,
                                                  undone: false, failed: reply.failed,
-                                                 notice: reply.notice))
+                                                 notice: reply.notice,
+                                                 planLines: reply.plan.map { Self.planLines($0) },
+                                                 email: reply.email))
             waiting = false
         }
     }

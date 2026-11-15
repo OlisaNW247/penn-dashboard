@@ -21,12 +21,20 @@ public struct PlannedCourse: Codable, Sendable, Hashable, Identifiable {
     /// list among Penn's options.
     public let pickRuleKey: String?
     public let pickLabel: String?
+    /// Set only for a course the planning engine placed: the requirements it
+    /// counts toward (the engine's words) and how Penn treats it ("automatic",
+    /// "petition" or "check"). The table shows them; nothing computes with them.
+    public let countsToward: [String]?
+    public let approval: String?
     public var id: String { code }
 
     public init(
         code: String, title: String?, credits: Double,
-        pickRuleKey: String? = nil, pickLabel: String? = nil
+        pickRuleKey: String? = nil, pickLabel: String? = nil,
+        countsToward: [String]? = nil, approval: String? = nil
     ) {
+        self.countsToward = countsToward
+        self.approval = approval
         self.code = code
         self.title = title
         self.credits = credits
@@ -34,7 +42,7 @@ public struct PlannedCourse: Codable, Sendable, Hashable, Identifiable {
         self.pickLabel = pickLabel
     }
 
-    private enum CodingKeys: String, CodingKey { case code, title, credits, pickRuleKey, pickLabel }
+    private enum CodingKeys: String, CodingKey { case code, title, credits, pickRuleKey, pickLabel, countsToward, approval }
 
     /// The pick fields are decoded if present so a `degree-plan.json` written
     /// before they existed still loads: a failed decode quarantines the file.
@@ -45,6 +53,8 @@ public struct PlannedCourse: Codable, Sendable, Hashable, Identifiable {
         self.credits = try container.decode(Double.self, forKey: .credits)
         self.pickRuleKey = try container.decodeIfPresent(String.self, forKey: .pickRuleKey)
         self.pickLabel = try container.decodeIfPresent(String.self, forKey: .pickLabel)
+        self.countsToward = try container.decodeIfPresent([String].self, forKey: .countsToward)
+        self.approval = try container.decodeIfPresent(String.self, forKey: .approval)
     }
 }
 
@@ -84,7 +94,9 @@ public struct DegreePlan: Codable, Sendable, Equatable {
 /// The rules of the plan tab. Every function is pure and takes the date it
 /// needs as a parameter: the screen decides what "now" is, so a test can pin it.
 public enum DegreePlanMath {
-    public static let maxTerms = 10
+    /// A cap on columns. Fourteen so a plan that spends summers (fall, spring and
+    /// summer for several years) is not cut short.
+    public static let maxTerms = 14
     public static let maxCoursesPerTerm = 8
 
     /// An open requirement that Penn's audit lists options for, in Penn's order.
@@ -229,7 +241,8 @@ public enum DegreePlanMath {
         var out = plan
         out.terms[index].courses.append(PlannedCourse(
             code: code, title: course.title, credits: course.credits,
-            pickRuleKey: course.pickRuleKey, pickLabel: course.pickLabel))
+            pickRuleKey: course.pickRuleKey, pickLabel: course.pickLabel,
+            countsToward: course.countsToward, approval: course.approval))
         return out
     }
 

@@ -20,9 +20,15 @@ struct DegreeAdvisorReply: Sendable, Equatable {
     let audits: [DegreeLabeledAudit]?
     /// A line for the chat when a what-if was read, e.g. "read path@penn's audit for finance".
     let notice: String?
+    /// The engine's schedule, when the server ran it, and its drafted advisor email.
+    let plan: DegreeEnginePlan?
+    let email: String?
 
     init(answer: String, changes: [DegreeAdvisorChange], planBefore: DegreePlan?, failed: Bool,
-         audits: [DegreeLabeledAudit]? = nil, notice: String? = nil) {
+         audits: [DegreeLabeledAudit]? = nil, notice: String? = nil,
+         plan: DegreeEnginePlan? = nil, email: String? = nil) {
+        self.plan = plan
+        self.email = email
         self.answer = answer
         self.changes = changes
         self.planBefore = planBefore
@@ -187,13 +193,24 @@ extension AppState {
         var round = 1
         while true {
             let before = degreePlan
-            let outcome = DegreeAdvisor.apply(current.actions, to: before, brief: currentBrief)
+            // The engine's plan is complete and replaces the future; without
+            // one, the model's edits are applied as before.
+            let outcome: DegreeAdvisorOutcome
+            if let enginePlan = current.plan {
+                outcome = DegreeAdvisor.applyEnginePlan(
+                    enginePlan, to: before,
+                    currentTerm: currentBrief.structured?.currentTerm ?? Term(date: now).code)
+            } else {
+                outcome = DegreeAdvisor.apply(current.actions, to: before, brief: currentBrief)
+            }
             let changed = outcome.plan != before
             if changed {
                 commitDegreePlan(outcome.plan)
                 changes.append(contentsOf: outcome.applied)
             }
             if !current.answer.isEmpty || answer.isEmpty { answer = current.answer }
+            // A complete engine plan needs no follow-up rounds.
+            guard current.plan == nil else { break }
             guard current.planning, changed, round < Self.degreeAdvisorMaxRounds else { break }
             let nextBrief = DegreeAdvisor.brief(audits: auditsUsed, plan: degreePlan,
                                                 history: degree.history, now: now)
@@ -223,7 +240,8 @@ extension AppState {
         return DegreeAdvisorReply(answer: answer,
                                   changes: changedOverall ? changes : [],
                                   planBefore: changedOverall ? planBefore : nil,
-                                  failed: false, audits: replyAudits, notice: notice)
+                                  failed: false, audits: replyAudits, notice: notice,
+                                  plan: current.plan, email: current.email)
     }
 
     /// Fetches the what-if audit for one catalogue entry from Penn and returns

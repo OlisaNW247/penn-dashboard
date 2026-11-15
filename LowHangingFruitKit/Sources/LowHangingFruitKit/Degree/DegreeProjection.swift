@@ -203,7 +203,8 @@ public struct DegreeProjection: Sendable, Equatable {
                 if seen.insert(code).inserted {
                     candidates.append(PlannedCourse(
                         code: code, title: course.title, credits: course.credits,
-                        pickRuleKey: course.pickRuleKey, pickLabel: course.pickLabel))
+                        pickRuleKey: course.pickRuleKey, pickLabel: course.pickLabel,
+                        countsToward: course.countsToward, approval: course.approval))
                 }
             }
         }
