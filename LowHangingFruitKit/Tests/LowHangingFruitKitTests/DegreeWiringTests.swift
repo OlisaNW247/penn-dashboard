@@ -417,7 +417,7 @@ struct DegreeAppStateTests {
         #expect(AppState.degreeAdvisorFailureLine(BackendError.quotaExceeded(resetAt: nil)) == "that's today's limit. try again tomorrow.")
         #expect(AppState.degreeAdvisorFailureLine(BackendError.http(426)) == "update smooth to use this.")
         #expect(AppState.degreeAdvisorFailureLine(BackendError.http(502)) == "couldn't reach smooth.")
-        #expect(AppState.degreeAdvisorFailureLine(BackendError.transport) == "couldn't reach smooth.")
+        #expect(AppState.degreeAdvisorFailureLine(BackendError.transport) == "that took too long. try again.")
         #expect(AppState.degreeAdvisorFailureLine(BackendError.unauthorized) == "couldn't reach smooth.")
         #expect(AppState.degreeAdvisorFailureLine(BackendError.decoding) == "couldn't reach smooth.")
         #expect(AppState.degreeAdvisorFailureLine(BackendError.notConfigured) == "couldn't reach smooth.")
@@ -751,5 +751,40 @@ struct DegreeAppStateTests {
             && state.canvasInstallation.id == CanvasInstallation.penn.id))
         state.forceFixtureDataForTesting(true)
         #expect(state.degreeFeatureAvailable == FeatureFlags.degreeProgress)
+    }
+
+    @Test("only a dropped connection or a server error is retried")
+    func advisorRetryRule() {
+        #expect(AppState.degreeAdvisorShouldRetry(BackendError.transport))
+        #expect(AppState.degreeAdvisorShouldRetry(BackendError.http(502)))
+        #expect(AppState.degreeAdvisorShouldRetry(BackendError.http(500)))
+        #expect(!AppState.degreeAdvisorShouldRetry(BackendError.http(426)))
+        #expect(!AppState.degreeAdvisorShouldRetry(BackendError.http(400)))
+        #expect(!AppState.degreeAdvisorShouldRetry(BackendError.quotaExceeded(resetAt: nil)))
+        #expect(!AppState.degreeAdvisorShouldRetry(BackendError.unauthorized))
+    }
+
+    @Test("the continuation question names dropped codes")
+    func advisorContinuationText() {
+        #expect(AppState.degreeAdvisorContinuation(dropped: []) == "continue the plan: fill what STILL NEEDED lists.")
+        #expect(AppState.degreeAdvisorContinuation(dropped: ["A 1", "B 2"])
+                == "continue the plan: fill what STILL NEEDED lists. these codes are not in penn's catalogue: A 1, B 2.")
+    }
+
+    @Test("the advisor's source continues the plan in at most three rounds and retries once")
+    func advisorRoundsSource() throws {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<3 { url.deleteLastPathComponent() }
+        let root = url.appendingPathComponent("Sources/LowHangingFruitUI")
+        let state = try String(contentsOf: root.appendingPathComponent("AppState+DegreeAdvisor.swift"), encoding: .utf8)
+        #expect(state.contains("continue the plan: fill what STILL NEEDED lists."))
+        #expect(state.contains("degreeAdvisorMaxRounds = 3"))
+        #expect(state.contains("round < Self.degreeAdvisorMaxRounds"))
+        #expect(state.contains("filling what's left…"))
+        #expect(state.contains("still working…"))
+        let client = try String(contentsOf: root.appendingPathComponent("BackendClient.swift"), encoding: .utf8)
+        #expect(client.contains("degreeAdvisorTimeout: TimeInterval = 150"))
+        #expect(client.contains("timeout: Self.degreeAdvisorTimeout"))
+        #expect(client.contains("request.timeoutInterval = timeout"))
     }
 }

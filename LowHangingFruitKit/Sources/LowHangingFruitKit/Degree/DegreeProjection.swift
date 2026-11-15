@@ -37,6 +37,31 @@ public struct DegreeRuleProjection: Sendable, Equatable {
     }
 }
 
+/// A requirement that still needs something after the plan as it stands.
+public struct DegreeNeed: Sendable, Equatable {
+    /// `DegreeProjection.key(blockID:ruleID:)`.
+    public let key: String
+    /// The rule's label, or its block's title when the rule has none.
+    public let label: String
+    /// What is left, in credits when `usesCredits`, else in courses. > 0.
+    public let remaining: Double
+    public let usesCredits: Bool
+    /// Whether the rule lists at least one concrete (non-wildcard) option.
+    public let hasConcreteOptions: Bool
+    /// Normalized concrete option codes, Penn's order.
+    public let optionCodes: [String]
+
+    public init(key: String, label: String, remaining: Double, usesCredits: Bool,
+                hasConcreteOptions: Bool, optionCodes: [String]) {
+        self.key = key
+        self.label = label
+        self.remaining = remaining
+        self.usesCredits = usesCredits
+        self.hasConcreteOptions = hasConcreteOptions
+        self.optionCodes = optionCodes
+    }
+}
+
 public struct DegreeProjection: Sendable, Equatable {
     /// Keyed by `DegreeProjection.key(blockID:ruleID:)`.
     public let rules: [String: DegreeRuleProjection]
@@ -142,6 +167,26 @@ public struct DegreeProjection: Sendable, Equatable {
         // changes no denominator (the tally counts every open rule already) and
         // with nothing planned it has no entry.
         return !rule.advice.isEmpty || rule.children.isEmpty
+    }
+
+    /// Every requirement `make` lays courses against whose need is not spent by
+    /// the plan, in Penn's order: remaining need minus what the projection
+    /// supplies for it. This app's estimate, never Penn's word on what counts.
+    public static func stillNeeded(plan: DegreePlan, audit: DegreeAudit) -> [DegreeNeed] {
+        let layout = DegreeProjectionLayoutCache.shared.layout(for: audit)
+        let projection = make(plan: plan, audit: audit)
+        var out: [DegreeNeed] = []
+        for requirement in layout.requirements where requirement.remaining > 1e-9 {
+            let fill = min(1, max(0, projection.rules[requirement.key]?.fill ?? 0))
+            let left = requirement.remaining * (1 - fill)
+            guard left > 1e-9 else { continue }
+            out.append(DegreeNeed(
+                key: requirement.key, label: requirement.label, remaining: left,
+                usesCredits: requirement.usesCredits,
+                hasConcreteOptions: !requirement.options.isEmpty,
+                optionCodes: requirement.options))
+        }
+        return out
     }
 
     public static func make(plan: DegreePlan, audit: DegreeAudit?) -> DegreeProjection {
@@ -267,6 +312,8 @@ struct DegreeProjectionLayout: Sendable {
         let remaining: Double
         /// Wildcard advice codes ("MGMT @") this requirement lists.
         let patterns: [String]
+        /// Normalized concrete option codes, distinct, Penn's order.
+        let options: [String]
     }
 
     let taken: Set<String>
@@ -318,16 +365,24 @@ struct DegreeProjectionLayout: Sendable {
                         label: rule.label.isEmpty ? blockTitle : rule.label,
                         usesCredits: usesCredits,
                         remaining: remaining,
-                        patterns: patterns))
+                        patterns: patterns,
+                        options: []))
                     if keyIndex[ruleKey] == nil { keyIndex[ruleKey] = index }
                     var listedHere = Set<String>()
+                    var optionCodes: [String] = []
                     for option in rule.advice {
                         // A wildcard is a pattern, never a course.
                         if option.code.contains("@") { continue }
                         let code = DegreePlanMath.normalizedCode(option.code)
                         if code.isEmpty || !listedHere.insert(code).inserted { continue }
                         listing[code, default: []].append(index)
+                        optionCodes.append(code)
                     }
+                    requirements[index] = Requirement(
+                        key: requirements[index].key, label: requirements[index].label,
+                        usesCredits: requirements[index].usesCredits,
+                        remaining: requirements[index].remaining,
+                        patterns: requirements[index].patterns, options: optionCodes)
                 }
                 collect(rule.children, blockID: blockID, blockTitle: blockTitle)
             }

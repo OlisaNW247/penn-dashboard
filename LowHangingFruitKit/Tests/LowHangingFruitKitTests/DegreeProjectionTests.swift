@@ -264,4 +264,36 @@ struct DegreeProjectionTests {
         let p = DegreeProjection.make(plan: plan(["MGMT 2010"]), audit: a)
         #expect(p.counted["MGMT 2010"] == "rule o")
     }
+
+    @Test("stillNeeded drops a rule the plan fills and keeps partial remaining credits")
+    func stillNeededBasics() {
+        let a = audit([
+            rule("filled", .open, advice: ["AAAA 1000"], needCourses: 1),
+            rule("credits", .open, advice: ["BBBB 1000", "BBBB 2000"], needCredits: 3),
+            rule("done", .met, advice: ["CCCC 1000"]),
+        ])
+        let needs = DegreeProjection.stillNeeded(plan: plan(["AAAA 1000", "BBBB 1000"]), audit: a)
+        #expect(needs.map { $0.key } == ["B|credits"])
+        #expect(close(needs[0].remaining, 2))
+        #expect(needs[0].usesCredits)
+        #expect(needs[0].hasConcreteOptions)
+        #expect(needs[0].optionCodes == ["BBBB 1000", "BBBB 2000"])
+        let none = DegreeProjection.stillNeeded(plan: .empty, audit: a)
+        #expect(none.map { $0.key } == ["B|filled", "B|credits"])
+    }
+
+    @Test("stillNeeded fills a word requirement by a pick and counts an in-progress rule's remainder")
+    func stillNeededPickAndInProgress() {
+        let a = audit([
+            rule("w", .open, advice: ["MGMT @"], needCourses: 2),
+            rule("ip", .inProgress, advice: ["IPIP 1000"], needCourses: 3, appliedCount: 1),
+        ])
+        let picked = DegreePlan(terms: [PlannedTerm(termCode: "202710", courses: [
+            PlannedCourse(code: "MGMT 2010", title: nil, credits: 1, pickRuleKey: "B|w", pickLabel: "rule w")])])
+        let needs = DegreeProjection.stillNeeded(plan: picked, audit: a)
+        #expect(needs.map { $0.key } == ["B|w", "B|ip"])
+        #expect(close(needs[0].remaining, 1))
+        #expect(!needs[0].hasConcreteOptions)
+        #expect(close(needs[1].remaining, 2))
+    }
 }

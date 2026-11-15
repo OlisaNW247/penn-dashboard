@@ -113,13 +113,16 @@ public struct DegreeAdvisorRequest: Encodable, Sendable, Equatable {
     public let programs: [DegreeAdvisorProgram]
     public let requirements: [DegreeAdvisorRequirement]
     public let now: Date
+    /// 1...3: which pass of a plan this is. Always encoded.
+    public let round: Int
 
     public init(
         question: String, history: [DegreeAdvisorTurn], context: String,
         terms: [DegreeAdvisorTerm], addable: [String],
         programs: [DegreeAdvisorProgram] = [],
-        requirements: [DegreeAdvisorRequirement] = [], now: Date
+        requirements: [DegreeAdvisorRequirement] = [], now: Date, round: Int = 1
     ) {
+        self.round = min(3, max(1, round))
         self.question = question
         self.history = history
         self.context = context
@@ -183,18 +186,25 @@ public struct DegreeAdvisorResponse: Decodable, Sendable, Equatable {
     public let whatIf: String?
     /// The model id that answered; a diagnostics breadcrumb, never shown.
     public let model: String?
+    /// True when the student asked to build, fill or complete a plan.
+    public let planning: Bool
+    /// Pick codes the server removed because Penn's catalogue lacked them.
+    public let dropped: [String]
 
     public init(
         answer: String, actions: [DegreeAdvisorAction],
-        whatIf: String? = nil, model: String? = nil
+        whatIf: String? = nil, model: String? = nil,
+        planning: Bool = false, dropped: [String] = []
     ) {
+        self.planning = planning
+        self.dropped = dropped
         self.answer = answer
         self.actions = actions
         self.whatIf = whatIf
         self.model = model
     }
 
-    private enum CodingKeys: String, CodingKey { case answer, actions, whatIf, model }
+    private enum CodingKeys: String, CodingKey { case answer, actions, whatIf, model, planning, dropped }
 
     /// Decodes one action without ever throwing, so a single bad element
     /// (an op this build does not know, a number where a string belongs) costs
@@ -219,6 +229,10 @@ public struct DegreeAdvisorResponse: Decodable, Sendable, Equatable {
         self.whatIf = trimmedWhatIf.isEmpty ? nil : trimmedWhatIf
         let rawModel: String? = try? container.decodeIfPresent(String.self, forKey: .model)
         self.model = rawModel
+        let rawPlanning: Bool? = try? container.decodeIfPresent(Bool.self, forKey: .planning)
+        self.planning = rawPlanning ?? false
+        let rawDropped: [String]? = try? container.decodeIfPresent([String].self, forKey: .dropped)
+        self.dropped = rawDropped ?? []
     }
 }
 
@@ -233,11 +247,15 @@ public struct DegreeAdvisorBrief: Sendable, Equatable {
     public let requirements: [String: DegreeAdvisorRequirementInfo]
     /// Normalized codes taken or registered in any audit or in the history.
     public let taken: Set<String>
+    /// How many lines the STILL NEEDED section lists: needs the model can act on.
+    public let fillableNeeds: Int
 
     public init(
         context: String, terms: [DegreeAdvisorTerm], addable: [String: AdviceCourse],
-        requirements: [String: DegreeAdvisorRequirementInfo] = [:], taken: Set<String> = []
+        requirements: [String: DegreeAdvisorRequirementInfo] = [:], taken: Set<String> = [],
+        fillableNeeds: Int = 0
     ) {
+        self.fillableNeeds = fillableNeeds
         self.context = context
         self.terms = terms
         self.addable = addable
@@ -286,6 +304,7 @@ public enum DegreeAdvisor {
     public static let maxAddable = 800
     public static let maxPrograms = 80
     public static let maxRequirements = 120
+    public static let maxStillNeeded = 120
     public static let maxAdviceText = 200
     /// Fall and spring semesters in a degree, counted from the first.
     public static let finishSemesters = 8
@@ -388,11 +407,13 @@ public enum DegreeAdvisor {
             for code in history[key] ?? [] { taken.insert(DegreePlanMath.normalizedCode(code)) }
         }
         taken.remove("")
+        let needs = stillNeededLines(audits: audits, plan: plan, tags: tags, infos: infos, addable: addable)
         let context = buildContext(
             audits: audits, plan: plan, history: history, terms: terms, tags: tags,
-            now: now, calendar: calendar)
+            needs: needs.lines, now: now, calendar: calendar)
         return DegreeAdvisorBrief(
-            context: context, terms: terms, addable: addable, requirements: infos, taken: taken)
+            context: context, terms: terms, addable: addable, requirements: infos, taken: taken,
+            fillableNeeds: needs.count)
     }
 
     private static func futureTerms(plan: DegreePlan, now: Date, calendar: Calendar) -> [DegreeAdvisorTerm] {
@@ -447,12 +468,46 @@ public enum DegreeAdvisor {
 
     // MARK: Document
 
+    /// The STILL NEEDED lines: requirements the plan leaves unspent that the
+    /// model can do something about (a tagged word requirement, or one that
+    /// lists an option in `addable`). `count` is the number of lines written.
+    private static func stillNeededLines(
+        audits: [DegreeLabeledAudit], plan: DegreePlan, tags: [String: String],
+        infos: [String: DegreeAdvisorRequirementInfo], addable: [String: AdviceCourse]
+    ) -> (lines: [String], count: Int) {
+        var lines: [String] = []
+        outer: for (index, entry) in audits.enumerated() {
+            for need in DegreeProjection.stillNeeded(plan: plan, audit: entry.audit) {
+                let tag = tags["\(index)|" + need.key]
+                let fillable = need.optionCodes.contains { addable[$0] != nil }
+                guard tag != nil || fillable else { continue }
+                if lines.count >= maxStillNeeded { break outer }
+                let flat = need.label.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+                let label = String((flat.isEmpty ? "requirement" : flat).prefix(120))
+                var parts = [name(entry), (tag.map { "[\($0)] " } ?? "") + label]
+                let left = number(need.remaining)
+                if need.usesCredits {
+                    parts.append("\(left) cu left")
+                } else if abs(need.remaining - 1) < 1e-9 {
+                    parts.append("1 course left")
+                } else {
+                    parts.append("\(left) courses left")
+                }
+                if fillable { parts.append("options in ADDABLE") }
+                lines.append(parts.joined(separator: " | "))
+            }
+        }
+        return (lines, lines.count)
+    }
+
     private static func buildContext(
         audits: [DegreeLabeledAudit], plan: DegreePlan, history: [String: [String]],
-        terms: [DegreeAdvisorTerm], tags: [String: String], now: Date, calendar: Calendar
+        terms: [DegreeAdvisorTerm], tags: [String: String], needs: [String],
+        now: Date, calendar: Calendar
     ) -> String {
-        let shared = sharedSections(
+        var shared = sharedSections(
             audits: audits, plan: plan, history: history, terms: terms, now: now, calendar: calendar)
+        shared.needs = needs
         var last = ""
         for cap in optionCaps {
             let text = render(audits: audits, optionCap: cap, shared: shared, tags: tags)
@@ -479,6 +534,7 @@ public enum DegreeAdvisor {
         let finish: [String]
         let plan: [String]
         let worth: [String]
+        var needs: [String] = []
     }
 
     private static func name(_ entry: DegreeLabeledAudit) -> String {
@@ -593,6 +649,9 @@ public enum DegreeAdvisor {
         lines.append("PLAN")
         lines.append(contentsOf: shared.plan)
         lines.append("")
+        lines.append("STILL NEEDED (after the plan as it stands; this app's estimate)")
+        lines.append(contentsOf: shared.needs.isEmpty ? ["none"] : shared.needs)
+        lines.append("")
         lines.append("WORTH")
         lines.append("(points are this app's own estimate of progress, not penn's word on what counts)")
         lines.append(contentsOf: shared.worth)
@@ -665,7 +724,7 @@ public enum DegreeAdvisor {
 
     public static func request(
         question: String, turns: [DegreeAdvisorTurn], brief: DegreeAdvisorBrief,
-        programs: [DegreeAdvisorProgram] = [], now: Date
+        programs: [DegreeAdvisorProgram] = [], now: Date, round: Int = 1
     ) -> DegreeAdvisorRequest {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         let cut = String(trimmed.prefix(maxQuestion))
@@ -680,7 +739,7 @@ public enum DegreeAdvisor {
             question: cut, history: kept, context: brief.context, terms: brief.terms,
             addable: brief.addable.keys.sorted(),
             programs: Array(programs.prefix(maxPrograms)),
-            requirements: requirementList(brief), now: now)
+            requirements: requirementList(brief), now: now, round: round)
     }
 
     /// The brief's requirements as the wire carries them: ascending by tag

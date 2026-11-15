@@ -275,7 +275,7 @@ struct DegreeAdvisorView: View {
         draft = ""
         waiting = true
         let sent = activeAudits ?? audits
-        stage = nil
+        stage = "planning…"
         Task {
             let reply = await state.askDegreeAdvisor(question: question, turns: turns, audits: sent,
                                                      onStage: { stage = $0 })

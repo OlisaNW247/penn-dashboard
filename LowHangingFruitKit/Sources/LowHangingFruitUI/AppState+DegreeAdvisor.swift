@@ -82,7 +82,7 @@ extension AppState {
                                             programs: programs, now: now)
         let first: DegreeAdvisorResponse
         do {
-            first = try await client.degreeAdvisor(request)
+            first = try await sendDegreeAdvisor(client, request, onStage: onStage)
         } catch {
             return DegreeAdvisorReply(answer: Self.degreeAdvisorFailureLine(error),
                                       changes: [], planBefore: nil, failed: true, audits: nil, notice: nil)
@@ -92,7 +92,9 @@ extension AppState {
         guard let wanted = first.whatIf,
               let entry = entries.first(where: { $0.listing.code == wanted && $0.degreeID != nil })
         else {
-            return finishDegreeAdvisor(first, brief: brief, audits: nil, notice: nil)
+            return await finishDegreeAdvisor(
+                first, brief: brief, auditsUsed: audits, replyAudits: nil, notice: nil,
+                question: question, turns: turns, client: client, now: now, onStage: onStage)
         }
 
         onStage("reading path@penn for \(entry.name)…")
@@ -114,9 +116,11 @@ extension AppState {
         let second = DegreeAdvisor.request(question: question, turns: turns, brief: secondBrief,
                                            programs: [], now: now)
         do {
-            let response = try await client.degreeAdvisor(second)
+            let response = try await sendDegreeAdvisor(client, second, onStage: onStage)
             Self.noteDegreeAdvisorModel(response.model)
-            return finishDegreeAdvisor(response, brief: secondBrief, audits: swapped, notice: notice)
+            return await finishDegreeAdvisor(
+                response, brief: secondBrief, auditsUsed: swapped, replyAudits: swapped, notice: notice,
+                question: question, turns: turns, client: client, now: now, onStage: onStage)
         } catch {
             return DegreeAdvisorReply(answer: Self.degreeAdvisorFailureLine(error),
                                       changes: [], planBefore: nil, failed: true,
@@ -124,17 +128,102 @@ extension AppState {
         }
     }
 
-    /// Applies a response's edits to the live plan and builds the reply.
-    private func finishDegreeAdvisor(_ response: DegreeAdvisorResponse, brief: DegreeAdvisorBrief,
-                                     audits: [DegreeLabeledAudit]?, notice: String?) -> DegreeAdvisorReply {
-        let before = degreePlan
-        let outcome = DegreeAdvisor.apply(response.actions, to: before, brief: brief)
-        let changed = outcome.plan != before
-        if changed { commitDegreePlan(outcome.plan) }
-        return DegreeAdvisorReply(answer: response.answer,
-                                  changes: changed ? outcome.applied : [],
-                                  planBefore: changed ? before : nil,
-                                  failed: false, audits: audits, notice: notice)
+    /// Most passes one send may make: the answer and two automatic follow-ups.
+    nonisolated static let degreeAdvisorMaxRounds = 3
+
+    /// The automatic follow-up's question; the server treats a question that
+    /// starts with this phrase as a continuation round.
+    nonisolated static func degreeAdvisorContinuation(dropped: [String]) -> String {
+        var text = "continue the plan: fill what STILL NEEDED lists."
+        if !dropped.isEmpty {
+            text += " these codes are not in penn's catalogue: \(dropped.joined(separator: ", "))."
+        }
+        return text
+    }
+
+    /// One request, retried once on a dropped connection or a server error
+    /// (the answer may still be on its way). A quota refusal, an update wall
+    /// or anything else is never retried.
+    private func sendDegreeAdvisor(
+        _ client: BackendClient, _ request: DegreeAdvisorRequest,
+        onStage: @MainActor (String) -> Void
+    ) async throws -> DegreeAdvisorResponse {
+        do {
+            return try await client.degreeAdvisor(request)
+        } catch {
+            guard Self.degreeAdvisorShouldRetry(error) else { throw error }
+            onStage("still working…")
+            return try await client.degreeAdvisor(request)
+        }
+    }
+
+    nonisolated static func degreeAdvisorShouldRetry(_ error: Error) -> Bool {
+        switch error as? BackendError {
+        case .transport?: return true
+        case .http(let code)?: return code >= 500 && code < 600
+        default: return false
+        }
+    }
+
+    /// Applies a response's edits to the live plan and builds the reply. When
+    /// the student asked for a whole plan and the round changed it while the
+    /// document still lists needs the model can act on, asks again (at most
+    /// three rounds in all). Edits accumulate into one reply, `planBefore` is
+    /// the plan before the first round so one undo restores everything, and a
+    /// failed follow-up keeps what earlier rounds did.
+    private func finishDegreeAdvisor(
+        _ response: DegreeAdvisorResponse, brief: DegreeAdvisorBrief,
+        auditsUsed: [DegreeLabeledAudit], replyAudits: [DegreeLabeledAudit]?, notice: String?,
+        question: String, turns: [DegreeAdvisorTurn], client: BackendClient, now: Date,
+        onStage: @MainActor (String) -> Void
+    ) async -> DegreeAdvisorReply {
+        let planBefore = degreePlan
+        var current = response
+        var currentBrief = brief
+        var currentQuestion = question
+        var history = turns
+        var changes: [DegreeAdvisorChange] = []
+        var answer = response.answer
+        var round = 1
+        while true {
+            let before = degreePlan
+            let outcome = DegreeAdvisor.apply(current.actions, to: before, brief: currentBrief)
+            let changed = outcome.plan != before
+            if changed {
+                commitDegreePlan(outcome.plan)
+                changes.append(contentsOf: outcome.applied)
+            }
+            if !current.answer.isEmpty || answer.isEmpty { answer = current.answer }
+            guard current.planning, changed, round < Self.degreeAdvisorMaxRounds else { break }
+            let nextBrief = DegreeAdvisor.brief(audits: auditsUsed, plan: degreePlan,
+                                                history: degree.history, now: now)
+            guard nextBrief.fillableNeeds > 0 else { break }
+            onStage("filling what's left…")
+            #if DEBUG
+            Self.writeDegreeAdvisorDiagnostics(brief: nextBrief, audits: auditsUsed)
+            #endif
+            history.append(DegreeAdvisorTurn(role: "user", content: currentQuestion))
+            history.append(DegreeAdvisorTurn(role: "assistant", content: current.answer))
+            let nextQuestion = Self.degreeAdvisorContinuation(dropped: current.dropped)
+            let request = DegreeAdvisor.request(
+                question: nextQuestion, turns: history, brief: nextBrief,
+                programs: [], now: now, round: round + 1)
+            do {
+                let next = try await sendDegreeAdvisor(client, request, onStage: onStage)
+                Self.noteDegreeAdvisorModel(next.model)
+                current = next
+                currentBrief = nextBrief
+                currentQuestion = nextQuestion
+                round += 1
+            } catch {
+                break
+            }
+        }
+        let changedOverall = degreePlan != planBefore
+        return DegreeAdvisorReply(answer: answer,
+                                  changes: changedOverall ? changes : [],
+                                  planBefore: changedOverall ? planBefore : nil,
+                                  failed: false, audits: replyAudits, notice: notice)
     }
 
     /// Fetches the what-if audit for one catalogue entry from Penn and returns
@@ -237,6 +326,7 @@ extension AppState {
         switch error as? BackendError {
         case .quotaExceeded?: return "that's today's limit. try again tomorrow."
         case .http(426)?: return "update smooth to use this."
+        case .transport?: return "that took too long. try again."
         default: return "couldn't reach smooth."
         }
     }

@@ -70,12 +70,12 @@ struct DegreeAdvisorTests {
 
     // MARK: Document
 
-    @Test("the document has its five sections in order")
+    @Test("the document has its six sections in order")
     func headings() {
         let text = brief([labeled("x", audit([rule("r", .open, advice: [advice("ABCD 1000")])]))]).context
-        let marks = ["DEGREES\n", "DEGREE 1: Deg x", "SEMESTERS\n", "PLAN\n", "WORTH\n"]
+        let marks = ["DEGREES\n", "DEGREE 1: Deg x", "SEMESTERS\n", "PLAN\n", "STILL NEEDED", "WORTH\n"]
         let places = marks.compactMap { text.range(of: $0)?.lowerBound }
-        #expect(places.count == 5)
+        #expect(places.count == 6)
         #expect(places == places.sorted())
     }
 
@@ -243,7 +243,7 @@ struct DegreeAdvisorTests {
         let r = DegreeAdvisor.request(question: "q", turns: [], brief: simpleBrief(addable: []), now: now)
         let data = try JSONEncoder().encode(r)
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        #expect(Set(object?.keys.map { $0 } ?? []) == ["question", "history", "context", "terms", "addable", "programs", "requirements", "now"])
+        #expect(Set(object?.keys.map { $0 } ?? []) == ["question", "history", "context", "terms", "addable", "programs", "requirements", "now", "round"])
     }
 
     private func entry(_ code: String, _ kind: DegreeProgramKind, degreeID: String?) -> DegreeProgramEntry {
@@ -668,5 +668,80 @@ struct DegreeAdvisorTests {
         for (code, pattern, expected) in rows {
             #expect(DegreePlanMath.matchesPattern(code, pattern) == expected, "\(code) vs \(pattern)")
         }
+    }
+
+    // MARK: Still needed, rounds
+
+    private func needsLines(_ text: String) -> [String] {
+        guard let start = text.range(of: "STILL NEEDED (after the plan as it stands; this app's estimate)\n") else { return [] }
+        let rest = text[start.upperBound...]
+        let section = rest.range(of: "\n\nWORTH").map { String(rest[..<$0.lowerBound]) } ?? String(rest)
+        return section.split(separator: "\n").map(String.init)
+    }
+
+    @Test("STILL NEEDED lists a tagged word requirement and an addable one, singular and plural")
+    func stillNeededSection() {
+        let tree = [
+            word("w", patterns: ["MGMT @"], needCourses: 2),
+            word("one", needCourses: 1),
+            rule("o", .open, advice: [advice("OPTA 1000")], needCredits: 1.5),
+        ]
+        let b = brief([labeled("x", audit(tree))])
+        #expect(needsLines(b.context) == [
+            "Deg x | [R1] rule w | 2 courses left",
+            "Deg x | [R2] rule one | 1 course left",
+            "Deg x | rule o | 1.5 cu left | options in ADDABLE",
+        ])
+        #expect(b.fillableNeeds == 3)
+    }
+
+    @Test("STILL NEEDED omits a need the model cannot act on and says none when empty")
+    func stillNeededOmitsAndNone() {
+        // A rule whose only options are already taken is neither tagged nor addable.
+        let dead = rule("d", .open, advice: [advice("DONE 1000")], needCourses: 1)
+        let b = brief([labeled("x", audit([dead], courses: [taken("DONE 1000")]))])
+        #expect(needsLines(b.context) == ["none"])
+        #expect(b.fillableNeeds == 0)
+    }
+
+    @Test("a pick that fills a word requirement takes it off STILL NEEDED")
+    func stillNeededAfterPick() {
+        let tree = [word("w", patterns: ["MGMT @"], needCourses: 1)]
+        let picked = DegreePlan(terms: [PlannedTerm(termCode: "202710", courses: [
+            PlannedCourse(code: "MGMT 2010", title: nil, credits: 1, pickRuleKey: "B|w", pickLabel: "rule w")])])
+        let b = brief([labeled("x", audit(tree))], picked)
+        #expect(needsLines(b.context) == ["none"])
+        #expect(b.fillableNeeds == 0)
+    }
+
+    @Test("the request always encodes round, clamped to 1...3")
+    func requestRound() throws {
+        let b = simpleBrief(addable: [])
+        func round(_ value: Int?) throws -> Int? {
+            let r = value.map { DegreeAdvisor.request(question: "q", turns: [], brief: b, now: now, round: $0) }
+                ?? DegreeAdvisor.request(question: "q", turns: [], brief: b, now: now)
+            let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(r)) as? [String: Any]
+            return object?["round"] as? Int
+        }
+        #expect(try round(nil) == 1)
+        #expect(try round(2) == 2)
+        #expect(try round(9) == 3)
+        #expect(try round(0) == 1)
+    }
+
+    @Test("the response decodes planning and dropped, and defaults them when absent")
+    func responsePlanningDropped() throws {
+        let with = #"{"answer":"a","actions":[],"planning":true,"dropped":["MGMT 9999","X 1"]}"#
+        let a = try JSONDecoder().decode(DegreeAdvisorResponse.self, from: Data(with.utf8))
+        #expect(a.planning)
+        #expect(a.dropped == ["MGMT 9999", "X 1"])
+        let without = #"{"answer":"a","actions":[]}"#
+        let b = try JSONDecoder().decode(DegreeAdvisorResponse.self, from: Data(without.utf8))
+        #expect(!b.planning)
+        #expect(b.dropped.isEmpty)
+        let bad = #"{"answer":"a","actions":[],"planning":"yes","dropped":5}"#
+        let c = try JSONDecoder().decode(DegreeAdvisorResponse.self, from: Data(bad.utf8))
+        #expect(!c.planning)
+        #expect(c.dropped.isEmpty)
     }
 }

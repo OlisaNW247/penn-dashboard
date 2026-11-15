@@ -90,8 +90,14 @@ struct BackendClient: Sendable {
     /// planned courses, the question and the last few turns of the chat; no
     /// name, no id, no grade. The server answers and stores none of it.
     func degreeAdvisor(_ request: DegreeAdvisorRequest) async throws -> DegreeAdvisorResponse {
-        try await post("degree-advisor", body: request)
+        try await post("degree-advisor", body: request, timeout: Self.degreeAdvisorTimeout)
     }
+
+    /// Seconds a degree-advisor call may take before the phone gives up. The
+    /// default 60 s cut off answers the server was still writing. The session's
+    /// resource timeout is a week by default, so this per-request interval is
+    /// the effective limit.
+    static let degreeAdvisorTimeout: TimeInterval = 150
 
     // MARK: - delete-account
 
@@ -202,17 +208,19 @@ struct BackendClient: Sendable {
     /// for the pairing and encrypted-sync functions) calls it: the other
     /// choice was a second copy of the header, 401-retry and status handling,
     /// which is the thing that must exist exactly once.
-    func post<T: Decodable>(_ function: String, body: some Encodable) async throws -> T {
+    func post<T: Decodable>(_ function: String, body: some Encodable,
+                            timeout: TimeInterval? = nil) async throws -> T {
         let bodyData: Data
         do {
             bodyData = try BackendJSON.encoder().encode(body)
         } catch {
             throw BackendError.decoding
         }
-        return try await send(function: function, bodyData: bodyData, forceRefresh: false)
+        return try await send(function: function, bodyData: bodyData, forceRefresh: false, timeout: timeout)
     }
 
-    private func send<T: Decodable>(function: String, bodyData: Data, forceRefresh: Bool) async throws -> T {
+    private func send<T: Decodable>(function: String, bodyData: Data, forceRefresh: Bool,
+                                    timeout: TimeInterval?) async throws -> T {
         let accessToken = try await session.accessToken(forceRefresh: forceRefresh)
         var request = URLRequest(url: configuration.url.appendingPathComponent("functions/v1/\(function)"))
         request.httpMethod = "POST"
@@ -221,6 +229,7 @@ struct BackendClient: Sendable {
         request.setValue(configuration.anonKey, forHTTPHeaderField: "apikey")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         BackendVersionHeader.apply(to: &request)
+        if let timeout { request.timeoutInterval = timeout }
 
         let data: Data
         let response: URLResponse
@@ -233,7 +242,7 @@ struct BackendClient: Sendable {
 
         if http.statusCode == 401 {
             guard !forceRefresh else { throw BackendError.unauthorized }
-            return try await send(function: function, bodyData: bodyData, forceRefresh: true)
+            return try await send(function: function, bodyData: bodyData, forceRefresh: true, timeout: timeout)
         }
         if http.statusCode == 429 {
             throw BackendError.quotaExceeded(resetAt: Self.decodeResetAt(from: data))
