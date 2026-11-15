@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { nextSemester, verifyPennCourses } from "../supabase/functions/_shared/pennCourses.ts";
+import { lookupSemesters, nextSemester, verifyPennCourses } from "../supabase/functions/_shared/pennCourses.ts";
 
 const NOW = new Date("2026-11-14T12:00:00Z"); // 2026C, next 2027A
 
@@ -38,6 +38,21 @@ Deno.test("pennCourses: found only in the second semester; numeric-string credit
   assert.ok(f.calls[0].includes("/2026C/") && f.calls[1].includes("/2027A/"));
 });
 
+Deno.test("pennCourses: lookup order for a fixed now, deduped, at most four", () => {
+  assert.deepEqual(lookupSemesters(NOW), ["2026C", "2027A", "2025C", "2026A"]);
+  assert.deepEqual(lookupSemesters(new Date("2026-03-01T12:00:00Z")), ["2026A", "2026C", "2025A", "2025C"]);
+});
+
+Deno.test("pennCourses: found only in an older semester, tried in order", async () => {
+  const f = fakeFetch((url) =>
+    url.includes("/2026A/") ? ok({ id: "X", title: "Old", credits: 1 }) : new Response("{}", { status: 404 })
+  );
+  const r = await verifyPennCourses(["CIS 1200"], { fetchImpl: f.impl, now: NOW });
+  assert.deepEqual(r.get("CIS 1200"), { title: "Old", credits: 1 });
+  assert.equal(f.calls.length, 4);
+  assert.ok(f.calls[3].includes("/2026A/"));
+});
+
 Deno.test("pennCourses: 404 in both is unverified; missing credits is null", async () => {
   const none = await verifyPennCourses(["CIS 9999"], { fetchImpl: fakeFetch(() => new Response("", { status: 404 })).impl, now: NOW });
   assert.equal(none.size, 0);
@@ -67,11 +82,11 @@ Deno.test("pennCourses: a timeout or a throw leaves the code unverified and neve
   assert.equal((await verifyPennCourses(["CIS 1200"], { fetchImpl: boom, now: NOW })).size, 0);
 });
 
-Deno.test("pennCourses: distinct codes, at most 40 looked up", async () => {
-  const codes = Array.from({ length: 60 }, (_, i) => `CIS ${1000 + i}`);
+Deno.test("pennCourses: distinct codes, at most 60 looked up", async () => {
+  const codes = Array.from({ length: 80 }, (_, i) => `CIS ${1000 + i}`);
   const f = fakeFetch(() => ok({ id: "a", title: "b", credits: 1 }));
   const r = await verifyPennCourses([...codes, ...codes], { fetchImpl: f.impl, now: NOW });
-  assert.equal(r.size, 40);
-  assert.equal(f.calls.length, 40);
-  assert.ok(!r.has("CIS 1040"));
+  assert.equal(r.size, 60);
+  assert.equal(f.calls.length, 60);
+  assert.ok(!r.has("CIS 1060"));
 });

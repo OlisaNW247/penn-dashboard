@@ -213,8 +213,9 @@ Deno.test("degree-advisor: schema is strict-shaped", () => {
   const s = DEGREE_ADVISOR_SCHEMA.schema as any;
   assert.equal(DEGREE_ADVISOR_SCHEMA.name, "degree_advice");
   assert.equal(s.additionalProperties, false);
-  assert.deepEqual(Object.keys(s.properties), ["actions", "whatIf", "answer"]);
-  assert.deepEqual(s.required, ["actions", "whatIf", "answer"]);
+  assert.deepEqual(Object.keys(s.properties), ["actions", "whatIf", "planning", "answer"]);
+  assert.deepEqual(s.required, ["actions", "whatIf", "planning", "answer"]);
+  assert.deepEqual(s.properties.planning.type, "boolean");
   assert.deepEqual(Object.keys(s.properties.actions.items.properties), ["op", "code", "term", "toTerm", "for"]);
   assert.deepEqual(s.properties.actions.items.properties.for.type, ["string", "null"]);
   assert.deepEqual(s.properties.whatIf.type, ["string", "null"]);
@@ -262,7 +263,9 @@ Deno.test("degree-advisor: a 200 carries actions, whatIf, answer and the model i
     );
     assert.equal(res.status, 200);
     const out = await res.json();
-    assert.deepEqual(Object.keys(out).sort(), ["actions", "answer", "model", "whatIf"]);
+    assert.deepEqual(Object.keys(out).sort(), ["actions", "answer", "dropped", "model", "planning", "whatIf"]);
+    assert.equal(out.planning, false);
+    assert.deepEqual(out.dropped, []);
     assert.equal(out.whatIf, "FNCS-BS");
     assert.equal(typeof out.model, "string");
     assert.ok(out.model.length > 0);
@@ -431,8 +434,101 @@ Deno.test("degree-advisor: a 200 verifies picks against Penn and drops unknown o
     assert.deepEqual(out.actions, [
       { op: "add", code: "MGMT 2380", term: "202730", toTerm: null, for: "R1", title: "Negotiations", credits: 1 },
     ]);
+    assert.deepEqual(out.dropped, ["MGMT 2999"]);
   } finally {
     globalThis.fetch = stubFetch;
+    stub.restore();
+  }
+});
+
+Deno.test("degree-advisor: round is optional, 1 to 3, and anything else is malformed", () => {
+  assert.equal(parseDegreeAdvisorBody(valid())!.round, 1);
+  for (const r of [1, 2, 3]) assert.equal(parseDegreeAdvisorBody(valid({ round: r }))!.round, r);
+  for (const r of [0, 4, -1, 1.5, "2", null, true]) assert.equal(parseDegreeAdvisorBody(valid({ round: r })), undefined, String(r));
+});
+
+Deno.test("degree-advisor: planning passes through, defaults to false, survives whatIf", () => {
+  const b = bodyOf({ programs: [prog] });
+  assert.equal(buildDegreeAdvice(reply([]), b).planning, false);
+  const withFlag = (planning: unknown, whatIf: string | null = null) =>
+    JSON.stringify({ actions: [], whatIf, planning, answer: "ok" });
+  assert.equal(buildDegreeAdvice(withFlag(true), b).planning, true);
+  assert.equal(buildDegreeAdvice(withFlag(false), b).planning, false);
+  assert.equal(buildDegreeAdvice(withFlag("yes"), b).planning, false);
+  assert.equal(buildDegreeAdvice(withFlag(true, "FNCS-BS"), b).planning, true);
+});
+
+Deno.test("degree-advisor: finalize reports dropped picks, normalized, capped at 80", () => {
+  const picks = Array.from({ length: 90 }, (_, i) => `MGMT ${1000 + i}`);
+  const draft = {
+    actions: picks.map((code) => ({ op: "add" as const, code, term: "202730", toTerm: null, for: "R1", title: null, credits: null })),
+    whatIf: null, planning: true, answer: "x", pickCodes: picks,
+  };
+  const out = finalizeDegreeAdvice(draft, new Map([["MGMT 1000", { title: "T", credits: 1 }]]));
+  assert.equal(out.actions.length, 1);
+  assert.equal(out.dropped.length, 80);
+  assert.ok(!out.dropped.includes("MGMT 1000"));
+  assert.equal(out.planning, true);
+  assert.deepEqual(finalizeDegreeAdvice({ ...draft, actions: [], pickCodes: [] }, new Map()).dropped, []);
+});
+
+Deno.test("degree-advisor: the student's instructions override the defaults; no hard load ceiling", () => {
+  const t = DEGREE_ADVISOR_INSTRUCTIONS;
+  assert.ok(t.includes("explicit instructions override every default"));
+  assert.ok(t.includes("Never refuse an instruction about load or finish date"));
+  assert.ok(!/never above 6/i.test(t));
+  assert.ok(!/never bring a semester above 6/i.test(t));
+  assert.ok(t.includes("I can take 7"));
+  for (const phrase of ["STILL NEEDED", "WHOLE PLANS", "CONTINUATION", "continue the plan", "PLANNING FLAG"]) {
+    assert.ok(t.includes(phrase), phrase);
+  }
+});
+
+Deno.test("degree-advisor: unusable primary output retries once on the fallback model", async () => {
+  const stub = installStub({ reserve: () => GRANTED, openrouter: { kind: "json", content: "{}" } });
+  const stubFetch = globalThis.fetch;
+  const models: string[] = [];
+  const good = JSON.stringify({ actions: [], whatIf: null, planning: true, answer: "ok" });
+  globalThis.fetch = ((input: Request | URL | string, init?: RequestInit) => {
+    if (String(input).startsWith("https://openrouter.ai/")) {
+      models.push(JSON.parse(String(init?.body)).model);
+      const content = models.length === 1 ? '{"actions": [' : good;
+      return Promise.resolve(new Response(JSON.stringify({ choices: [{ message: { content } }], usage: { completion_tokens: 5 } }), { status: 200 }));
+    }
+    return stubFetch(input as any, init);
+  }) as typeof fetch;
+  try {
+    const res = await handleDegreeAdvisor(
+      new Request("http://functions.test/degree-advisor", {
+        method: "POST",
+        headers: { Authorization: "Bearer test-jwt", "content-type": "application/json" },
+        body: JSON.stringify(valid({ round: 2 })),
+      }),
+    );
+    assert.equal(res.status, 200);
+    const out = await res.json();
+    assert.equal(out.planning, true);
+    assert.equal(models.length, 2);
+    assert.notEqual(models[0], models[1]);
+    assert.equal(out.model, models[1]);
+  } finally {
+    globalThis.fetch = stubFetch;
+    stub.restore();
+  }
+});
+
+Deno.test("degree-advisor: unusable output on both models is a 502", async () => {
+  const stub = installStub({ reserve: () => GRANTED, openrouter: { kind: "json", content: "not json" } });
+  try {
+    const res = await handleDegreeAdvisor(
+      new Request("http://functions.test/degree-advisor", {
+        method: "POST",
+        headers: { Authorization: "Bearer test-jwt", "content-type": "application/json" },
+        body: JSON.stringify(valid()),
+      }),
+    );
+    assert.equal(res.status, 502);
+  } finally {
     stub.restore();
   }
 });

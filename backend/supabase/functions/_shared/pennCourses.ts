@@ -4,13 +4,14 @@
 //
 // The semester is always named explicitly and Penn Labs' `current` is never
 // used: it is whatever is open for registration, not what is in session (see
-// `academicSemester` in catalog.ts). Two semesters are tried, this one and the
-// next regular one, because a student plans ahead and a course may be listed
-// only for the coming term. Never throws: any failure leaves that code
+// `academicSemester` in catalog.ts). Up to four semesters are tried (see
+// `lookupSemesters`): this one, the next regular one, then the same seasons a
+// year or two back, because a student plans ahead and a course may be listed
+// only for the coming term or only in an older one. Never throws: any failure leaves that code
 // unverified.
 import { academicSemester } from "./catalog.ts";
 
-export const MAX_VERIFIED_CODES = 40;
+export const MAX_VERIFIED_CODES = 60;
 const DEFAULT_TIMEOUT_MS = 3000;
 const PENN_LABS_BASE_URL = "https://penncoursereview.com/api/base";
 const USER_AGENT = "LowHangingFruit/1 (student dashboard; contact in repo)";
@@ -26,6 +27,25 @@ export function nextSemester(semester: string): string {
   const letter = semester.slice(4);
   if (letter === "C") return `${year + 1}A`;
   return `${year}C`;
+}
+
+/** [this, next, this one year back, next one year back], deduped, at most
+ *  four. Now in 2026C: 2026C, 2027A, 2025C, 2026A. The older ones catch
+ *  courses Penn Labs no longer lists for the coming terms. */
+export function lookupSemesters(now: Date): string[] {
+  const first = academicSemester(now);
+  const next = nextSemester(first);
+  const year = Number(first.slice(0, 4));
+  const letter = first.slice(4);
+  const nextLetter = next.slice(4);
+  const nextYear = Number(next.slice(0, 4));
+  const list = [
+    first,
+    next,
+    `${year - 1}${letter}`,
+    `${nextYear - 1}${nextLetter}`,
+  ];
+  return [...new Set(list)].slice(0, 4);
 }
 
 async function lookupOne(
@@ -70,7 +90,7 @@ async function lookupOne(
 }
 
 /** Codes are "SUBJ 1234", already normalized. Unfound codes are absent from
- *  the map. At most 40 distinct codes are looked up. */
+ *  the map. At most 60 distinct codes are looked up. */
 export async function verifyPennCourses(
   codes: string[],
   opts: { fetchImpl: typeof fetch; now: Date; timeoutMs?: number },
@@ -78,8 +98,7 @@ export async function verifyPennCourses(
   const result = new Map<string, VerifiedCourse>();
   const distinct = [...new Set(codes)].slice(0, MAX_VERIFIED_CODES);
   if (distinct.length === 0) return result;
-  const first = academicSemester(opts.now);
-  const semesters = [first, nextSemester(first)];
+  const semesters = lookupSemesters(opts.now);
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   await Promise.all(distinct.map(async (code) => {
     try {

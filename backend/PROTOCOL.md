@@ -1127,7 +1127,8 @@ discussed today have been posted." into an overdue assignment.
 
 ## `degree-advisor`
 
-Request `{ "question", "history": [{ "role": "user"|"assistant", "content" }], "context", "terms": [{ "code", "label" }], "addable": [course code], "programs"?: [{ "code", "name", "kind" }], "requirements"?: [{ "tag", "label", "degree", "need", "patterns": [string] }], "now": ISO8601 }`.
+Request `{ "question", "history": [{ "role": "user"|"assistant", "content" }], "context", "terms": [{ "code", "label" }], "addable": [course code], "programs"?: [{ "code", "name", "kind" }], "requirements"?: [{ "tag", "label", "degree", "need", "patterns": [string] }], "now": ISO8601, "round"?: 1|2|3 }`.
+`round` is optional (absent reads as 1): the phone's automatic continuation round of a whole-plan request; any other value (0, 4, a non-integer, a string) makes the body malformed. The DOCUMENT may carry a phone-built `STILL NEEDED` section (lines such as `computer science | [R4] Humanities | 2 courses left`) that the prompt treats as the work list.
 `context` is a text document the phone builds: Penn's audit for each of the
 student's degrees, their semesters and their own plan. `terms` and `addable`
 are the term codes (six digits, e.g. `202730`) and course codes (e.g.
@@ -1145,10 +1146,11 @@ of 1 to 20 characters each (Degree Works wildcards such as "MGMT @", "CIS 2@",
 "@ @"); at most 120 entries. Any violation makes the whole body malformed.
 They are rendered to the model as a REQUIREMENTS section after ADDABLE.
 
-Response `{ "actions": [ { "op": "add"|"remove"|"move", "code", "term", "toTerm": string|null, "for": string|null, "title": string|null, "credits": number|null } ], "whatIf": string|null, "answer": string, "model": string }`.
+Response `{ "actions": [ { "op": "add"|"remove"|"move", "code", "term", "toTerm": string|null, "for": string|null, "title": string|null, "credits": number|null } ], "whatIf": string|null, "planning": boolean, "answer": string, "dropped": [string], "model": string }`.
+`planning` is the model's flag that the student asked for a plan to be built, filled, extended or completed (in this message or, on a continuation round, earlier); missing or non-boolean reads as false, and it passes through unchanged when `whatIf` is set. `dropped` is the normalized codes of picks removed because Penn Labs did not find them (empty otherwise, at most 80).
 `answer` is at most 2000 characters (the prompt asks for 150 words and not to
 list the added codes, which the app shows itself); `actions` is empty for a
-plain question. The schema orders the fields `actions`, `whatIf`, `answer` so
+plain question. The schema orders the fields `actions`, `whatIf`, `planning`, `answer` (all required) so
 the model decides before it describes. `model` is the id that actually answered
 (the primary, or the fallback when it was used, including after a 400/404 retry).
 `whatIf` is the `code` of one entry of `programs` that the model wants audited
@@ -1175,14 +1177,15 @@ is passed through only if it is a listed tag, else null, and `title` and
 `credits` are null. `remove` and `move` carry null for all three.
 
 **Penn Labs check.** After the model answers, the server looks each distinct
-pick code (at most 40; extras are unverified and dropped) up at
+pick code (at most 60; extras are unverified and dropped) up at
 `https://penncoursereview.com/api/base/{semester}/courses/{SUBJ}-{NUM}/`, for
-the current academic semester and then the next regular one (summer skipped;
-never Penn Labs' `current`), with a 3 s timeout per request, all in parallel. A
+up to four semesters in order, stopping at the first 200: the current academic
+semester, the next regular one (summer skipped), then each of those one year back
+(2026C: 2026C, 2027A, 2025C, 2026A; never Penn Labs' `current`), with a 3 s timeout per request, all in parallel. A
 200 with a string `id` and `title` counts as found; anything else leaves the
 pick unverified and it is dropped silently. What leaves the server for this is
 course codes only, to penncoursereview.com: no student data, no question, no
-document. The log carries counts only (`degree-advisor: picks 12 kept 10`).
+document. The log carries one counts-and-ids line per request (`degree-advisor: round R model M ms T actions A picks P kept K planning B completion_tokens N`, T being the model call time; the OpenRouter helper does not expose the finish reason, so it is not logged).
 
 Caps (anything over, or malformed, is 400 `bad_request`, "malformed
 degree-advisor request"; unknown extra keys are ignored): `question` 1 to 1000
@@ -1203,9 +1206,12 @@ it.
 
 Model `LHF_DEGREE_MODEL` (default `anthropic/claude-sonnet-5.5`), fallback
 `LHF_DEGREE_FALLBACK_MODEL` (default `anthropic/claude-haiku-5.5`), provider
-order `LHF_PROVIDER_ORDER`. Strict JSON schema, `reasoning: { effort: "medium" }`,
-6000 max tokens, temperature 0.2 (a whole-plan answer is up to 80 actions;
-version 1's low effort and 1500 tokens produced a plan of two courses).
+order `LHF_PROVIDER_ORDER`. Strict JSON schema, `reasoning: { effort: "low" }` on every round,
+10000 max tokens, temperature 0.2. Completeness of a whole plan comes from the
+phone's continuation rounds (up to 3), not from longer thinking: medium effort
+outlived the phone's timeout. When the primary's output cannot be read (for
+example truncated JSON), the server retries once with the fallback model alone
+before answering 502; no retry if the client has gone.
 
 ## `map-categories`
 

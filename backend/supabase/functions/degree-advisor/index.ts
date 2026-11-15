@@ -17,7 +17,7 @@ import { HttpError, corsHeaders, errorResponse, json, readJSON } from "../_share
 import { enforceMinimumVersion } from "../_shared/version.ts";
 import { requireUser } from "../_shared/auth.ts";
 import { limitsFromEnv, reserveUsage } from "../_shared/quota.ts";
-import { chatCompletionJSONWithUsage, UpstreamError } from "../_shared/openrouter.ts";
+import { chatCompletionJSONWithUsage, type JSONCompletion, UpstreamError } from "../_shared/openrouter.ts";
 import { verifyPennCourses } from "../_shared/pennCourses.ts";
 import {
   buildDegreeAdvice,
@@ -65,7 +65,16 @@ export async function handleDegreeAdvisor(req: Request): Promise<Response> {
       // second try below, a mistyped or retired model id would turn every
       // question into "couldn't reach smooth" until someone read the logs.
       // The retry names the fallback as the only model, so it cannot loop.
-      const complete = (primary: string, fallback: string | undefined) =>
+      let modelMs = 0;
+      const complete = async (primary: string, fallback: string | undefined) => {
+        const t0 = Date.now();
+        try {
+          return await call(primary, fallback);
+        } finally {
+          modelMs += Date.now() - t0;
+        }
+      };
+      const call = (primary: string, fallback: string | undefined) =>
         chatCompletionJSONWithUsage({
           fetchImpl: fetch,
           apiKey,
@@ -74,17 +83,19 @@ export async function handleDegreeAdvisor(req: Request): Promise<Response> {
           provider: providerFromEnv(),
           messages: buildDegreeAdvisorMessages(body),
           jsonSchema: DEGREE_ADVISOR_SCHEMA,
-          // A whole-plan answer is up to 80 actions; low effort and 1,500
-          // tokens (version 1) produced a plan of two courses.
-          reasoning: { effort: "medium" },
-          maxTokens: 6000,
+          // Speed: low effort on every round. Completeness of a whole plan
+          // comes from the phone's continuation rounds, not from thinking
+          // longer (a medium-effort whole-plan request outlived the phone's
+          // 60 s timeout).
+          reasoning: { effort: "low" },
+          maxTokens: 10000,
           temperature: 0.2,
           // The answer is for this phone alone, so when the client leaves
           // the model call is cut off rather than paid for and discarded.
           signal: req.signal,
         });
 
-      let completion: { content: string; model: string };
+      let completion: JSONCompletion;
       try {
         try {
           completion = await complete(model, fallbackModel);
@@ -103,19 +114,34 @@ export async function handleDegreeAdvisor(req: Request): Promise<Response> {
       }
 
       let advice;
+      let pickCount = 0;
       try {
-        const draft = buildDegreeAdvice(completion.content, body);
+        let draft;
+        try {
+          draft = buildDegreeAdvice(completion.content, body);
+        } catch (err) {
+          // A truncated or malformed JSON is the likely cause; one retry on
+          // the fallback model alone before giving up.
+          if (fallbackModel === completion.model || req.signal.aborted) throw err;
+          console.warn(`degree-advisor: unusable output from ${completion.model}, trying ${fallbackModel}`);
+          completion = await complete(fallbackModel, undefined);
+          draft = buildDegreeAdvice(completion.content, body);
+        }
         // Picks are courses the model named for requirements Penn lists no
         // courses for; only codes that Penn's catalogue knows survive. Only
         // course codes leave the server for this check. Counts are logged,
         // never codes.
-        const verified = draft.pickCodes.length > 0
+        pickCount = draft.pickCodes.length;
+        const verified = pickCount > 0
           ? await verifyPennCourses(draft.pickCodes, { fetchImpl: fetch, now: new Date() })
           : new Map();
         advice = finalizeDegreeAdvice(draft, verified);
-        if (draft.pickCodes.length > 0) {
-          console.log(`degree-advisor: picks ${draft.pickCodes.length} kept ${verified.size}`);
-        }
+        const tokens = completion.usage.completionTokens;
+        console.log(
+          `degree-advisor: round ${body.round} model ${completion.model} ms ${modelMs} ` +
+            `actions ${advice.actions.length} picks ${pickCount} kept ${verified.size} ` +
+            `planning ${advice.planning} completion_tokens ${tokens ?? "n/a"}`,
+        );
       } catch {
         // Unusable output is a failure: the unit is given back (not kept).
         console.error("degree-advisor: unusable model output");
