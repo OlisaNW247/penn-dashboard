@@ -18,9 +18,11 @@ import { enforceMinimumVersion } from "../_shared/version.ts";
 import { requireUser } from "../_shared/auth.ts";
 import { limitsFromEnv, reserveUsage } from "../_shared/quota.ts";
 import { chatCompletionJSONWithUsage, UpstreamError } from "../_shared/openrouter.ts";
+import { verifyPennCourses } from "../_shared/pennCourses.ts";
 import {
   buildDegreeAdvice,
   buildDegreeAdvisorMessages,
+  finalizeDegreeAdvice,
   DEGREE_ADVISOR_SCHEMA,
   parseDegreeAdvisorBody,
 } from "../_shared/degreeAdvisor.ts";
@@ -72,10 +74,10 @@ export async function handleDegreeAdvisor(req: Request): Promise<Response> {
           provider: providerFromEnv(),
           messages: buildDegreeAdvisorMessages(body),
           jsonSchema: DEGREE_ADVISOR_SCHEMA,
-          // A whole-plan answer is up to 60 actions; low effort and 1,500
+          // A whole-plan answer is up to 80 actions; low effort and 1,500
           // tokens (version 1) produced a plan of two courses.
           reasoning: { effort: "medium" },
-          maxTokens: 4000,
+          maxTokens: 6000,
           temperature: 0.2,
           // The answer is for this phone alone, so when the client leaves
           // the model call is cut off rather than paid for and discarded.
@@ -102,7 +104,18 @@ export async function handleDegreeAdvisor(req: Request): Promise<Response> {
 
       let advice;
       try {
-        advice = buildDegreeAdvice(completion.content, body);
+        const draft = buildDegreeAdvice(completion.content, body);
+        // Picks are courses the model named for requirements Penn lists no
+        // courses for; only codes that Penn's catalogue knows survive. Only
+        // course codes leave the server for this check. Counts are logged,
+        // never codes.
+        const verified = draft.pickCodes.length > 0
+          ? await verifyPennCourses(draft.pickCodes, { fetchImpl: fetch, now: new Date() })
+          : new Map();
+        advice = finalizeDegreeAdvice(draft, verified);
+        if (draft.pickCodes.length > 0) {
+          console.log(`degree-advisor: picks ${draft.pickCodes.length} kept ${verified.size}`);
+        }
       } catch {
         // Unusable output is a failure: the unit is given back (not kept).
         console.error("degree-advisor: unusable model output");

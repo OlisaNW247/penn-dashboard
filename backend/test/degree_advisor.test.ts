@@ -4,6 +4,8 @@ import {
   buildDegreeAdvisorMessages,
   DEGREE_ADVISOR_INSTRUCTIONS,
   DEGREE_ADVISOR_SCHEMA,
+  finalizeDegreeAdvice,
+  matchesCoursePattern,
   normalizeCourseCode,
   parseDegreeAdvisorBody,
   type DegreeAdvisorBody,
@@ -103,6 +105,7 @@ function bodyOf(over: Partial<DegreeAdvisorBody> = {}): DegreeAdvisorBody {
     terms: [{ code: "202730", label: "Fall 2027" }, { code: "202810", label: "Spring 2028" }],
     addable: ["cis  4710", "MATH 1400"],
     programs: [],
+    requirements: [],
     now: "2026-11-14T12:00:00Z",
     ...over,
   };
@@ -118,7 +121,7 @@ Deno.test("degree-advisor: messages are ordered stable-first with the date last"
   assert.ok(s.startsWith("DOCUMENT\nAUDIT"));
   assert.ok(s.indexOf("DOCUMENT") < s.indexOf("TERMS") && s.indexOf("TERMS") < s.indexOf("ADDABLE"));
   assert.ok(s.includes("202730 | Fall 2027\n202810 | Spring 2028"));
-  assert.ok(s.endsWith("ADDABLE\nCIS 4710, MATH 1400\n\nPROGRAMS\nnone"));
+  assert.ok(s.endsWith("ADDABLE\nCIS 4710, MATH 1400\n\nREQUIREMENTS\nnone\n\nPROGRAMS\nnone"));
   assert.deepEqual(m.slice(2, 4), [{ role: "user", content: "hi" }, { role: "assistant", content: "hello" }]);
   assert.equal(m[4].role, "user");
   assert.equal(m[4].content, "Current date: 2026-11-14T12:00:00Z\n\nplan fall");
@@ -134,7 +137,7 @@ Deno.test("degree-advisor: PROGRAMS follows ADDABLE, one line per program", () =
 Deno.test("degree-advisor: empty terms and addable read as none", () => {
   const m = buildDegreeAdvisorMessages(bodyOf({ terms: [], addable: [], history: [] }));
   assert.ok(m[1].content.includes("TERMS\nnone"));
-  assert.ok(m[1].content.endsWith("ADDABLE\nnone\n\nPROGRAMS\nnone"));
+  assert.ok(m[1].content.endsWith("ADDABLE\nnone\n\nREQUIREMENTS\nnone\n\nPROGRAMS\nnone"));
   assert.equal(m.length, 3);
 });
 
@@ -144,7 +147,7 @@ const reply = (actions: unknown[], answer = "ok", whatIf: unknown = null) =>
 
 Deno.test("degree-advisor: advice keeps a valid add and normalizes the code", () => {
   const r = buildDegreeAdvice(reply([act({ code: "cis 4710" })]), bodyOf());
-  assert.deepEqual(r.actions, [{ op: "add", code: "CIS 4710", term: "202730", toTerm: null }]);
+  assert.deepEqual(r.actions, [{ op: "add", code: "CIS 4710", term: "202730", toTerm: null, for: null, title: null, credits: null }]);
 });
 
 Deno.test("degree-advisor: advice drops adds outside addable and unknown terms", () => {
@@ -165,17 +168,17 @@ Deno.test("degree-advisor: move needs a different valid toTerm; add nulls toTerm
     bodyOf(),
   );
   assert.deepEqual(r.actions, [
-    { op: "move", code: "CIS 1200", term: "202730", toTerm: "202810" },
-    { op: "add", code: "CIS 4710", term: "202730", toTerm: null },
-    { op: "remove", code: "CIS 1200", term: "202730", toTerm: null },
+    { op: "move", code: "CIS 1200", term: "202730", toTerm: "202810", for: null, title: null, credits: null },
+    { op: "add", code: "CIS 4710", term: "202730", toTerm: null, for: null, title: null, credits: null },
+    { op: "remove", code: "CIS 1200", term: "202730", toTerm: null, for: null, title: null, credits: null },
   ]);
 });
 
-Deno.test("degree-advisor: advice drops duplicates and caps at 60", () => {
+Deno.test("degree-advisor: advice drops duplicates and caps at 80", () => {
   const dup = buildDegreeAdvice(reply([act({}), act({ code: "cis 4710" })]), bodyOf());
   assert.equal(dup.actions.length, 1);
   const many = Array.from({ length: 100 }, (_, i) => ({ op: "remove", code: `CIS ${1000 + i}`, term: "202730", toTerm: null }));
-  assert.equal(buildDegreeAdvice(reply(many), bodyOf()).actions.length, 60);
+  assert.equal(buildDegreeAdvice(reply(many), bodyOf()).actions.length, 80);
 });
 
 Deno.test("degree-advisor: whatIf is kept only for a listed program and empties actions", () => {
@@ -212,15 +215,17 @@ Deno.test("degree-advisor: schema is strict-shaped", () => {
   assert.equal(s.additionalProperties, false);
   assert.deepEqual(Object.keys(s.properties), ["actions", "whatIf", "answer"]);
   assert.deepEqual(s.required, ["actions", "whatIf", "answer"]);
+  assert.deepEqual(Object.keys(s.properties.actions.items.properties), ["op", "code", "term", "toTerm", "for"]);
+  assert.deepEqual(s.properties.actions.items.properties.for.type, ["string", "null"]);
   assert.deepEqual(s.properties.whatIf.type, ["string", "null"]);
   assert.equal(s.properties.actions.items.additionalProperties, false);
-  assert.deepEqual([...s.properties.actions.items.required].sort(), ["code", "op", "term", "toTerm"]);
+  assert.deepEqual([...s.properties.actions.items.required].sort(), ["code", "for", "op", "term", "toTerm"]);
 });
 
 Deno.test("degree-advisor: instructions carry the load-bearing phrases", () => {
   assert.ok(DEGREE_ADVISOR_INSTRUCTIONS.includes("would count toward"));
   assert.ok(DEGREE_ADVISOR_INSTRUCTIONS.includes("ADDABLE"));
-  for (const phrase of ["PROGRAMS", "EVERY", "Path@Penn"]) {
+  for (const phrase of ["PROGRAMS", "EVERY", "Path@Penn", "PICKS", "FINISH", "REQUIREMENTS"]) {
     assert.ok(DEGREE_ADVISOR_INSTRUCTIONS.includes(phrase), phrase);
   }
   assert.ok(!DEGREE_ADVISOR_INSTRUCTIONS.toLowerCase().includes("guarantee"));
@@ -262,6 +267,172 @@ Deno.test("degree-advisor: a 200 carries actions, whatIf, answer and the model i
     assert.equal(typeof out.model, "string");
     assert.ok(out.model.length > 0);
   } finally {
+    stub.restore();
+  }
+});
+
+const req = (o: Record<string, unknown> = {}) => ({
+  tag: "R1", label: "General Management elective", degree: "Wharton", need: "need 2 cu", patterns: ["MGMT @", "MGMT 2@"], ...o,
+});
+
+Deno.test("degree-advisor: requirements are optional and parsed", () => {
+  assert.deepEqual(parseDegreeAdvisorBody(valid())!.requirements, []);
+  assert.deepEqual(parseDegreeAdvisorBody(valid({ requirements: [req()] }))!.requirements, [req()]);
+  const edge = parseDegreeAdvisorBody(valid({
+    requirements: Array.from({ length: 120 }, (_, i) =>
+      req({ tag: `R${i + 1}`, label: "a".repeat(160), degree: "a".repeat(80), need: "a".repeat(40), patterns: Array(20).fill("a".repeat(20)) })),
+  }));
+  assert.equal(edge!.requirements.length, 120);
+  assert.ok(parseDegreeAdvisorBody(valid({ requirements: [req({ degree: "", need: "", patterns: [] })] })));
+});
+
+Deno.test("degree-advisor: every requirements violation is a malformed body", () => {
+  const cases: Array<[string, unknown]> = [
+    ["not array", "x"],
+    ["121 entries", Array.from({ length: 121 }, (_, i) => req({ tag: `R${i}` }))],
+    ["entry not object", [1]],
+    ["bad tag", [req({ tag: "X1" })]],
+    ["tag 4 digits", [req({ tag: "R1234" })]],
+    ["duplicate tag", [req(), req()]],
+    ["label empty", [req({ label: "" })]],
+    ["label 161", [req({ label: "a".repeat(161) })]],
+    ["degree 81", [req({ degree: "a".repeat(81) })]],
+    ["degree not string", [req({ degree: 1 })]],
+    ["need 41", [req({ need: "a".repeat(41) })]],
+    ["patterns not array", [req({ patterns: "MGMT @" })]],
+    ["patterns 21", [req({ patterns: Array(21).fill("A @") })]],
+    ["pattern empty", [req({ patterns: [""] })]],
+    ["pattern 21 chars", [req({ patterns: ["a".repeat(21)] })]],
+    ["pattern not string", [req({ patterns: [1] })]],
+  ];
+  for (const [name, value] of cases) {
+    assert.equal(parseDegreeAdvisorBody(valid({ requirements: value })), undefined, name);
+  }
+});
+
+Deno.test("degree-advisor: REQUIREMENTS renders between ADDABLE and PROGRAMS", () => {
+  const m = buildDegreeAdvisorMessages(bodyOf({
+    requirements: [
+      { tag: "R3", label: "Business Breadth", degree: "Wharton", need: "need 4 courses", patterns: ["MGMT @", "MGMT 2@"] },
+      { tag: "R4", label: "Humanities", degree: "SEAS", need: "", patterns: [] },
+    ],
+  }));
+  const s = m[1].content;
+  assert.ok(s.indexOf("ADDABLE") < s.indexOf("REQUIREMENTS") && s.indexOf("REQUIREMENTS") < s.indexOf("PROGRAMS"));
+  assert.ok(s.includes("REQUIREMENTS\nR3 | Wharton | Business Breadth | need 4 courses | patterns: MGMT @, MGMT 2@\nR4 | SEAS | Humanities | \n\nPROGRAMS"));
+});
+
+Deno.test("degree-advisor: matchesCoursePattern", () => {
+  const table: Array<[string, string, boolean]> = [
+    ["MGMT 2380", "MGMT @", true],
+    ["mgmt 2380", "MGMT @", true],
+    ["MGMT 2380", "mgmt @", true],
+    ["CIS 1200", "MGMT @", false],
+    ["CIS 1200", "@ @", true],
+    ["CIS 1200", "@ @@@@", true],
+    ["MGMT 2380", "MGMT 2@", true],
+    ["MGMT 2380", "MGMT 23@@", true],
+    ["MGMT 3380", "MGMT 2@", false],
+    ["MGMT 2380", "MGMT 2380", true],
+    ["MGMT 2381", "MGMT 2380", false],
+    ["MGMT 2380", "MGMT 1@:2@", false],
+    ["MGMT 2380", "MGMT 2@ (ATTR=X)", false],
+    ["MGMT 2380", "MGMT", true],
+    ["CIS 2380", "@ 2@", true],
+    ["MGMT 2380", "", false],
+  ];
+  for (const [code, pattern, expected] of table) {
+    assert.equal(matchesCoursePattern(code, pattern), expected, `${code} vs ${pattern}`);
+  }
+});
+
+const picksBody = () => bodyOf({
+  requirements: [
+    { tag: "R1", label: "GM elective", degree: "Wharton", need: "need 1 cu", patterns: ["MGMT @"] },
+    { tag: "R2", label: "Humanities", degree: "SEAS", need: "", patterns: [] },
+  ],
+});
+
+Deno.test("degree-advisor: picks are kept by tag, shape and pattern, and listed for lookup", () => {
+  const r = buildDegreeAdvice(reply([
+    act({ code: "mgmt 2380", for: "R1" }),
+    act({ code: "HIST 1000", for: "R2" }),
+    act({ code: "MGMT 2380", for: "R9" }),
+    act({ code: "ENGL 1000", for: null }),
+    act({ code: "MGMT 238", for: "R1" }),
+    act({ code: "ENGL 1000", for: "R1" }),
+    act({ code: "CIS 4710", for: "R2" }),
+    act({ code: "CIS 4710", for: "R7", term: "202810" }),
+  ]), picksBody());
+  assert.deepEqual(r.actions.map((a) => [a.code, a.for]), [
+    ["MGMT 2380", "R1"], ["HIST 1000", "R2"], ["CIS 4710", "R2"], ["CIS 4710", null],
+  ]);
+  assert.deepEqual(r.pickCodes.sort(), ["HIST 1000", "MGMT 2380"]);
+});
+
+Deno.test("degree-advisor: finalize drops unverified picks and fills title and credits", () => {
+  const draft = buildDegreeAdvice(reply([
+    act({ code: "MGMT 2380", for: "R1" }),
+    act({ code: "HIST 1000", for: "R2" }),
+    act({ code: "CIS 4710", for: "R2" }),
+    { op: "remove", code: "CIS 1200", term: "202730", toTerm: null, for: "R1" },
+  ]), picksBody());
+  const out = finalizeDegreeAdvice(draft, new Map([["MGMT 2380", { title: "Negotiations", credits: 1 }], ["HIST 1000", { title: "Old", credits: null }]]));
+  assert.deepEqual(out.actions, [
+    { op: "add", code: "MGMT 2380", term: "202730", toTerm: null, for: "R1", title: "Negotiations", credits: 1 },
+    { op: "add", code: "HIST 1000", term: "202730", toTerm: null, for: "R2", title: "Old", credits: null },
+    { op: "add", code: "CIS 4710", term: "202730", toTerm: null, for: "R2", title: null, credits: null },
+    { op: "remove", code: "CIS 1200", term: "202730", toTerm: null, for: null, title: null, credits: null },
+  ]);
+  const none = finalizeDegreeAdvice(draft, new Map());
+  assert.deepEqual(none.actions.map((a) => a.code), ["CIS 4710", "CIS 1200"]);
+});
+
+Deno.test("degree-advisor: a whatIf still empties picks too", () => {
+  const b = bodyOf({ programs: [prog], requirements: picksBody().requirements });
+  const r = buildDegreeAdvice(reply([act({ code: "MGMT 2380", for: "R1" })], "x", "FNCS-BS"), b);
+  assert.deepEqual(r.actions, []);
+  assert.deepEqual(r.pickCodes, []);
+});
+
+Deno.test("degree-advisor: a 200 verifies picks against Penn and drops unknown ones", async () => {
+  const content = JSON.stringify({
+    actions: [
+      { op: "add", code: "MGMT 2380", term: "202730", toTerm: null, for: "R1" },
+      { op: "add", code: "MGMT 2999", term: "202730", toTerm: null, for: "R1" },
+    ],
+    whatIf: null,
+    answer: "done",
+  });
+  const stub = installStub({ reserve: () => GRANTED, openrouter: { kind: "json", content } });
+  const stubFetch = globalThis.fetch;
+  globalThis.fetch = ((input: Request | URL | string, init?: RequestInit) => {
+    const url = String(input);
+    if (url.startsWith("https://penncoursereview.com/")) {
+      if (url.includes("MGMT-2380")) {
+        return Promise.resolve(new Response(JSON.stringify({ id: "MGMT-2380", title: "Negotiations", credits: "1.00" }), { status: 200 }));
+      }
+      return Promise.resolve(new Response("{}", { status: 404 }));
+    }
+    return stubFetch(input as any, init);
+  }) as typeof fetch;
+  try {
+    const res = await handleDegreeAdvisor(
+      new Request("http://functions.test/degree-advisor", {
+        method: "POST",
+        headers: { Authorization: "Bearer test-jwt", "content-type": "application/json" },
+        body: JSON.stringify(valid({
+          requirements: [req({ patterns: ["MGMT @"] })],
+        })),
+      }),
+    );
+    assert.equal(res.status, 200);
+    const out = await res.json();
+    assert.deepEqual(out.actions, [
+      { op: "add", code: "MGMT 2380", term: "202730", toTerm: null, for: "R1", title: "Negotiations", credits: 1 },
+    ]);
+  } finally {
+    globalThis.fetch = stubFetch;
     stub.restore();
   }
 });

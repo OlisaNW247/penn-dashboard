@@ -1127,7 +1127,7 @@ discussed today have been posted." into an overdue assignment.
 
 ## `degree-advisor`
 
-Request `{ "question", "history": [{ "role": "user"|"assistant", "content" }], "context", "terms": [{ "code", "label" }], "addable": [course code], "programs"?: [{ "code", "name", "kind" }], "now": ISO8601 }`.
+Request `{ "question", "history": [{ "role": "user"|"assistant", "content" }], "context", "terms": [{ "code", "label" }], "addable": [course code], "programs"?: [{ "code", "name", "kind" }], "requirements"?: [{ "tag", "label", "degree", "need", "patterns": [string] }], "now": ISO8601 }`.
 `context` is a text document the phone builds: Penn's audit for each of the
 student's degrees, their semesters and their own plan. `terms` and `addable`
 are the term codes (six digits, e.g. `202730`) and course codes (e.g.
@@ -1137,7 +1137,15 @@ fetch a what-if audit for, the student's concentration options and sibling
 majors, each `code` 1 to 40 characters, `name` 1 to 80, `kind` 1 to 20, at most
 80 of them.
 
-Response `{ "actions": [ { "op": "add"|"remove"|"move", "code", "term", "toTerm": string|null } ], "whatIf": string|null, "answer": string, "model": string }`.
+`requirements` is optional (missing reads as `[]`): the requirements Penn
+describes in words with no course list. `tag` matches `R` plus 1 to 3 digits
+and is unique; `label` 1 to 160 characters; `degree` 0 to 80; `need` 0 to 40
+(for example "need 4 courses", "need 2 cu", or ""); `patterns` 0 to 20 strings
+of 1 to 20 characters each (Degree Works wildcards such as "MGMT @", "CIS 2@",
+"@ @"); at most 120 entries. Any violation makes the whole body malformed.
+They are rendered to the model as a REQUIREMENTS section after ADDABLE.
+
+Response `{ "actions": [ { "op": "add"|"remove"|"move", "code", "term", "toTerm": string|null, "for": string|null, "title": string|null, "credits": number|null } ], "whatIf": string|null, "answer": string, "model": string }`.
 `answer` is at most 2000 characters (the prompt asks for 150 words and not to
 list the added codes, which the app shows itself); `actions` is empty for a
 plain question. The schema orders the fields `actions`, `whatIf`, `answer` so
@@ -1150,9 +1158,31 @@ is set, the phone fetches Penn's audit for that program and sends the question
 again with that audit in `context` and `programs: []`. The server drops any action the model should not
 have made: an `add` of a code not in `addable`, a `term` or `toTerm` not in
 `terms`, a `move` whose `toTerm` is missing or equal to `term`, duplicates, and
-anything past 60. Codes come back upper-cased with single spaces. `toTerm` is
+anything past 80. Codes come back upper-cased with single spaces. `toTerm` is
 null except for `move`. The phone validates again; the server's check exists
 because the model's output is untrusted.
+
+**Picks.** An `add` whose code is not in `addable` is a *pick*, a real Penn
+course for a requirement Penn lists no courses for. It is kept only if `for`
+names a tag in `requirements`, the code looks like `SUBJ 1234` (2 to 5 letters,
+four digits), it matches at least one of that requirement's `patterns` (when it
+has any; `@` as the subject matches any subject, `@` or all-`@` as the number
+matches any number, digits then `@` is a prefix, plain digits are exact, and
+anything else, such as a range, matches nothing), and Penn's catalogue knows it
+(below). A kept pick carries `for`, and `title` and `credits` (null when Penn
+Labs gives none) from the catalogue. For an `add` of an `addable` code, `for`
+is passed through only if it is a listed tag, else null, and `title` and
+`credits` are null. `remove` and `move` carry null for all three.
+
+**Penn Labs check.** After the model answers, the server looks each distinct
+pick code (at most 40; extras are unverified and dropped) up at
+`https://penncoursereview.com/api/base/{semester}/courses/{SUBJ}-{NUM}/`, for
+the current academic semester and then the next regular one (summer skipped;
+never Penn Labs' `current`), with a 3 s timeout per request, all in parallel. A
+200 with a string `id` and `title` counts as found; anything else leaves the
+pick unverified and it is dropped silently. What leaves the server for this is
+course codes only, to penncoursereview.com: no student data, no question, no
+document. The log carries counts only (`degree-advisor: picks 12 kept 10`).
 
 Caps (anything over, or malformed, is 400 `bad_request`, "malformed
 degree-advisor request"; unknown extra keys are ignored): `question` 1 to 1000
@@ -1174,7 +1204,7 @@ it.
 Model `LHF_DEGREE_MODEL` (default `anthropic/claude-sonnet-5.5`), fallback
 `LHF_DEGREE_FALLBACK_MODEL` (default `anthropic/claude-haiku-5.5`), provider
 order `LHF_PROVIDER_ORDER`. Strict JSON schema, `reasoning: { effort: "medium" }`,
-4000 max tokens, temperature 0.2 (a whole-plan answer is up to 60 actions;
+6000 max tokens, temperature 0.2 (a whole-plan answer is up to 80 actions;
 version 1's low effort and 1500 tokens produced a plan of two courses).
 
 ## `map-categories`
