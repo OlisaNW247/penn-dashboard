@@ -75,20 +75,24 @@ public enum PassageSituating {
         return "\(word) \(dayWithAge(date, askedAt: askedAt, in: timeZone))"
     }
 
-    /// The fixed zone the index uses for the absolute date, because the index
-    /// is built without a question. Penn and every other supported school keep
-    /// Eastern time, and a one-day slip in an indexed digit string costs
-    /// nothing (the label the model reads uses the student's own zone).
-    static let indexTimeZone = TimeZone(identifier: "America/New_York") ?? .gmt
-
-    /// `<course code> <kind word> "<title>" <absolute date if dated>`, the one
-    /// situating line indexed with every passage of `document`. Course and kind
-    /// come first because `BM25Index` keeps only the first dozen distinct
-    /// words of it, and those two are the ones a title cannot supply.
+    /// `<kind word> "<title>"`, the one situating line indexed with every
+    /// passage of `document`, so "late policy announcement" or "syllabus
+    /// grading" reaches a passage whose body never says which kind of
+    /// document it sits in.
+    ///
+    /// Deliberately not the course code and not the date (2026-11-15: the
+    /// first runner compile of this file failed four tests over exactly
+    /// that). The course code put "cis" and "2620" on every passage of the
+    /// course, so a class-meeting question naming the course matched every
+    /// old Ed post and let a 20-day-old one back into the block through the
+    /// search fill, which the meeting rule exists to keep out; and the scope
+    /// filter (`courseIDs`, from `FollowUpRetrieval`) already restricts a
+    /// question that names a course to that course, so the code bought
+    /// nothing. The date's digits ("2026", "11", "01") matched questions with
+    /// numbers in them ("exam 2", "hw 11"), and the label the model reads
+    /// already carries the date.
     public static func indexLine(for document: CourseDocument) -> String {
-        var parts = [document.course, document.kind.label, "\"\(document.title)\""]
-        if let date = document.shownPostedAt { parts.append(absoluteDay(date, in: indexTimeZone)) }
-        return parts.joined(separator: " ")
+        "\(document.kind.label) \"\(document.title)\""
     }
 
     private static func calendar(in timeZone: TimeZone) -> Calendar {

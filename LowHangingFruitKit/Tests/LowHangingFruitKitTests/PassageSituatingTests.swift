@@ -94,14 +94,16 @@ struct PassageSituatingTests {
 
     private static let lateBody = "Late work loses ten percent per day, and nothing is accepted after the fifth day."
 
-    @Test("a query naming only the course and the kind finds that course's syllabus, whose body never says so")
-    func courseAndKindFindThePassage() throws {
-        let cisSyllabus = Self.document(.syllabus, title: "Course information", text: Self.lateBody, updatedAt: nil, course: "CIS 2620", id: "cis-s")
-        let mathSyllabus = Self.document(.syllabus, title: "Course information", text: Self.lateBody, updatedAt: nil, course: "MATH 1400", id: "math-s")
-        let cisPage = Self.document(.page, title: "Course information", text: Self.lateBody, updatedAt: nil, course: "CIS 2620", id: "cis-p")
-        let hits = Self.search([mathSyllabus, cisPage, cisSyllabus]).search("cis 2620 syllabus late policy", limit: 3, perDocument: 1)
+    // Rewritten 2026-11-15: the index line no longer carries the course code
+    // (the scope filter does that job, and the code let old posts back into
+    // class-meeting answers), so this pins the kind word instead.
+    @Test("a query naming the kind finds the passage whose title and body never say it")
+    func kindFindsThePassage() throws {
+        let announcement = Self.document(.announcement, title: "Course information", text: Self.lateBody, updatedAt: nil, id: "ann")
+        let page = Self.document(.page, title: "Course information", text: Self.lateBody, updatedAt: nil, id: "page")
+        let hits = Self.search([page, announcement]).search("announcement", limit: 2, perDocument: 1)
         let first = try #require(hits.first)
-        #expect(first.document.id == cisSyllabus.id)
+        #expect(first.document.id == announcement.id)
     }
 
     @Test("the stored document is byte-identical after indexing")
@@ -123,11 +125,11 @@ struct PassageSituatingTests {
         #expect(hits.first?.document.id == late.id)
     }
 
-    @Test("the index line is course, kind, title and an Eastern date when dated; no date when not")
+    @Test("the index line is the kind word and the title, with no course code and no date")
     func indexLineShape() {
         let dated = Self.document(.ed, title: "Room change", updatedAt: Self.eastern(2026, 11, 1, 22))
-        #expect(PassageSituating.indexLine(for: dated) == "CIS 2620 ed discussion \"Room change\" 2026-11-01")
+        #expect(PassageSituating.indexLine(for: dated) == "ed discussion \"Room change\"")
         let undated = Self.document(.syllabus, title: "Course information", updatedAt: nil)
-        #expect(PassageSituating.indexLine(for: undated) == "CIS 2620 syllabus \"Course information\"")
+        #expect(PassageSituating.indexLine(for: undated) == "syllabus \"Course information\"")
     }
 }
