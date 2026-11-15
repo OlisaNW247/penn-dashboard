@@ -1,0 +1,3405 @@
+{
+ "cs": {
+  "goals": {
+   "college": "EU",
+   "school": null,
+   "program": "EU_BSE",
+   "degree": "BSE",
+   "majors": [
+    "CSCI"
+   ],
+   "concentrations": [],
+   "minors": [],
+   "catalogYear": "202430"
+  },
+  "isWhatIf": false,
+  "percentComplete": 50,
+  "degreeLabel": null,
+  "catalogYearLabel": "202430",
+  "blocks": [
+   {
+    "id": "b0",
+    "type": "DEGREE",
+    "value": "",
+    "title": "Degree in Bachelor of Science in Engineering",
+    "percentComplete": null,
+    "rules": [
+     {
+      "id": "r2",
+      "label": "Minimum Total Credits Required",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r1",
+        "label": "You currently have 20 CU.",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "r3",
+      "label": "Major Requirements - See Major in Computer Science",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": []
+     },
+     {
+      "id": "r4",
+      "label": "General Electives - See separate block",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": []
+     }
+    ]
+   },
+   {
+    "id": "b1",
+    "type": "MAJOR",
+    "value": "",
+    "title": "Major in Computer Science",
+    "percentComplete": null,
+    "rules": [
+     {
+      "id": "r6",
+      "label": "Minimum Credits Requirement",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r5",
+        "label": "29 CU are required. You currently have 12. You still need 17 more.",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "r7",
+      "label": "Minimum Credits Earned from University of Pennsylvania",
+      "ruleType": "comment",
+      "percentComplete": null,
+      "status": "info",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": []
+     },
+     {
+      "id": "r9",
+      "label": "Area List - Networking",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r8",
+        "label": "A course from the following list is required: NETS 1500, NETS 2120, CIS 4510, CIS 5510, CIS 4550, CIS 5550, CIS 5050, or CIS 5530",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "r10",
+      "label": "Area List - Databases",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "met",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": []
+     },
+     {
+      "id": "r11",
+      "label": "Area List - Project",
+      "ruleType": "comment",
+      "percentComplete": null,
+      "status": "info",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": []
+     },
+     {
+      "id": "r19",
+      "label": "MATH AND NATURAL SCIENCE (9 CU)",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": 2,
+      "appliedCredits": 2,
+      "applied": [
+       {
+        "code": "MATH 1400",
+        "title": "MATH 1400",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       },
+       {
+        "code": "MATH 1410",
+        "title": "MATH 1410",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       }
+      ],
+      "advice": [],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r12",
+        "label": "Probability/Statistics Elective",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "met",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": 1,
+        "appliedCredits": 1,
+        "applied": [
+         {
+          "code": "ESE 3010",
+          "title": "ESE 3010",
+          "credits": 1,
+          "termCode": null,
+          "isInProgress": false,
+          "isTransfer": false
+         }
+        ],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       },
+       {
+        "id": "r13",
+        "label": "Calc III or Algebra Course",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "open",
+        "needCourses": 1,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [
+         {
+          "code": "MATH 2400",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "MATH 2600",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "MATH 3120",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "MATH 3130",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "MATH 3140",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "ESE 2030",
+          "title": null,
+          "credits": 1
+         }
+        ],
+        "adviceText": "Choose 1  of the following:",
+        "children": []
+       },
+       {
+        "id": "r15",
+        "label": "PHYSICS I",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "met",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": [
+         {
+          "id": "r14",
+          "label": "Physics I - See Appendix 1",
+          "ruleType": "group",
+          "percentComplete": null,
+          "status": "met",
+          "needCourses": null,
+          "needCredits": null,
+          "appliedCount": null,
+          "appliedCredits": null,
+          "applied": [],
+          "advice": [],
+          "adviceText": null,
+          "children": []
+         }
+        ]
+       },
+       {
+        "id": "r18",
+        "label": "Math and Natural Science Elective",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "open",
+        "needCourses": null,
+        "needCredits": 1,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": "Choose 1 CU from:",
+        "children": [
+         {
+          "id": "r16",
+          "label": "Any course(s) with attribute EUNS",
+          "ruleType": "comment",
+          "percentComplete": null,
+          "status": "info",
+          "needCourses": null,
+          "needCredits": null,
+          "appliedCount": null,
+          "appliedCredits": null,
+          "applied": [],
+          "advice": [],
+          "adviceText": null,
+          "children": []
+         },
+         {
+          "id": "r17",
+          "label": "Any course(s) with attribute EUMA",
+          "ruleType": "comment",
+          "percentComplete": null,
+          "status": "info",
+          "needCourses": null,
+          "needCredits": null,
+          "appliedCount": null,
+          "appliedCredits": null,
+          "applied": [],
+          "advice": [],
+          "adviceText": null,
+          "children": []
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "id": "r30",
+      "label": "ENGINEERING (14 CU)",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "inProgress",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": 3,
+      "appliedCredits": 3,
+      "applied": [
+       {
+        "code": "CIS 1200",
+        "title": "CIS 1200",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       },
+       {
+        "code": "CIS 1210",
+        "title": "CIS 1210",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       },
+       {
+        "code": "CIS 2400",
+        "title": "CIS 2400",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": true,
+        "isTransfer": false
+       }
+      ],
+      "advice": [
+       {
+        "code": "CIS 3200",
+        "title": null,
+        "credits": 1
+       }
+      ],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r20",
+        "label": "CIS 1100 or CIS Elective",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "met",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": 1,
+        "appliedCredits": 1,
+        "applied": [
+         {
+          "code": "CIS 1100",
+          "title": "CIS 1100",
+          "credits": 1,
+          "termCode": null,
+          "isInProgress": false,
+          "isTransfer": false
+         }
+        ],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       },
+       {
+        "id": "r21",
+        "label": "Operating Systems",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "open",
+        "needCourses": 1,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [
+         {
+          "code": "CIS 4480",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "CIS 5480",
+          "title": null,
+          "credits": 1
+         }
+        ],
+        "adviceText": "Choose 1  of the following:",
+        "children": []
+       },
+       {
+        "id": "r22",
+        "label": "Computer Organization and Design",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "open",
+        "needCourses": 1,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [
+         {
+          "code": "CIS 4710",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "CIS 5710",
+          "title": null,
+          "credits": 1
+         }
+        ],
+        "adviceText": "Choose 1  of the following:",
+        "children": []
+       },
+       {
+        "id": "r23",
+        "label": "Senior Project #1",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "open",
+        "needCourses": 1,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [
+         {
+          "code": "CIS 4000",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "CIS 4100",
+          "title": null,
+          "credits": 1
+         }
+        ],
+        "adviceText": "Choose 1  of the following:",
+        "children": []
+       },
+       {
+        "id": "r24",
+        "label": "Senior Project #2",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "open",
+        "needCourses": 1,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [
+         {
+          "code": "CIS 4010",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "CIS 4110",
+          "title": null,
+          "credits": 1
+         }
+        ],
+        "adviceText": "Choose 1  of the following:",
+        "children": []
+       },
+       {
+        "id": "r25",
+        "label": "CIS Elective",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "met",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": 1,
+        "appliedCredits": 1,
+        "applied": [
+         {
+          "code": "CIS 4190",
+          "title": "CIS 4190",
+          "credits": 1,
+          "termCode": null,
+          "isInProgress": false,
+          "isTransfer": false
+         }
+        ],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       },
+       {
+        "id": "r29",
+        "label": "CIS Elective at the 2000 Level or Above",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "inProgress",
+        "needCourses": null,
+        "needCredits": 3,
+        "appliedCount": 1,
+        "appliedCredits": 1,
+        "applied": [
+         {
+          "code": "CIS 3330",
+          "title": "CIS 3330",
+          "credits": 1,
+          "termCode": null,
+          "isInProgress": true,
+          "isTransfer": false
+         }
+        ],
+        "advice": [
+         {
+          "code": "ESE 3500",
+          "title": null,
+          "credits": 1
+         }
+        ],
+        "adviceText": "Choose 3 CU from:",
+        "children": [
+         {
+          "id": "r26",
+          "label": "Any CIS 2000-9999 course(s)",
+          "ruleType": "comment",
+          "percentComplete": null,
+          "status": "info",
+          "needCourses": null,
+          "needCredits": null,
+          "appliedCount": null,
+          "appliedCredits": null,
+          "applied": [],
+          "advice": [],
+          "adviceText": null,
+          "children": []
+         },
+         {
+          "id": "r27",
+          "label": "Any NETS 2000-5999 course(s)",
+          "ruleType": "comment",
+          "percentComplete": null,
+          "status": "info",
+          "needCourses": null,
+          "needCredits": null,
+          "appliedCount": null,
+          "appliedCredits": null,
+          "applied": [],
+          "advice": [],
+          "adviceText": null,
+          "children": []
+         },
+         {
+          "id": "r28",
+          "label": "Note: This requirement may not be satisfied with any course(s) with attribute EUNE or any 2970 course(s).",
+          "ruleType": "comment",
+          "percentComplete": null,
+          "status": "info",
+          "needCourses": null,
+          "needCredits": null,
+          "appliedCount": null,
+          "appliedCredits": null,
+          "applied": [],
+          "advice": [],
+          "adviceText": null,
+          "children": []
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "id": "r34",
+      "label": "TECHNICAL ELECTIVES",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r31",
+        "label": "Restricted or Unrestricted Technical Electives",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "met",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": 1,
+        "appliedCredits": 1,
+        "applied": [
+         {
+          "code": "ECON 0210",
+          "title": "ECON 0210",
+          "credits": 1,
+          "termCode": null,
+          "isInProgress": false,
+          "isTransfer": false
+         }
+        ],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       },
+       {
+        "id": "r33",
+        "label": "Unrestricted Technical Electives",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "open",
+        "needCourses": null,
+        "needCredits": 5,
+        "appliedCount": 2,
+        "appliedCredits": 2,
+        "applied": [
+         {
+          "code": "ESE 2150",
+          "title": "ESE 2150",
+          "credits": 1,
+          "termCode": null,
+          "isInProgress": false,
+          "isTransfer": false
+         },
+         {
+          "code": "FNCE 1000",
+          "title": "FNCE 1000",
+          "credits": 1,
+          "termCode": null,
+          "isInProgress": false,
+          "isTransfer": false
+         }
+        ],
+        "advice": [],
+        "adviceText": null,
+        "children": [
+         {
+          "id": "r32",
+          "label": "Any course(s) with attribute EUCU",
+          "ruleType": "comment",
+          "percentComplete": null,
+          "status": "info",
+          "needCourses": null,
+          "needCredits": null,
+          "appliedCount": null,
+          "appliedCredits": null,
+          "applied": [],
+          "advice": [],
+          "adviceText": null,
+          "children": []
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "id": "r35",
+      "label": "PHYS 0150 or PHYS 0170",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "met",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": 1,
+      "appliedCredits": 1.5,
+      "applied": [
+       {
+        "code": "PHYS 0150",
+        "title": "PHYS 0150",
+        "credits": 1.5,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       }
+      ],
+      "advice": [],
+      "adviceText": null,
+      "children": []
+     }
+    ]
+   },
+   {
+    "id": "b2",
+    "type": "OTHER",
+    "value": "",
+    "title": "General Electives",
+    "percentComplete": null,
+    "rules": [
+     {
+      "id": "r37",
+      "label": "Minimum Credits Requirement",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r36",
+        "label": "7 CU are required.",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "r41",
+      "label": "GENERAL ELECTIVES (7 CU)",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r38",
+        "label": "Engineering Ethics - See Appendix 1",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "open",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       },
+       {
+        "id": "r39",
+        "label": "Humanities or Social Science",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "met",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": 2,
+        "appliedCredits": 2,
+        "applied": [
+         {
+          "code": "ECON 0100",
+          "title": "ECON 0100",
+          "credits": 1,
+          "termCode": null,
+          "isInProgress": false,
+          "isTransfer": false
+         },
+         {
+          "code": "LGST 1000",
+          "title": "LGST 1000",
+          "credits": 1,
+          "termCode": null,
+          "isInProgress": false,
+          "isTransfer": false
+         }
+        ],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       },
+       {
+        "id": "r40",
+        "label": "Humanities, Social Science, or Technology in Business and Society",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "inProgress",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": 1,
+        "appliedCredits": 1,
+        "applied": [
+         {
+          "code": "LGST 1010",
+          "title": "LGST 1010",
+          "credits": 1,
+          "termCode": null,
+          "isInProgress": true,
+          "isTransfer": false
+         }
+        ],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "r42",
+      "label": "Ethics Course",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": 1,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [
+       {
+        "code": "CIS 4230",
+        "title": null,
+        "credits": 1
+       },
+       {
+        "code": "CIS 5230",
+        "title": null,
+        "credits": 1
+       },
+       {
+        "code": "EAS 2030",
+        "title": null,
+        "credits": 1
+       },
+       {
+        "code": "LAWM 5060",
+        "title": null,
+        "credits": 1
+       }
+      ],
+      "adviceText": "Choose 1 CU from:",
+      "children": []
+     }
+    ]
+   },
+   {
+    "id": "b3",
+    "type": "OTHER",
+    "value": "",
+    "title": "SEAS Writing Requirement",
+    "percentComplete": null,
+    "rules": [
+     {
+      "id": "r43",
+      "label": "SEAS Writing",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "met",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": []
+     }
+    ]
+   },
+   {
+    "id": "b4",
+    "type": "CL_SYNTHETIC_BLOCK",
+    "value": "",
+    "title": "Elective Coursework",
+    "percentComplete": null,
+    "rules": [
+     {
+      "id": "r44",
+      "label": "courses",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "inProgress",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": 2,
+      "appliedCredits": 2,
+      "applied": [
+       {
+        "code": "ACCT 1010",
+        "title": "ACCT 1010",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": true,
+        "isTransfer": false
+       },
+       {
+        "code": "MKTG 1010",
+        "title": "MKTG 1010",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       }
+      ],
+      "advice": [],
+      "adviceText": null,
+      "children": []
+     },
+     {
+      "id": "r45",
+      "label": "Note: If you are pursuing more than one degree, courses for another degree may also be listed here as \"Elective Coursework\".",
+      "ruleType": "comment",
+      "percentComplete": null,
+      "status": "info",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": []
+     }
+    ]
+   },
+   {
+    "id": "b5",
+    "type": "N/A",
+    "value": "",
+    "title": "Exceptions Applied",
+    "percentComplete": null,
+    "rules": []
+   }
+  ],
+  "courses": [
+   {
+    "code": "MATH 1400",
+    "title": "MATH 1400",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "MATH 1410",
+    "title": "MATH 1410",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "ESE 3010",
+    "title": "ESE 3010",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "CIS 1200",
+    "title": "CIS 1200",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "CIS 1210",
+    "title": "CIS 1210",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "CIS 2400",
+    "title": "CIS 2400",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "CIS 1100",
+    "title": "CIS 1100",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "CIS 4190",
+    "title": "CIS 4190",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "CIS 3330",
+    "title": "CIS 3330",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "ECON 0210",
+    "title": "ECON 0210",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "ESE 2150",
+    "title": "ESE 2150",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "FNCE 1000",
+    "title": "FNCE 1000",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "PHYS 0150",
+    "title": "PHYS 0150",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "ECON 0100",
+    "title": "ECON 0100",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "LGST 1000",
+    "title": "LGST 1000",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "LGST 1010",
+    "title": "LGST 1010",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "ACCT 1010",
+    "title": "ACCT 1010",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "MKTG 1010",
+    "title": "MKTG 1010",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   }
+  ],
+  "fetchedAt": "2026-11-15T12:00:00Z"
+ },
+ "whMgmt": {
+  "goals": {
+   "college": "WU",
+   "school": null,
+   "program": "WU_BS_WUNG",
+   "degree": "BS",
+   "majors": [
+    "MGMT"
+   ],
+   "concentrations": [],
+   "minors": [],
+   "catalogYear": "202430"
+  },
+  "isWhatIf": true,
+  "percentComplete": 50,
+  "degreeLabel": null,
+  "catalogYearLabel": "202430",
+  "blocks": [
+   {
+    "id": "w0",
+    "type": "DEGREE",
+    "value": "",
+    "title": "Degree in Bachelor of Science in Economics",
+    "percentComplete": null,
+    "rules": [
+     {
+      "id": "r65",
+      "label": "Business Fundamentals - See separate block",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": []
+     },
+     {
+      "id": "r66",
+      "label": "Concentration Requirement(s) - See Concentration in Management (MGMT)",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": []
+     }
+    ]
+   },
+   {
+    "id": "w1",
+    "type": "OTHER",
+    "value": "",
+    "title": "First-Year Foundations",
+    "percentComplete": null,
+    "rules": [
+     {
+      "id": "r67",
+      "label": "First-Year",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "met",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": 2,
+      "appliedCredits": 2,
+      "applied": [
+       {
+        "code": "MATH 1400",
+        "title": "MATH 1400",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       },
+       {
+        "code": "ECON 0100",
+        "title": "ECON 0100",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       }
+      ],
+      "advice": [],
+      "adviceText": null,
+      "children": []
+     }
+    ]
+   },
+   {
+    "id": "w2",
+    "type": "OTHER",
+    "value": "",
+    "title": "Business Fundamentals",
+    "percentComplete": null,
+    "rules": [
+     {
+      "id": "r69",
+      "label": "Minimum Credits Requirement",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r68",
+        "label": "15 CU are required. You currently have 8. You still need 7 more.",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "r71",
+      "label": "LEADERSHIP JOURNEY",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": 2,
+      "appliedCredits": 1,
+      "applied": [
+       {
+        "code": "WH 1010",
+        "title": "WH 1010",
+        "credits": 0.5,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       },
+       {
+        "code": "WH 2010",
+        "title": "WH 2010",
+        "credits": 0.5,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       }
+      ],
+      "advice": [
+       {
+        "code": "MGMT 3010",
+        "title": null,
+        "credits": 1
+       }
+      ],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r70",
+        "label": "Senior Capstone",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "open",
+        "needCourses": 1,
+        "needCredits": 0.5,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [
+         {
+          "code": "BE 4950",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "BE 4980",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "CIS 4000",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "CIS 4970",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "CIS 4980",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "ESE 4500",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "EAS 4990",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "MEAM 4450",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "MSE 4950",
+          "title": null,
+          "credits": 1
+         }
+        ],
+        "adviceText": "Choose 1 class for at least 0.5 CU from:",
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "r75",
+      "label": "FUNDAMENTALS",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": 4,
+      "appliedCredits": 4,
+      "applied": [
+       {
+        "code": "ACCT 1010",
+        "title": "ACCT 1010",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": true,
+        "isTransfer": false
+       },
+       {
+        "code": "FNCE 1000",
+        "title": "FNCE 1000",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       },
+       {
+        "code": "MGMT 1010",
+        "title": "MGMT 1010",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       },
+       {
+        "code": "MKTG 1010",
+        "title": "MKTG 1010",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       }
+      ],
+      "advice": [
+       {
+        "code": "ACCT 1020",
+        "title": null,
+        "credits": 1
+       },
+       {
+        "code": "OIDD 1010",
+        "title": null,
+        "credits": 1
+       }
+      ],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r72",
+        "label": "Managerial Economics",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "open",
+        "needCourses": null,
+        "needCredits": 1,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [
+         {
+          "code": "BEPP 2500",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "BEPP 2508",
+          "title": null,
+          "credits": 1
+         }
+        ],
+        "adviceText": "Choose 1 CU from:",
+        "children": []
+       },
+       {
+        "id": "r73",
+        "label": "Intro Business Stat I",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "met",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": 1,
+        "appliedCredits": 1,
+        "applied": [
+         {
+          "code": "STAT 1010",
+          "title": "STAT 1010",
+          "credits": 1,
+          "termCode": null,
+          "isInProgress": false,
+          "isTransfer": false
+         }
+        ],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       },
+       {
+        "id": "r74",
+        "label": "Intro Business Stat II",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "open",
+        "needCourses": null,
+        "needCredits": 1,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [
+         {
+          "code": "STAT 1020",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "STAT 1028",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "STAT 4310",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "ESE 4020",
+          "title": null,
+          "credits": 1
+         }
+        ],
+        "adviceText": "Choose 1 CU from:",
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "r80",
+      "label": "FLEX FUNDAMENTALS",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r77",
+        "label": "Global Economy, Business and Society",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "open",
+        "needCourses": null,
+        "needCredits": 1,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": "Choose 1 CU from:",
+        "children": [
+         {
+          "id": "r76",
+          "label": "Any course(s) with attribute WUGE",
+          "ruleType": "comment",
+          "percentComplete": null,
+          "status": "info",
+          "needCourses": null,
+          "needCredits": null,
+          "appliedCount": null,
+          "appliedCredits": null,
+          "applied": [],
+          "advice": [],
+          "adviceText": null,
+          "children": []
+         }
+        ]
+       },
+       {
+        "id": "r79",
+        "label": "Technology, Innovation, and Analytics",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "open",
+        "needCourses": null,
+        "needCredits": 1,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [
+         {
+          "code": "OIDD 4770",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "STAT 4770",
+          "title": null,
+          "credits": 1
+         }
+        ],
+        "adviceText": "Choose 1 CU from:",
+        "children": [
+         {
+          "id": "r78",
+          "label": "Any course(s) with attribute WUTI",
+          "ruleType": "comment",
+          "percentComplete": null,
+          "status": "info",
+          "needCourses": null,
+          "needCredits": null,
+          "appliedCount": null,
+          "appliedCredits": null,
+          "applied": [],
+          "advice": [],
+          "adviceText": null,
+          "children": []
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "w3",
+    "type": "OTHER",
+    "value": "",
+    "title": "Liberal Arts and Sciences",
+    "percentComplete": null,
+    "rules": [
+     {
+      "id": "r82",
+      "label": "Minimum Credits Requirement",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r81",
+        "label": "7 CU are required.",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "r84",
+      "label": "Humanities",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": 1,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": "Choose 1 CU from:",
+      "children": [
+       {
+        "id": "r83",
+        "label": "Any course(s) with attribute WUHM",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "r85",
+      "label": "Natural Science, Math, Engineering",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "met",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": 1,
+      "appliedCredits": 1,
+      "applied": [
+       {
+        "code": "CIS 1100",
+        "title": "CIS 1100",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       }
+      ],
+      "advice": [],
+      "adviceText": null,
+      "children": []
+     },
+     {
+      "id": "r86",
+      "label": "Social Science",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "met",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": 1,
+      "appliedCredits": 1,
+      "applied": [
+       {
+        "code": "ECON 0210",
+        "title": "ECON 0210",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       }
+      ],
+      "advice": [],
+      "adviceText": null,
+      "children": []
+     },
+     {
+      "id": "r87",
+      "label": "Flexible Gen Eds",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "inProgress",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": 2,
+      "appliedCredits": 1.5,
+      "applied": [
+       {
+        "code": "ENGL 1050",
+        "title": "ENGL 1050",
+        "credits": 0.5,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       },
+       {
+        "code": "CIS 3330",
+        "title": "CIS 3330",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": true,
+        "isTransfer": false
+       }
+      ],
+      "advice": [],
+      "adviceText": null,
+      "children": []
+     },
+     {
+      "id": "r89",
+      "label": "Cross-Cultural Non-U.S. or U.S.",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": 3,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": "Choose 3 CU from:",
+      "children": [
+       {
+        "id": "r88",
+        "label": "Any course(s) with attribute WUCN or WUCU",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "r91",
+      "label": "Foreign Language Proficiency",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": 1,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": "Choose 1 CU from:",
+      "children": [
+       {
+        "id": "r90",
+        "label": "Any course(s) with attribute WUFL",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "w4",
+    "type": "OTHER",
+    "value": "",
+    "title": "Business Breadth",
+    "percentComplete": null,
+    "rules": [
+     {
+      "id": "r93",
+      "label": "Minimum Credits Requirement",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r92",
+        "label": "3 CU are required. You currently have 1. You still need 2 more.",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "r94",
+      "label": "Business Breadth requirements are under development. Contact your Advisor for more information.",
+      "ruleType": "comment",
+      "percentComplete": null,
+      "status": "info",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": []
+     },
+     {
+      "id": "r64",
+      "label": "Business Breadth (1 concentration)",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": 3,
+      "appliedCount": 1,
+      "appliedCredits": 1,
+      "applied": [
+       {
+        "code": "LGST 1000",
+        "title": "LGST 1000",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       }
+      ],
+      "advice": [],
+      "adviceText": "Choose 3 CU from:",
+      "children": [
+       {
+        "id": "r53",
+        "label": "Any ACCT course(s)",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       },
+       {
+        "id": "r54",
+        "label": "Any BEPP course(s)",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       },
+       {
+        "id": "r55",
+        "label": "Any FNCE course(s)",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       },
+       {
+        "id": "r56",
+        "label": "Any HCMG course(s)",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       },
+       {
+        "id": "r57",
+        "label": "Any LGST course(s)",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       },
+       {
+        "id": "r58",
+        "label": "Any MGMT course(s)",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       },
+       {
+        "id": "r59",
+        "label": "Any MKTG course(s)",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       },
+       {
+        "id": "r60",
+        "label": "Any OIDD course(s)",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       },
+       {
+        "id": "r61",
+        "label": "Any REAL course(s)",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       },
+       {
+        "id": "r62",
+        "label": "Any STAT course(s)",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       },
+       {
+        "id": "r63",
+        "label": "Any WH course(s)",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "w5",
+    "type": "MAJOR",
+    "value": "",
+    "title": "Concentration in Management (MGMT)",
+    "percentComplete": null,
+    "rules": [
+     {
+      "id": "r47",
+      "label": "Minimum Credits Requirement",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r46",
+        "label": "4 CU are required. You currently have 1. You still need 3 more.",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "r52",
+      "label": "GENERAL MANAGEMENT TRACK",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r48",
+        "label": "Only 1.0 cu out of the four total cu may be allotted to the aggregate of Global Modular Courses, Advanced Study Projects, and/or Research Theses.",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       },
+       {
+        "id": "r51",
+        "label": "General Management Electives",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "open",
+        "needCourses": null,
+        "needCredits": 4,
+        "appliedCount": 1,
+        "appliedCredits": 1,
+        "applied": [
+         {
+          "code": "MGMT 2110",
+          "title": "MGMT 2110",
+          "credits": 1,
+          "termCode": null,
+          "isInProgress": false,
+          "isTransfer": false
+         }
+        ],
+        "advice": [],
+        "adviceText": "Choose 4 CU from:",
+        "children": [
+         {
+          "id": "r49",
+          "label": "Any MGMT 1011-4180 course(s)",
+          "ruleType": "comment",
+          "percentComplete": null,
+          "status": "info",
+          "needCourses": null,
+          "needCredits": null,
+          "appliedCount": null,
+          "appliedCredits": null,
+          "applied": [],
+          "advice": [],
+          "adviceText": null,
+          "children": []
+         },
+         {
+          "id": "r50",
+          "label": "Any course(s) with attribute WUMG",
+          "ruleType": "comment",
+          "percentComplete": null,
+          "status": "info",
+          "needCourses": null,
+          "needCredits": null,
+          "appliedCount": null,
+          "appliedCredits": null,
+          "applied": [],
+          "advice": [],
+          "adviceText": null,
+          "children": []
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "courses": [
+   {
+    "code": "MATH 1400",
+    "title": "MATH 1400",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "ECON 0100",
+    "title": "ECON 0100",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "WH 1010",
+    "title": "WH 1010",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "WH 2010",
+    "title": "WH 2010",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "ACCT 1010",
+    "title": "ACCT 1010",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "FNCE 1000",
+    "title": "FNCE 1000",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "MGMT 1010",
+    "title": "MGMT 1010",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "MKTG 1010",
+    "title": "MKTG 1010",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "STAT 1010",
+    "title": "STAT 1010",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "CIS 1100",
+    "title": "CIS 1100",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "ECON 0210",
+    "title": "ECON 0210",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "ENGL 1050",
+    "title": "ENGL 1050",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "CIS 3330",
+    "title": "CIS 3330",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "LGST 1000",
+    "title": "LGST 1000",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "MGMT 2110",
+    "title": "MGMT 2110",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   }
+  ],
+  "fetchedAt": "2026-11-15T12:00:00Z"
+ },
+ "whUndeclared": {
+  "goals": {
+   "college": "WU",
+   "school": null,
+   "program": "WU_BS_WUNG",
+   "degree": "BS",
+   "majors": [
+    "WUNG"
+   ],
+   "concentrations": [],
+   "minors": [],
+   "catalogYear": "202430"
+  },
+  "isWhatIf": false,
+  "percentComplete": 50,
+  "degreeLabel": null,
+  "catalogYearLabel": "202430",
+  "blocks": [
+   {
+    "id": "w0",
+    "type": "DEGREE",
+    "value": "",
+    "title": "Degree in Bachelor of Science in Economics",
+    "percentComplete": null,
+    "rules": [
+     {
+      "id": "r101",
+      "label": "Business Fundamentals - See separate block",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": []
+     },
+     {
+      "id": "r102",
+      "label": "Concentration Requirement(s) - See Concentration in Management (MGMT)",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": []
+     }
+    ]
+   },
+   {
+    "id": "w1",
+    "type": "OTHER",
+    "value": "",
+    "title": "First-Year Foundations",
+    "percentComplete": null,
+    "rules": [
+     {
+      "id": "r103",
+      "label": "First-Year",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "met",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": 2,
+      "appliedCredits": 2,
+      "applied": [
+       {
+        "code": "MATH 1400",
+        "title": "MATH 1400",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       },
+       {
+        "code": "ECON 0100",
+        "title": "ECON 0100",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       }
+      ],
+      "advice": [],
+      "adviceText": null,
+      "children": []
+     }
+    ]
+   },
+   {
+    "id": "w2",
+    "type": "OTHER",
+    "value": "",
+    "title": "Business Fundamentals",
+    "percentComplete": null,
+    "rules": [
+     {
+      "id": "r105",
+      "label": "Minimum Credits Requirement",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r104",
+        "label": "15 CU are required. You currently have 8. You still need 7 more.",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "r107",
+      "label": "LEADERSHIP JOURNEY",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": 2,
+      "appliedCredits": 1,
+      "applied": [
+       {
+        "code": "WH 1010",
+        "title": "WH 1010",
+        "credits": 0.5,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       },
+       {
+        "code": "WH 2010",
+        "title": "WH 2010",
+        "credits": 0.5,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       }
+      ],
+      "advice": [
+       {
+        "code": "MGMT 3010",
+        "title": null,
+        "credits": 1
+       }
+      ],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r106",
+        "label": "Senior Capstone",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "open",
+        "needCourses": 1,
+        "needCredits": 0.5,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [
+         {
+          "code": "BE 4950",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "BE 4980",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "CIS 4000",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "CIS 4970",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "CIS 4980",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "ESE 4500",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "EAS 4990",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "MEAM 4450",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "MSE 4950",
+          "title": null,
+          "credits": 1
+         }
+        ],
+        "adviceText": "Choose 1 class for at least 0.5 CU from:",
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "r111",
+      "label": "FUNDAMENTALS",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": 4,
+      "appliedCredits": 4,
+      "applied": [
+       {
+        "code": "ACCT 1010",
+        "title": "ACCT 1010",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": true,
+        "isTransfer": false
+       },
+       {
+        "code": "FNCE 1000",
+        "title": "FNCE 1000",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       },
+       {
+        "code": "MGMT 1010",
+        "title": "MGMT 1010",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       },
+       {
+        "code": "MKTG 1010",
+        "title": "MKTG 1010",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       }
+      ],
+      "advice": [
+       {
+        "code": "ACCT 1020",
+        "title": null,
+        "credits": 1
+       },
+       {
+        "code": "OIDD 1010",
+        "title": null,
+        "credits": 1
+       }
+      ],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r108",
+        "label": "Managerial Economics",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "open",
+        "needCourses": null,
+        "needCredits": 1,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [
+         {
+          "code": "BEPP 2500",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "BEPP 2508",
+          "title": null,
+          "credits": 1
+         }
+        ],
+        "adviceText": "Choose 1 CU from:",
+        "children": []
+       },
+       {
+        "id": "r109",
+        "label": "Intro Business Stat I",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "met",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": 1,
+        "appliedCredits": 1,
+        "applied": [
+         {
+          "code": "STAT 1010",
+          "title": "STAT 1010",
+          "credits": 1,
+          "termCode": null,
+          "isInProgress": false,
+          "isTransfer": false
+         }
+        ],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       },
+       {
+        "id": "r110",
+        "label": "Intro Business Stat II",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "open",
+        "needCourses": null,
+        "needCredits": 1,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [
+         {
+          "code": "STAT 1020",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "STAT 1028",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "STAT 4310",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "ESE 4020",
+          "title": null,
+          "credits": 1
+         }
+        ],
+        "adviceText": "Choose 1 CU from:",
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "r116",
+      "label": "FLEX FUNDAMENTALS",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r113",
+        "label": "Global Economy, Business and Society",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "open",
+        "needCourses": null,
+        "needCredits": 1,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": "Choose 1 CU from:",
+        "children": [
+         {
+          "id": "r112",
+          "label": "Any course(s) with attribute WUGE",
+          "ruleType": "comment",
+          "percentComplete": null,
+          "status": "info",
+          "needCourses": null,
+          "needCredits": null,
+          "appliedCount": null,
+          "appliedCredits": null,
+          "applied": [],
+          "advice": [],
+          "adviceText": null,
+          "children": []
+         }
+        ]
+       },
+       {
+        "id": "r115",
+        "label": "Technology, Innovation, and Analytics",
+        "ruleType": "group",
+        "percentComplete": null,
+        "status": "open",
+        "needCourses": null,
+        "needCredits": 1,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [
+         {
+          "code": "OIDD 4770",
+          "title": null,
+          "credits": 1
+         },
+         {
+          "code": "STAT 4770",
+          "title": null,
+          "credits": 1
+         }
+        ],
+        "adviceText": "Choose 1 CU from:",
+        "children": [
+         {
+          "id": "r114",
+          "label": "Any course(s) with attribute WUTI",
+          "ruleType": "comment",
+          "percentComplete": null,
+          "status": "info",
+          "needCourses": null,
+          "needCredits": null,
+          "appliedCount": null,
+          "appliedCredits": null,
+          "applied": [],
+          "advice": [],
+          "adviceText": null,
+          "children": []
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "w3",
+    "type": "OTHER",
+    "value": "",
+    "title": "Liberal Arts and Sciences",
+    "percentComplete": null,
+    "rules": [
+     {
+      "id": "r118",
+      "label": "Minimum Credits Requirement",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r117",
+        "label": "7 CU are required.",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "r120",
+      "label": "Humanities",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": 1,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": "Choose 1 CU from:",
+      "children": [
+       {
+        "id": "r119",
+        "label": "Any course(s) with attribute WUHM",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "r121",
+      "label": "Natural Science, Math, Engineering",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "met",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": 1,
+      "appliedCredits": 1,
+      "applied": [
+       {
+        "code": "CIS 1100",
+        "title": "CIS 1100",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       }
+      ],
+      "advice": [],
+      "adviceText": null,
+      "children": []
+     },
+     {
+      "id": "r122",
+      "label": "Social Science",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "met",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": 1,
+      "appliedCredits": 1,
+      "applied": [
+       {
+        "code": "ECON 0210",
+        "title": "ECON 0210",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       }
+      ],
+      "advice": [],
+      "adviceText": null,
+      "children": []
+     },
+     {
+      "id": "r123",
+      "label": "Flexible Gen Eds",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "inProgress",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": 2,
+      "appliedCredits": 1.5,
+      "applied": [
+       {
+        "code": "ENGL 1050",
+        "title": "ENGL 1050",
+        "credits": 0.5,
+        "termCode": null,
+        "isInProgress": false,
+        "isTransfer": false
+       },
+       {
+        "code": "CIS 3330",
+        "title": "CIS 3330",
+        "credits": 1,
+        "termCode": null,
+        "isInProgress": true,
+        "isTransfer": false
+       }
+      ],
+      "advice": [],
+      "adviceText": null,
+      "children": []
+     },
+     {
+      "id": "r125",
+      "label": "Cross-Cultural Non-U.S. or U.S.",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": 3,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": "Choose 3 CU from:",
+      "children": [
+       {
+        "id": "r124",
+        "label": "Any course(s) with attribute WUCN or WUCU",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "r127",
+      "label": "Foreign Language Proficiency",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": 1,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": "Choose 1 CU from:",
+      "children": [
+       {
+        "id": "r126",
+        "label": "Any course(s) with attribute WUFL",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "w4",
+    "type": "OTHER",
+    "value": "",
+    "title": "Business Breadth",
+    "percentComplete": null,
+    "rules": [
+     {
+      "id": "r129",
+      "label": "Minimum Credits Requirement",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r128",
+        "label": "3 CU are required. You currently have 1. You still need 2 more.",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "r130",
+      "label": "Business Breadth requirements are under development. Contact your Advisor for more information.",
+      "ruleType": "comment",
+      "percentComplete": null,
+      "status": "info",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": []
+     },
+     {
+      "id": "r100",
+      "label": "Major Required",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r99",
+        "label": "Students must declare a concentration before the Business Breadth requirements can be fulfilled.",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "w5",
+    "type": "MAJOR",
+    "value": "",
+    "title": "Concentration in Wharton Undeclared",
+    "percentComplete": null,
+    "rules": [
+     {
+      "id": "r96",
+      "label": "Minimum Credits Requirement",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r95",
+        "label": "4 CU are required. You currently have 0. You still need 4 more.",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       }
+      ]
+     },
+     {
+      "id": "r98",
+      "label": "Concentration Undeclared",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": null,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [],
+      "adviceText": null,
+      "children": [
+       {
+        "id": "r97",
+        "label": "Our records indicate that you have not yet declared your intended concentration.",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "courses": [
+   {
+    "code": "MATH 1400",
+    "title": "MATH 1400",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "ECON 0100",
+    "title": "ECON 0100",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "WH 1010",
+    "title": "WH 1010",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "WH 2010",
+    "title": "WH 2010",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "ACCT 1010",
+    "title": "ACCT 1010",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "FNCE 1000",
+    "title": "FNCE 1000",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "MGMT 1010",
+    "title": "MGMT 1010",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "MKTG 1010",
+    "title": "MKTG 1010",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "STAT 1010",
+    "title": "STAT 1010",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "CIS 1100",
+    "title": "CIS 1100",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "ECON 0210",
+    "title": "ECON 0210",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "ENGL 1050",
+    "title": "ENGL 1050",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   },
+   {
+    "code": "CIS 3330",
+    "title": "CIS 3330",
+    "credits": 1,
+    "termCode": null,
+    "isInProgress": false,
+    "isTransfer": false
+   }
+  ],
+  "fetchedAt": "2026-11-15T12:00:00Z"
+ },
+ "whFinance": {
+  "goals": {
+   "college": "WU",
+   "school": null,
+   "program": "WU_BS_WUNG",
+   "degree": "BS",
+   "majors": [
+    "FNCS"
+   ],
+   "concentrations": [],
+   "minors": [],
+   "catalogYear": "202430"
+  },
+  "isWhatIf": true,
+  "percentComplete": 50,
+  "degreeLabel": null,
+  "catalogYearLabel": "202430",
+  "blocks": [
+   {
+    "id": "f1",
+    "type": "MAJOR",
+    "value": "",
+    "title": "Concentration in Finance (FNCS)",
+    "percentComplete": null,
+    "rules": [
+     {
+      "id": "r133",
+      "label": "Finance Courses",
+      "ruleType": "group",
+      "percentComplete": null,
+      "status": "open",
+      "needCourses": null,
+      "needCredits": 4,
+      "appliedCount": null,
+      "appliedCredits": null,
+      "applied": [],
+      "advice": [
+       {
+        "code": "BEPP 2020",
+        "title": null,
+        "credits": 1
+       },
+       {
+        "code": "BEPP 2300",
+        "title": null,
+        "credits": 1
+       },
+       {
+        "code": "REAL 2090",
+        "title": null,
+        "credits": 1
+       },
+       {
+        "code": "REAL 2300",
+        "title": null,
+        "credits": 1
+       }
+      ],
+      "adviceText": "Choose 4 CU from:",
+      "children": [
+       {
+        "id": "r131",
+        "label": "Any FNCE 2020-4030 course(s)",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       },
+       {
+        "id": "r132",
+        "label": "Note: This requirement may not be satisfied with FNCE 3990.",
+        "ruleType": "comment",
+        "percentComplete": null,
+        "status": "info",
+        "needCourses": null,
+        "needCredits": null,
+        "appliedCount": null,
+        "appliedCredits": null,
+        "applied": [],
+        "advice": [],
+        "adviceText": null,
+        "children": []
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "courses": [],
+  "fetchedAt": "2026-11-15T12:00:00Z"
+ }
+}
