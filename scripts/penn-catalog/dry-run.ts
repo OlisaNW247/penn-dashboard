@@ -81,3 +81,28 @@ function describe(e: Eligibility): string {
     case "number": return `number ${e.numbers.join(",")}`;
   }
 }
+
+// The same request through the server's engine, which also fetches the
+// prerequisites of the chosen courses and plans a second time.
+import { runEngine } from "../../backend/supabase/functions/_shared/degreePlanner/engine.ts";
+{
+  t = Date.now();
+  const out = await runEngine({
+    structured: { audits, history: {}, currentTerm: "202630" },
+    intent: { targetTerm: "202810", maxLoad: null, allowSummer: null, waive: [], avoid: [], prefer: [] },
+    fetchImpl: fetch, now,
+  });
+  const r = out.plan;
+  console.log(`\n== ENGINE (${Date.now() - t} ms) remaining ${r.remainingCredits} chosen ${r.chosen}`);
+  for (const s of r.scenarios) console.log(`scenario ${s.id}: ${s.finishTerm} meets ${s.meetsTarget}`);
+  for (const term of r.schedule) {
+    console.log(`${term.term} (${term.credits} cu): ${term.courses.map((c) => c.code).join(", ")}`);
+  }
+  const chosen = new Set(r.schedule.flatMap((x) => x.courses.map((c) => c.code)));
+  const details = await buildCatalogSnapshot({ fetchImpl: fetch, now, attributes: [], subjects: [], codes: [...chosen] });
+  for (const code of chosen) {
+    const p = details.courses[code]?.prerequisites;
+    if (p) console.log(`prereq ${code}: ${p.slice(0, 160)}`);
+  }
+  for (const n of r.notes) console.log(`note: ${n}`);
+}

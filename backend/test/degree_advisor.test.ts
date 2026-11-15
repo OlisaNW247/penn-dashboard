@@ -532,3 +532,254 @@ Deno.test("degree-advisor: unusable output on both models is a 502", async () =>
     stub.restore();
   }
 });
+
+// ---------------------------------------------------------------------------
+// Structured (planner) path
+// ---------------------------------------------------------------------------
+import {
+  DEGREE_ADVISOR_EXPLAIN_INSTRUCTIONS,
+  DEGREE_ADVISOR_STRUCTURED_SCHEMA,
+  readDegreeIntent,
+} from "../supabase/functions/_shared/degreeAdvisor.ts";
+import { engineHooks } from "../supabase/functions/degree-advisor/index.ts";
+
+const fxAudits = JSON.parse(Deno.readTextFileSync(new URL("./fixtures/degree-audits-synthetic.json", import.meta.url)));
+const structuredBody = (over: Record<string, unknown> = {}) => ({
+  audits: [
+    { degreeId: "cs", label: "computer science", audit: fxAudits.cs },
+    { degreeId: "wh", label: "management", audit: fxAudits.whMgmt },
+  ],
+  history: { "202530": ["CIS 1200"] },
+  currentTerm: "202630",
+  ...over,
+});
+
+Deno.test("degree-advisor: structured is optional and parsed with its caps", () => {
+  assert.equal(parseDegreeAdvisorBody(valid())!.structured, undefined);
+  const ok = parseDegreeAdvisorBody(valid({ structured: structuredBody() }));
+  assert.equal(ok!.structured!.audits.length, 2);
+  assert.equal(ok!.structured!.currentTerm, "202630");
+  const a = (over: Record<string, unknown> = {}) => ({ degreeId: "x", label: "y", audit: {}, ...over });
+  const bad: Array<[string, unknown]> = [
+    ["not an object", 5],
+    ["array", []],
+    ["no audits", structuredBody({ audits: [] })],
+    ["seven audits", structuredBody({ audits: Array(7).fill(a()) })],
+    ["audit not object", structuredBody({ audits: [a({ audit: "x" })] })],
+    ["degreeId empty", structuredBody({ audits: [a({ degreeId: "" })] })],
+    ["degreeId 121", structuredBody({ audits: [a({ degreeId: "a".repeat(121) })] })],
+    ["label 121", structuredBody({ audits: [a({ label: "a".repeat(121) })] })],
+    ["history not object", structuredBody({ history: [] })],
+    ["history values not string arrays", structuredBody({ history: { "202530": [1] } })],
+    ["currentTerm bad", structuredBody({ currentTerm: "2026" })],
+    ["currentTerm missing", structuredBody({ currentTerm: undefined })],
+    ["too large", structuredBody({ audits: [a({ audit: { pad: "a".repeat(1_500_001) } })] })],
+  ];
+  for (const [name, structured] of bad) {
+    assert.equal(parseDegreeAdvisorBody(valid({ structured })), undefined, name);
+  }
+  const edge = parseDegreeAdvisorBody(valid({ structured: structuredBody({ audits: Array(6).fill(a()) }) }));
+  assert.equal(edge!.structured!.audits.length, 6);
+});
+
+Deno.test("degree-advisor: structured schema order and the legacy schema untouched", () => {
+  const props = Object.keys((DEGREE_ADVISOR_STRUCTURED_SCHEMA.schema as any).properties);
+  assert.deepEqual(props, [
+    "intent", "whatIf", "targetTerm", "maxLoad", "allowSummer", "waive", "avoid", "prefer", "actions", "planning", "answer",
+  ]);
+  assert.deepEqual((DEGREE_ADVISOR_STRUCTURED_SCHEMA.schema as any).required, props);
+  assert.deepEqual((DEGREE_ADVISOR_STRUCTURED_SCHEMA.schema as any).properties.intent.enum, ["question", "edit", "plan", "email"]);
+  assert.deepEqual(Object.keys((DEGREE_ADVISOR_SCHEMA.schema as any).properties), ["actions", "whatIf", "planning", "answer"]);
+});
+
+Deno.test("degree-advisor: structured phones get the intent instructions, others do not", () => {
+  const plain = buildDegreeAdvisorMessages(parseDegreeAdvisorBody(valid())!);
+  assert.equal(plain[0].content, DEGREE_ADVISOR_INSTRUCTIONS);
+  const st = buildDegreeAdvisorMessages(parseDegreeAdvisorBody(valid({ structured: structuredBody() }))!);
+  assert.ok(st[0].content.startsWith(DEGREE_ADVISOR_INSTRUCTIONS));
+  assert.ok(st[0].content.includes("INTENT"));
+  assert.ok(st[0].content.includes("\"202810\""));
+});
+
+Deno.test("degree-advisor: readDegreeIntent is lenient about fields", () => {
+  const body = parseDegreeAdvisorBody(valid({ structured: structuredBody() }))!;
+  const r = readDegreeIntent(JSON.stringify({
+    intent: "plan", targetTerm: "202810", maxLoad: 7, allowSummer: false,
+    waive: ["Foreign Language", 3], avoid: ["cis  4710", "nonsense"], prefer: [], whatIf: "nope",
+  }), body);
+  assert.equal(r.intent, "plan");
+  assert.deepEqual(r.params, {
+    targetTerm: "202810", maxLoad: 7, allowSummer: false, waive: ["Foreign Language"], avoid: ["CIS 4710"], prefer: [],
+  });
+  assert.equal(r.whatIf, null);
+  assert.equal(readDegreeIntent(JSON.stringify({ intent: "bogus", maxLoad: 99, targetTerm: "x" }), body).intent, "question");
+  assert.throws(() => readDegreeIntent("not json", body));
+});
+
+Deno.test("degree-advisor: explain instructions carry the load-bearing phrases", () => {
+  for (const phrase of ["170 words", "would count toward", "[advisor name]", "[your name]", "petition"]) {
+    assert.ok(DEGREE_ADVISOR_EXPLAIN_INSTRUCTIONS.includes(phrase), phrase);
+  }
+});
+
+type Sent = { schema: string; messages: Array<{ role: string; content: string }> };
+
+/** Routes OpenRouter by schema name; Penn Labs and the CIS list answer 404. */
+function structuredStub(replies: { intent: unknown; explain?: unknown | "bad" }) {
+  const stub = installStub({ reserve: () => GRANTED, openrouter: { kind: "json", content: "{}" } });
+  const base = globalThis.fetch;
+  const sent: Sent[] = [];
+  const penn: string[] = [];
+  globalThis.fetch = (async (input: Request | URL | string, init?: RequestInit) => {
+    const url = String(input instanceof Request ? input.url : input);
+    if (url.startsWith("https://openrouter.ai/")) {
+      const b = JSON.parse(String(init?.body ?? "{}"));
+      const schema = b.response_format?.json_schema?.name ?? "";
+      sent.push({ schema, messages: b.messages });
+      const reply = schema === "degree_explanation" ? replies.explain : replies.intent;
+      const content = reply === "bad" ? "not json" : JSON.stringify(reply);
+      return new Response(JSON.stringify({ choices: [{ message: { content } }] }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.startsWith("https://penncoursereview.com/") || url.startsWith("https://advising.cis.upenn.edu/")) {
+      penn.push(url);
+      return new Response("nope", { status: 404 });
+    }
+    return base(input as any, init);
+  }) as typeof fetch;
+  return { sent, penn, restore: () => { globalThis.fetch = base; stub.restore(); } };
+}
+
+const post = (body: unknown) =>
+  handleDegreeAdvisor(new Request("http://functions.test/degree-advisor", {
+    method: "POST",
+    headers: { Authorization: "Bearer test-jwt", "content-type": "application/json" },
+    body: JSON.stringify(body),
+  }));
+
+const intentReply = (over: Record<string, unknown> = {}) => ({
+  intent: "plan", whatIf: null, targetTerm: "202810", maxLoad: null, allowSummer: null, waive: [], avoid: [], prefer: [],
+  actions: [], planning: false, answer: "ok", ...over,
+});
+
+Deno.test("degree-advisor: a plan intent runs the engine, explains, and returns plan without email", async () => {
+  const s = structuredStub({
+    intent: intentReply(),
+    explain: { answer: "It finishes spring 2028 with approval.", email: "SHOULD NOT APPEAR" },
+  });
+  try {
+    const res = await post(valid({ structured: structuredBody() }));
+    assert.equal(res.status, 200);
+    const out = await res.json();
+    assert.equal(out.answer, "It finishes spring 2028 with approval.");
+    assert.deepEqual(out.actions, []);
+    assert.equal(out.whatIf, null);
+    assert.equal(out.planning, false);
+    assert.deepEqual(out.dropped, []);
+    assert.equal("email" in out, false);
+    assert.ok(Array.isArray(out.plan.schedule) && out.plan.schedule.length > 0);
+    assert.ok(out.plan.scenarios.length >= 1);
+    assert.deepEqual(s.sent.map((x) => x.schema), ["degree_intent", "degree_explanation"]);
+    const explain = s.sent[1].messages;
+    assert.ok(explain[0].content.includes("170 words"));
+    assert.ok(explain[1].content.includes("\"scenarios\""));
+    assert.ok(explain[1].content.includes("EMAIL REQUESTED\nno"));
+    assert.ok(s.penn.length > 0, "catalogue requested");
+  } finally {
+    s.restore();
+  }
+});
+
+Deno.test("degree-advisor: an email intent returns the email", async () => {
+  const s = structuredStub({
+    intent: intentReply({ intent: "email" }),
+    explain: { answer: "Here is the plan.", email: "Dear [advisor name],\n1. Can I overload?\n[your name]" },
+  });
+  try {
+    const out = await (await post(valid({ structured: structuredBody() }))).json();
+    assert.ok(out.email.startsWith("Dear [advisor name]"));
+    assert.ok(out.plan);
+    assert.ok(s.sent[1].messages[1].content.includes("EMAIL REQUESTED\nyes"));
+  } finally {
+    s.restore();
+  }
+});
+
+Deno.test("degree-advisor: an unreadable explanation still returns the plan with a numeric summary", async () => {
+  const s = structuredStub({ intent: intentReply(), explain: "bad" });
+  try {
+    const out = await (await post(valid({ structured: structuredBody() }))).json();
+    assert.ok(out.plan);
+    assert.ok(out.answer.length > 0);
+    assert.equal("email" in out, false);
+  } finally {
+    s.restore();
+  }
+});
+
+Deno.test("degree-advisor: question and edit intents keep the old path (no plan, one model call)", async () => {
+  const s = structuredStub({
+    intent: intentReply({
+      intent: "edit", answer: "added.",
+      actions: [{ op: "add", code: "CIS 4710", term: "202730", toTerm: null, for: null }],
+    }),
+  });
+  try {
+    const out = await (await post(valid({ structured: structuredBody() }))).json();
+    assert.equal(out.plan, undefined);
+    assert.equal("email" in out, false);
+    assert.equal(out.actions.length, 1);
+    assert.equal(out.actions[0].code, "CIS 4710");
+    assert.equal(out.answer, "added.");
+    assert.deepEqual(s.sent.map((x) => x.schema), ["degree_intent"]);
+    assert.deepEqual(Object.keys(out).sort(), ["actions", "answer", "dropped", "model", "planning", "whatIf"]);
+  } finally {
+    s.restore();
+  }
+});
+
+Deno.test("degree-advisor: a what-if from a structured phone is returned as before", async () => {
+  const s = structuredStub({ intent: intentReply({ whatIf: "FNCS-BS", answer: "reading penn's audit." }) });
+  try {
+    const out = await (await post(valid({
+      structured: structuredBody(), programs: [{ code: "FNCS-BS", name: "Finance BS", kind: "concentration" }],
+    }))).json();
+    assert.equal(out.whatIf, "FNCS-BS");
+    assert.equal(out.plan, undefined);
+    assert.deepEqual(out.actions, []);
+  } finally {
+    s.restore();
+  }
+});
+
+Deno.test("degree-advisor: an engine failure falls back to the first call's answer", async () => {
+  const s = structuredStub({ intent: intentReply({ answer: "I will plan that." }) });
+  const real = engineHooks.run;
+  engineHooks.run = () => Promise.reject(new Error("boom"));
+  try {
+    const res = await post(valid({ structured: structuredBody() }));
+    assert.equal(res.status, 200);
+    const out = await res.json();
+    assert.equal(out.answer, "I will plan that.");
+    assert.equal(out.plan, undefined);
+    assert.deepEqual(out.actions, []);
+    assert.deepEqual(s.sent.map((x) => x.schema), ["degree_intent"]);
+  } finally {
+    engineHooks.run = real;
+    s.restore();
+  }
+});
+
+Deno.test("degree-advisor: a phone without structured is byte-for-byte the old request", async () => {
+  const s = structuredStub({ intent: { actions: [], whatIf: null, planning: false, answer: "hello" } });
+  try {
+    const out = await (await post(valid())).json();
+    assert.equal(out.answer, "hello");
+    assert.deepEqual(s.sent.map((x) => x.schema), ["degree_advice"]);
+    assert.equal(s.sent[0].messages[0].content, DEGREE_ADVISOR_INSTRUCTIONS);
+    assert.deepEqual(s.penn, []);
+  } finally {
+    s.restore();
+  }
+});

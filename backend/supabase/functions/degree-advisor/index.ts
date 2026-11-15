@@ -23,9 +23,23 @@ import {
   buildDegreeAdvice,
   buildDegreeAdvisorMessages,
   finalizeDegreeAdvice,
+  DEGREE_ADVISOR_EXPLAIN_SCHEMA,
   DEGREE_ADVISOR_SCHEMA,
+  DEGREE_ADVISOR_STRUCTURED_SCHEMA,
+  buildDegreeExplainMessages,
   parseDegreeAdvisorBody,
+  parseDegreeExplanation,
+  plainPlanSummary,
+  readDegreeIntent,
+  type AdvisorMessage,
+  type DegreeAdvice,
+  type DegreeExplanation,
+  type DegreeIntentReading,
 } from "../_shared/degreeAdvisor.ts";
+import { type EngineOutput, runEngine } from "../_shared/degreePlanner/engine.ts";
+
+/** Test seam: tests replace `run` to force an engine failure. */
+export const engineHooks: { run: typeof runEngine } = { run: runEngine };
 
 export async function handleDegreeAdvisor(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") {
@@ -65,83 +79,199 @@ export async function handleDegreeAdvisor(req: Request): Promise<Response> {
       // second try below, a mistyped or retired model id would turn every
       // question into "couldn't reach smooth" until someone read the logs.
       // The retry names the fallback as the only model, so it cannot loop.
+      interface CallSpec {
+        messages: AdvisorMessage[];
+        schema: { name: string; schema: Record<string, unknown> };
+        maxTokens: number;
+      }
       let modelMs = 0;
-      const complete = async (primary: string, fallback: string | undefined) => {
+      const complete = async (primary: string, fallback: string | undefined, spec: CallSpec) => {
         const t0 = Date.now();
         try {
-          return await call(primary, fallback);
+          return await call(primary, fallback, spec);
         } finally {
           modelMs += Date.now() - t0;
         }
       };
-      const call = (primary: string, fallback: string | undefined) =>
+      const call = (primary: string, fallback: string | undefined, spec: CallSpec) =>
         chatCompletionJSONWithUsage({
           fetchImpl: fetch,
           apiKey,
           model: primary,
           fallbackModel: fallback,
           provider: providerFromEnv(),
-          messages: buildDegreeAdvisorMessages(body),
-          jsonSchema: DEGREE_ADVISOR_SCHEMA,
+          messages: spec.messages,
+          jsonSchema: spec.schema,
           // Speed: low effort on every round. Completeness of a whole plan
           // comes from the phone's continuation rounds, not from thinking
           // longer (a medium-effort whole-plan request outlived the phone's
           // 60 s timeout).
           reasoning: { effort: "low" },
-          maxTokens: 10000,
+          maxTokens: spec.maxTokens,
           temperature: 0.2,
           // The answer is for this phone alone, so when the client leaves
           // the model call is cut off rather than paid for and discarded.
           signal: req.signal,
         });
-
-      let completion: JSONCompletion;
-      try {
+      const completeWithRetry = async (spec: CallSpec): Promise<JSONCompletion> => {
         try {
-          completion = await complete(model, fallbackModel);
+          return await complete(model, fallbackModel, spec);
         } catch (err) {
           const status = err instanceof UpstreamError ? err.status : undefined;
           const refused = status === 400 || status === 404;
           if (!refused || fallbackModel === model || req.signal.aborted) throw err;
           // Model ids only, never request content.
           console.warn(`degree-advisor: ${model} refused with ${status}, trying ${fallbackModel}`);
-          completion = await complete(fallbackModel, undefined);
+          return await complete(fallbackModel, undefined, spec);
         }
+      };
+
+      const firstSpec: CallSpec = {
+        messages: buildDegreeAdvisorMessages(body),
+        schema: body.structured ? DEGREE_ADVISOR_STRUCTURED_SCHEMA : DEGREE_ADVISOR_SCHEMA,
+        maxTokens: 10000,
+      };
+
+      let completion: JSONCompletion;
+      try {
+        completion = await completeWithRetry(firstSpec);
       } catch (err) {
         const status = err instanceof UpstreamError ? err.status : undefined;
         console.error("degree-advisor: upstream failure, status:", status ?? "network");
         return errorResponse("upstream", "the model backend failed", 502);
       }
 
+      // What the first call decided (structured phones only).
+      let reading: DegreeIntentReading | undefined;
       let advice;
       let pickCount = 0;
+      let keptCount = 0;
       try {
-        let draft;
+        let draft: DegreeAdvice | undefined;
+        const interpret = (content: string) => {
+          if (!body.structured) {
+            reading = undefined;
+            draft = buildDegreeAdvice(content, body);
+            return;
+          }
+          const r = readDegreeIntent(content, body);
+          const needsDraft = r.intent === "question" || r.intent === "edit" || r.whatIf !== null;
+          draft = needsDraft ? buildDegreeAdvice(content, body) : undefined;
+          reading = r;
+        };
         try {
-          draft = buildDegreeAdvice(completion.content, body);
+          interpret(completion.content);
         } catch (err) {
           // A truncated or malformed JSON is the likely cause; one retry on
           // the fallback model alone before giving up.
           if (fallbackModel === completion.model || req.signal.aborted) throw err;
           console.warn(`degree-advisor: unusable output from ${completion.model}, trying ${fallbackModel}`);
-          completion = await complete(fallbackModel, undefined);
-          draft = buildDegreeAdvice(completion.content, body);
+          completion = await complete(fallbackModel, undefined, firstSpec);
+          interpret(completion.content);
         }
+
+        const intent = reading as DegreeIntentReading | undefined;
+        if (body.structured && intent && draft === undefined) {
+          // Plan or email: the planner decides, a second call explains.
+          const firstMs = modelMs;
+          const wantsEmail = intent.intent === "email";
+          const e0 = Date.now();
+          let out: EngineOutput | undefined;
+          try {
+            out = await engineHooks.run({
+              structured: body.structured,
+              intent: intent.params,
+              fetchImpl: fetch,
+              now: new Date(),
+            });
+          } catch {
+            console.error("degree-advisor: engine failed");
+          }
+          const engineMs = Date.now() - e0;
+
+          if (!out) {
+            // Fall back to the first call's own words and no plan.
+            let answer = "I couldn't build the plan just now. Try again in a moment.";
+            try {
+              answer = buildDegreeAdvice(completion.content, body).answer;
+            } catch { /* keep the default */ }
+            keepReservation = true;
+            console.log(
+              `degree-advisor: round ${body.round} intent ${intent.intent} model ${completion.model} ` +
+                `ms ${firstMs} engine_ms ${engineMs} engine failed`,
+            );
+            return json(200, {
+              answer, actions: [], whatIf: null, planning: false, dropped: [], model: completion.model,
+            });
+          }
+
+          const plan = out.plan;
+          const explainSpec: CallSpec = {
+            messages: buildDegreeExplainMessages(body, plan, intent.params, wantsEmail),
+            schema: DEGREE_ADVISOR_EXPLAIN_SCHEMA,
+            maxTokens: 4000,
+          };
+          let explained: DegreeExplanation | undefined;
+          let explainModel = completion.model;
+          try {
+            let c = await completeWithRetry(explainSpec);
+            try {
+              explained = parseDegreeExplanation(c.content, wantsEmail);
+            } catch (err) {
+              if (fallbackModel === c.model || req.signal.aborted) throw err;
+              c = await complete(fallbackModel, undefined, explainSpec);
+              explained = parseDegreeExplanation(c.content, wantsEmail);
+            }
+            explainModel = c.model;
+          } catch {
+            // The plan is real; only the prose failed. Say it with numbers.
+            console.error("degree-advisor: explanation failed");
+          }
+          const chosen = plan.scenarios.find((sc) => sc.id === plan.chosen);
+          keepReservation = true;
+          console.log(
+            `degree-advisor: round ${body.round} intent ${intent.intent} model ${completion.model}` +
+              `${explainModel !== completion.model ? `+${explainModel}` : ""} ` +
+              `ms ${firstMs} explain_ms ${modelMs - firstMs} engine_ms ${engineMs} slots ${out.slots} ` +
+              `remaining ${plan.remainingCredits} chosen ${plan.chosen} finish ${chosen?.finishTerm ?? "none"}`,
+          );
+          const response: Record<string, unknown> = {
+            answer: explained?.answer ?? plainPlanSummary(plan),
+            actions: [],
+            whatIf: null,
+            planning: false,
+            dropped: [],
+            model: explainModel,
+            plan,
+          };
+          if (wantsEmail && explained?.email) response.email = explained.email;
+          return json(200, response);
+        }
+
         // Picks are courses the model named for requirements Penn lists no
         // courses for; only codes that Penn's catalogue knows survive. Only
         // course codes leave the server for this check. Counts are logged,
         // never codes.
-        pickCount = draft.pickCodes.length;
+        const d = draft!;
+        pickCount = d.pickCodes.length;
         const verified = pickCount > 0
-          ? await verifyPennCourses(draft.pickCodes, { fetchImpl: fetch, now: new Date() })
+          ? await verifyPennCourses(d.pickCodes, { fetchImpl: fetch, now: new Date() })
           : new Map();
-        advice = finalizeDegreeAdvice(draft, verified);
-        const tokens = completion.usage.completionTokens;
-        console.log(
-          `degree-advisor: round ${body.round} model ${completion.model} ms ${modelMs} ` +
-            `actions ${advice.actions.length} picks ${pickCount} kept ${verified.size} ` +
-            `planning ${advice.planning} completion_tokens ${tokens ?? "n/a"}`,
-        );
+        keptCount = verified.size;
+        advice = finalizeDegreeAdvice(d, verified);
+        if (body.structured && intent) {
+          console.log(
+            `degree-advisor: round ${body.round} intent ${intent.intent} model ${completion.model} ms ${modelMs} ` +
+              `actions ${advice.actions.length} picks ${pickCount} kept ${keptCount}`,
+          );
+        } else {
+          const tokens = completion.usage.completionTokens;
+          console.log(
+            `degree-advisor: round ${body.round} model ${completion.model} ms ${modelMs} ` +
+              `actions ${advice.actions.length} picks ${pickCount} kept ${keptCount} ` +
+              `planning ${advice.planning} completion_tokens ${tokens ?? "n/a"}`,
+          );
+        }
       } catch {
         // Unusable output is a failure: the unit is given back (not kept).
         console.error("degree-advisor: unusable model output");

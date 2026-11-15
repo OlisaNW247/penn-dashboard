@@ -1213,6 +1213,76 @@ outlived the phone's timeout. When the primary's output cannot be read (for
 example truncated JSON), the server retries once with the fallback model alone
 before answering 502; no retry if the client has gone.
 
+### `degree-advisor`: structured plans (2026-11-15)
+
+A phone that has Penn's audits in structured form adds one optional request key:
+`structured: { "audits": [{ "degreeId": string (1..120), "label": string (0..120), "audit": <DegreeAudit JSON object> }] (1..6), "history": { "<termCode>": [course code] }, "currentTerm": "202630" }`.
+The raw JSON of `structured` is capped at 1,500,000 characters; any wrong shape,
+an over-cap size, or a `currentTerm` that is not six digits makes the body
+malformed (400). `history` may be omitted (reads as `{}`). A phone that sends no
+`structured` gets exactly the behaviour documented above (same prompt, schema,
+response keys and log line).
+
+With `structured`, the first model call uses a different strict schema and the
+instructions gain an INTENT section. The schema's property order is `intent`,
+`whatIf`, `targetTerm`, `maxLoad`, `allowSummer`, `waive`, `avoid`, `prefer`,
+`actions`, `planning`, `answer`. `intent` is `question`, `edit`, `plan` or
+`email`: `plan` when the student asks to build, fill, complete or check whether a
+plan or finish date works; `email` when they ask for an advisor email (the plan
+runs too); `edit` for adding, moving or removing a few courses; `question`
+otherwise. `targetTerm` is a six-digit term code or null ("by spring 2028" is
+`202810`; "on time" is the semester on the DOCUMENT's FINISH line, or null);
+`maxLoad` credit units per semester or null; `allowSummer` boolean or null;
+`waive` short requirement labels the student says are handled; `avoid` and
+`prefer` course codes. Every field is read leniently (a bad value is its neutral
+value; an unknown intent is `question`).
+
+- `question`, `edit`, or any intent with a valid `whatIf`: answered exactly as
+  before from the same JSON (`actions` validated and picks checked as above; no
+  `plan`, no `email`).
+- `plan` and `email`: the `answer` of this call is ignored. The server runs the
+  deterministic planner (`_shared/degreePlanner/`): audits to requirement slots,
+  public catalogue data, one plan, then a second pass with the chosen courses'
+  prerequisites so they order the schedule (skipped, with a note, when the
+  25-second engine budget is nearly spent). A second model call (reasoning low,
+  4000 tokens, `{ answer, email }`) explains the result: at most 170 words, plain
+  text, no course list, says whether the target is met and under which scenario,
+  names the double-counting saving, the unfilled requirements and the petitions
+  ("ask your advisor"), "would count toward", never met or satisfied, never a
+  promise. `email` is written only for intent `email` (under 300 words, only the
+  placeholders `[advisor name]` and `[your name]`).
+
+Response for `plan` and `email`: `{ "answer", "actions": [], "whatIf": null,
+"planning": false, "dropped": [], "model", "plan": PlanResult, "email"?: string }`.
+`email` is present only for intent `email` and only when the model wrote one.
+`plan` is `{ remainingCredits, remainingCreditsWithoutOverlap, scenarios:
+[{ id: "standard"|"summer"|"approved"|"student", label, maxLoad, summer,
+finishTerm: string|null, meetsTarget }], chosen, schedule: [{ term, credits,
+courses: [{ code, title, credits, countsToward: [string], approval:
+"automatic"|"petition"|"check", note? }] }], unfilled: [{ slotId, degreeLabel,
+label, reason }], petitions: [{ code, slots: [string], savesCredits }], notes:
+[string] }`. When `plan` is present the phone replaces its future semesters with
+`plan.schedule` and ignores `actions`. If the planner throws, the response is the
+first call's `answer` with no `plan` (log line `degree-advisor: engine failed`);
+if only the explaining call fails, the plan is returned with a one-sentence
+numeric summary as the answer.
+
+**Public data requested by the planner** (no student data, no question, no
+document; course codes, subjects and attribute codes only): Penn Labs
+`https://penncoursereview.com/api/base/{semester}/courses/` (course lists),
+`.../{semester}/search/courses/?attributes={ATTR}` (attribute membership),
+`.../{semester}/courses/{SUBJ}-{NUM}/` (prerequisites, attributes,
+crosslistings for the chosen courses), semesters named explicitly as in the
+Penn Labs check above, and the CIS technical-elective list
+`https://advising.cis.upenn.edu/assets/json/37cu_csci_tech_elective_list.json`.
+Failures leave holes, never errors; an empty catalogue yields a plan from the
+audits' explicit options with a note.
+
+Structured-phone log line (counts and ids only, no content, no course codes):
+`degree-advisor: round R intent I model M[+M2] ms T explain_ms E engine_ms G slots S remaining C chosen ID finish TERM`
+for plan and email; `degree-advisor: round R intent I model M ms T actions A picks P kept K` for the
+other intents.
+
 ## `map-categories`
 
 The problem this solves: Grade Watcher's grading scheme needs to know
