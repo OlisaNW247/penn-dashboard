@@ -193,7 +193,11 @@ audit.
   request count every "tree" question also adds to. Nothing is sent until
   you send a message, and the chat says so before your first one. If you
   never open it, nothing about your degree leaves the phone. Changes the
-  chat makes to your plan can be undone with one tap.
+  chat makes to your plan can be undone with one tap. When the chat picks a
+  course for a requirement Penn describes only in words, our server checks
+  that the course exists by asking Penn Labs' public course catalogue
+  (penncoursereview.com) for that course code alone; nothing about you goes
+  with it.
 - **Searching programs:** the search in "what if" runs on this phone, over
   Penn's public list of programs. On an iPhone with Apple Intelligence,
   when a search finds almost nothing, Apple's on-device model is asked for

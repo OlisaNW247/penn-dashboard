@@ -1154,6 +1154,36 @@ Keep this current. It is the fastest way for a new session to know what exists.
     `lastDegreeAdvisorModelV1`, because the function log could not be read
     from the cloud session and nobody knows which model wrote that first
     answer.
+    **The second real question, 2026-11-15, and picks (`452a47c` server,
+    `8023e78` phone).** "can you fill out classes for me to graduate on
+    time with a mgmt concentration at Wharton": the what-if round trip
+    worked on a device (it read Penn's audit for management (general)),
+    but it placed two courses and handed back a dozen requirements
+    because Penn lists no course for them (general management electives,
+    business breadth, humanities, global economy, cross-cultural, foreign
+    language, technical electives); and the table greyed its ACCT 1020 as
+    "not on an open requirement", judged against the undeclared audit.
+    Olisa: "Still not working." So: a requirement Penn describes only in
+    words (open or in progress, no children, no concrete option) is
+    tagged `R1`... in the document and sent as `requirements`; the model
+    may `add` a **pick** for one (`for` = the tag); the server keeps it
+    only if the code is Penn-shaped, matches the requirement's Degree
+    Works wildcards, and exists in Penn Labs' catalogue for this or the
+    next semester (`_shared/pennCourses.ts`, the code alone is sent), and
+    returns its title and credits; the phone checks the tag, the
+    wildcards, taken and planned again. A pick is stored with its
+    requirement (`PlannedCourse.pickRuleKey`, `pickLabel`, optional), counts
+    toward that requirement in the projection, and reads "your pick ·
+    <requirement>" in the table. Wildcard options ("MGMT @") are patterns,
+    never courses. The document gains Penn's words for a rule and a FINISH
+    line (the eighth fall or spring semester from the first in history).
+    Closing a chat that read a what-if opens the what-if tab. DEBUG builds
+    write the last brief and the rule tree to the app container
+    (`scripts/read-advisor-brief.sh` copies it off the phone), because
+    nobody has seen what Penn's word-only rules hold: whether they carry
+    wildcards, `infoText`, or nothing. Whether Penn counts a pick is
+    Penn's to say, and the answer tells the student to run the plan in
+    Path@Penn.
     **The add sheet's list is grouped** (`DegreeContribution.grouped`): "both
     degrees" first, then each degree under its name, ranked inside. Ranked by
     points alone, his five engineering rows (+2% each) sat above two Wharton
