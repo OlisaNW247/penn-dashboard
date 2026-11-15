@@ -1,0 +1,34 @@
+# penn-catalog: fetches Penn's public course data on a GitHub runner, for the
+# degree planner. The cloud sessions that build Smooth cannot reach Penn's
+# hosts, and a runner can, so the planner's data snapshot is made here and
+# uploaded as an artifact; a person or a session downloads it, reviews it and
+# commits it. Nothing here signs in anywhere or reads any student's data:
+# every URL is a public page (Penn's catalog, the CIS advising list, Penn
+# Labs' public course API).
+#
+# It runs when this file or scripts/penn-catalog/ changes on degree-progress.
+name: penn-catalog
+
+on:
+  push:
+    branches: [degree-progress]
+    paths:
+      - ".github/workflows/penn-catalog.yml"
+      - "scripts/penn-catalog/**"
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fetch
+        run: node scripts/penn-catalog/fetch.mjs out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: penn-catalog
+          path: out
