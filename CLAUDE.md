@@ -184,7 +184,10 @@ files and uploads, stray staged objects are swept, file names and mime types
 checked), with the front redeployed carrying `CLIENT_IP_SECRET` and the
 matching `LHF_FRONT_CLIENT_IP_SECRET` set on Supabase (the value is in
 `~/lhf-bench/front-client-ip.secret`, mode 600, never printed), so the
-sign-in rate limits are per student address again; proven by a bucket keyed
+sign-in rate limits are per student address again; then **`agent-auth` v17, `mcp` v16,
+`agent-snapshot` v13 and `delete-account` v20 on 2026-11-16 about 02:48 UTC at
+Marco's "Yes, deploy", from `claude/agent-debug-998a30` `afa64bb` (the sliding
+chunked-upload expiry, Traps; the 14-step probe passed at 02:50 UTC); proven by a bucket keyed
 by the dev Mac's own address filling to 64 from the test session's 61-hit
 probe plus the deploy checks, which is why the probe's authorize step read
 429 from this Mac until the hour was up (`node backend/scripts/deploy-agent.mjs --public-base
@@ -3458,7 +3461,9 @@ itself.
 
 - **A fixed 30-minute expiry on a chunked upload threw away a finished
   upload** (2026-11-12, Marco's PHYS 0151 Worksheet 10.1 from a Claude cloud
-  session; fixed on `claude/agent-debug-998a30`, Deno 902, **not deployed**).
+  session; fixed on `claude/agent-debug-998a30`, Deno 902, **live since
+  2026-11-16 02:48 UTC as `mcp` v16**, at Marco's "Yes, deploy" with a token
+  from his own Supabase account).
   `agent_uploads.expires_at` was stamped once at `begin_file_upload`, and
   `UploadService.live()` deleted the row and every chunk on the first call
   after it. The sandbox's egress proxy refuses `supabase.co` (a `CONNECT`
@@ -4746,13 +4751,18 @@ none is a ship line.
 
 ## Known gaps
 
-- **Chunked uploads expire on a sliding window on `claude/agent-debug-998a30`
-  only; production `mcp` v11 still throws away a slow finished upload**
-  (2026-11-12, Traps). Deploying it is `node backend/scripts/deploy-agent.mjs
-  --public-base https://smooth-agent.vercel.app/functions/v1` at Marco's or
-  Olisa's word, with a working Management token (the one on the Mac is dead,
-  see Traps); no migration. Then `agent-e2e.mjs` and, by hand, a draft from
-  a Claude cloud session: expect it to arrive as a text draft now, not a PDF.
+- **The sliding upload expiry is live; a real cloud-session upload under it
+  has not been watched** (deployed 2026-11-16 02:48 UTC from
+  `claude/agent-debug-998a30` `afa64bb`: `agent-auth` v17, `mcp` v16,
+  `agent-snapshot` v13, `delete-account` v20, the four agent migrations
+  re-applied idempotent; the 14-step `agent-e2e.mjs` passed on production at
+  02:50 UTC, uploads leg included). The versions jumped by more than one
+  each since the 2026-11-11 record (`mcp` was v11), so someone deployed in
+  between without a note here. Still to see by hand: a draft from a Claude
+  cloud session, which should now arrive as a text draft (the tool text says
+  so) or, as a slow chunked file, finish instead of expiring. The Management
+  token in `~/lhf-bench/supabase.token` is Marco's own since 2026-11-15
+  (mode 600, never printed); Olisa's old one is dead.
 - **v11 backend, tested hostile on 2026-11-11, three deploys owed**
   (`docs/V11_TEST_BACKEND_2026-11-11.md`; branch `claude/v11-test-backend-3b1f1b`,
   nothing deployed). About 220 checks against production matched
