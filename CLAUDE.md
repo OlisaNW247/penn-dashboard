@@ -1264,7 +1264,15 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v10` (2026-11-15, the own-section read, Olisa's Mac, macOS
+**Current on `v10` (2026-11-16, Penn's real section names): 3711 tests /
+358 suites, all green, `swift test --no-parallel` alone on Olisa's Mac (34 s
+of tests).** +1 over 3710: `CanvasOwnSectionsTests.pennRealNames`. The first
+full run had one red, `LedgerSchemaRehearsalTests` "the widget's door refuses
+a store older than its schema…" (a store file's bytes compared before and
+after); it passed three times alone and in the full rerun, and nothing here
+touches the ledger, so it is a flake to watch, not a regression.
+
+**Before it, on `v10` (2026-11-15, the own-section read, Olisa's Mac, macOS
 27.0, Xcode 27.2): 3710 tests / 358 suites, all green, `swift test
 --no-parallel` alone on the machine, 35.8 s of tests, 87 s wall; the iOS
 Debug `xcodebuild` for `generic/platform=iOS` with `CODE_SIGNING_ALLOWED=NO`
@@ -3606,15 +3614,18 @@ none is a ship line.
   `refreshCourseIntel`, keeps a number only when the student's sections
   name this site's own code and settle on exactly one number, and
   `canvasCourseSummaries` uses it only when the name has none
-  (`canvasOwnSectionByCourseIDV1`, cleared on disconnect). Penn's real
-  section-name format has never been seen; the parser takes "ACCT 1010-002",
-  "ACCT 1010 002", "ACCT-1010-002" and "ACCT1010002". **It reaches the server
-  only through the manifest, which still fails on his phone** (next bullet),
-  so ask will not know the section until that is fixed. To check: after a
-  sync, `course-knowledge.json`'s `courses` entry for 1946774 should carry a
-  `section`.
-- **The course-material manifest still fails on Olisa's phone, every
-  Canvas request cancelled** (2026-11-15). The summary at 13:54 Eastern
+  (`canvasOwnSectionByCourseIDV1`, cleared on disconnect). Penn names the
+  sections "8:30amACCT1010-001-Fall2026" (read off the phone 2026-11-16 with
+  a one-off DEBUG record): the meeting time glued to the code, which the
+  first parser's leading word break missed, so the pattern is now built from
+  the site's own code (`sectionRegex(for:)`). On the `degree-progress` build
+  the phone then read ACCT 1010 → 001 and LGST 1010 → 002 (Hail's 001 is
+  Tue/Thu 8:30-9:59, JMHH 240). It reaches the server only through the
+  manifest; not yet seen there or in an answer.
+- **The course-material manifest failed on Olisa's phone, every Canvas
+  request cancelled** (2026-11-15; explained 2026-11-16: the phone was
+  running a `degree-progress` build, which lacked Marco's `c5f8d2a`; with it
+  cherry-picked there, the next sync read `manifest ok · uploaded 200`). The summary at 13:54 Eastern
   read `ok · courses 8 · fetched 0 · partial 8 · docs 1319 · manifest
   failed · uploaded 0 · errors 25 · error kinds: assignments 8 · modules 8 ·
   pages 8 · announcements 1 · ed notes 1 · ed: matched 0 · read 0 ·

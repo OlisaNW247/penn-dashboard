@@ -33,6 +33,16 @@ struct CanvasOwnSectionsTests {
         #expect(CanvasOwnSections.sectionNumber(courseCode: "ACCT 1010", sectionNames: [name]) == "002")
     }
 
+    @Test("Penn's real section names, the meeting time glued to the code (read off a phone, 2026-11-16)")
+    func pennRealNames() {
+        #expect(CanvasOwnSections.sectionNumber(courseCode: "ACCT 1010", sectionNames: ["8:30amACCT1010-001-Fall2026"]) == "001")
+        #expect(CanvasOwnSections.sectionNumber(courseCode: "LGST 1010", sectionNames: ["12:00pmLGST1010-002-Fall2026"]) == "002")
+        // A program site's section names no course, and names nothing.
+        #expect(CanvasOwnSections.sectionNumber(courseCode: "TAP 2028", sectionNames: ["TAP 2028: First-Year Students"]) == nil)
+        // The glued time is not mistaken for another department's code.
+        #expect(CanvasOwnSections.sectionNumber(courseCode: "ACCT 1010", sectionNames: ["8:30amOIDD1010-004-Fall2026"]) == nil)
+    }
+
     @Test("a term code after the course number is never read as a section")
     func termIsNotASection() {
         #expect(CanvasOwnSections.sectionNumber(courseCode: "ACCT 1010", sectionNames: ["ACCT 1010 2026C"]) == nil)

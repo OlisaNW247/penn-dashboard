@@ -114,42 +114,43 @@ public enum CanvasOwnSections {
     /// The student's section number for a site whose course code is
     /// `courseCode` ("ACCT 1010"), or `nil` when the names do not settle it.
     public static func sectionNumber(courseCode: String, sectionNames: [String]) -> String? {
-        guard let wanted = codeKey(courseCode) else { return nil }
+        guard let regex = sectionRegex(for: courseCode) else { return nil }
         var numbers: [String] = []
         for name in sectionNames {
-            let text = name.uppercased().replacingOccurrences(of: "_", with: "-") as NSString
-            for match in sectionNameRegex.matches(in: text as String, range: NSRange(location: 0, length: text.length)) {
-                let dept = text.substring(with: match.range(at: 1))
-                let number = text.substring(with: match.range(at: 2))
-                let section = text.substring(with: match.range(at: 3))
-                guard codeKey(dept: dept, number: number) == wanted else { continue }
+            let text = name.replacingOccurrences(of: "_", with: "-") as NSString
+            for match in regex.matches(in: text as String, range: NSRange(location: 0, length: text.length)) {
+                let section = text.substring(with: match.range(at: 1)).uppercased()
                 if !numbers.contains(section) { numbers.append(section) }
             }
         }
         return numbers.count == 1 ? numbers[0] : nil
     }
 
-    /// `DEPT` then the course number then the section, each separated by a
-    /// space, a dash or nothing: "ACCT 1010-002", "ACCT 1010 002",
-    /// "ACCT-1010-002", "ACCT1010002". The section is three digits with an
-    /// optional letter, the shape `CourseCode`'s own section rule takes.
-    private static let sectionNameRegex = try! NSRegularExpression(
-        pattern: #"\b([A-Z]{2,5})[ -]?(\d{4}|\d{3})[ -]?(\d{3}[A-Z]?)\b"#
-    )
-
-    /// "ACCT 1010" and "ACCT-1010" and "acct 1010" are one key; a leading
-    /// zero in the number is dropped so Penn's old "PHYS 151" meets "PHYS
-    /// 0151".
-    static func codeKey(_ courseCode: String) -> String? {
+    /// A pattern for *this* course's code followed by a section number: the
+    /// department, then the course number (leading zeros optional, so Penn's
+    /// old "PHYS 151" meets "PHYS 0151"), then the section, each separated by
+    /// a space, a dash or nothing.
+    ///
+    /// Built from the code rather than a general "letters, digits, digits"
+    /// shape, because Penn's real section names have no word break before the
+    /// department: read off Olisa's phone on 2026-11-16, they are
+    /// "8:30amACCT1010-001-Fall2026" and "12:00pmLGST1010-002-Fall2026", the
+    /// meeting time glued to the code. The first version's general pattern
+    /// began with `\b` and matched neither; dropping the `\b` from a general
+    /// pattern would read "MACCT" out of "amACCT". Searching for the site's
+    /// own department and number also keeps a cross-listed twin ("OIDD
+    /// 1010-004") from lending its number, and the trailing `\b` keeps a term
+    /// code ("ACCT 1010 2026C") from being read as section 202.
+    static func sectionRegex(for courseCode: String) -> NSRegularExpression? {
         let upper = courseCode.uppercased() as NSString
         guard let match = codeRegex.firstMatch(in: upper as String, range: NSRange(location: 0, length: upper.length))
         else { return nil }
-        return codeKey(dept: upper.substring(with: match.range(at: 1)), number: upper.substring(with: match.range(at: 2)))
-    }
-
-    private static func codeKey(dept: String, number: String) -> String {
-        let trimmed = number.drop(while: { $0 == "0" })
-        return dept + " " + (trimmed.isEmpty ? "0" : String(trimmed))
+        let dept = upper.substring(with: match.range(at: 1))
+        let trimmed = String(upper.substring(with: match.range(at: 2)).drop(while: { $0 == "0" }))
+        let number = trimmed.isEmpty ? "0" : trimmed
+        let pattern = NSRegularExpression.escapedPattern(for: dept) + "[ -]?0*"
+            + NSRegularExpression.escapedPattern(for: number) + #"[ -]?(\d{3}[A-Z]?)\b"#
+        return try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
     }
 
     private static let codeRegex = try! NSRegularExpression(pattern: #"\b([A-Z]{2,5})[ -]?(\d{3,4}[A-Z]?)\b"#)
