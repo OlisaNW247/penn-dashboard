@@ -494,7 +494,11 @@ and API access.
     anonymous account when you disconnect Canvas.
 - **Your enrollment list** (which Canvas courses you're synced to) is kept so
   the pooling and quota system work, and is deleted if you delete your
-  account.
+  account. It includes your section number for each class, so ask can tell
+  when and where your own section meets: read from the class's name on
+  Canvas, or, when the name has none, from the sections Canvas lists for
+  your own enrollment. The section's name stays on your phone; only the
+  number is sent.
 - **Encrypted sync copies**, if you paired the Chrome extension: one
   encrypted copy per device, replaced each time that device syncs, deleted
   when you unpair or disconnect Canvas. We hold no key to them.
