@@ -11,9 +11,11 @@
 //
 // State is durable (`agent_uploads`, `agent_upload_chunks`, migration
 // 20261110090000) because the function runs in many stateless isolates. An
-// upload not finished within 30 minutes is garbage: refused, and swept by
-// `agent_sweep_expired`. One open upload per connection; a new begin replaces
-// an unfinished one. Never logged: names, bytes, urls.
+// upload idle for 30 minutes (no accepted chunk since, or since `begin` if
+// none) is garbage: refused, and swept by `agent_sweep_expired`; two hours
+// after `begin` is the ceiling whatever the activity. One open upload per
+// connection; a new begin replaces an unfinished one. Never logged: names,
+// bytes, urls.
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.115.0";
 import { base64url } from "./agentTokens.ts";
 import { DRAFT_BUCKET, sanitizeFileName } from "./agentDrafts.ts";
@@ -21,7 +23,12 @@ import type { ProposedDraft } from "./agentTools.ts";
 
 export const CHUNK_BYTES = 16_384;
 export const MAX_UPLOAD_CHUNKS = 100;
+/** The idle allowance: an upload expires this long after its last accepted
+ *  chunk (after `begin` when none has come). */
 export const UPLOAD_TTL_MS = 30 * 60_000;
+/** The ceiling from `createdAt`. A signed upload URL lives about two hours
+ *  too, so nothing outlives it by much. */
+export const UPLOAD_MAX_LIFE_MS = 2 * 60 * 60_000;
 export const SHA256_PATTERN = /^[0-9a-fA-F]{64}$/;
 
 /** A refusal whose message is safe and useful to show the agent. */
@@ -87,6 +94,8 @@ export interface UploadStore {
   /** Inserts or replaces one chunk. */
   putChunk(uploadId: string, index: number, bytes: Uint8Array, sha256: string): Promise<void>;
   chunkIndexes(uploadId: string): Promise<number[]>;
+  /** Moves the row's expiry forward. */
+  touch(uploadId: string, expiresAt: string): Promise<void>;
   /** Every stored chunk, ascending by index. */
   chunks(uploadId: string): Promise<Array<{ index: number; bytes: Uint8Array }>>;
   /** A signed URL to PUT the raw file to, or null when none could be made. */
@@ -167,8 +176,9 @@ export class UploadService {
     const row = await this.store.get(userId, uploadId);
     if (!row) throw new UploadError("no such upload; call begin_file_upload");
     if (Date.parse(row.expiresAt) <= this.now().getTime()) {
+      const have = (await this.store.chunkIndexes(row.id)).length;
       await this.store.remove(row);
-      throw new UploadError("upload expired; call begin_file_upload again");
+      throw new UploadError(`upload expired with ${have} of ${row.chunks} chunks received; call begin_file_upload again`);
     }
     return row;
   }
@@ -182,6 +192,16 @@ export class UploadService {
     const want = chunkLength(row, index);
     if (bytes.byteLength !== want) throw new UploadError(`chunk ${index} must be ${want} bytes, got ${bytes.byteLength}`);
     await this.store.putChunk(uploadId, index, bytes, sha256.toLowerCase());
+    // Expiry slides with activity. The model types each chunk's base64 token
+    // by token, so a 74 KB file can take longer than 30 minutes from `begin`
+    // (a Claude cloud session sent all five chunks, got `missing: []`, and
+    // was told "expired" at finish: a finished upload thrown away). A sender
+    // who is still sending is not an abandoned upload. The ceiling keeps the
+    // sweeper's bound and matches the signed URL's life. The wrong fix is a
+    // longer fixed window: it still discards a finished slow upload, and it
+    // keeps real garbage longer.
+    const next = Math.min(this.now().getTime() + UPLOAD_TTL_MS, Date.parse(row.createdAt) + UPLOAD_MAX_LIFE_MS);
+    if (next > Date.parse(row.expiresAt)) await this.store.touch(row.id, new Date(next).toISOString());
     const have = await this.store.chunkIndexes(uploadId);
     return { received: have.length, missing: missingOf(row.chunks, have) };
   }
@@ -341,6 +361,11 @@ export class PostgrestUploadStore implements UploadStore {
     return ((data ?? []) as Array<{ index: number }>).map((r) => r.index);
   }
 
+  async touch(uploadId: string, expiresAt: string): Promise<void> {
+    const { error } = await this.client.from("agent_uploads").update({ expires_at: expiresAt }).eq("id", uploadId);
+    if (error) throw error;
+  }
+
   async chunks(uploadId: string): Promise<Array<{ index: number; bytes: Uint8Array }>> {
     const { data, error } = await this.client.from("agent_upload_chunks").select("index, data").eq("upload_id", uploadId).order("index");
     if (error) throw error;
@@ -454,6 +479,12 @@ export class MemoryUploadStore implements UploadStore {
 
   chunkIndexes(uploadId: string): Promise<number[]> {
     return Promise.resolve([...(this.chunkRows.get(uploadId)?.keys() ?? [])].sort((a, b) => a - b));
+  }
+
+  touch(uploadId: string, expiresAt: string): Promise<void> {
+    const row = this.rows.get(uploadId);
+    if (row) this.rows.set(uploadId, { ...row, expiresAt });
+    return Promise.resolve();
   }
 
   chunks(uploadId: string): Promise<Array<{ index: number; bytes: Uint8Array }>> {

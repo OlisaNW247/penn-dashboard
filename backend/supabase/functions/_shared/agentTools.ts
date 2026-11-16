@@ -613,7 +613,8 @@ export function registerTools(server: McpServer, backend: ToolBackend, options: 
     title: "Propose a submission",
     description:
       "Creates a draft for the student to review and submit from Smooth. Nothing is submitted to Canvas by this tool. " +
-      "Files: file_base64 is for files under about 24 KB; larger files (up to 1.5 MB) go through begin_file_upload, append_file_chunk and finish_file_upload.",
+      "Files: file_base64 is for files under about 24 KB; larger files (up to 1.5 MB) go through begin_file_upload, append_file_chunk and finish_file_upload. " +
+      "For a document you wrote (answers, an essay, a worksheet) send kind text with the body in Markdown (math as $...$ stays text): the student's phone renders it into a PDF when Canvas wants a file, so nothing has to be written out as base64. Use kind file only for bytes you did not author.",
     inputSchema: z.object({
       assignment_id: z.string(),
       kind: z.enum(["text", "url", "file"]),
@@ -685,7 +686,7 @@ export function registerTools(server: McpServer, backend: ToolBackend, options: 
     description:
       "Starts a chunked upload of a file for a draft (for files over about 24 KB; at most 1.5 MB). Give the assignment id, file name, mime type, exact size in bytes and the sha256 (hex) of the whole file. " +
       "Returns an upload id, the chunk size (16384 bytes) and the chunk count, and for clients with a shell a signed URL to PUT the raw bytes to. " +
-      "Then either PUT the file to that URL, or send each chunk with append_file_chunk; then call finish_file_upload. Nothing is submitted to Canvas. An unfinished upload expires after 30 minutes; a new begin replaces it.",
+      "Then either PUT the file to that URL, or send each chunk with append_file_chunk; then call finish_file_upload. Nothing is submitted to Canvas. An upload expires 30 minutes after its last chunk (2 hours after begin at most); a new begin replaces it. The PUT needs a shell whose network can reach the signed URL's host; if that connection is refused, send chunks, or send the document as a text draft instead.",
     inputSchema: z.object({
       assignment_id: z.string(),
       file_name: z.string(),
@@ -721,7 +722,7 @@ export function registerTools(server: McpServer, backend: ToolBackend, options: 
         result.upload_method = "PUT";
         result.upload_headers = { "content-type": args.mime_type, "x-upsert": "false" };
         lines.push(
-          `fastest: PUT the raw bytes to ${began.uploadUrl} (e.g. \`curl -X PUT --upload-file <path> -H 'Content-Type: ${args.mime_type}' '${began.uploadUrl}'\`), then call finish_file_upload; otherwise send chunks with append_file_chunk`,
+          `fastest: PUT the raw bytes to ${began.uploadUrl} (e.g. \`curl -X PUT --upload-file <path> -H 'Content-Type: ${args.mime_type}' '${began.uploadUrl}'\`), then call finish_file_upload; if that host is unreachable from where you run, send chunks with append_file_chunk`,
         );
       } else {
         lines.push("send chunks with append_file_chunk, then call finish_file_upload");

@@ -1352,7 +1352,7 @@ public (`none`); PKCE `S256` is mandatory; there are no client secrets.
    at once, because browsers throttle timers there and nobody is watching.
    `denied` and `expired` (or a 4xx from the poll) show "Not connected" and
    "This request expired" with a sentence naming the client (since
-   2026-11-10, not deployed). The response sets
+   2026-11-10; live since 2026-11-11). The response sets
    the browser nonce: `Set-Cookie: sa_<id>=<nonce>; HttpOnly; Secure;
    SameSite=Lax; Max-Age=600; Path=<agent-auth root>`. A unique code is drawn
    up to 5 times against the live-code index, then `503 code_unavailable`.
@@ -1486,7 +1486,7 @@ public (`none`); PKCE `S256` is mandatory; there are no client secrets.
    but through the connector front every request is counted by Vercel's
    egress address, a handful of addresses shared by every student: 60
    `/authorize` requests an hour from anyone blocked every sign-in. Since
-   then (written, not deployed) the front sends the address Vercel saw as
+   then (live since 2026-11-11) the front sends the address Vercel saw as
    `x-smooth-client-ip` with `x-smooth-front-secret`, and `agent-auth` uses
    it only when the secret equals `LHF_FRONT_CLIENT_IP_SECRET` (the front's
    `CLIENT_IP_SECRET`); the front never passes either header from a caller.
@@ -1565,7 +1565,7 @@ RLS): `course_id in (the caller's enrolled ids)`, live documents only
 | `get_facts` | `course?`, `since?` (Unix seconds) | `course_facts` of enrolled courses, by `seq`; `since` compares `posted_at`, and a fact with none is always included; facts of a gone or since-edited document are dropped, as in the manifest | 200 facts |
 | `get_announcements` | `course?`, `days` (1 to 365, default 14), `page?` | `announcement` documents, newest `posted_at` first | 10 per page, 8,000 characters a post |
 | `get_ed_posts` | `course?`, `page?` | `ed` documents, newest first | 10 per page, 8,000 characters a post |
-| `propose_submission` | `assignment_id`, `kind` (`text` \| `url` \| `file`), `body?`, `url?`, `file_base64?`, `file_name?`, `mime_type?`, `note?` | writes a draft (see Drafts below) | body 100,000 characters; note 2,000; file name 200 with no path separator, no control character and not only dots or spaces; `mime_type` `type/subtype` in RFC 6838 token characters, at most 127 (both since 2026-11-11, not deployed); file 1,572,864 bytes (1.5 MB) decoded, judged from the base64 length without decoding, but the tool description tells the model `file_base64` is for files under about 24 KB (claude.ai will not emit a 144,000-character argument) and that larger files go through the upload tools; url https only; the SDK's own 4 MiB body limit applies on top |
+| `propose_submission` | `assignment_id`, `kind` (`text` \| `url` \| `file`), `body?`, `url?`, `file_base64?`, `file_name?`, `mime_type?`, `note?` | writes a draft (see Drafts below) | body 100,000 characters; note 2,000; file name 200 with no path separator, no control character and not only dots or spaces; `mime_type` `type/subtype` in RFC 6838 token characters, at most 127 (both since 2026-11-11, live the same day); file 1,572,864 bytes (1.5 MB) decoded, judged from the base64 length without decoding, but the tool description tells the model `file_base64` is for files under about 24 KB (claude.ai will not emit a 144,000-character argument) and that larger files go through the upload tools; url https only; the SDK's own 4 MiB body limit applies on top |
 | `draft_status` | `id` | a draft's state | |
 | `begin_file_upload` | `assignment_id`, `file_name`, `mime_type`, `total_bytes`, `sha256` | `{ upload_id, chunk_bytes: 16384, chunks, upload_url, upload_method: "PUT", upload_headers }` as a JSON first line, then the "fastest: PUT ..." guidance | scope `draft`; same name and `mime_type` rules and unknown-assignment refusal as `propose_submission`; `total_bytes` 1 to 1,572,864; `sha256` 64 hex |
 | `append_file_chunk` | `upload_id`, `index`, `data_base64`, `sha256` | `{ received, missing: [...] }` | scope `draft`; a chunk is exactly 16384 bytes except the last; a wrong checksum is "chunk <i> checksum mismatch; resend it"; an index outside `0..chunks-1` is refused; re-sending an index replaces it |
@@ -1594,8 +1594,20 @@ that student, "no such draft" otherwise.
 scope `draft` and are annotated like `propose_submission` (not read-only; the
 `destructiveHint` follows the same knob). Caps: 1,572,864 bytes, at most 100
 chunks (the byte cap is 96), one open upload per connection (a new `begin`
-deletes the unfinished one, its chunks and its staged object), 30 minutes from
-`begin` to `finish` (`expires_at`; later calls say "upload expired"). Staging
+deletes the unfinished one, its chunks and its staged object). **Expiry
+(changed 2026-11-12; live since 2026-11-16 as `mcp` v16):** an upload expires 30 minutes after its
+last accepted chunk (after `begin` when none has come), and never more than
+2 hours after `begin`; each accepted chunk moves `expires_at` forward, and a
+later call on an expired upload says "upload expired with N of M chunks
+received". Before, it was a fixed 30 minutes from `begin`. Why: a sandboxed
+client that cannot reach the signed URL types every chunk's base64 itself, and
+a 74 KB file took a Claude cloud session longer than 30 minutes; it got
+`missing: []` and was then told "expired" at finish, a finished upload thrown
+away. A longer fixed window was the wrong fix (it still discards a slow
+finished upload and keeps garbage longer). A document the model wrote should
+go as a text draft and be rendered to PDF on the phone, which the tool texts
+now say. No migration: `agent_sweep_expired` deletes at `expires_at <= now()`,
+which stays right because the column is what moves. Staging
 is the table `agent_uploads` (`id` `smu_` + 22 base64url characters, `user_id`,
 `connection_id`, `assignment_id`, `file_name`, `mime_type`, `total_bytes`,
 `sha256`, `chunk_bytes`, `chunks`, `created_at`, `expires_at`) and
@@ -1607,7 +1619,7 @@ cascade) but cannot reach Storage, so an expired upload's staged object stays
 until the sweep below; opt-out (`agent-snapshot` `delete`) and `deleteUserData` delete the
 student's uploads and every staged object under `<user id>/uploads/`.
 
-**Stray staged objects** (found 2026-11-11, fixed, not deployed): the signed
+**Stray staged objects** (found 2026-11-11, fixed, live the same day): the signed
 upload URL lives about two hours and cannot be revoked, while the upload ends
 at finish, at a replacing begin, or after 30 minutes. A PUT after that answers
 200 and stores the file again under an upload id no row names; production
@@ -1649,7 +1661,7 @@ logging of names, bytes or URLs. Retention is that of drafts, so
 `docs/PRIVACY.md` is unchanged.
 
 Annotations: every read tool carries `readOnlyHint: true`, `destructiveHint:
-false` and `openWorldHint: false`, all explicit (since 2026-11-10, not deployed;
+false` and `openWorldHint: false`, all explicit (since 2026-11-10, live since 2026-11-11;
 OpenAI's app submission guidelines require all three on every tool, see
 `docs/CONNECTOR_LISTING_CHECKLIST_2026-11-10.md`).
 `propose_submission` carries `readOnlyHint: false`, `idempotentHint: false`,

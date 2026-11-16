@@ -87,6 +87,24 @@ Deno.test("replaceForConnection deletes the connection's old uploads and objects
   );
 });
 
+Deno.test("touch PATCHes expires_at on the one upload row; an error response throws", async () => {
+  await withStore(
+    () => null,
+    async (store, calls) => {
+      await store.touch("smu_a", "2026-11-10T12:45:00.000Z");
+      const patch = calls.find((c) => c.method === "PATCH" && c.path === "/rest/v1/agent_uploads")!;
+      assert.strictEqual(patch.q.get("id"), "eq.smu_a");
+      assert.deepStrictEqual(JSON.parse(patch.body), { expires_at: "2026-11-10T12:45:00.000Z" });
+    },
+  );
+  await withStore(
+    (c) => (c.method === "PATCH" ? json({ message: "boom" }, 500) : null),
+    async (store) => {
+      await assert.rejects(() => store.touch("smu_a", "2026-11-10T12:45:00.000Z"));
+    },
+  );
+});
+
 Deno.test("signedUploadUrl asks Storage for a signed upload URL into agent-drafts; a failure is null", async () => {
   await withStore(
     (c) => (c.path.includes("/object/upload/sign/") ? json({ url: "/object/upload/sign/agent-drafts/u1/uploads/smu_a/x.pdf?token=tok" }) : null),

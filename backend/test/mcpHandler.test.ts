@@ -375,7 +375,7 @@ Deno.test("chunked upload: begin, a wrong chunk refused and resent, finish makes
   assertEquals(info.upload_method, "PUT");
   assertEquals(info.upload_headers["x-upsert"], "false");
   assertStringIncludes(toolText(began), "fastest: PUT the raw bytes to ");
-  assertStringIncludes(toolText(began), "otherwise send chunks with append_file_chunk");
+  assertStringIncludes(toolText(began), "if that host is unreachable from where you run, send chunks with append_file_chunk");
 
   // Chunk 0 with the wrong bytes under its checksum.
   const bad = await call(deps, token, "append_file_chunk", {
@@ -498,24 +498,30 @@ Deno.test("chunked upload: no signed URL still leaves the chunk path", async () 
   assertStringIncludes(began, "send chunks with append_file_chunk");
 });
 
-Deno.test("chunked upload: expiry after 30 minutes, and the 20-open-draft cap keeps the staging", async () => {
+Deno.test("chunked upload: expiry slides with each accepted chunk, and the 20-open-draft cap keeps the staging", async () => {
   let clock = new Date(NOW);
   const store = new MemoryAgentStore();
   const backend = new FixtureToolBackend(NOW, 10, () => clock);
   const deps: McpDeps = { store, backend, publicBase: BASE, now: () => NOW, proposeHint: "false" };
   const { token } = await seed(store);
   const file = randomFile(100);
-  const a = JSON.parse(toolText(await begin(deps, token, file)).split("\n")[0]);
+  // A slow sender who is still sending is not abandoned: 2 chunks at +29 and
+  // +45 minutes, finish at +58, far past 30 minutes from begin.
+  const two = randomFile(20_000);
+  const slow = JSON.parse(toolText(await begin(deps, token, two)).split("\n")[0]);
   clock = new Date(NOW.getTime() + 29 * 60_000);
-  assertEquals(JSON.parse(toolText(await chunk(deps, token, a.upload_id, file, 0))).received, 1);
-  clock = new Date(NOW.getTime() + 31 * 60_000);
-  const late = await call(deps, token, "finish_file_upload", { upload_id: a.upload_id });
-  assertEquals(late.result.isError, true);
-  assertStringIncludes(toolText(late), "expired");
+  assertEquals(JSON.parse(toolText(await chunk(deps, token, slow.upload_id, two, 0))).received, 1);
+  clock = new Date(NOW.getTime() + 45 * 60_000);
+  assertEquals(JSON.parse(toolText(await chunk(deps, token, slow.upload_id, two, 1))).received, 2);
+  clock = new Date(NOW.getTime() + 58 * 60_000);
+  const done = await call(deps, token, "finish_file_upload", { upload_id: slow.upload_id });
+  assert(!done.result.isError, toolText(done));
   assertEquals(backend.uploadStore.rows.size, 0);
+  clock = new Date(NOW);
 
   clock = new Date(NOW);
-  for (let i = 0; i < 20; i++) {
+  // The slow upload's draft is the first of the 20 open ones.
+  for (let i = 0; i < 19; i++) {
     assert(!(await call(deps, token, "propose_submission", { assignment_id: "asg-phys-hw4", kind: "text", body: "x" })).result.isError);
   }
   const b = JSON.parse(toolText(await begin(deps, token, file)).split("\n")[0]);
@@ -524,6 +530,64 @@ Deno.test("chunked upload: expiry after 30 minutes, and the 20-open-draft cap ke
   assertEquals(capped.result.isError, true);
   assertStringIncludes(toolText(capped), "too many open drafts");
   assertEquals(backend.uploadStore.rows.size, 1);
+});
+
+function expiryFixture() {
+  let clock = new Date(NOW);
+  const store = new MemoryAgentStore();
+  const backend = new FixtureToolBackend(NOW, 10, () => clock);
+  const deps: McpDeps = { store, backend, publicBase: BASE, now: () => NOW, proposeHint: "false" };
+  const at = (minutes: number) => { clock = new Date(NOW.getTime() + minutes * 60_000); };
+  return { store, backend, deps, at };
+}
+
+Deno.test("chunked upload: idle for 30 minutes from begin with no chunk is expired, naming the count", async () => {
+  const { store, backend, deps, at } = expiryFixture();
+  const { token } = await seed(store);
+  const file = randomFile(100);
+  const a = JSON.parse(toolText(await begin(deps, token, file)).split("\n")[0]);
+  at(31);
+  const late = await call(deps, token, "finish_file_upload", { upload_id: a.upload_id });
+  assertEquals(late.result.isError, true);
+  assertStringIncludes(toolText(late), "expired with 0 of 1 chunks received");
+  assertEquals(backend.uploadStore.rows.size, 0);
+});
+
+Deno.test("chunked upload: idle for 30 minutes after a chunk is expired", async () => {
+  const { store, backend, deps, at } = expiryFixture();
+  const { token } = await seed(store);
+  const file = randomFile(20_000);
+  const a = JSON.parse(toolText(await begin(deps, token, file)).split("\n")[0]);
+  at(10);
+  await chunk(deps, token, a.upload_id, file, 0);
+  at(41);
+  const late = await call(deps, token, "finish_file_upload", { upload_id: a.upload_id });
+  assertEquals(late.result.isError, true);
+  assertStringIncludes(toolText(late), "expired with 1 of 2 chunks received");
+  assertEquals(backend.uploadStore.rows.size, 0);
+});
+
+Deno.test("chunked upload: the 2-hour ceiling from begin holds however active the sender is", async () => {
+  for (const [finishAt, ok] of [[125, false], [119, true]] as const) {
+    const { store, backend, deps, at } = expiryFixture();
+    const { token } = await seed(store);
+    const file = randomFile(100_000); // 7 chunks
+    const a = JSON.parse(toolText(await begin(deps, token, file)).split("\n")[0]);
+    // Each chunk is within 30 minutes of the last, so only the ceiling can end it.
+    for (const [i, minute] of [0, 25, 50, 75, 100, 110, 115].entries()) {
+      at(minute);
+      await chunk(deps, token, a.upload_id, file, i);
+    }
+    at(finishAt);
+    const res = await call(deps, token, "finish_file_upload", { upload_id: a.upload_id });
+    if (ok) {
+      assert(!res.result.isError, toolText(res));
+    } else {
+      assertEquals(res.result.isError, true);
+      assertStringIncludes(toolText(res), "expired with 7 of 7 chunks received");
+      assertEquals(backend.uploadStore.rows.size, 0);
+    }
+  }
 });
 
 Deno.test("upload tools need the draft scope", async () => {
