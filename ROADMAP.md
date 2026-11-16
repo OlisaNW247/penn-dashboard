@@ -177,20 +177,34 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
      it afterwards.
   Also open: the phone's course-material sync reported `manifest failed ·
   uploaded 0 · errors 7` on 2026-11-03, which would starve extraction.
+- **The Sweeper rings only when it should** (the release after 3.5.0 (21);
+  planned 2026-11-16, not started). Marco's "Yes, plan it" of 2026-11-16
+  answered the research's one question: the server may hold, per install,
+  an APNs device token and the minutes at which that install wants to be
+  woken, and nothing about which course, which work, a session or a state.
+  `docs/SWEEPER_ACCURACY_PLAN_2026-11-16.md` is the brief, two releases:
+  **Release 1, phone only**, four phases that ship alone, in order: cancel
+  at observation; a `planner/items` poll every minute inside the last hour
+  while the app is open; the Sweeper armed only from a read inside the
+  last hour that confirmed the item unsubmitted, with the quiet rules
+  (nothing to submit, in-class, zero points, optional/survey titles,
+  Gradescope-only, found exams); the background wake proven on a phone
+  with a throttle bypass for the poll. **Release 2, the server timer
+  push**: a silent APNs push at the phone's chosen minutes, best effort,
+  never after a force-quit, degrading to Release 1 under every failure
+  Apple documents; needs the APNs key from Olisa as Account Holder and a
+  paragraph in `docs/PRIVACY.md`. Measured by counts kept on the phone
+  (`rangSubmitted` to zero), never titles.
 - **Reminders for work already turned in, and a Sweeper that earns its
   ring** (Marco, 2026-11-04: reminded of an assignment he had submitted
   fifteen minutes earlier; agreed to the plan the same day). Reminders
   are local notifications scheduled days ahead and only a replan after a
   Canvas grades fetch unsets one; that fetch runs at most every 15
   minutes and only in the foreground, so a submission inside about 20
-  minutes of a reminder, or with the app closed, cannot stop it.
-  `docs/REMINDER_SUBMISSION_FIX_SESSION_PROMPT.md` is the brief, four
-  parts that ship alone: cancel at observation, a submissions-only poll
-  every minute inside the last hour, the background wake proven on a
-  phone with a throttle bypass, and the Sweeper armed only inside the
-  last hour from a confirmed-unsubmitted check, qualified by rules
-  (no-submission, zero points, "optional"/"survey" titles) with a seam
-  for a pooled model verdict later. Not started.
+  minutes of a reminder, or with the app closed, cannot stop it. The
+  2026-11-04 brief (`docs/REMINDER_SUBMISSION_FIX_SESSION_PROMPT.md`) is
+  superseded by the entry above; its four parts are Release 1 there.
+  Not started.
 - **Ship the no-banner sign-in as 3.4.1.** `v9` (2026-11-02): the sign-out
   banner is gone for good, replaced by a quiet status line the clock can
   never trigger; silent re-login on every open; keepalive probes; the
@@ -480,7 +494,8 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   `docs/REMINDER_SUBMISSION_FIX_SESSION_PROMPT.md` come first, then a
   server timer push (silent, best effort) is the one way to reach a closed
   app, and it needs the owners' answer on holding a device token and ring
-  minutes per install.
+  minutes per install. Answered yes on 2026-11-16; the build plan is
+  `docs/SWEEPER_ACCURACY_PLAN_2026-11-16.md` (Now, above).
 
 - **A loud same-day warning for in-class quizzes** (Marco, 2026-11-09: "it
   didn't tell me I had a quiz today"). PHYS 0151 Quiz 7 was in todo for two

@@ -5468,7 +5468,8 @@ none is a ship line.
     (`performSilentCanvasRenewal`) doesn't either. Background code is off
     limits. **Bit Marco on 2026-11-03** (a reminder fifteen minutes after
     he submitted): the fix is planned in
-    `docs/REMINDER_SUBMISSION_FIX_SESSION_PROMPT.md` (`ROADMAP.md` → Now);
+    `docs/SWEEPER_ACCURACY_PLAN_2026-11-16.md` (`ROADMAP.md` → Now; it
+    supersedes `docs/REMINDER_SUBMISSION_FIX_SESSION_PROMPT.md`);
     `LHFBackgroundRefresh.run()` does replan since the hardening work,
     unverified on a phone, and hits the same 15-minute throttle.
   - **Canvas partial failure.** When one site of a class fails and another
