@@ -494,8 +494,13 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   `docs/REMINDER_SUBMISSION_FIX_SESSION_PROMPT.md` come first, then a
   server timer push (silent, best effort) is the one way to reach a closed
   app, and it needs the owners' answer on holding a device token and ring
-  minutes per install. Answered yes on 2026-11-16; the build plan is
-  `docs/SWEEPER_ACCURACY_PLAN_2026-11-16.md` (Now, above).
+  minutes per install. Answered yes on 2026-11-16. **Marco's decision the
+  same day: no "no alarm unless confirmed" mode ("no dont want no alarm
+  option as this cd lead to someone missing an assignemnt"); a missed
+  assignment is worse than a wrong ring.** The build brief is
+  `docs/SWEEPER_ACCURACY_PLAN_2026-11-16.md` (Now, above; the plan
+  session's, being revised to the always-armed design); it replaces part 4
+  of the 2026-11-04 brief.
 
 - **A loud same-day warning for in-class quizzes** (Marco, 2026-11-09: "it
   didn't tell me I had a quiz today"). PHYS 0151 Quiz 7 was in todo for two
