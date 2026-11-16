@@ -54,8 +54,9 @@ things could be built instead: arm the alarm only once a fresh read has
 confirmed the work unsubmitted (a missed ring in place of a wrong one), or
 keep arming it days ahead as today and make the cancel as reliable as iOS
 allows (a wrong ring in place of a missed one). **Marco chose the second,
-on 2026-11-16, to the research session: he does not want "arm only from a
-confirmed read", because to him a missed ring is worse than a wrong one.**
+on 2026-11-16, to the research session, in his words: "no dont want no
+alarm option as this cd lead to someone missing an assignemnt." An
+occasional wrong ring is accepted over a missed one.**
 The first version of this plan (commit `b0d2738`) had the first; this
 revision has the second. So the alarm stays armed ahead of time, exactly as
 today, and every phase below is about one thing: seeing a submission as

@@ -182,9 +182,10 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   answered the research's one question: the server may hold, per install,
   an APNs device token and the minutes at which that install wants to be
   woken, and nothing about which course, which work, a session or a state.
-  Later the same day Marco told the research session he does not want
-  "arm only from a confirmed read": a missed ring is worse to him than a
-  wrong one, so **the alarm stays armed ahead of time as today and the
+  Later the same day Marco told the research session, of "arm only from a
+  confirmed read": "no dont want no alarm option as this cd lead to someone
+  missing an assignemnt". An occasional wrong ring is accepted over a
+  missed one, so **the alarm stays armed ahead of time as today and the
   work is making the cancel as reliable as iOS allows**.
   `docs/SWEEPER_ACCURACY_PLAN_2026-11-16.md` (revised for that the same
   day) is the brief, two releases: **Release 1, phone only**, four phases
