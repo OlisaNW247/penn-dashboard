@@ -1,7 +1,8 @@
 # The Sweeper rings only when it should: the build plan
 
-Written 2026-11-16, planning only: no app or backend code changed, nothing
-deployed, nothing on a phone. This is the brief a build session is handed.
+Written 2026-11-16, revised the same day after Marco changed one decision
+(§0). Planning only: no app or backend code changed, nothing deployed,
+nothing on a phone. This is the brief a build session is handed.
 It replaces `docs/REMINDER_SUBMISSION_FIX_SESSION_PROMPT.md` (2026-11-04,
 whose four parts it keeps, reordered and widened) and it rests on
 `docs/SWEEPER_STATUS_RESEARCH_2026-11-16.md`, which is where every claim
@@ -48,28 +49,46 @@ planner's `submitted` flag, same cadence), followed by `settleAfterFetch`'s
 submission while the app is closed, cannot stop it.
 
 The research settled what cannot be built: nothing of ours runs at the
-moment an alarm fires, so the ring can never be gated at ring time. What
-can be built is the reverse, in two releases.
+moment an alarm fires, so the ring can never be gated at ring time. Two
+things could be built instead: arm the alarm only once a fresh read has
+confirmed the work unsubmitted (a missed ring in place of a wrong one), or
+keep arming it days ahead as today and make the cancel as reliable as iOS
+allows (a wrong ring in place of a missed one). **Marco chose the second,
+on 2026-11-16, to the research session: he does not want "arm only from a
+confirmed read", because to him a missed ring is worse than a wrong one.**
+The first version of this plan (commit `b0d2738`) had the first; this
+revision has the second. So the alarm stays armed ahead of time, exactly as
+today, and every phase below is about one thing: seeing a submission as
+early and as often as possible, and cancelling the instant one is seen.
 
-**Release 1, on the phone only.** Never arm the Sweeper until a read inside
-the last hour has confirmed the item unsubmitted; cancel it the moment any
-later read says otherwise; read as often as iOS allows while the app is
-open, and prove how often it lets us read when it is not. Four phases, each
-shipping alone, each ending the 2026-11-03 case a little more completely.
-Nothing new leaves the phone, so `docs/PRIVACY.md` does not change.
+**Release 1, on the phone only.** Cancel the alarm and buzzes the moment any
+read sees a submission; read every minute inside the last hour while Smooth
+is open; keep the kind-based quiet rules for items that never ring; and
+prove how often iOS lets a closed app read, then let that wake read too.
+Four phases, each shipping alone, each ending the 2026-11-03 case a little
+more completely. Nothing new leaves the phone, so `docs/PRIVACY.md` does not
+change.
 
 **Release 2, the server as a timer.** The phone tells the server "wake me at
 these minutes"; the server sends a silent push at each; the phone wakes for
-about thirty seconds, reads the planner, and cancels or keeps its alarm.
-Best effort by Apple's own words, never after a force-quit, and the only
-way to reach a closed app at all. One key from Olisa, one short paragraph
-in `docs/PRIVACY.md`, one table.
+about thirty seconds, reads the planner, and cancels the alarm if the work
+is in. Best effort by Apple's own words, never after a force-quit, and the
+only way to reach a closed app at all. One key from Olisa, one short
+paragraph in `docs/PRIVACY.md`, one table. An optional fifth piece, for the
+three-buzz fallback only, lets a notification service extension turn a buzz
+into a quiet "turned in" even after a force-quit (§2.10).
 
-**The wrong fix, named once here and not again:** arming the alarm days ahead
-and trying to cancel it in time. Cancelling needs our process, and iOS lends
-it to a closed app rarely and never at a minute of our choosing. Every phase
-below moves the decision to *arming*, where our process is certain to be
-running, and treats every later chance to read as a bonus.
+**The floor that remains, stated once so nobody reads it as a bug later:** a
+force-quit app, or a dropped push, with a website submission inside the last
+hour, rings once for work that is already in. "turned in" on the alarm
+silences it and marks the card done; stop opens the page and marks nothing.
+Closing that floor would need the server to know submission state, which
+the rule forbids.
+
+**The wrong fix, named once here and not again:** a check at ring time.
+There is no fire-time code to put it in (research §1), so every "check
+before ringing" idea becomes either a gate on arming, which the owner has
+rejected, or a cancel that must have already run. The cancel is the work.
 
 ## 1. Release 1: the phone alone
 
@@ -245,42 +264,43 @@ paths; `refreshCanvasGrades` and its throttle; the structured-sources run's
 replace rules for dismissals. The poll reads, it never writes a completion
 as the student's own.
 
-### Phase 3. Arm the Sweeper only from a confirmed read inside the last hour
+### Phase 3. Confirmed reads cancel; kind decides what never rings
 
-**What.** The loud alarm (and its three-buzz fallback) is registered for an
-item only once a read taken inside the last 60 minutes before its ring time
-has seen the item still unsubmitted. An item the app could not confirm in
-that window gets no loud alarm, only the ordinary quiet reminders, which
-keep their days-ahead scheduling. That trades a missed ring for a wrong
-ring, which is Marco's stated preference (2026-11-04: before the Sweeper
-runs, something has to make sure the assignment really needs alarming,
-"since it can be quite annoying").
+**What.** Two rules, both about the cancel path and the eligibility rule,
+neither about *when* the alarm is armed: the Sweeper keeps its days-ahead
+arming from `plannedAlarms` as today (Marco's decision, §0).
 
-**Why this is a change to arming, not a check at ring time.** An alarm
-registered days ahead rings no matter what (research §1). The only thing
-our code controls is whether it is registered, and when.
+1. **Only a confirmed submitted read cancels.** A read that positively says
+   the item is submitted (the planner's `submitted: true` or
+   `marked_complete`, the grades fetch's `indicatesSubmitted`, a Gradescope
+   row that reads "Submitted") cancels through Phase 1. A read that failed,
+   was cut short, was rate-limited, answered 401, or simply did not list
+   the item never cancels anything and never arms anything either: an
+   absent item in a partial planner page is not "unsubmitted", and a 403 is
+   not "submitted". Today this is mostly true by construction
+   (`applyStructuredSources` only adds completions, and a failed grades
+   fetch keeps the last snapshot); this phase makes it a named, tested rule
+   so the faster reads of Phases 2 and 4 cannot erode it.
+2. **Quiet rules by kind.** Items that never ring, decided by what the item
+   *is*, not by whether a read confirmed it.
 
-**The pure rule to extract and test first.** Two additions to
+**The pure rules to extract and test first.** Two additions to
 `SweeperSettings` (`LUI/SweeperPlan.swift`), the one eligibility rule both
 the planner and the Sweeper page read, so the countdown card can never
 promise an alarm the planner will not set:
 
-1. `armingWindow: TimeInterval = 3600` and
-   `SweeperSettings.mayArm(_ item: DashItem, now: Date, confirmation: SubmissionConfirmation?) -> Bool`:
-   true only when `ringAt - now <= armingWindow` and `confirmation` is a
-   read of this item's Canvas id, taken at or after `ringAt - armingWindow`,
-   that said unsubmitted. `SubmissionConfirmation` is a small value
-   (assignment id, read at, source: planner | grades | gradescope,
-   submitted: Bool) that Phase 1's observation points and Phase 2's poll
-   record into a memory map `AppState.lastSubmissionReads` (never persisted:
-   a confirmation older than an hour is worthless and a relaunch starts
-   clean). `plannedAlarms` and `loudAlerts` consult it; `nextSweep` shows
-   the card for an item that *will* qualify once confirmed, with the word
-   "checking" under the countdown until it is (one word, the copy rule).
+1. `SubmissionRead` (assignment id, read at, source: planner | grades |
+   gradescope, verdict: `.submitted` | `.unsubmitted` | `.unknown`) and
+   `SubmissionRead.cancels -> Bool`: true for `.submitted` only. Phase 1's
+   observation points and Phase 2's poll build these; `.unknown` is what a
+   missing item, an error or a partial page becomes, and the cancel hook
+   drops it. A memory map `AppState.lastSubmissionReads` keeps the newest
+   per id for the DEBUG row and the counts (§3); never persisted, since a
+   read older than an hour says nothing a relaunch should trust.
 
 2. `SweeperSettings.neverRings(_ item: DashItem, facts: SweeperItemFacts) -> SweeperQuietReason?`,
-   the quiet rules, each one line and each a case of the enum, returned so
-   the DEBUG row can say why:
+   each rule one line and one case of the enum, returned so the DEBUG row
+   can say why:
    - `.nothingToSubmit`: `showsNothingToSubmit` (Canvas `none`, `on_paper`,
      `not_graded`, `.event`), already a rule, kept;
    - `.inClass`: an on-paper item or a title naming a quiz or exam that is
@@ -296,11 +316,11 @@ promise an alarm the planner will not set:
      list: optional, practice, survey, extra credit, ungraded, attendance;
      one `static let`, one test per word, one test that "Optional reading
      response 3" is quiet and "Problem Set 3" is not;
-   - `.gradescopeOnly`: an item with no Canvas assignment id, so no planner
-     read can ever confirm it; it rings only if a Gradescope scrape inside
-     the window still read "No Submission" (the scrape's cadence is Olisa's;
-     this plan asks nothing of it, so in practice such an item is quiet until
-     the scrape happens to land in the hour, and CLAUDE.md says so);
+   - `.gradescopeOnly`: an item with no Canvas assignment id. It still rings
+     (the owner's rule: armed as today), but the only read that can cancel
+     it is a Gradescope scrape, whose cadence is Olisa's and which this plan
+     asks nothing of; the DEBUG row says "cancel needs gradescope" and
+     CLAUDE.md says so. This is a reason recorded, not a rule that silences;
    - `.foundExam`: `isFoundExam`, already a rule, kept;
    - `.recurring`: `RecurringTask.isOccurrence`, already a rule, kept;
    - `.classOff`: the class's Sweeper or reminders switch, already a rule, kept.
@@ -310,11 +330,11 @@ promise an alarm the planner will not set:
 
 **What the student sees instead.** Nothing new on the dashboard. A quiet item
 keeps its ordinary reminders. The Sweeper page's countdown card names the
-next alarm that will actually ring; a DEBUG build with
-`FeatureFlags.profileDiagnostics` flipped shows one row per item in the
-next 24 hours with its `SweeperQuietReason` or "arms at <time>" or
-"confirmed <m> min ago"; a Release build shows none of it (the copy rule,
-and the owner's 2026-10-20 call on diagnostics).
+next alarm, as today. A DEBUG build with `FeatureFlags.profileDiagnostics`
+flipped shows one row per item in the next 24 hours with its
+`SweeperQuietReason`, or "armed · last read <m> min ago: unsubmitted", or
+"armed · no read yet"; a Release build shows none of it (the copy rule, and
+the owner's 2026-10-20 call on diagnostics).
 
 **The model gate, later, not here.** Where rules cannot tell, a pooled
 course-level `alarm_worthy` verdict from `extract-facts` was proposed on
@@ -323,33 +343,31 @@ nobody produces, and a `SweeperQualifier` protocol with the rules
 implementation behind it. It rides Olisa's sync and needs his go; it goes
 into ROADMAP → Next, not into this release.
 
-**Acceptance.** Tests: an item due in 3 hours has no alarm registered and no
-loud buzz planned; the same item at due minus 50 minutes with a planner
-confirmation 2 minutes old has one; the same with a confirmation 70 minutes
-old has none; with no confirmation, none, and the quiet reminders are
-unchanged in both cases; each quiet reason removes its item and leaves the
-others; the Sweeper page's `nextSweep` and the planner's `plannedAlarms`
-agree on every fixture (a parametrised test over the existing fixtures).
-`BerserkAlarmTests`' parity test ("every loud item ends with exactly one of
-alarm or buzzes") is extended with the confirmation, not loosened. Device
-check: one real item rings once at its lead time with the app having been
-open inside the hour; one submitted from the Canvas website 20 minutes
-before its ring does not ring and is not on the Sweeper page; an item due
-in 3 hours shows "checking" on the page and no alarm in `storedAlarms()`
-(the DEBUG row lists the AlarmKit store).
+**Acceptance.** Tests: an item due in 3 hours has its alarm registered, as
+today (a test that pins the owner's decision, so a later session cannot
+quietly reintroduce the gate); a `.submitted` read cancels it and an
+`.unknown` read from a 403, a partial page or a missing item leaves it
+armed; a `.unsubmitted` read changes nothing; each quiet reason removes its
+item and leaves the others; the Sweeper page's `nextSweep` and the planner's
+`plannedAlarms` agree on every fixture (a parametrised test over the
+existing fixtures). `BerserkAlarmTests`' parity test ("every loud item ends
+with exactly one of alarm or buzzes") is unchanged. Device check: one real
+item rings once at its lead time; one submitted from the Canvas website 20
+minutes before its ring, with Smooth open, does not ring and leaves the
+Sweeper page; an optional-titled item shows its quiet reason in the DEBUG
+row and sets no alarm in `storedAlarms()`.
 
 **CLAUDE.md and ROADMAP.md lines.** What the app does → Profile → reminders:
-the Sweeper arms inside the last hour from a confirmed read, the quiet
-rules by name, what "checking" means. Traps: a new entry, "an alarm armed
-days ahead cannot be unarmed", pointing at the research. Known gaps: the
-closed-app case rewritten as "an item the phone could not confirm in the
-hour gets no alarm; Release 2 adds the wakes that make confirmation likely".
+the quiet rules by name; only a confirmed submitted read cancels. Traps: a
+new entry, "an unknown read is not an unsubmitted one", with the 403 and
+partial-page examples. Known gaps: the floor of §0, in one sentence, dated.
 ROADMAP → Next: the pooled verdict seam.
 
-**What must not change.** `BerserkAlarmPlan.alarmID` (a reschedule stays
-idempotent; nothing about the id changes); the stop button; the ordinary
-reminders' days-ahead plan and their 64-slot budget arithmetic
-(`reservedForeignSlots` and the ambassador carve-out); the ledger.
+**What must not change.** When the alarm is armed (days ahead, from
+`plannedAlarms`, horizon `horizonDays`); `BerserkAlarmPlan.alarmID`; the
+stop button; the ordinary reminders' plan and their 64-slot budget
+arithmetic (`reservedForeignSlots` and the ambassador carve-out); the
+ledger.
 
 ### Phase 4. Prove the background wake, and let it run the poll
 
@@ -358,7 +376,7 @@ phone, how often, and whether a wake can finish the last-hour poll inside
 its 30 seconds; then let a wake inside the hour run the poll regardless of
 the 15-minute grades throttle.
 
-**Why fourth.** Phases 1 to 3 make the read decisive; this phase only adds
+**Why fourth.** Phases 1 to 3 make every read a cancel; this phase only adds
 chances to read while the app is suspended. No wake has ever been watched on
 a phone (CLAUDE.md, Known gaps; the crash of 2026-08-24 to 2026-10-09 ran
 unseen for six weeks). Apple documents no cadence, Low Power Mode switches
@@ -414,8 +432,8 @@ replan, and still awaits a pending silent renewal before completing.
 Everything here is behind one compile-time switch, `FeatureFlags.sweeperWake`
 (false until the whole phase is on a phone), and one server switch,
 `LHF_SWEEPER_WAKE_DISABLED` (§2.9). It ships only after Release 1 is on the
-App Store, because it is only another chance for the read Release 1 makes
-decisive; on its own it decides nothing.
+App Store, because it is only another chance for the cancelling read
+Release 1 builds; on its own it cancels nothing.
 
 ### 2.1 The APNs setup, Olisa's part as Account Holder
 
@@ -455,9 +473,8 @@ decisive; on its own it decides nothing.
   the student; the existing notification permission is for the alerts and
   stays as it is.
 - **Ring minutes.** The phone computes, from `plannedAlarms` and the quiet
-  rules, the set of moments at which it wants to be woken: for each item
-  that will qualify for the Sweeper (confirmed or not yet), `ringAt - 15 min`
-  and `ringAt - 3 min` (two chances per alarm; Apple: "two or three per
+  rules, the set of moments at which it wants to be woken: for each alarm
+  in `plannedAlarms`, `ringAt - 15 min` and `ringAt - 3 min` (two chances per alarm; Apple: "two or three per
   hour", and every item due at 11:59 PM is one moment, so a day's list is
   short), truncated to the minute, UTC, at most 24 moments and only inside
   the next 48 hours. Nothing about which item: the server receives a list
@@ -572,7 +589,7 @@ session and not lengthened:
 
 > **A wake-up call for the Sweeper (iOS 26, optional).** The Smooth
 > Sweeper is an alarm iOS rings whether or not the app is running, so the
-> app has to decide beforehand whether your work is still unsubmitted.
+> app has to cancel it beforehand once your work is in.
 > To give it a chance to check close to the deadline even when it is
 > closed, your phone sends our server two things: the device token Apple
 > issues this install for push notifications (it identifies the install to
@@ -580,7 +597,7 @@ session and not lengthened:
 > like to be woken, at most twenty-four over two days. At those minutes
 > our server sends your phone a silent push, with nothing in it; your
 > phone wakes for a few seconds, asks Canvas whether the work is in, and
-> keeps or cancels the alarm. The server never learns which class, which
+> cancels the alarm if the work is in. The server never learns which class, which
 > assignment or whether you submitted; the minutes are just minutes.
 > Apple may deliver these pushes late or not at all, and never after you
 > force-quit the app, so they help the alarm, they do not control it. The
@@ -599,18 +616,18 @@ and that it carries no content.
 
 - **Throttling** ("two or three per hour", held and delayed, only the newest
   held push kept): a late push wakes the phone after the ring. Degrades to
-  Release 1 exactly: the alarm that rang was armed from a confirmed read
-  inside the hour, and the two moments per alarm mean the earlier one often
-  lands even when the later is dropped. No retry: a second push is the
+  Release 1 exactly: the alarm rings as it would have without the push, and
+  the two moments per alarm mean the earlier one often lands even when the
+  later is dropped. No retry: a second push is the
   "newest" and displaces nothing useful.
 - **Low Power Mode**: Background App Refresh is off; whether background
   pushes are delivered is undocumented. Degrades to Release 1. The DEBUG
   wake log records `ProcessInfo.isLowPowerModeEnabled` at each wake so the
   48-hour read-off can say whether any push arrived in it.
 - **Force-quit**: the held push is discarded and the app is never woken.
-  Degrades to Release 1, and this is the case Release 1's "arm only from a
-  confirmed read" exists for: an item the phone never confirmed in the hour
-  has no loud alarm, only the quiet reminder.
+  Degrades to Release 1, and this is the floor of §0: a website submission
+  in the last hour rings once; "turned in" on the alarm silences it. §2.10
+  is the one route that reaches this case, for the buzzes only.
 - **Device offline at the moment**: APNs holds the push until the device
   connects or `apns-expiration` passes (two minutes), then drops it. Same
   as a late push.
@@ -624,8 +641,8 @@ and that it carries no content.
   cancels nothing; the alarm armed earlier stands, as under Release 1.
 
 In every row the student is never worse off than under Release 1, because
-nothing in Release 2 arms, keeps or cancels an alarm without a read, and a
-missed wake is a missed read.
+nothing in Release 2 arms or cancels an alarm without a read, and a missed
+wake is a missed cancel, never a missed ring.
 
 ### 2.7 The one open design choice, and the recommendation
 
@@ -671,15 +688,51 @@ sends one `DELETE` at the first foreground if a row may exist (a defaults
 flag remembers that a PUT was ever made). Either switch alone leaves the
 app on Release 1's behaviour; neither touches an alarm.
 
+### 2.10 Optional: the three-buzz fallback downgraded after a force-quit
+
+**What.** Research route B, for the buzzes only. On a phone where the
+Sweeper is the three Time Sensitive buzzes rather than an AlarmKit alarm
+(below iOS 26, AlarmKit refused or throwing), the server sends the Sweeper's
+buzz itself as an *alert* push at the ring minute with `mutable-content: 1`,
+and a Notification Service Extension (`LHFSweeperExtension/`, a new target)
+reads `planner/items` with the Canvas cookies and, if the work is in,
+rewrites the alert to a quiet "turned in" at `.passive` and, if it is not,
+leaves the loud text and `.timeSensitive`. The extension runs in its own
+process even after a force-quit (a DTS forum claim, research §1), which is
+the one thing nothing else in this plan reaches.
+
+**What it needs.** The Canvas cookies in a Keychain access group shared
+with the extension (`SessionCookieStore` gains an access-group parameter;
+the session stays on the phone, so the privacy rule holds); the server
+holding, per install, the ring minutes it already holds for §2.3 plus the
+*text* of each buzz (class and title), which is a new per-user datum the
+server does not hold today and must be disclosed in `docs/PRIVACY.md`
+beside §2.5; the push sent at the ring minute instead of before it. It
+cannot drop the notification without `com.apple.developer.usernotifications.filtering`,
+which Apple grants by request, so the floor becomes a quiet "turned in"
+line, not silence. It cannot touch an AlarmKit alarm as far as anything
+documents, so on iOS 26 with alarms allowed it changes nothing.
+
+**Cost and risk.** 3 to 4 days after §2.1 to §2.9, plus a review pass of a
+second process holding Canvas cookies: the risk is of the same kind as the
+hidden renewer's, not larger, but it is a new place the session lives, and
+every reader of `SessionCookieStore` has to be re-read for the access group.
+App Review sees an extension that reads a university site with saved
+cookies. Build it only if Release 2's pushes prove too unreliable over a
+week of counts (§3: `wakes.push` against `rangSubmitted`), and only with
+the class-and-title disclosure approved by Marco and Olisa first, because
+it moves a title to the server, which nothing else in this plan does.
+
 ## 3. Effort, order, needs, and how it is measured
 
 | Phase | Days | Needs from Marco | Needs from Olisa |
 |---|---|---|---|
 | R1.1 cancel at observation | 1 | a phone session for the check | nothing |
 | R1.2 last-hour planner poll | 2 | the rate-limit headers read off his phone | nothing (the poll is beside his sync, not in it) |
-| R1.3 arm from a confirmed read, quiet rules | 2 | the word list approved; "checking" approved | nothing; the pooled verdict is a later ask |
+| R1.3 confirmed reads cancel, quiet rules | 1.5 | the word list approved | nothing; the pooled verdict is a later ask |
 | R1.4 background wake proven | 1 plus 48 h of normal phone use | the phone on the cable twice for the plist | nothing |
 | R2 server timer push | 5 to 7 | the deploy go, the privacy label edit in App Store Connect, the phone | the APNs key (Key ID, Team ID, `.p8` into the Supabase secrets), Push Notifications on the App ID, the PRIVACY.md paragraph's sign-off |
+| R2.10 buzz downgrade extension (optional) | 3 to 4 | the title-to-server disclosure approved | the same approval; a second cookie holder is his sign-in code's concern |
 
 Order: R1.1, R1.2, R1.3, R1.4 (its 48 hours overlap R2's build), then R2,
 and R2 only after Release 1 is on the App Store. R1.1 to R1.3 are one
@@ -691,11 +744,12 @@ ships with them if it is done in time; R2 is the release after.
 the phone, in `UserDefaults.lhf` under one key (`sweeperCountsV1`), DEBUG and
 Release alike, never a title, id or URL, shown as one DEBUG row and read off
 the plist:
-- `armed`: alarms registered from a confirmed read;
-- `withheld.unconfirmed`: items that reached their arming window with no
-  read inside it (the number Release 2 exists to lower);
-- `withheld.quiet.<reason>`: one per `SweeperQuietReason`;
-- `cancelledAtObservation`: Phase 1's cancellations;
+- `armed`: alarms registered;
+- `quiet.<reason>`: one per `SweeperQuietReason`;
+- `cancelledAtObservation`: Phase 1's cancellations, with a sub-count by
+  source (planner poll, grades fetch, Gradescope, background wake, push
+  wake), which says which read is doing the work;
+- `readsUnknown`: reads that could not say and so cancelled nothing;
 - `rang`: alarms whose id was missing from `storedAlarms()` at the next
   launch while the item was still unsubmitted at that launch (a ring that
   should have rung);
@@ -705,18 +759,22 @@ the plist:
 - `polls`, `pollsBackedOff`, `wakes.bg`, `wakes.push`, `wakes.lowPower`.
 
 The plan has worked when, over two weeks on Marco's and Olisa's phones,
-`rangSubmitted` is zero, `rang` is not, and `withheld.unconfirmed` falls
-once Release 2 is on. Those three numbers, dated, go into CLAUDE.md →
+`rangSubmitted` is zero or every one of its cases is the §0 floor (a
+force-quit or a dropped push, which `wakes.push` and the DEBUG wake log
+tell apart), `rang` is not zero, and `cancelledAtObservation`'s wake and
+push sub-counts rise once Release 2 is on. Those three numbers, dated, go into CLAUDE.md →
 Known gaps each time they are read, and a `rangSubmitted` above zero is a
 bug report with the minutes-before figure attached.
 
 ## 4. What this plan will still not fix
 
-A student who submits on the Canvas website, never opens Smooth in the
-hour, has force-quit the app, and whose phone iOS never wakes: with Release
-1 their alarm was never armed (no confirmation), so they hear the quiet
-reminder only. That is the designed outcome, not a gap: a missed ring in
-place of a wrong one. Making the ring itself conditional on a check at fire
-time would need the server to know submission state, which is the line
-Marco and Olisa have drawn, and the research found no iOS mechanism that
-would run the check on the phone instead.
+A student who submits on the Canvas website inside the last hour, has
+force-quit Smooth or whose push iOS dropped, and whose phone iOS never
+wakes: the alarm rings once for work already in. "turned in" on it marks
+the card done and silences it; stop opens the page. That is the floor Marco
+accepted on 2026-11-16 in choosing an always-armed alarm over one armed
+from a confirmed read, and it is not a gap to fix later by gating the
+arming: the research found no iOS mechanism that runs a check at ring time,
+and a check on the server would need it to know submission state, which is
+the line Marco and Olisa have drawn. §2.10 narrows it for the three-buzz
+fallback to a quiet "turned in" line, at the price named there.
