@@ -461,9 +461,10 @@ part 4).
 confirmed" mode, because a student could miss an assignment. The alarm
 stays armed ahead of time and the work is the cancel. That reverses the
 trade recorded in the 2026-11-04 plan's part 4, so where this section and
-section 5 say "arm only from a confirmed read", read the always-armed plan
-instead: `docs/SWEEPER_ALWAYS_ARMED_PLAN_2026-11-16.md`. The table and the
-routes stand; the order of work there is the one to follow.
+section 5 say "arm only from a confirmed read", read the build brief
+instead: `docs/SWEEPER_ACCURACY_PLAN_2026-11-16.md`, the plan session's,
+revised to the always-armed design. The table and the routes here stand;
+the order of work there is the one to follow.
 
 | Route | App closed? | Latency to see a submission | Delivery guarantee | Leaves the phone | Review risk | Effort | Depends on |
 |---|---|---|---|---|---|---|---|

@@ -482,9 +482,8 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   app, and it needs the owners' answer on holding a device token and ring
   minutes per install. **Marco's decision the same day: no "no alarm unless
   confirmed" mode, a missed assignment is worse than a wrong ring.** The
-  always-armed implementation plan is
-  `docs/SWEEPER_ALWAYS_ARMED_PLAN_2026-11-16.md` (phase 1 phone-only, phase
-  2 the server timer push, phase 3 on evidence); it replaces part 4 of the
+  build brief is `docs/SWEEPER_ACCURACY_PLAN_2026-11-16.md` (the plan
+  session's, revised to the always-armed design); it replaces part 4 of the
   2026-11-04 brief.
 
 - **A loud same-day warning for in-class quizzes** (Marco, 2026-11-09: "it
