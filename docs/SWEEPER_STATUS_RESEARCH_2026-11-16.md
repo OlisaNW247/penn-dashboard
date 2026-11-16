@@ -457,6 +457,14 @@ part 4).
 
 ## 6. Comparison, order of work, and the one question
 
+**Decision after this was read (2026-11-16, Marco):** no "no alarm unless
+confirmed" mode, because a student could miss an assignment. The alarm
+stays armed ahead of time and the work is the cancel. That reverses the
+trade recorded in the 2026-11-04 plan's part 4, so where this section and
+section 5 say "arm only from a confirmed read", read the always-armed plan
+instead: `docs/SWEEPER_ALWAYS_ARMED_PLAN_2026-11-16.md`. The table and the
+routes stand; the order of work there is the one to follow.
+
 | Route | App closed? | Latency to see a submission | Delivery guarantee | Leaves the phone | Review risk | Effort | Depends on |
 |---|---|---|---|---|---|---|---|
 | Cancel at observation (plan 1) | no | at the next read | n/a | nothing new | none | 1 day | nothing |
