@@ -1139,7 +1139,7 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
   if (req.targetTerm !== undefined) {
     if (chosen.meetsTarget) {
       if (chosen.id === "best") {
-        notes.push(`this fits by ${termLabel(req.targetTerm)} only in the best case: ${bestAssumptions().join("; ")}`);
+        notes.push(`this fits by ${termLabel(req.targetTerm)} only in the best case, whose assumptions follow`);
       } else if (chosen.id === "approved") notes.push(`this fits by ${termLabel(req.targetTerm)} only with ${fmt(chosen.maxLoad)} cu semesters, which need approval`);
       else if (chosen.id === "summer" && chosen.summer) notes.push(`this fits by ${termLabel(req.targetTerm)} only with summer courses`);
     } else if (chosen.finishTerm) {

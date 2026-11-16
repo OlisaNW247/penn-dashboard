@@ -79,9 +79,13 @@ export const pennPolicy: Policy = {
 
   petitionPairs(a, b) {
     if (a.degreeId !== b.degreeId || a.id === b.id) return false;
+    // Business breadth with the concentration is not here on purpose:
+    // Wharton allows breadth to share a course only with a *second*
+    // concentration, and breadth must sit outside the concentration's
+    // department, so offering it as a petition would send the student to
+    // ask for something the rule already refuses.
     return (
       isPair(a, b, "wharton.flex", "wharton.concentration") ||
-      isPair(a, b, "wharton.breadth", "wharton.concentration") ||
       isPair(a, b, "seas.math", "seas.techElective")
     );
   },
