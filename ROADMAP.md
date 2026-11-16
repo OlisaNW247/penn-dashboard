@@ -182,19 +182,30 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   answered the research's one question: the server may hold, per install,
   an APNs device token and the minutes at which that install wants to be
   woken, and nothing about which course, which work, a session or a state.
-  `docs/SWEEPER_ACCURACY_PLAN_2026-11-16.md` is the brief, two releases:
-  **Release 1, phone only**, four phases that ship alone, in order: cancel
-  at observation; a `planner/items` poll every minute inside the last hour
-  while the app is open; the Sweeper armed only from a read inside the
-  last hour that confirmed the item unsubmitted, with the quiet rules
-  (nothing to submit, in-class, zero points, optional/survey titles,
-  Gradescope-only, found exams); the background wake proven on a phone
-  with a throttle bypass for the poll. **Release 2, the server timer
-  push**: a silent APNs push at the phone's chosen minutes, best effort,
-  never after a force-quit, degrading to Release 1 under every failure
-  Apple documents; needs the APNs key from Olisa as Account Holder and a
-  paragraph in `docs/PRIVACY.md`. Measured by counts kept on the phone
-  (`rangSubmitted` to zero), never titles.
+  Later the same day Marco told the research session, of "arm only from a
+  confirmed read": "no dont want no alarm option as this cd lead to someone
+  missing an assignemnt". An occasional wrong ring is accepted over a
+  missed one, so **the alarm stays armed ahead of time as today and the
+  work is making the cancel as reliable as iOS allows**.
+  `docs/SWEEPER_ACCURACY_PLAN_2026-11-16.md` (revised for that the same
+  day) is the brief, two releases: **Release 1, phone only**, four phases
+  that ship alone, in order: cancel at observation; a `planner/items` poll
+  every minute inside the last hour while the app is open; only a
+  confirmed submitted read cancels (an unknown read never arms or disarms)
+  plus the kind-based quiet rules (nothing to submit, in-class, zero
+  points, optional/survey titles, found exams); the background wake proven
+  on a phone with a throttle bypass for the poll. **Release 2, the server
+  timer push**: a silent APNs push at the phone's chosen minutes, best
+  effort, never after a force-quit, degrading to Release 1 under every
+  failure Apple documents; needs the APNs key from Olisa as Account Holder
+  and a paragraph in `docs/PRIVACY.md`; optionally, for the three-buzz
+  fallback only, a notification service extension that downgrades a buzz
+  to "turned in" after a force-quit, at the price of cookies in a second
+  process and a title on the server. The floor that remains: a force-quit
+  app or a dropped push with a website submission in the last hour rings
+  once for work already in; "turned in" on the alarm silences it. Measured
+  by counts kept on the phone (`rangSubmitted` to zero or only the floor),
+  never titles.
 - **Reminders for work already turned in, and a Sweeper that earns its
   ring** (Marco, 2026-11-04: reminded of an assignment he had submitted
   fifteen minutes earlier; agreed to the plan the same day). Reminders
