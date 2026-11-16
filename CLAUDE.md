@@ -151,7 +151,7 @@ with the backend unreachable, ask answers on-device:
 items, retrieves policy and content answers from synced course materials
 (`CourseKnowledgeCollector` → `CourseKnowledgeStore`), and on iOS 26 /
 macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
-(`OnDeviceLanguageModel`). A twelfth function, `degree-advisor`, is in the tree on `degree-progress` and **live since 2026-11-14 at about 17:49 UTC** (version 1 from `b5b0762`; **version 2 since about 18:40 UTC the same day, from `1b92d58`**, the what-if round trip, both at Olisa's go **version 5 since 2026-11-15 about 17:35 UTC, from `d2e0a49`**, the picks, at his go (versions 3 and 4 were not deployed from this session; `ask` read 24 and `sync` 31 at the same moment); **version 6 since 2026-11-15 about 18:20 UTC, from `335ec9a`**, the rounds, at his go); Degree → Plan with AI); only a `degree-progress` build calls it. Eleven Edge Functions are in
+(`OnDeviceLanguageModel`). A twelfth function, `degree-advisor`, is in the tree on `degree-progress` and **live since 2026-11-14 at about 17:49 UTC** (version 1 from `b5b0762`; **version 2 since about 18:40 UTC the same day, from `1b92d58`**, the what-if round trip, both at Olisa's go **version 5 since 2026-11-15 about 17:35 UTC, from `d2e0a49`**, the picks, at his go (versions 3 and 4 were not deployed from this session; `ask` read 24 and `sync` 31 at the same moment); **version 6 since 2026-11-15 about 18:20 UTC, from `335ec9a`**, the rounds, at his go; **version 7 since 2026-11-16, from `4083bc0`**, the deterministic planner, at his go); Degree → Plan with AI); only a `degree-progress` build calls it. Eleven Edge Functions are in
 `backend/supabase/functions/` (all eleven are deployed; `extract-facts` was
 the last, on 2026-11-05): `ask`,
 `ask-canary`, `delete-account`, `device-sync`, `discover-websites`,
@@ -1205,6 +1205,49 @@ Keep this current. It is the fastest way for a new session to know what exists.
     in the last two years' semesters. Green at the first attempt: 4032 /
     382, the iOS build, Deno 755 (run 43744564579 at `335ec9a`). Not on
     a phone yet.
+    **The deterministic planner, 2026-11-15/16 (`738bf42`..`4083bc0`).**
+    Four attempts had shown that one model call cannot read two audits and
+    plan: it filled placeholder rows, never counted a course toward both
+    degrees, ignored Penn's load rules and could not say the request did not
+    fit. A plan Olisa had made by hand with real catalogue data (attribute
+    lists, the CIS elective list, arithmetic) got it right, so the
+    arithmetic now lives in code (`backend/supabase/functions/_shared/
+    degreePlanner/`): `requirements.ts` reads the audits into slots,
+    `catalog.ts` fetches Penn Labs' public course API (attribute searches,
+    course lists, details) and the CIS technical-elective list, `planner.ts`
+    fills slots with cross-degree double counting under `policy.ts` (one
+    course per degree per slot, Wharton's within-degree pairs only as
+    petitions, 5.5 / 6.5 cu loads, 2 cu a summer and 4 in all, senior
+    project fall then spring, Wharton fundamentals before the capstone) and
+    schedules three scenarios (standard, summer, approved) plus the
+    student's own load, and `engine.ts` runs it under a hard 25-second
+    deadline with a second pass for prerequisites. In `degree-advisor` a
+    request with `structured` (the audits, the history, the current term;
+    the phone sends it since `c034965`) makes the first model call read
+    only the intent (target term, load, summers, requirements the student
+    calls done), runs the engine, and a second call explains the result in
+    at most 170 words and, when asked, drafts an email to the advisor; the
+    response carries `plan` and `email`, and the phone writes the schedule
+    into the plan table (`DegreeAdvisor.applyEnginePlan`), with "ask
+    advisor" on petition courses. Requests without `structured` take the
+    old path. An independent review found the budget unenforced and input
+    unbounded; both fixed in `4083bc0` (deadlines on every fetch, 70 s for
+    the intent call, 130 s for the explain call, caps on slots, codes and
+    the cache). A live dry run on a GitHub runner
+    (`scripts/penn-catalog/dry-run.ts`, the `penn-catalog` workflow; the
+    cloud session cannot reach Penn Labs) over the synthetic audit fixture
+    read 2,218 courses in about 6 s and planned in under a second: 25.5 cu
+    left (30.5 without double counting), fall 2028 with summers, spring
+    2029 without, and spring 2028 out of reach even at 6.5 cu, which
+    agrees with the hand-made analysis of Olisa's own case. Known limit:
+    Penn Labs' `prerequisites` field is empty for most courses (CIS 4000's
+    included), so prerequisite order rests on the explicit rules; a
+    language course above the first level carries a placement-exam note.
+    **Deployed as version 7 from `4083bc0` on 2026-11-16 at Olisa's go**
+    (`ask` 24, `sync` 31 unchanged; it answers `OPTIONS` 200 and an
+    unsigned POST 401). Deno 835 passed; Swift unchanged since 4046 / 383
+    green with the iOS build (run 43750193079 at `c034965`). Not yet asked
+    from a phone.
     **The add sheet's list is grouped** (`DegreeContribution.grouped`): "both
     degrees" first, then each degree under its name, ranked inside. Ranked by
     points alone, his five engineering rows (+2% each) sat above two Wharton

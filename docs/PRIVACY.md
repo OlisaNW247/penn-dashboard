@@ -197,7 +197,14 @@ audit.
   course for a requirement Penn describes only in words, our server checks
   that the course exists by asking Penn Labs' public course catalogue
   (penncoursereview.com) for that course code alone; nothing about you goes
-  with it.
+  with it. Since 2026-11-16 a message also carries the audits themselves, in
+  the form the app keeps them (the same requirements, course codes and
+  semesters listed above, nothing more), so that a planning program on our
+  server, not the language model, can work out the plan; to do that the
+  server asks Penn Labs' catalogue and Penn's public CIS elective list for
+  course, subject and requirement-attribute codes, and nothing about you
+  goes with them. Asked for an email to your advisor, the chat drafts one
+  for you to copy; Smooth sends nothing to anyone.
 - **Searching programs:** the search in "what if" runs on this phone, over
   Penn's public list of programs. On an iPhone with Apple Intelligence,
   when a search finds almost nothing, Apple's on-device model is asked for

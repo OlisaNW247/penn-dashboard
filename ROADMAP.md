@@ -966,6 +966,16 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-16.** Plan with AI plans with code, not the model
+  (`degree-progress`, `738bf42`..`4083bc0`; `degree-advisor` version 7,
+  deployed at Olisa's go): the audits become slots, Penn Labs and the CIS
+  elective list supply the catalogue, a deterministic planner counts
+  courses toward both degrees and schedules standard, summer and approved
+  scenarios, and the model only reads the request and explains the result
+  (and drafts an advisor email when asked). Not yet asked from a phone;
+  the next step is Olisa's own question on a fresh build. Open: Penn Labs
+  carries no prerequisites for most courses, so a real prerequisite source
+  (the catalogue pages, which block GitHub's runners) is the next data gap.
 - **2026-11-14.** Plan with AI (`degree-progress`, `a8956fc`, green on the
   runner; the `degree-advisor` function is live since the same day, version 1, unasked): a
   chat on the degree screen that answers from Penn's audits through a larger
