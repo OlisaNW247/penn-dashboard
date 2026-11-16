@@ -472,6 +472,16 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
 
 ## Next: features
 
+- **Where the Sweeper's accuracy can come from** (Marco, 2026-11-16: "super
+  important that like smooth sweeper only goes off when it needs to").
+  `docs/SWEEPER_STATUS_RESEARCH_2026-11-16.md`: no iOS mechanism runs our
+  code at an exact time after a force-quit, so the loud alarm can only be
+  armed from a confirmed read, never gated at ring time; the four parts of
+  `docs/REMINDER_SUBMISSION_FIX_SESSION_PROMPT.md` come first, then a
+  server timer push (silent, best effort) is the one way to reach a closed
+  app, and it needs the owners' answer on holding a device token and ring
+  minutes per install.
+
 - **A loud same-day warning for in-class quizzes** (Marco, 2026-11-09: "it
   didn't tell me I had a quiz today"). PHYS 0151 Quiz 7 was in todo for two
   days and filed at its due time; the Sweeper never rings for nothing to
