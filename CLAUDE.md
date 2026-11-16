@@ -151,7 +151,7 @@ with the backend unreachable, ask answers on-device:
 items, retrieves policy and content answers from synced course materials
 (`CourseKnowledgeCollector` → `CourseKnowledgeStore`), and on iOS 26 /
 macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
-(`OnDeviceLanguageModel`). A twelfth function, `degree-advisor`, is in the tree on `degree-progress` and **live since 2026-11-14 at about 17:49 UTC** (version 1 from `b5b0762`; **version 2 since about 18:40 UTC the same day, from `1b92d58`**, the what-if round trip, both at Olisa's go **version 5 since 2026-11-15 about 17:35 UTC, from `d2e0a49`**, the picks, at his go (versions 3 and 4 were not deployed from this session; `ask` read 24 and `sync` 31 at the same moment); **version 6 since 2026-11-15 about 18:20 UTC, from `335ec9a`**, the rounds, at his go; **version 7 since 2026-11-16, from `4083bc0`**, the deterministic planner, at his go); Degree → Plan with AI); only a `degree-progress` build calls it. Eleven Edge Functions are in
+(`OnDeviceLanguageModel`). A twelfth function, `degree-advisor`, is in the tree on `degree-progress` and **live since 2026-11-14 at about 17:49 UTC** (version 1 from `b5b0762`; **version 2 since about 18:40 UTC the same day, from `1b92d58`**, the what-if round trip, both at Olisa's go **version 5 since 2026-11-15 about 17:35 UTC, from `d2e0a49`**, the picks, at his go (versions 3 and 4 were not deployed from this session; `ask` read 24 and `sync` 31 at the same moment); **version 6 since 2026-11-15 about 18:20 UTC, from `335ec9a`**, the rounds, at his go; **version 7 since 2026-11-16, from `4083bc0`**, the deterministic planner, at his go; **version 9 since later on 2026-11-16, from `9c45e21`**, area lists, the best case and no MBA courses, at his go (version 8 was not deployed from this session; `ask` read 25 and `sync` 32 at the same moment)); Degree → Plan with AI); only a `degree-progress` build calls it. Eleven Edge Functions are in
 `backend/supabase/functions/` (all eleven are deployed; `extract-facts` was
 the last, on 2026-11-05): `ask`,
 `ask-canary`, `delete-account`, `device-sync`, `discover-websites`,
@@ -1246,8 +1246,24 @@ Keep this current. It is the fastest way for a new session to know what exists.
     **Deployed as version 7 from `4083bc0` on 2026-11-16 at Olisa's go**
     (`ask` 24, `sync` 31 unchanged; it answers `OPTIONS` 200 and an
     unsigned POST 401). Deno 835 passed; Swift unchanged since 4046 / 383
-    green with the iOS build (run 43750193079 at `c034965`). Not yet asked
-    from a phone.
+    green with the iOS build (run 43750193079 at `c034965`).
+    **Asked from his phone the same evening (recording 19:25 EST) and
+    fixed (`b84f54a`, `9c45e21`, live as version 9).** Both questions
+    answered in about 12 s (logs: engine 6.3-6.8 s, 24 slots), and the
+    schedule landed in the table, but it left 25.5 CU (finance) and 26.5
+    (management) where the hand plan found 24.5 with no approvals: the
+    planner gave an "Area List" its own course when the CS curriculum
+    counts it as a CIS elective; it listed the petitions without ever
+    planning with them, so spring 2028 read "not met in any scenario";
+    it planned FNCE 7210, an MBA course; and one unfilled row had no
+    label. Now an area list shares a course with the CIS elective slot
+    (automatic), a "best" scenario plans at 6.5 cu with summers, the
+    petitions approved and the language placement exam (chosen only when
+    nothing else meets the target, its assumptions in one note), courses
+    6000+ are planned only when Penn names them, and breadth with the
+    concentration is no longer offered as a petition (Wharton refuses it).
+    The live dry run then read 24.5 CU with no approvals and spring 2028
+    in the best case, as the hand plan did. Deno 842. Not yet asked again.
     **The add sheet's list is grouped** (`DegreeContribution.grouped`): "both
     degrees" first, then each degree under its name, ranked inside. Ranked by
     points alone, his five engineering rows (+2% each) sat above two Wharton
