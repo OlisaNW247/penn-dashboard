@@ -1,3 +1,5 @@
+**Superseded 2026-11-16 by `docs/SWEEPER_ACCURACY_PLAN_2026-11-16.md`, the brief a build session is handed now; this file is kept as the record of the 2026-11-04 plan and nothing below was changed.**
+
 # Session brief: reminders must not fire for work already turned in, and the Sweeper must earn its ring
 
 Written 2026-11-04 for the session that builds this on `v10`. Read
