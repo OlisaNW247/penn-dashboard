@@ -1849,7 +1849,14 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `degree-progress` (2026-11-14, the advisor's what-if round
+**Current on `degree-progress` (2026-11-16, the held course-material sync
+and the student's own section): 4060 tests / 386 suites, all green, `swift
+test --no-parallel` alone on Olisa's Mac (34 s of tests), and the unsigned
+generic iOS `xcodebuild` succeeded.** Marco's `c5f8d2a` from `v10` (the sync
+held on `AppState`, +`CourseKnowledgeHeldSyncTests`) and the own-section read
+(`CanvasOwnSectionsTests`, `CanvasOwnSectionsSummaryTests`), on `211739d`.
+
+Before it, **on `degree-progress` (2026-11-14, the advisor's what-if round
 trip): 4005 tests / 382 suites, all green, `swift test --no-parallel` on the
 GitHub macOS runner in 153 s, with the unsigned iOS `xcodebuild`, the
 extension suite and Deno (732 passed, 0 failed) green in the same run
@@ -4471,6 +4478,25 @@ it holds work that exists nowhere else.
 none is a ship line.
 
 ## Known gaps
+
+- **The course-material sync failed on every run on `degree-progress` until
+  2026-11-16, and the student's section was unknown for a renamed Canvas
+  site.** Read off Olisa's iPhone 17: every sync on this branch's builds read
+  `manifest failed · uploaded 0 · errors 25`, every Canvas request
+  `cancelled`, because this branch never had Marco's `c5f8d2a` (v10,
+  2026-11-10): the sync ran inside a view-bound task that SwiftUI cancels. It
+  was cherry-picked here on 2026-11-16, and the first run after the install
+  read `manifest ok · uploaded 200 · errors 7`, Ed `matched 4 · read 4`. The
+  same day ask could not say when his accounting class meets: the site is
+  "ACCT 1010 (Hail) - Fall 2026", so `courses.section` was empty and ask saw
+  eight lectures. `CanvasOwnSections` now reads the student's own sections
+  from `GET /api/v1/courses?include[]=sections`; Penn names them
+  "8:30amACCT1010-001-Fall2026" (the meeting time glued to the code, so a
+  pattern with a leading word break matched nothing; the first version did
+  exactly that and settled five of eight sites). Built from the course's own
+  code, it reads 001 for ACCT 1010 and 002 for LGST 1010. Not yet seen: the
+  section reaching `courses.section` on the server, and the tree then naming
+  Tue/Thu 8:30 in JMHH 240.
 
 - **Ambassador mode (2026-11-09) has signed in on one phone, and little
   else is checked.** The Debug build of `v12` `76bc6a0` went onto
