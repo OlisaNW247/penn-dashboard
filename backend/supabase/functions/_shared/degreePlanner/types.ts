@@ -179,7 +179,7 @@ export interface PlannedTermOut {
 }
 
 export interface Scenario {
-  id: "standard" | "summer" | "approved" | "student";
+  id: "standard" | "summer" | "approved" | "student" | "best";
   /** "5.5 cu a semester, no summer". */
   label: string;
   maxLoad: number;

@@ -179,6 +179,11 @@ function buildMatcher(slot: Slot, env: Env, unrestricted: Set<string>): (c: Cour
     }
     if (best < 0 && eucu && !c.synthetic && unrestricted.has(c.key)) best = 1;
     if (best < 0) return -1;
+    // Numbers from 6000 up are graduate courses (FNCE 7210 is an MBA course
+    // an attribute list happened to carry). Undergraduates take one only when
+    // Penn names it for the requirement; no attribute, range, subject,
+    // pattern, number rule or unrestricted list reaches it.
+    if (best !== 0 && c.num >= 6000) return -1;
     if (!c.synthetic) for (const x of excl) if (x(c)) return -1;
     if (minNumber !== undefined && !(c.num >= minNumber)) return -1;
     if (used.has(c.subject)) return -1;
@@ -888,26 +893,49 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
     }
   }
 
-  const kindOf: Map<number, Kind>[] = courses.map(() => new Map());
-  const slotsOf: number[][] = courses.map(() => []);
-  const slots: SlotInfo[] = active.map((slot, idx) => ({ idx, slot, need: slot.need, cands: [] }));
-  for (const s of slots) {
-    const match = buildMatcher(s.slot, env, unrestricted);
-    for (let ci = 0; ci < courses.length; ci++) {
-      const c = courses[ci];
-      if (taken.has(c.key) || avoid.has(c.key)) continue;
-      const k = match(c);
-      if (k < 0) continue;
-      s.cands.push(ci);
-      kindOf[ci].set(s.idx, k);
-      slotsOf[ci].push(s.idx);
+  const makeCtx = (list: Slot[], pol: Policy): Ctx => {
+    const kindOf: Map<number, Kind>[] = courses.map(() => new Map());
+    const slotsOf: number[][] = courses.map(() => []);
+    const slots: SlotInfo[] = list.map((slot, idx) => ({ idx, slot, need: slot.need, cands: [] }));
+    for (const s of slots) {
+      const match = buildMatcher(s.slot, env, unrestricted);
+      for (let ci = 0; ci < courses.length; ci++) {
+        const c = courses[ci];
+        if (taken.has(c.key) || avoid.has(c.key)) continue;
+        const k = match(c);
+        if (k < 0) continue;
+        s.cands.push(ci);
+        kindOf[ci].set(s.idx, k);
+        slotsOf[ci].push(s.idx);
+      }
     }
+    return { policy: pol, slots, courses, kindOf, slotsOf, prefer };
+  };
+  const ctx = makeCtx(active, policy);
+  const { slots, kindOf } = ctx;
+
+  // The best case: every petition pair counts as if an advisor approved it,
+  // and the language requirement is met by the placement exam when the
+  // student has taken nothing in a language subject. It is a separate
+  // solve over the same machinery, with a policy that allows the pairs.
+  const languageSlots = active.filter((s) => s.group === "wharton.language");
+  const languageSubjects = new Set<string>();
+  for (const s of languageSlots) {
+    const match = buildMatcher(s, env, unrestricted);
+    for (const c of courses) if (match(c) >= 0) languageSubjects.add(c.subject);
   }
-  const ctx: Ctx = { policy, slots, courses, kindOf, slotsOf, prefer };
+  const takenSubjectSet = new Set([...taken].map((k) => parseAlias(k).subject));
+  const placesOut = languageSlots.length > 0 && ![...languageSubjects].some((x) => takenSubjectSet.has(x));
+  const bestPolicy: Policy = {
+    ...policy,
+    withinDegree: (a, b) => policy.withinDegree(a, b) || policy.petitionPairs(a, b) || policy.petitionPairs(b, a),
+  };
+  const bestCtx = makeCtx(placesOut ? active.filter((s) => s.group !== "wharton.language") : active, bestPolicy);
 
   // ---- choose ------------------------------------------------------------
   const main = solve(ctx, { crossDegree: true, extra: new Set() });
   const flat = solve(ctx, { crossDegree: false, extra: new Set() });
+  const bestMain = solve(bestCtx, { crossDegree: true, extra: new Set() });
   const remainingCredits = main.totalCredits();
   const remainingCreditsWithoutOverlap = flat.totalCredits();
 
@@ -936,26 +964,35 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
   petitions.sort((x, y) => y.savesCredits - x.savesCredits || (x.code < y.code ? -1 : x.code > y.code ? 1 : 0));
 
   // ---- unfilled ----------------------------------------------------------
-  const unfilled: Unfilled[] = [];
-  for (const s of slots) {
-    const covered = Math.min(s.need, main.cov[s.idx]);
-    if (covered >= s.need - EPS) continue;
-    const word = s.slot.unit === "cu" ? "cu" : "courses";
-    unfilled.push({
-      slotId: s.slot.id,
-      degreeLabel: s.slot.degreeLabel,
-      label: s.slot.label,
-      reason: s.cands.length === 0
-        ? "no eligible course found in Penn's catalogue"
-        : `only ${fmt(covered)} of ${fmt(s.need)} ${word} can be filled from Penn's catalogue`,
-    });
-  }
+  // Never an empty label: the phone prints it in a sentence.
+  const unfilledOf = (c: Ctx, st: State): Unfilled[] => {
+    const out: Unfilled[] = [];
+    for (const s of c.slots) {
+      const covered = Math.min(s.need, st.cov[s.idx]);
+      if (covered >= s.need - EPS) continue;
+      const word = s.slot.unit === "cu" ? "cu" : "courses";
+      out.push({
+        slotId: s.slot.id,
+        degreeLabel: s.slot.degreeLabel,
+        label: s.slot.label.trim() || s.slot.blockTitle.trim() || "a requirement",
+        reason: s.cands.length === 0
+          ? "no eligible course found in Penn's catalogue"
+          : `only ${fmt(covered)} of ${fmt(s.need)} ${word} can be filled from Penn's catalogue`,
+      });
+    }
+    return out;
+  };
 
   // ---- schedule ----------------------------------------------------------
-  const items: Item[] = [...main.byCourse.entries()]
-    .map(([ci, sl]) => ({ ci, course: courses[ci], slots: sl.slice().sort((a, b) => a - b) }))
-    .sort((a, b) => (a.course.code < b.course.code ? -1 : 1));
-  const cons = buildConstraints(items, ctx);
+  interface Assign { ctx: Ctx; st: State; items: Item[]; cons: Constraints }
+  const mkAssign = (c: Ctx, st: State): Assign => {
+    const items: Item[] = [...st.byCourse.entries()]
+      .map(([ci, sl]) => ({ ci, course: courses[ci], slots: sl.slice().sort((a, b) => a - b) }))
+      .sort((a, b) => (a.course.code < b.course.code ? -1 : 1));
+    return { ctx: c, st, items, cons: buildConstraints(items, c) };
+  };
+  const mainA = mkAssign(ctx, main);
+  const bestA = mkAssign(bestCtx, bestMain);
 
   const terms: string[] = [];
   for (let t = req.currentTerm, n = 0; n < HORIZON; n++) {
@@ -977,10 +1014,18 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
       summer: summerOk,
     });
   }
+  defs.push({
+    id: "best",
+    label: `${fmt(policy.loads.approved)} cu${summerOk ? ", summers" : ""}, your advisor's approvals and the language placement exam`,
+    maxLoad: policy.loads.approved,
+    summer: summerOk,
+  });
   const runs = defs.map((d) => {
+    // "best" schedules its own course set; the others share the main one.
+    const A = d.id === "best" ? bestA : mainA;
     // Two list orders; keep the one that finishes sooner (ties: the first).
-    const first = runSchedule(items, cons, terms, d, policy, 0);
-    const second = cons.urgent.size ? runSchedule(items, cons, terms, d, policy, 1) : first;
+    const first = runSchedule(A.items, A.cons, terms, d, policy, 0);
+    const second = A.cons.urgent.size ? runSchedule(A.items, A.cons, terms, d, policy, 1) : first;
     const score = (r: Run) => [r.unplaced.length, r.finishIdx] as const;
     const [fa, fb] = [score(first), score(second)];
     const run = fb[0] < fa[0] || (fb[0] === fa[0] && fb[1] < fa[1]) ? second : first;
@@ -993,9 +1038,12 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
   const byId = (id: Scenario["id"]) => runs.find((r) => r.scenario.id === id);
   let chosenRun = byId("student")?.scenario.meetsTarget ? byId("student")! : undefined;
   if (!chosenRun) chosenRun = (["standard", "summer", "approved"] as const).map(byId).find((r) => r?.scenario.meetsTarget);
+  // Only when nothing ordinary fits does the best case speak up; if it does
+  // not fit either, the earliest honest finish is still the answer.
+  if (!chosenRun && byId("best")?.scenario.meetsTarget) chosenRun = byId("best")!;
   if (!chosenRun) {
-    const finished = runs.filter((r) => r.scenario.finishTerm !== null);
-    const pool = finished.length ? finished : runs;
+    const finished = runs.filter((r) => r.scenario.id !== "best" && r.scenario.finishTerm !== null);
+    const pool = finished.length ? finished : runs.filter((r) => r.scenario.id !== "best");
     chosenRun = pool.slice().sort((a, b) => {
       if (finished.length) {
         const fa = a.scenario.finishTerm!, fb = b.scenario.finishTerm!;
@@ -1007,11 +1055,29 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
     })[0];
   }
   const chosen = chosenRun.scenario;
+  const A = chosen.id === "best" ? bestA : mainA;
+  const { items, cons } = A;
+  const chosenSlots = A.ctx.slots;
+  const chosenCredits = A.st.totalCredits();
+  const unfilled = unfilledOf(A.ctx, A.st);
 
-  const label = (si: number) => `${slots[si].slot.degreeLabel} · ${slots[si].slot.label}`;
+  const label = (si: number) => `${chosenSlots[si].slot.degreeLabel} · ${chosenSlots[si].slot.label}`;
+  // A course that fills two slots only a petition pair joins (judged by the
+  // standing policy, not the best-case variant) needs an advisor's yes.
+  const petitionPairsOf = (it: Item): [number, number][] => {
+    const out: [number, number][] = [];
+    for (let i = 0; i < it.slots.length; i++) {
+      for (let j = i + 1; j < it.slots.length; j++) {
+        const a = chosenSlots[it.slots[i]].slot, b = chosenSlots[it.slots[j]].slot;
+        if (a.degreeId !== b.degreeId || policy.withinDegree(a, b)) continue;
+        if (policy.petitionPairs(a, b) || policy.petitionPairs(b, a)) out.push([it.slots[i], it.slots[j]]);
+      }
+    }
+    return out;
+  };
   const outFor = (it: Item): PlannedCourseOut => {
     const check = it.course.synthetic || noOfferingData(it.course);
-    const approval: Approval = check ? "check" : "automatic";
+    const approval: Approval = petitionPairsOf(it).length ? "petition" : check ? "check" : "automatic";
     const out: PlannedCourseOut = {
       code: it.course.code,
       title: it.course.title,
@@ -1019,7 +1085,8 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
       countsToward: it.slots.map(label),
       approval,
     };
-    if (it.course.synthetic) out.note = "not in the catalogue data; check it is offered";
+    if (approval === "petition") out.note = "counting it twice in one degree needs your advisor's approval";
+    else if (it.course.synthetic) out.note = "not in the catalogue data; check it is offered";
     else if (check) out.note = "no offering data; the term is a guess";
     return out;
   };
@@ -1038,13 +1105,25 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
 
   // ---- notes -------------------------------------------------------------
   const notes: string[] = [];
-  const saved = remainingCreditsWithoutOverlap - remainingCredits;
+  const saved = remainingCreditsWithoutOverlap - chosenCredits;
   if (saved > EPS) notes.push(`counting courses toward both degrees saves ${fmt(Math.round(saved * 100) / 100)} cu`);
   const byCi = new Map(items.map((i) => [i.ci, i]));
+  // What "best" leans on, named exactly, so the explanation can say it.
+  const bestAssumptions = (): string[] => {
+    const out: string[] = [`${fmt(policy.loads.approved)} cu semesters, which need approval`];
+    if (chosen.summer) out.push("summer courses");
+    for (const it of items) {
+      for (const [i, j] of petitionPairsOf(it)) {
+        out.push(`your advisor approving ${it.course.code} for both ${label(i)} and ${label(j)}`);
+      }
+    }
+    if (placesOut) out.push("you place out of the language requirement with Penn's placement exam");
+    return out;
+  };
   for (const [a, b] of cons.next) {
     const ta = termOf.get(a), tb = termOf.get(b);
     if (ta === undefined || tb === undefined) continue;
-    const sl = byCi.get(a)!.slots.map((s) => slots[s].slot.label).find((l) => /#\s*1\b/.test(l)) ?? "sequence";
+    const sl = byCi.get(a)!.slots.map((s) => chosenSlots[s].slot.label).find((l) => /#\s*1\b/.test(l)) ?? "sequence";
     const name = sl.replace(/#\s*1\b/, "").trim().toLowerCase();
     notes.push(`${byCi.get(a)!.course.code} goes in ${termLabel(terms[ta])} and ${byCi.get(b)!.course.code} in ${termLabel(terms[tb])} (${name} runs fall to spring)`);
   }
@@ -1059,7 +1138,9 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
   }
   if (req.targetTerm !== undefined) {
     if (chosen.meetsTarget) {
-      if (chosen.id === "approved") notes.push(`this fits by ${termLabel(req.targetTerm)} only with ${fmt(chosen.maxLoad)} cu semesters, which need approval`);
+      if (chosen.id === "best") {
+        notes.push(`this fits by ${termLabel(req.targetTerm)} only in the best case: ${bestAssumptions().join("; ")}`);
+      } else if (chosen.id === "approved") notes.push(`this fits by ${termLabel(req.targetTerm)} only with ${fmt(chosen.maxLoad)} cu semesters, which need approval`);
       else if (chosen.id === "summer" && chosen.summer) notes.push(`this fits by ${termLabel(req.targetTerm)} only with summer courses`);
     } else if (chosen.finishTerm) {
       notes.push(`this does not fit by ${termLabel(req.targetTerm)}; the earliest finish is ${termLabel(chosen.finishTerm)} at ${fmt(chosen.maxLoad)} cu a semester${chosen.summer ? " with summer courses" : ""}`);
@@ -1073,6 +1154,7 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
       ? `at ${fmt(req.maxLoad)} cu a semester the plan finishes in ${termLabel(stu.finishTerm)}`
       : `at ${fmt(req.maxLoad)} cu a semester the plan does not fit in ${HORIZON} terms`);
   }
+  if (chosen.id === "best") notes.push(`best case assumes ${bestAssumptions().join("; ")}`);
   const used = schedule.some((t) => seasonOf(t.term) === "summer");
   if (used) notes.push("summer terms are used");
 
@@ -1093,19 +1175,19 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
   const langNoted = new Set<string>();
   for (const it of items) {
     if (!termOf.has(it.ci)) continue;
-    if (!it.slots.some((si) => slots[si].slot.group === "wharton.language")) continue;
+    if (!it.slots.some((si) => chosenSlots[si].slot.group === "wharton.language")) continue;
     const c = it.course;
     if (!Number.isFinite(c.num) || c.num % 1000 < 200 || takenSubjects.has(c.subject)) continue;
     if (langNoted.has(c.code)) continue;
     langNoted.add(c.code);
     notes.push(`${c.code} assumes you place into it with Penn's language placement exam; otherwise start with ${c.subject} 0100 (or the first course in the sequence)`);
   }
-  if (schedule.length === 0 && remainingCredits <= EPS && unfilled.length === 0) {
+  if (schedule.length === 0 && chosenCredits <= EPS && unfilled.length === 0) {
     notes.push("nothing is left to plan");
   }
 
   return {
-    remainingCredits,
+    remainingCredits: chosenCredits,
     remainingCreditsWithoutOverlap,
     scenarios: runs.map((r) => r.scenario),
     chosen: chosen.id,

@@ -265,6 +265,12 @@ function subjectOf(code: string): string {
   return code.split(" ")[0];
 }
 
+/** The phone prints a label inside a sentence, so it is never empty: the
+ *  rule's own, else the block's title, else a plain word. */
+function labelOr(label: string, ctx: Ctx): string {
+  return label.trim() || ctx.blockTitle.trim() || "a requirement";
+}
+
 function makeSlot(ctx: Ctx, r: RuleView, path: string[], opts: {
   idSuffix?: string;
   label?: string;
@@ -274,7 +280,7 @@ function makeSlot(ctx: Ctx, r: RuleView, path: string[], opts: {
   extraText?: string;
 }): void {
   const id = `${ctx.degreeId}|${ctx.blockId}|${r.id}${opts.idSuffix ? `|${opts.idSuffix}` : ""}`;
-  const label = opts.label ?? r.label;
+  const label = labelOr(opts.label ?? r.label, ctx);
   if (opts.parsed.anyOf.length === 0) {
     ctx.unfilled.push({ slotId: id, degreeLabel: ctx.degreeLabel, label, reason: NO_COURSES_REASON });
     return;
@@ -331,7 +337,7 @@ function walkRule(ctx: Ctx, r: RuleView, ancestors: string[]) {
     ctx.unfilled.push({
       slotId: `${ctx.degreeId}|${ctx.blockId}|${r.id}`,
       degreeLabel: ctx.degreeLabel,
-      label,
+      label: labelOr(label, ctx),
       reason: DECLARE_REASON,
     });
     return;

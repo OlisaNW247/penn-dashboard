@@ -166,3 +166,29 @@ Deno.test("a slot with no courses is unfilled; wildcards become patterns; bad in
   assertEquals(r.degrees[0].slots[0].anyOf, [{ kind: "pattern", pattern: "MGMT @" }]);
   assertEquals(r.degrees[1].slots, []);
 });
+
+Deno.test("an unfilled entry never has an empty label", () => {
+  const rule = (o: Record<string, unknown>) => ({
+    id: "x", label: "Odd", ruleType: "g", status: "open", applied: [], advice: [], children: [], ...o,
+  });
+  const audit = {
+    goals: { college: "WU" },
+    blocks: [{ id: "b", type: "OTHER", title: "Business Breadth", rules: [
+      rule({ id: "a", label: "  ", needCourses: 2 }),
+      rule({ id: "d", label: "", children: [], adviceText: "", needCourses: 1, advice: [] }),
+      rule({ id: "m", label: "", status: "open", children: [rule({ id: "i", label: "You must declare a concentration", status: "info" })] }),
+    ] }],
+  };
+  const noTitle = { ...audit, blocks: [{ ...audit.blocks[0], title: "" }] };
+  const r = degreesFromAudits([{ degreeId: "d", label: "L", audit }, { degreeId: "e", label: "E", audit: noTitle }]);
+  assert(r.unfilled.length >= 4, `${r.unfilled.length}`);
+  for (const u of r.unfilled) assert(u.label.trim() !== "", JSON.stringify(u));
+  assertEquals(r.unfilled.filter((u) => u.degreeLabel === "L").every((u) => u.label === "Business Breadth"), true);
+  assertEquals(r.unfilled.filter((u) => u.degreeLabel === "E").every((u) => u.label === "a requirement"), true);
+});
+
+Deno.test("CS BSE: area lists sit beside the CIS elective", () => {
+  const { cs } = run();
+  assert(slot(cs, "Area List - Networking"));
+  assert(slot(cs, "CIS Elective at the 2000 Level or Above"));
+});

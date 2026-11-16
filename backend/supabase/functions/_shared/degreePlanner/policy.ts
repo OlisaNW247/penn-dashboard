@@ -43,13 +43,27 @@ function isPair(a: Slot, b: Slot, g1: string, g2: string): boolean {
   return (a.group === g1 && b.group === g2) || (a.group === g2 && b.group === g1);
 }
 
+const isAreaList = (s: Slot) => /^area list/i.test(s.label.trim());
+
+function isAreaListElectivePair(area: Slot, elective: Slot): boolean {
+  return area.group.startsWith("seas.") && elective.group === "seas.core" &&
+    isAreaList(area) && !isAreaList(elective) && /elective/i.test(elective.label);
+}
+
 export const pennPolicy: Policy = {
   crossDegree: { maxPerDegree: 1 },
 
   withinDegree(a, b) {
     if (a.degreeId !== b.degreeId || a.id === b.id) return false;
+    // SEAS: an area list ("Area List - Networking") overlaps the CIS elective
+    // by design, so a course from the list also counts as an elective. That
+    // is the curriculum's own rule, not a petition. Only the elective that
+    // sits with the major (group seas.core) qualifies: the technical, math
+    // and free electives are not what the area lists overlap, and a free
+    // elective would accept anything.
+    if (isAreaListElectivePair(a, b) || isAreaListElectivePair(b, a)) return true;
     // Wharton: cross-cultural with the liberal-arts areas, and a language
-    // course with them. Nothing else, and nothing at all in SEAS.
+    // course with them. Nothing else.
     return (
       isPair(a, b, "wharton.crossCultural", "wharton.liberal") ||
       isPair(a, b, "wharton.language", "wharton.liberal")

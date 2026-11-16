@@ -1257,13 +1257,25 @@ Response for `plan` and `email`: `{ "answer", "actions": [], "whatIf": null,
 "planning": false, "dropped": [], "model", "plan": PlanResult, "email"?: string }`.
 `email` is present only for intent `email` and only when the model wrote one.
 `plan` is `{ remainingCredits, remainingCreditsWithoutOverlap, scenarios:
-[{ id: "standard"|"summer"|"approved"|"student", label, maxLoad, summer,
+[{ id: "standard"|"summer"|"approved"|"student"|"best", label, maxLoad, summer,
 finishTerm: string|null, meetsTarget }], chosen, schedule: [{ term, credits,
 courses: [{ code, title, credits, countsToward: [string], approval:
 "automatic"|"petition"|"check", note? }] }], unfilled: [{ slotId, degreeLabel,
 label, reason }], petitions: [{ code, slots: [string], savesCredits }], notes:
 [string] }`. When `plan` is present the phone replaces its future semesters with
-`plan.schedule` and ignores `actions`. If the planner throws, the response is the fixed sentence "I couldn't build the plan just now. Try again in a moment." with no `plan` (log line `degree-advisor: engine failed`);
+`plan.schedule` and ignores `actions`.
+Scenario `best` (always reported, 6.5 cu semesters, summers unless the student
+said no, every petition pair counted as if the advisor approved it, and the
+`wharton.language` slots treated as met by the placement exam when the student
+has taken nothing in a language subject) is `chosen` only when `standard`,
+`summer`, `approved` and `student` all miss the target and `best` meets it; its
+schedule is a separate course selection, its petition courses carry approval
+`petition`, and `notes` has a "best case assumes ..." line naming each
+assumption. Two matching rules apply to every scenario: a course from an
+"Area List" rule also counts toward the same SEAS degree's CIS elective rule
+(automatic, not a petition), and a course numbered 6000 or above matches a slot
+only through an explicit course option of that slot. Every `unfilled` entry has a
+non-empty `label` (the rule's, else its block's title, else "a requirement"). If the planner throws, the response is the fixed sentence "I couldn't build the plan just now. Try again in a moment." with no `plan` (log line `degree-advisor: engine failed`);
 if only the explaining call fails, the plan is returned with a one-sentence
 numeric summary as the answer.
 

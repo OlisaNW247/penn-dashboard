@@ -538,3 +538,126 @@ Deno.test("planner: a plan with nothing left says so", () => {
   assert.equal(r.schedule.length, 0);
   assert.ok(r.notes.includes("nothing is left to plan"));
 });
+
+// ---- area lists, graduate courses, empty labels, the best case -------------
+
+const relabel = (from: string, to: string) => (d: Degree): Degree => ({
+  ...d, slots: d.slots.map((s) => s.label === from ? { ...s, id: `${s.degreeId}|b|${to}`, label: to } : s),
+});
+
+Deno.test("planner: an area-list course also counts as a CIS elective, automatically", () => {
+  const plain = plan(request(), catalog());
+  const asArea = (r: PlanRequest): PlanRequest => ({
+    ...r, degrees: r.degrees.map(relabel("Networking", "Area List - Networking"))
+      .map(relabel("CIS Electives", "CIS Elective at the 2000 Level or Above")),
+  });
+  const r = plan(asArea(request()), catalog());
+  assert.equal(r.remainingCredits, plain.remainingCredits - 1);
+  const both = planned(r).filter((c) =>
+    c.countsToward.some((x) => x.endsWith("· Area List - Networking")) &&
+    c.countsToward.some((x) => x.endsWith("· CIS Elective at the 2000 Level or Above")));
+  assert.equal(both.length, 1);
+  assert.equal(both[0].approval, "automatic");
+  // It is the curriculum's rule, so not a petition, and not for other pairs.
+  assert.ok(!r.petitions.some((p) => p.slots.some((s) => s.endsWith("Area List - Networking"))));
+  const [a, e] = [asArea(request()).degrees[0].slots, 0];
+  const net = a.find((s) => s.label.startsWith("Area List"))!;
+  const el = a.find((s) => s.label.startsWith("CIS Elective"))!;
+  const tech = a.find((s) => s.label === "Technical Electives")!;
+  assert.equal(pennPolicy.withinDegree(net, el), true);
+  assert.equal(pennPolicy.withinDegree(el, net), true);
+  assert.equal(pennPolicy.withinDegree(net, tech), false);
+  assert.equal(pennPolicy.withinDegree(el, tech), false);
+  void e;
+});
+
+Deno.test("planner: graduate courses only through an explicit option", () => {
+  const cat = catalog();
+  cat.courses["FNCE 7210"] = course("FNCE 7210", 1, ["WUGE", "EUCU"]);
+  cat.attributeIndex["WUGE"].push("FNCE 7210");
+  cat.attributeIndex["EUCU"].push("FNCE 7210");
+  cat.courses["MGMT 6000"] = course("MGMT 6000", 1);
+  const r = plan(request(), cat);
+  const codes = planned(r).map((c) => c.code);
+  assert.ok(!codes.includes("FNCE 7210") && !codes.includes("MGMT 6000"), codes.join(","));
+  // Named by Penn for the requirement: allowed. 5000-level too.
+  cat.courses["CIS 5000"] = course("CIS 5000", 1, ["EUCU"]);
+  cat.attributeIndex["EUCU"].push("CIS 5000");
+  const named = request({ degrees: [{ id: "wh", label: WH, college: "WU", applied: [], slots: [
+    wh("Only Grad", "wharton.flex", 1, "cu", opts("FNCE 7210")),
+  ] }] });
+  assert.deepEqual(planned(plan(named, cat)).map((c) => c.code), ["FNCE 7210"]);
+  const byAttr = request({ degrees: [{ id: "wh", label: WH, college: "WU", applied: [], slots: [
+    wh("By attribute", "wharton.flex", 1, "cu", attr("WUGE")),
+  ] }] });
+  assert.ok(!planned(plan(byAttr, cat)).some((c) => c.code === "FNCE 7210"));
+  const five = request({ degrees: [{ id: "cs", label: CS, college: "EU", applied: [], slots: [
+    cs("Five", "seas.core", 1, "courses", [{ kind: "range", subject: "CIS", from: 5000, to: 5999 }]),
+  ] }] });
+  assert.deepEqual(planned(plan(five, cat)).map((c) => c.code), ["CIS 5000"]);
+});
+
+Deno.test("planner: an unfilled item always has a label", () => {
+  const empty = wh("", "wharton.concentration", 1, "cu", opts("NOPE 1234"), { blockTitle: "Finance Concentration" });
+  const r = plan(request({ degrees: [{ id: "wh", label: WH, college: "WU", applied: [], slots: [
+    { ...empty, anyOf: [{ kind: "attribute", codes: ["ZZZZ"] }] },
+    { ...empty, id: "wh|b|2", blockTitle: " ", anyOf: [{ kind: "attribute", codes: ["ZZZZ"] }] },
+  ] }] }), catalog());
+  assert.deepEqual(r.unfilled.map((u) => u.label), ["Finance Concentration", "a requirement"]);
+});
+
+Deno.test("planner: best is always reported, never preferred when an ordinary scenario fits", () => {
+  const r = plan(request({ targetTerm: "209910" }), catalog());
+  const best = r.scenarios.find((s) => s.id === "best")!;
+  assert.ok(best);
+  assert.equal(best.maxLoad, 6.5);
+  assert.equal(best.label, "6.5 cu, summers, your advisor's approvals and the language placement exam");
+  assert.equal(r.chosen, "standard");
+  const noSummer = plan(request({ allowSummer: false }), catalog()).scenarios.find((s) => s.id === "best")!;
+  assert.equal(noSummer.summer, false);
+  assert.equal(noSummer.label, "6.5 cu, your advisor's approvals and the language placement exam");
+  assert.ok(!r.notes.some((n) => n.startsWith("best case")));
+});
+
+Deno.test("planner: best is picked when the ordinary scenarios miss the target", () => {
+  // Fixture: 8 cu of 1-cu single-option courses can't fit one 5.5 semester
+  // plus no summer, but a 6.5 load with the petition pair and the language
+  // waiver needs only 6.
+  const cat = catalog();
+  const cs0: Slot[] = [];
+  const mk = (n: string, code: string) => wh(n, "wharton.fundamental", 1, "cu", opts(code));
+  const slotsW: Slot[] = [
+    mk("A", "ACCT 1020"), mk("B", "OIDD 1010"), mk("C", "MGMT 3010"), mk("D", "BEPP 2500"), mk("E", "ACCT 2300"),
+    wh("Technology Innovation", "wharton.flex", 1, "cu", opts("OIDD 4770")),
+    wh("Finance Courses", "wharton.concentration", 1, "cu", opts("OIDD 4770")),
+    wh("Foreign Language", "wharton.language", 1, "cu", attr("WUFL")),
+  ];
+  void cs0;
+  const req: PlanRequest = request({
+    degrees: [{ id: "wh", label: WH, college: "WU", applied: [], slots: slotsW }],
+    targetTerm: "202710", allowSummer: false,
+  });
+  const r = plan(req, cat);
+  // ordinary: 5 + OIDD 4770 + (concentration also needs 4770: same course can't) -> 6 courses + SPAN = 7 > 5.5, 6.5
+  assert.equal(r.scenarios.find((s) => s.id === "standard")!.meetsTarget, false);
+  assert.equal(r.scenarios.find((s) => s.id === "approved")!.meetsTarget, false);
+  const best = r.scenarios.find((s) => s.id === "best")!;
+  assert.equal(best.meetsTarget, true, JSON.stringify(r.scenarios));
+  assert.equal(r.chosen, "best");
+  const oidd = findCourse(r, "OIDD 4770");
+  assert.equal(oidd.approval, "petition");
+  assert.equal(oidd.countsToward.length, 2);
+  assert.ok(!planned(r).some((c) => c.code === "SPAN 0100"), "language is waived");
+  assert.ok(r.unfilled.every((u) => u.label !== "Foreign Language"));
+  const note = r.notes.find((n) => n.startsWith("best case assumes"))!;
+  assert.ok(note, r.notes.join("|"));
+  assert.ok(note.includes("6.5 cu semesters"));
+  assert.ok(note.includes("OIDD 4770"));
+  assert.ok(note.includes("placement exam"));
+  // A language already studied is not waived.
+  const r2 = plan({ ...req, taken: ["SPAN 0050"] }, (() => { const c = catalog(); c.courses["SPAN 0050"] = course("SPAN 0050", 1, ["WUFL"]); c.attributeIndex["WUFL"].push("SPAN 0050"); return c; })());
+  assert.ok(!r2.notes.some((n) => n.includes("placement exam")));
+  // When nothing meets the target, best is not chosen.
+  const none = plan({ ...req, targetTerm: "202630" }, cat);
+  assert.notEqual(none.chosen, "best");
+});
