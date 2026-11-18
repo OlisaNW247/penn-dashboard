@@ -179,10 +179,13 @@ export const PRODUCTION_SLUG = "ask";
 /** Functions the gateway must let through without a Supabase JWT: the agent
  *  connection's OAuth server (a browser and Claude's servers call it with no
  *  token at all) and the MCP endpoint (its bearer is our own opaque token,
- *  which the gateway cannot verify; `mcp/index.ts` checks it). Every other
+ *  which the gateway cannot verify; `mcp/index.ts` checks it), and the
+ *  Sweeper wake (pg_cron's once-a-minute POST to /tick holds no student JWT;
+ *  `put` and `delete` verify the bearer in code through `requireUser`).
+ *  Every other
  *  function keeps `verify_jwt: true`, the default this script always sent,
  *  because for them the gateway check is the first line of auth. */
-export const PUBLIC_SLUGS = new Set(["mcp", "agent-auth"]);
+export const PUBLIC_SLUGS = new Set(["mcp", "agent-auth", "sweeper-wake"]);
 
 export function verifyJwtFor(slug, noVerifyJwt = false) {
   return !(noVerifyJwt || PUBLIC_SLUGS.has(slug));

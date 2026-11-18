@@ -29,9 +29,12 @@ P -f /m/20261109100000_agent_drafts.sql >/dev/null 2>&1 || { echo "FAIL: agent_d
 echo "agent_drafts migration: idempotent"
 P -f /m/20261110090000_agent_uploads.sql >/dev/null 2>&1 || { echo "FAIL: agent_uploads migration is not idempotent"; exit 1; }
 echo "agent_uploads migration: idempotent"
+P -f /m/20261118090000_sweeper_wake.sql >/dev/null 2>&1 || { echo "FAIL: sweeper_wake migration is not idempotent"; exit 1; }
+echo "sweeper_wake migration: idempotent"
 P -f /t/rls.test.sql 2>&1 | tail -1 || exit 1
 P -f /t/claim_fact_extraction.test.sql 2>&1 | grep -E 'passed|ERROR' | tail -1
 P -f /t/finish_fact_extraction.test.sql 2>&1 | grep -E 'passed|ERROR' | tail -1
 P -f /t/agent_connection.test.sql 2>&1 | grep -E 'passed|ERROR' | tail -1
 P -f /t/agent_hardening.test.sql 2>&1 | grep -E 'passed|ERROR' | tail -1
 P -f /t/agent_uploads.test.sql 2>&1 | grep -E 'passed|ERROR' | tail -1
+P -f /t/sweeper_wake.test.sql 2>&1 | grep -E 'passed|ERROR' | tail -1

@@ -46,6 +46,7 @@ test("the usage text names --production", () => {
 test("mcp and agent-auth deploy with verify_jwt false, everything else true unless --no-verify-jwt", async () => {
   assert.equal(verifyJwtFor("mcp"), false);
   assert.equal(verifyJwtFor("agent-auth"), false);
+  assert.equal(verifyJwtFor("sweeper-wake"), false);
   assert.equal(verifyJwtFor("sync"), true);
   assert.equal(verifyJwtFor("sync", true), false);
   const plan = await deployFunction("mcp", quiet);

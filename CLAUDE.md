@@ -156,8 +156,16 @@ with the backend unreachable, ask answers on-device:
 items, retrieves policy and content answers from synced course materials
 (`CourseKnowledgeCollector` → `CourseKnowledgeStore`), and on iOS 26 /
 macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
-(`OnDeviceLanguageModel`). Fourteen Edge Functions are in
-`backend/supabase/functions/`, all fourteen deployed: `ask`,
+(`OnDeviceLanguageModel`). Fifteen Edge Functions are in
+`backend/supabase/functions/`, fourteen deployed and one written and
+**not deployed**, **`sweeper-wake`** (2026-11-18, `claude/sweeper-build-0a4dd0`:
+the Sweeper's wake-up clock, `backend/PROTOCOL.md` → "The Sweeper wake";
+it holds, per install, an APNs device token and at most 24 wake minutes and
+nothing else, sends one silent push per due minute from a `pg_cron` tick,
+needs the `LHF_APNS_*` secrets from Olisa's key and the `pg_cron` / `pg_net`
+extensions and two Vault secrets on the project before it can run; deploy
+with `node backend/scripts/deploy-sweeper.mjs` at Marco's go, never from a
+session): `ask`,
 `ask-canary`, `delete-account`, `device-sync`, `discover-websites`,
 `extract-announcement`, **`extract-facts`** (2026-11-05), `extract-profile`,
 `map-categories`, `pair`, `sync`; and the three of the v11 agent connection,

@@ -15,7 +15,11 @@ file; when they disagree, this file wins and the code is wrong.
    questions, **unless the student turns on an agent connection**, in which
    case exactly the fields listed under `agent-snapshot` are stored for that
    student alone, in `agent_snapshots`, and deleted on opt-out, Canvas
-   disconnect and account deletion. `CourseDocument.submitted` is stripped
+   disconnect and account deletion, **or the Sweeper wake schedule**
+   (`sweeper_wakes`: a device token and a list of minutes, nothing else),
+   kept while reminders and the Sweeper are on and deleted when they are
+   turned off, on Canvas disconnect and on account deletion.
+   `CourseDocument.submitted` is stripped
    before upload.
 3. **The sharing key is the Canvas numeric course id.** Every student in the
    same Canvas site sees identical material. Section ids are recorded on the
@@ -1796,6 +1800,199 @@ row also cascades from `auth.users`).
   `docs/V11_TEST_BACKEND_2026-11-11.md`). Redeploying `delete-account`
   (`deploy-agent.mjs` now includes it) makes this paragraph true.
 
+## The Sweeper wake (`sweeper-wake`)
+
+A phone cannot be relied on to wake itself a few minutes before a Sweeper
+alarm, so it uploads the minutes at which it would like a silent nudge, and a
+job on the server sends that nudge through Apple's push service. The nudge
+carries nothing. On waking, the phone looks at Canvas itself and cancels an
+alarm for work already handed in; the server never learns which work, which
+class, or whether anything was handed in.
+
+One function, two callers. `verify_jwt = false` (`config.toml`,
+`deploy-function.mjs` `PUBLIC_SLUGS`): pg_cron's POST carries no student JWT,
+so the gateway check is off and the student's routes verify the bearer in
+code through `requireUser`, the way `agent-auth` and `mcp` do. POST only.
+Logs counts and outcome codes only: never a token, a user id or a moment.
+
+### Student routes: `POST /`
+
+Called by the phone with the student's own Supabase JWT and
+`X-Smooth-Version`. **The version header is required** (a new function has no
+old callers): a missing header is `426 update_required`, as is a version
+below the update floor. Bodies are JSON, at most 16 KB, `{ "action": ... }`.
+
+- `put { "action": "put", "token", "environment", "moments", "plan"? }`
+  upserts the row for `token` for the caller. A token that moves to another
+  anonymous account (a reinstall can do that) follows the new owner. Answers
+  `{ "stored": n, "nextMoment": iso | null }`, `n` being the moments kept
+  after past ones were dropped; `nextMoment` is the earliest, `null` when
+  none. With `LHF_SWEEPER_WAKE_DISABLED=1` it validates, writes nothing and
+  answers `{ "stored": 0, "disabled": true }`.
+- `delete { "action": "delete" }` deletes every row of the caller and answers
+  `{ "deleted": n }`. Idempotent: a second call answers 0.
+- Any other `action`, a body that is not JSON, or a body over 16 KB is `400
+  bad_request` (`413 payload_too_large` over 16 KB). No bearer is 401.
+
+### Validation of `put`
+
+Every refusal is `400 { "error": "bad_request", "message": <reason> }` and
+writes nothing.
+
+| Field | Rule | Reason on refusal |
+|---|---|---|
+| (keys) | only `action`, `token`, `environment`, `moments`, `plan`; anything else is refused, never trimmed, so a client bug shows as a counted 400 | `forbidden_field` |
+| `token` | the APNs device token, 64 to 200 hex characters (upper case accepted, stored lower case) | `invalid_token` |
+| `environment` | `"production"` or `"development"`: which APNs host the token belongs to | `invalid_environment` |
+| `moments` | an array of ISO 8601 instants, at most 24 | `invalid_moments`, `invalid_moment`, `too_many_moments` |
+| each moment | truncated to the minute; one at or before now is **dropped silently**; one more than 48 hours ahead **refuses the request**; duplicates collapse | `moment_beyond_horizon` |
+| `plan` | 16 hex characters, or absent; a hash of the moments the phone can compare | `invalid_plan` |
+
+### `POST /tick` (pg_cron only)
+
+Requires the header `x-sweeper-tick-secret` equal to the function secret
+`LHF_SWEEPER_TICK_SECRET` (compared in constant time); a wrong, missing or
+unconfigured secret is `403 forbidden`, counted in a log line. A dedicated
+secret, not the service-role key: any role that can log in to the database can
+read a Vault value while the request waits, and a secret that can only trigger
+a tick is the smaller blast radius. With `LHF_SWEEPER_WAKE_DISABLED=1` the
+tick answers `200 { "disabled": true }` and does nothing.
+
+Otherwise: claim, answer, send.
+
+1. Claim the rows due in the minute just before and in this minute (the
+   earlier first, so a late tick is forgiven), at most 2,000 each, through
+   `claim_sweeper_wakes` (below). A token claimed in both is sent to once.
+2. Answer `202 { "claimed": n }`.
+3. Send one push per claimed row inside `EdgeRuntime.waitUntil`, with a
+   concurrency of 32, so the answer stays inside `pg_net`'s timeout and the
+   function's CPU cap (the sends are I/O).
+4. Act on each Apple answer (below), then drop moments more than 5 minutes
+   old from the claimed rows.
+5. Log one line: `sweeper-wake tick <iso minute>: claimed n, sent s, status
+   {"200":a,"400":b,...}, deleted d, took t ms`.
+
+### The clock
+
+`pg_cron` job `sweeper-wake-tick`, every minute, posting through `pg_net`
+(`timeout_milliseconds := 5000`) to the URL in Vault secret
+`sweeper_wake_tick_url` with the header from Vault secret
+`sweeper_wake_tick_secret`; the second is the same value as the function
+secret `LHF_SWEEPER_TICK_SECRET`. Both Vault secrets are created by hand once
+and never appear in a migration. Run history is `cron.job_run_details`, the
+first place to look when a tick seems to have missed. The migration enables
+both extensions inside blocks that tolerate their absence (so the check in
+`backend/scripts/sql-check.sh`, on a bare `postgres:16`, still passes) and
+schedules the job only when both exist; `cron.schedule` replaces a job of the
+same name, so re-running is safe.
+
+### Table: `sweeper_wakes`
+
+Service role only: RLS on, no policy for `anon` or `authenticated`, all
+privileges revoked from them and granted to `service_role`. One row per
+device token.
+
+| Column | |
+|---|---|
+| `device_token text` primary key | the APNs token, hex |
+| `user_id uuid` | `references auth.users on delete cascade`; indexed |
+| `environment text` | `production` or `development` (check constraint) |
+| `moments timestamptz[]` | at most 24, minute grain, at most 48 hours ahead (enforced by the function) |
+| `plan_hash text` | the phone's 16 hex characters |
+| `updated_at timestamptz` | |
+| `last_sent_for timestamptz` | the newest minute a push was claimed for |
+| `failures smallint` | failed sends since the phone last uploaded |
+
+**No column may hold a course, assignment, title, URL, grade, completion or
+submission state; the moments are the only per-student fact, and they are
+never logged.** `test/sweeper_wake.test.sql` pins the column list, so a later
+migration cannot add one quietly. Deleted on `delete`, on Canvas disconnect,
+on account deletion (`deleteUserData` removes it first; the row also
+cascades from `auth.users`), and when the tick finds the token dead.
+
+### The claim, and idempotency
+
+`claim_sweeper_wakes(at_minute timestamptz, max_rows int)`, `security
+definer`, executable by the service role only, is one statement:
+
+```sql
+update sweeper_wakes set last_sent_for = at_minute
+ where device_token in (select device_token from sweeper_wakes
+                         where at_minute = any (moments)
+                           and (last_sent_for is null or last_sent_for < at_minute)
+                         order by device_token limit max_rows for update skip locked)
+   and (last_sent_for is null or last_sent_for < at_minute)
+returning device_token, environment, user_id;
+```
+
+So a row is handed out once per minute however many ticks overlap: the
+second tick waits on the row lock and then re-checks `last_sent_for`, which
+the first has moved. (The test is `<`, not "is distinct from": a late claim
+for an older minute can never re-claim a row already claimed for a newer
+one.) A tick that dies half way leaves its unsent rows claimed and lost for
+that minute, which is the right trade: a nudge two minutes late is no nudge,
+and the next moment is its own claim.
+
+### The APNs request
+
+One request per claimed row, HTTP/2 over TLS, exactly:
+
+```
+POST https://api.push.apple.com/3/device/<token>          (environment production)
+POST https://api.sandbox.push.apple.com/3/device/<token>  (environment development)
+authorization:   bearer <ES256 JWT>
+apns-push-type:  background
+apns-priority:   5
+apns-topic:      com.lhf.lowhangingfruit
+apns-expiration: <unix seconds, now + 120>
+content-type:    application/json
+
+{"aps":{"content-available":1}}
+```
+
+The JWT is the provider token: header `{"alg":"ES256","kid":<key id>}`, claims
+`{"iss":<team id>,"iat":<unix seconds>}`, signed with the team's `.p8` key
+through `crypto.subtle` (no library). Minted once per isolate per key and
+reused for 50 minutes (Apple: no more than one new token per 20 minutes, none
+older than 60). Two keys, because Apple scopes a team key to one environment.
+Whether the Edge runtime's `fetch` reaches Apple over HTTP/2 is settled by
+`backend/scripts/sweeper-wake-e2e.mjs`: a fake token answered `400
+BadDeviceToken` proves it, a status of 0 (a connection-level failure) says it
+does not, and the send then moves to the connector front.
+
+### Apple's answers
+
+| Status, reason | Outcome | What the tick does |
+|---|---|---|
+| 200 | `ok` | nothing: accepted, not delivered |
+| 400 `BadDeviceToken`, `DeviceTokenNotForTopic` | `badToken` | `failures + 1`; at 3 the row is deleted |
+| 403 `ExpiredProviderToken`, `InvalidProviderToken` | `remint` | forget the cached JWT (once per environment per tick), mint a new one, retry that send once; a second 403 fails the whole tick loudly and deletes nothing |
+| 410 (`Unregistered`; the body's timestamp is milliseconds since the epoch) | `unregistered` | delete the row now |
+| 429 `TooManyRequests` | `tooMany` | leave the row alone this tick |
+| 429 `TooManyProviderTokenUpdates` | `providerTokenAbuse` | our remint logic is wrong: fail the tick loudly |
+| 5xx | `serverError` | `failures + 1`, no retry inside the tick (the moment would be over); at 3 the row is deleted |
+| anything else | `failed` | as `badToken` |
+
+A send that never reached Apple (status 0, or a missing function secret) is
+not the row's fault: it is counted in the log line (`"0"`, `"error"`) and the
+row is neither failed nor deleted. A deleted row is recreated by the phone's
+next upload.
+
+### Kill switch and secrets
+
+`LHF_SWEEPER_WAKE_DISABLED=1`: `/tick` is a no-op that answers 200, and `put`
+answers `{ "stored": 0, "disabled": true }` without writing, so nothing
+accumulates and an older build keeps working. It touches no alarm.
+
+Function secrets (names only; no value is ever in the repository):
+`LHF_APNS_KEY_P8_PRODUCTION`, `LHF_APNS_KEY_ID_PRODUCTION`,
+`LHF_APNS_KEY_P8_SANDBOX`, `LHF_APNS_KEY_ID_SANDBOX`, `LHF_APNS_TEAM_ID`,
+`LHF_APNS_TOPIC` (default `com.lhf.lowhangingfruit`),
+`LHF_SWEEPER_TICK_SECRET`, `LHF_SWEEPER_WAKE_DISABLED`. A missing one is an
+error naming the variable, never a value. Deploy with
+`backend/scripts/deploy-sweeper.mjs` (secrets check, the migration, then
+`sweeper-wake` and `delete-account`, then the Vault check).
+
 ## `pair` — link the Chrome extension to a phone
 
 Request `{ "action": ... }`, all POST, all authenticated as the caller's own
@@ -1846,7 +2043,9 @@ that it is base64 and within the size cap.
 
 Request `{}`. From an owner (any user that is not a linked device): deletes
 the caller's `enrollments` and `ask_usage` rows, every linked device's auth
-user, the device links and every sync blob, then the auth user. Shared
+user, the device links and every sync blob, and the caller's `sweeper_wakes`
+rows (first: a push token is the one row that can still reach their phone),
+then the auth user. Shared
 course material is untouched (it is not the user's data). Response
 `{ "deleted": true }`.
 
@@ -1940,3 +2139,11 @@ a 502 on a real phone while a 53-word one succeeded.
   `to_tsvector('english', text)`); the query scans the caller's enrolled
   courses' live documents. Fine at today's pool size; add the index before it is
   not.
+- Delivery of the Sweeper wake is Apple's best effort. A background push is
+  not guaranteed, may be throttled or held, and is never delivered to an app
+  the student force-quit. The server never knows whether a push woke the
+  phone (there is no acknowledgement): a 200 from APNs is acceptance, not
+  delivery. The only honest delivery number is the one the phone counts.
+- A tick of the Sweeper wake that dies after claiming leaves its rows claimed
+  for that minute; they are not retried, because a nudge two minutes late is
+  over.

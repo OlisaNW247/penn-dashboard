@@ -1251,6 +1251,12 @@ export async function upsertDirectoryCache(client: SupabaseClient, key: string, 
  * resolved owner id from a linked device's token -- `delete-account`
  * guards that with `decideDeleteAccount`. */
 export async function deleteUserData(client: SupabaseClient, userId: string): Promise<void> {
+  // The Sweeper wake (20261118090000_sweeper_wake.sql): the student's device
+  // token and the minutes they asked to be nudged at. First, because a
+  // push token is the one row here that can still reach their phone.
+  const { error: wakesError } = await client.from("sweeper_wakes").delete().eq("user_id", userId);
+  if (wakesError) throw wakesError;
+
   // The agent connection (20261108090000_agent_connection.sql). Drafts and
   // the snapshot first (they hold the student's own work), then connections
   // (their tokens cascade), then any authorization still waiting.

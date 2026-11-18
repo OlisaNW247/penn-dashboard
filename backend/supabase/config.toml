@@ -49,3 +49,12 @@ verify_jwt = false
 # Supabase JWT, so the gateway check stays on.
 [functions.agent-snapshot]
 verify_jwt = true
+
+# The Sweeper wake (docs/SERVER_SWEEPER_DESIGN_2026-11-17.md). pg_cron's
+# once-a-minute POST to /tick carries no student JWT, so the gateway check is
+# off; `put` and `delete` verify the bearer in code through `requireUser`
+# (the `agent-auth` / `mcp` pattern), and /tick requires its own secret in
+# `x-sweeper-tick-secret`. `backend/scripts/deploy-function.mjs` sends the
+# same as `verify_jwt: false` (`PUBLIC_SLUGS`).
+[functions.sweeper-wake]
+verify_jwt = false
