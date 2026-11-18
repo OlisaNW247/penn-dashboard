@@ -12,6 +12,7 @@ import {
 import type { ApnsEnvironment, ApnsOutcome, ApnsResult } from "../supabase/functions/_shared/apns.ts";
 
 const NOW = new Date("2026-11-20T04:30:20.000Z");
+const stat = (store: MemorySweeperWakeStore, t: string) => store.rows.get(t)!;
 const TOKEN = "ab".repeat(32);
 const good = (over: Record<string, unknown> = {}) => ({
   action: "put",
@@ -46,6 +47,11 @@ Deno.test("validate: refusals, each with its own reason", () => {
   assert.strictEqual(why(good({ moments: "2026-11-20T04:34:00Z" })), "invalid_moments");
   assert.strictEqual(why(good({ moments: [12345] })), "invalid_moment");
   assert.strictEqual(why(good({ moments: ["not a date"] })), "invalid_moment");
+  assert.strictEqual(why(good({ moments: ["Nov 20 2026 4:34 AM"] })), "invalid_moment");
+  assert.strictEqual(why(good({ moments: ["2026-11-20"] })), "invalid_moment");
+  assert.strictEqual(why(good({ moments: ["2026-11-20T04:34:00"] })), "invalid_moment"); // no zone
+  assert.strictEqual(why(good({ moments: ["2026-11-20T04:34+00:00", "2026-11-20T04:35:00.5-05:00"] })), "ok");
+  assert.strictEqual(why(good({ moments: [12345] })), "invalid_moment");
   assert.strictEqual(why(good({ plan: "xyz" })), "invalid_plan");
   assert.strictEqual(why(good({ plan: 12 })), "invalid_plan");
   assert.strictEqual(why(null), "invalid_body");
@@ -173,7 +179,7 @@ Deno.test("tick: counts, the log line, idempotence, the late minute and the prun
   assert.strictEqual(counts.deleted, 0);
   assert.deepStrictEqual(f.calls.sort(), ["a", "late"]);
   assert.strictEqual(lines.length, 1);
-  assert.match(lines[0], /^sweeper-wake tick 2026-11-20T04:34:00\.000Z: claimed 2, sent 2, status \{"200":2\}, deleted 0, took \d+ ms$/);
+  assert.match(lines[0], /^sweeper-wake tick 2026-11-20T04:34:00\.000Z: claimed 2, sent 2, status \{"200":2\}, unreachable 0, deleted 0, aged 0, store errors 0, took \d+ ms$/);
   assert.ok(!/[0-9a-f]{64}/.test(lines[0]), "no token in the log line");
   // 04:20 is more than five minutes old: pruned from the claimed row only.
   assert.deepStrictEqual(store.rows.get("a")!.moments.map((m) => m.toISOString()), ["2026-11-20T04:34:00.000Z"]);
@@ -274,6 +280,10 @@ Deno.test("tick: 429 leaves the row alone, a connection failure or a missing sec
   assert.strictEqual(store.rows.size, 3);
   for (const r of store.rows.values()) assert.strictEqual(r.failures, 0);
   assert.strictEqual(counts.byStatus.error, 1);
+  // A status-0 send is not "sent": it is unreachable.
+  assert.strictEqual(counts.unreachable, 1);
+  assert.strictEqual(counts.sent, 1);
+  assert.strictEqual(counts.byStatus["0"], undefined);
   assert.ok(lines.some((l) => l.includes("LHF_APNS_KEY_ID_SANDBOX")));
 });
 
@@ -298,4 +308,63 @@ Deno.test("tick: concurrency is bounded and onClaimed fires before any send", as
   await tickWith(store, sender, undefined, { concurrency: 3, onClaimed: () => (sendsWhenClaimed = started) });
   assert.strictEqual(peak, 3);
   assert.strictEqual(sendsWhenClaimed, 0);
+});
+
+Deno.test("tick: a config refusal (BadTopic, Forbidden) fails loudly and blames no row", async () => {
+  for (const [status, reason] of [[400, "BadTopic"], [403, "Forbidden"], [403, "MissingProviderToken"]] as const) {
+    const store = new MemorySweeperWakeStore();
+    for (const t of ["a", "b", "c"]) await store.upsert(row(t, ["2026-11-20T04:34:00Z"]));
+    const f = fakeApns(() => answer(status, "config", reason));
+    const lines: string[] = [];
+    await assert.rejects(runTick({ store, apns: f.sender, now: () => Date.parse("2026-11-20T04:34:20Z"), log: (l) => lines.push(l), concurrency: 1 }), /setup/);
+    assert.strictEqual(store.rows.size, 3);
+    for (const r of store.rows.values()) assert.strictEqual(r.failures, 0);
+    assert.ok(lines.some((l) => l.includes(reason)));
+  }
+});
+
+Deno.test("tick: a 200 resets the row's failures", async () => {
+  const store = new MemorySweeperWakeStore();
+  await store.upsert(row("a", ["2026-11-20T04:34:00Z", "2026-11-20T04:35:00Z", "2026-11-20T04:36:00Z", "2026-11-20T04:37:00Z"]));
+  let ok = false;
+  const f = fakeApns(() => (ok ? answer(200, "ok") : answer(400, "badToken", "BadDeviceToken")));
+  await tickWith(store, f.sender, "2026-11-20T04:34:20Z");
+  await tickWith(store, f.sender, "2026-11-20T04:35:20Z");
+  assert.strictEqual(stat(store, "a").failures, 2);
+  ok = true;
+  await tickWith(store, f.sender, "2026-11-20T04:36:20Z");
+  assert.strictEqual(stat(store, "a").failures, 0);
+  ok = false;
+  await tickWith(store, f.sender, "2026-11-20T04:37:20Z");
+  assert.strictEqual(stat(store, "a").failures, 1); // three in a row, not three in all
+});
+
+Deno.test("tick: rows untouched for 30 days are aged out and counted", async () => {
+  const store = new MemorySweeperWakeStore();
+  store.clock = () => new Date("2026-10-01T00:00:00Z");
+  await store.upsert(row("old", ["2026-11-30T04:34:00Z"]));
+  store.clock = () => new Date("2026-11-19T00:00:00Z");
+  await store.upsert(row("fresh", ["2026-11-20T04:34:00Z"]));
+  const f = fakeApns(() => answer(200, "ok"));
+  const { counts, lines } = await tickWith(store, f.sender);
+  assert.strictEqual(counts.aged, 1);
+  assert.deepStrictEqual([...store.rows.keys()], ["fresh"]);
+  assert.match(lines[0], /aged 1,/);
+});
+
+Deno.test("tick: a failing store call is counted and named, and the summary and prune still run", async () => {
+  const store = new MemorySweeperWakeStore();
+  await store.upsert(row("a", ["2026-11-20T04:34:00Z", "2026-11-20T04:00:00Z"]));
+  await store.upsert(row("b", ["2026-11-20T04:34:00Z"]));
+  class PostgrestError extends Error {}
+  store.markFailure = () => Promise.reject(new PostgrestError("secret detail"));
+  store.deleteToken = () => Promise.reject(new PostgrestError("secret detail"));
+  const f = fakeApns((r) => (r.token === "a" ? answer(400, "badToken", "BadDeviceToken") : answer(410, "unregistered")));
+  const { counts, lines } = await tickWith(store, f.sender);
+  assert.strictEqual(counts.storeErrors, 2);
+  assert.strictEqual(counts.deleted, 0);
+  assert.strictEqual(lines.filter((l) => l.includes("store call failed (PostgrestError)")).length, 1);
+  assert.ok(!lines.join("\n").includes("secret detail"));
+  assert.match(lines[lines.length - 1], /store errors 2,/);
+  assert.strictEqual(stat(store, "a").moments.length, 1, "the prune still ran");
 });

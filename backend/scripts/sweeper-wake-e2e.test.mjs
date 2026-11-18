@@ -4,7 +4,7 @@ import {
   cronQuery, fakeToken, findClaimingTick, judgeTick, logsQuery, logsURL, manyMoments, momentAhead, parseArgs, parseTickLine, run, STEPS,
 } from "./sweeper-wake-e2e.mjs";
 
-const LINE = 'sweeper-wake tick 2026-11-20T04:34:00.000Z: claimed 1, sent 1, status {"400":1}, deleted 0, took 212 ms';
+const LINE = 'sweeper-wake tick 2026-11-20T04:34:00.000Z: claimed 1, sent 1, status {"400":1}, unreachable 0, deleted 0, aged 0, store errors 0, took 212 ms';
 
 test("momentAhead is a whole minute at least the lead away", () => {
   const m = momentAhead(new Date("2026-11-20T04:30:20.000Z"));
@@ -25,14 +25,14 @@ test("fakeToken is 64 lowercase hex; manyMoments are distinct whole minutes", ()
 });
 
 test("the tick line parses, and a different line does not", () => {
-  assert.deepEqual(parseTickLine(LINE), { minute: "2026-11-20T04:34:00.000Z", claimed: 1, sent: 1, status: { 400: 1 }, deleted: 0, took: 212 });
+  assert.deepEqual(parseTickLine(LINE), { minute: "2026-11-20T04:34:00.000Z", claimed: 1, sent: 1, status: { 400: 1 }, unreachable: 0, deleted: 0, aged: 0, storeErrors: 0, took: 212 });
   assert.equal(parseTickLine("sweeper-wake: put stored=1"), null);
   assert.equal(parseTickLine(undefined), null);
 });
 
 test("findClaimingTick picks a claiming tick at or after the moment", () => {
   const rows = { result: [
-    { event_message: 'sweeper-wake tick 2026-11-20T04:35:00.000Z: claimed 0, sent 0, status {}, deleted 0, took 3 ms' },
+    { event_message: 'sweeper-wake tick 2026-11-20T04:35:00.000Z: claimed 0, sent 0, status {}, unreachable 0, deleted 0, aged 0, store errors 0, took 3 ms' },
     { event_message: LINE },
     { event_message: LINE.replace("04:34", "04:20") },
   ] };
@@ -44,10 +44,10 @@ test("findClaimingTick picks a claiming tick at or after the moment", () => {
 test("judgeTick: 400 proves HTTP/2 and the JWT; 0, 403 and errors are named", () => {
   assert.equal(judgeTick(parseTickLine(LINE)).ok, true);
   assert.equal(judgeTick(null).ok, false);
-  assert.match(judgeTick({ status: { 0: 1 } }).detail, /HTTP\/2|connection-level/);
-  assert.match(judgeTick({ status: { 403: 1 } }).detail, /key/);
-  assert.match(judgeTick({ status: { error: 1 } }).detail, /secret/);
-  assert.equal(judgeTick({ status: { 503: 1 } }).ok, false);
+  assert.match(judgeTick({ status: {}, unreachable: 1 }).detail, /HTTP\/2|connection-level/);
+  assert.match(judgeTick({ status: { 403: 1 }, unreachable: 0 }).detail, /key/);
+  assert.match(judgeTick({ status: { error: 1 }, unreachable: 0 }).detail, /secret/);
+  assert.equal(judgeTick({ status: { 503: 1 }, unreachable: 0 }).ok, false);
 });
 
 test("the queries read counts and log lines, never user data", () => {

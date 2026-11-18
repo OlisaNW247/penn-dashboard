@@ -24,6 +24,7 @@ import {
   PostgrestSweeperWakeStore,
   runTick,
   type SweeperWakeStore,
+  validateDeleteBody,
   validateWakeBody,
 } from "../_shared/sweeperWake.ts";
 
@@ -131,6 +132,11 @@ async function handleStudent(req: Request, deps: SweeperWakeDeps, env: (k: strin
   }
 
   if (action === "delete") {
+    const checked = validateDeleteBody(body);
+    if (!checked.ok) {
+      console.error(`sweeper-wake: refused (${checked.reason})`);
+      throw new HttpError(400, "bad_request", checked.reason);
+    }
     const deleted = await deps.store.deleteForUser(userId);
     console.log(`sweeper-wake: delete deleted=${deleted}`);
     return json(200, { deleted });

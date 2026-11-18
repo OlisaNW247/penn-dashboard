@@ -27,7 +27,7 @@ create table if not exists public.sweeper_wakes (
   plan_hash     text,                                       -- the phone's 16 hex chars, so a repeat upload is recognisable
   updated_at    timestamptz not null default now(),
   last_sent_for timestamptz,                                -- the newest moment a push was claimed for (minute grain)
-  failures      smallint not null default 0                 -- failed sends since the phone last uploaded; the tick deletes the row at 3
+  failures      smallint not null default 0                 -- failed sends in a row (a 200 or an upload resets it); the tick deletes the row at 3
 );
 create index if not exists sweeper_wakes_user_idx on public.sweeper_wakes (user_id);
 
@@ -73,6 +73,42 @@ as $$
 $$;
 revoke execute on function public.claim_sweeper_wakes(timestamptz, integer) from public, anon, authenticated;
 grant execute on function public.claim_sweeper_wakes(timestamptz, integer) to service_role;
+
+-- The tick's two writes to a claimed row, as single statements for the same
+-- reason the claim is one: each must act on the row as it is now. A prune
+-- that read the moments and wrote them back would overwrite, with a stale
+-- list, one the phone uploaded in between. Service role only, like the claim.
+create or replace function public.prune_sweeper_moments(tokens text[], before timestamptz)
+returns integer
+language sql
+security definer
+set search_path = public
+as $$
+  with changed as (
+    update public.sweeper_wakes w
+       set moments = array(select m from unnest(w.moments) m where m >= before)
+     where w.device_token = any (tokens)
+       and exists (select 1 from unnest(w.moments) m where m < before)
+    returning 1
+  )
+  select count(*)::integer from changed;
+$$;
+revoke execute on function public.prune_sweeper_moments(text[], timestamptz) from public, anon, authenticated;
+grant execute on function public.prune_sweeper_moments(text[], timestamptz) to service_role;
+
+create or replace function public.bump_sweeper_failure(token text)
+returns smallint
+language sql
+security definer
+set search_path = public
+as $$
+  update public.sweeper_wakes w
+     set failures = w.failures + 1
+   where w.device_token = token
+  returning w.failures;
+$$;
+revoke execute on function public.bump_sweeper_failure(text) from public, anon, authenticated;
+grant execute on function public.bump_sweeper_failure(text) to service_role;
 
 -- The clock. pg_cron calls the function through pg_net once a minute
 -- (Supabase has no scheduled functions of its own). Both extensions are

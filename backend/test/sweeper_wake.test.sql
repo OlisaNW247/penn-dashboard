@@ -79,6 +79,37 @@ begin
   end;
 end $$;
 
+-- (f2) the prune is in place and spares what the phone uploaded since, and the
+-- failure bump counts one at a time.
+set role service_role;
+do $$
+declare
+  n integer;
+begin
+  insert into public.sweeper_wakes (device_token, user_id, environment, moments) values
+    (repeat('e', 64), 'e5555555-5555-5555-5555-555555555555', 'production',
+       array['2026-11-20 04:00:00+00', '2026-11-20 05:00:00+00']::timestamptz[]),
+    (repeat('f', 64), 'e5555555-5555-5555-5555-555555555555', 'production',
+       array['2026-11-20 05:00:00+00']::timestamptz[]);
+  n := public.prune_sweeper_moments(array[repeat('e', 64), repeat('f', 64)], '2026-11-20 04:30:00+00');
+  if n <> 1 then raise exception 'prune touched % rows, expected 1', n; end if;
+  if (select moments from public.sweeper_wakes where device_token = repeat('e', 64)) <> array['2026-11-20 05:00:00+00']::timestamptz[] then
+    raise exception 'prune did not drop the old moment only';
+  end if;
+  -- rows not named are left alone.
+  if (select count(*) from public.sweeper_wakes where device_token = repeat('f', 64) and cardinality(moments) = 1) <> 1 then
+    raise exception 'prune changed an unrelated row';
+  end if;
+  if public.bump_sweeper_failure(repeat('e', 64)) <> 1 or public.bump_sweeper_failure(repeat('e', 64)) <> 2 then
+    raise exception 'bump_sweeper_failure did not count 1 then 2';
+  end if;
+  if public.bump_sweeper_failure(repeat('9', 64)) is not null then
+    raise exception 'bump on a missing token answered a count';
+  end if;
+  delete from public.sweeper_wakes where device_token in (repeat('e', 64), repeat('f', 64));
+end $$;
+reset role;
+
 -- (g) anon and authenticated can neither read nor write the table, nor call
 -- the claim function.
 reset role;
@@ -102,6 +133,16 @@ begin
     begin
       perform public.claim_sweeper_wakes(now(), 10);
       raise exception '% could call claim_sweeper_wakes', r;
+    exception when insufficient_privilege then null;
+    end;
+    begin
+      perform public.prune_sweeper_moments(array['x'], now());
+      raise exception '% could call prune_sweeper_moments', r;
+    exception when insufficient_privilege then null;
+    end;
+    begin
+      perform public.bump_sweeper_failure('x');
+      raise exception '% could call bump_sweeper_failure', r;
     exception when insufficient_privilege then null;
     end;
     reset role;

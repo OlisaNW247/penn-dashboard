@@ -65,9 +65,9 @@ export function logsURL(ref, now, hours = 1) {
   return `${MANAGEMENT}/v1/projects/${ref}/analytics/endpoints/logs?${params}`;
 }
 
-/** `sweeper-wake tick <iso>: claimed n, sent s, status {...}, deleted d, took t ms` -> object, or null. */
+/** `sweeper-wake tick <iso>: claimed n, sent s, status {...}, unreachable u, deleted d, aged a, store errors e, took t ms` -> object, or null. */
 export function parseTickLine(line) {
-  const m = /sweeper-wake tick (\S+): claimed (\d+), sent (\d+), status (\{[^}]*\}), deleted (\d+), took (\d+) ms/.exec(String(line ?? ""));
+  const m = /sweeper-wake tick (\S+): claimed (\d+), sent (\d+), status (\{[^}]*\}), unreachable (\d+), deleted (\d+), aged (\d+), store errors (\d+), took (\d+) ms/.exec(String(line ?? ""));
   if (!m) return null;
   let status;
   try {
@@ -75,7 +75,7 @@ export function parseTickLine(line) {
   } catch {
     return null;
   }
-  return { minute: m[1], claimed: Number(m[2]), sent: Number(m[3]), status, deleted: Number(m[5]), took: Number(m[6]) };
+  return { minute: m[1], claimed: Number(m[2]), sent: Number(m[3]), status, unreachable: Number(m[5]), deleted: Number(m[6]), aged: Number(m[7]), storeErrors: Number(m[8]), took: Number(m[9]) };
 }
 
 /** From the logs endpoint's answer, the newest tick line with `claimed >= 1` at or after `since`. */
@@ -91,7 +91,7 @@ export function findClaimingTick(result, since) {
 /** What a tick that claimed our fake token must have said for the probe to pass. */
 export function judgeTick(tick) {
   if (!tick) return { ok: false, detail: "no tick line with claimed >= 1 appeared" };
-  if (tick.status["0"]) return { ok: false, detail: `a connection-level failure (status 0): the Edge runtime did not reach Apple; see design 3.3 for the Vercel fallback` };
+  if (tick.unreachable > 0) return { ok: false, detail: `a connection-level failure (unreachable): the Edge runtime did not reach Apple; see design 3.3 for the Vercel fallback` };
   if (tick.status["403"]) return { ok: false, detail: "Apple answered 403: the key, key id or team id is wrong" };
   if (tick.status.error) return { ok: false, detail: "the tick could not send (a missing function secret); read the function log" };
   if (tick.status["400"]) return { ok: true, detail: "Apple answered 400 (BadDeviceToken for a fake token): the request, the JWT and HTTP/2 all worked" };

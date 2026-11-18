@@ -1830,7 +1830,9 @@ below the update floor. Bodies are JSON, at most 16 KB, `{ "action": ... }`.
   none. With `LHF_SWEEPER_WAKE_DISABLED=1` it validates, writes nothing and
   answers `{ "stored": 0, "disabled": true }`.
 - `delete { "action": "delete" }` deletes every row of the caller and answers
-  `{ "deleted": n }`. Idempotent: a second call answers 0.
+  `{ "deleted": n }`. Idempotent: a second call answers 0. The body is
+  `{ "action": "delete" }` and nothing else: an extra key is `400
+  forbidden_field`, as for `put`.
 - Any other `action`, a body that is not JSON, or a body over 16 KB is `400
   bad_request` (`413 payload_too_large` over 16 KB). No bearer is 401.
 
@@ -1844,7 +1846,7 @@ writes nothing.
 | (keys) | only `action`, `token`, `environment`, `moments`, `plan`; anything else is refused, never trimmed, so a client bug shows as a counted 400 | `forbidden_field` |
 | `token` | the APNs device token, 64 to 200 hex characters (upper case accepted, stored lower case) | `invalid_token` |
 | `environment` | `"production"` or `"development"`: which APNs host the token belongs to | `invalid_environment` |
-| `moments` | an array of ISO 8601 instants, at most 24 | `invalid_moments`, `invalid_moment`, `too_many_moments` |
+| `moments` | an array of full ISO 8601 instants (`YYYY-MM-DDTHH:MM[:SS[.fff]]` and `Z` or an offset; a date alone, a time without a zone or free text is refused before parsing), at most 24 | `invalid_moments`, `invalid_moment`, `too_many_moments` |
 | each moment | truncated to the minute; one at or before now is **dropped silently**; one more than 48 hours ahead **refuses the request**; duplicates collapse | `moment_beyond_horizon` |
 | `plan` | 16 hex characters, or absent; a hash of the moments the phone can compare | `invalid_plan` |
 
@@ -1868,9 +1870,17 @@ Otherwise: claim, answer, send.
    concurrency of 32, so the answer stays inside `pg_net`'s timeout and the
    function's CPU cap (the sends are I/O).
 4. Act on each Apple answer (below), then drop moments more than 5 minutes
-   old from the claimed rows.
+   old from the claimed rows (`prune_sweeper_moments`, in place).
+   Before the sends the tick also deletes rows whose `updated_at` is more
+   than 30 days old (a phone that is alive re-uploads at least every ten
+   minutes while open, so that is a dead install).
 5. Log one line: `sweeper-wake tick <iso minute>: claimed n, sent s, status
-   {"200":a,"400":b,...}, deleted d, took t ms`.
+   {"200":a,"400":b,...}, unreachable u, deleted d, aged a, store errors e,
+   took t ms`. `sent` counts requests Apple answered; a send that never
+   reached Apple is `unreachable`; `aged` is the 30-day deletions; a store
+   call that failed (a bump, a delete, a reset, a prune) is counted in
+   `store errors` and its error class named once, never its message, and
+   the tick carries on.
 
 ### The clock
 
@@ -1901,14 +1911,14 @@ device token.
 | `plan_hash text` | the phone's 16 hex characters |
 | `updated_at timestamptz` | |
 | `last_sent_for timestamptz` | the newest minute a push was claimed for |
-| `failures smallint` | failed sends since the phone last uploaded |
+| `failures smallint` | failed sends in a row; a 200 for the row or an upload resets it |
 
 **No column may hold a course, assignment, title, URL, grade, completion or
 submission state; the moments are the only per-student fact, and they are
 never logged.** `test/sweeper_wake.test.sql` pins the column list, so a later
 migration cannot add one quietly. Deleted on `delete`, on Canvas disconnect,
 on account deletion (`deleteUserData` removes it first; the row also
-cascades from `auth.users`), and when the tick finds the token dead.
+cascades from `auth.users`), when the tick finds the token dead, and after 30 days without an upload.
 
 ### The claim, and idempotency
 
@@ -1951,31 +1961,43 @@ content-type:    application/json
 ```
 
 The JWT is the provider token: header `{"alg":"ES256","kid":<key id>}`, claims
-`{"iss":<team id>,"iat":<unix seconds>}`, signed with the team's `.p8` key
+`{"iss":<team id>,"iat":<start of the current 20-minute window, unix seconds>}`
+(so isolates that mint in the same window agree on `iat` and Apple sees no
+token "update", even when a cold isolate serves every minute's tick), signed with the team's `.p8` key
 through `crypto.subtle` (no library). Minted once per isolate per key and
-reused for 50 minutes (Apple: no more than one new token per 20 minutes, none
+reused until its `iat` is 50 minutes old (Apple: no more than one new token per 20 minutes, none
 older than 60). Two keys, because Apple scopes a team key to one environment.
 Whether the Edge runtime's `fetch` reaches Apple over HTTP/2 is settled by
 `backend/scripts/sweeper-wake-e2e.mjs`: a fake token answered `400
 BadDeviceToken` proves it, a status of 0 (a connection-level failure) says it
 does not, and the send then moves to the connector front.
 
+### The tick's other writes
+
+`prune_sweeper_moments(tokens text[], before timestamptz)` and
+`bump_sweeper_failure(token text) returns smallint` are `security definer`
+SQL functions, service role only, each one statement acting on the row as it
+is now: a prune that read the moments and wrote them back could overwrite,
+with a stale list, one the phone uploaded in between.
+
 ### Apple's answers
 
 | Status, reason | Outcome | What the tick does |
 |---|---|---|
-| 200 | `ok` | nothing: accepted, not delivered |
+| 200 | `ok` | accepted, not delivered |
 | 400 `BadDeviceToken`, `DeviceTokenNotForTopic` | `badToken` | `failures + 1`; at 3 the row is deleted |
+| 200 | `ok` | also sets the row's `failures` back to 0 (one `UPDATE`) |
 | 403 `ExpiredProviderToken`, `InvalidProviderToken` | `remint` | forget the cached JWT (once per environment per tick), mint a new one, retry that send once; a second 403 fails the whole tick loudly and deletes nothing |
+| 400 `BadTopic`, `TopicDisallowed`, `MissingTopic`, `BadCertificate`, `BadCertificateEnvironment`; 403 `Forbidden`, `MissingProviderToken` | `config` | our setup is wrong for every row: fail the whole tick loudly and count nothing against any row |
 | 410 (`Unregistered`; the body's timestamp is milliseconds since the epoch) | `unregistered` | delete the row now |
 | 429 `TooManyRequests` | `tooMany` | leave the row alone this tick |
 | 429 `TooManyProviderTokenUpdates` | `providerTokenAbuse` | our remint logic is wrong: fail the tick loudly |
 | 5xx | `serverError` | `failures + 1`, no retry inside the tick (the moment would be over); at 3 the row is deleted |
-| anything else | `failed` | as `badToken` |
+| anything else, including an unknown reason | `failed` | as `badToken` |
 
 A send that never reached Apple (status 0, or a missing function secret) is
-not the row's fault: it is counted in the log line (`"0"`, `"error"`) and the
-row is neither failed nor deleted. A deleted row is recreated by the phone's
+not the row's fault: it is counted in the log line (`unreachable`, or
+`"error"` in the status map) and the row is neither failed nor deleted. A deleted row is recreated by the phone's
 next upload.
 
 ### Kill switch and secrets
@@ -2147,3 +2169,8 @@ a 502 on a real phone while a 53-word one succeeded.
 - A tick of the Sweeper wake that dies after claiming leaves its rows claimed
   for that minute; they are not retried, because a nudge two minutes late is
   over.
+- `sweeper-wake` `put` has no rate limit. A tampered anonymous account can
+  create rows whose fake tokens each cost one refused APNs request per due
+  minute, bounded by the 2,000-row claim. A caller who knows another
+  install's token can take its row over (the row follows the latest
+  uploader), which is also how a reinstall follows its new owner.

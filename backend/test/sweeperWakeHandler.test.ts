@@ -118,6 +118,9 @@ Deno.test("sweeper-wake: refusals are 400 with the reason, and nothing is writte
     assert.strictEqual(far.status, 400);
     assert.strictEqual((await far.json()).message, "moment_beyond_horizon");
 
+    const delExtra = await student({ action: "delete", assignment_id: "x" });
+    assert.strictEqual(delExtra.status, 400);
+    assert.strictEqual((await delExtra.json()).message, "forbidden_field");
     const notJSON = await student("{nope");
     assert.strictEqual(notJSON.status, 400);
     const noAction = await student({ token: TOKEN });

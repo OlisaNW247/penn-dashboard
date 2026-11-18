@@ -19,6 +19,7 @@ export type ApnsOutcome =
   | "remint" // 403 ExpiredProviderToken / InvalidProviderToken: mint a new JWT and retry once
   | "unregistered" // 410: the app was removed or the token rotated; delete the row now
   | "tooMany" // 429 TooManyRequests: leave this row alone for this tick
+  | "config" // 400 BadTopic and kin, 403 Forbidden / MissingProviderToken: our setup is wrong; fail the tick loudly, blame no row
   | "providerTokenAbuse" // 429 TooManyProviderTokenUpdates: our remint logic is wrong; fail loudly
   | "serverError" // 5xx: no retry inside the tick, the moment would be over
   | "failed"; // anything else
@@ -40,6 +41,8 @@ export interface ApnsCredentials {
 export const DEFAULT_TOPIC = "com.lhf.lowhangingfruit";
 /** Apple: "Refresh your token no more than once every 20 minutes and no less than once every 60 minutes". */
 export const PROVIDER_TOKEN_TTL_MS = 50 * 60 * 1000;
+/** Provider tokens are stamped with the start of the current 20-minute window. */
+export const IAT_WINDOW_SECONDS = 20 * 60;
 /** How long APNs may hold a nudge for a phone that is offline: a moment two minutes old is over. */
 export const EXPIRATION_SECONDS = 120;
 
@@ -64,6 +67,10 @@ function pemToDER(pem: string): ArrayBuffer {
   return out.buffer as ArrayBuffer;
 }
 
+export function iatFor(now: number): number {
+  return Math.floor(now / 1000 / IAT_WINDOW_SECONDS) * IAT_WINDOW_SECONDS;
+}
+
 /** The provider token: JWS compact, header {alg: ES256, kid}, claims {iss, iat}.
  *  WebCrypto's ECDSA signature is already the raw r||s form JWS wants, so it
  *  needs no DER unwrapping. */
@@ -72,7 +79,13 @@ export async function signProviderToken(
 ): Promise<string> {
   const key = await crypto.subtle.importKey("pkcs8", pemToDER(keyPEM), { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
   const header = base64url(encoder.encode(JSON.stringify({ alg: "ES256", kid: keyID })));
-  const claims = base64url(encoder.encode(JSON.stringify({ iss: teamID, iat: Math.floor(now / 1000) })));
+  // `iat` is the start of the current 20-minute window, not `now`. Apple:
+  // "refresh your token no more than once every 20 minutes", and a function
+  // isolate can be cold on every minute's tick, so every isolate minting in
+  // the same window must agree on `iat` or Apple sees a token "update" each
+  // time (TooManyProviderTokenUpdates). The cache below is measured from this
+  // `iat`, so a token is never used past 50 minutes of age (Apple refuses 60).
+  const claims = base64url(encoder.encode(JSON.stringify({ iss: teamID, iat: iatFor(now) })));
   const signingInput = `${header}.${claims}`;
   const signature = new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, encoder.encode(signingInput)));
   return `${signingInput}.${base64url(signature)}`;
@@ -88,7 +101,8 @@ export function providerToken(credentials: ApnsCredentials, now: number): Promis
   const cached = tokenCache.get(credentials.keyID);
   if (cached && now >= cached.mintedAt && now - cached.mintedAt < PROVIDER_TOKEN_TTL_MS) return cached.promise;
   const promise = signProviderToken({ keyPEM: credentials.keyPEM, keyID: credentials.keyID, teamID: credentials.teamID, now });
-  tokenCache.set(credentials.keyID, { promise, mintedAt: now });
+  // Aged from the token's own `iat`, which is up to 20 minutes before `now`.
+  tokenCache.set(credentials.keyID, { promise, mintedAt: iatFor(now) * 1000 });
   // A failed mint must not be cached for 50 minutes.
   promise.catch(() => {
     if (tokenCache.get(credentials.keyID)?.promise === promise) tokenCache.delete(credentials.keyID);
@@ -113,6 +127,10 @@ export function readAPNsAnswer(status: number, body: unknown): ApnsResult {
   const result = (outcome: ApnsOutcome): ApnsResult => (reason === undefined ? { status, outcome } : { status, reason, outcome });
   if (status === 200) return result("ok");
   if (status === 400 && (reason === "BadDeviceToken" || reason === "DeviceTokenNotForTopic")) return result("badToken");
+  // Our own setup is wrong (topic, certificate, key): never a row's fault.
+  if (status === 400 && (reason === "BadTopic" || reason === "TopicDisallowed" || reason === "MissingTopic" || reason === "BadCertificate" || reason === "BadCertificateEnvironment")) return result("config");
+  if (status === 403 && (reason === "Forbidden" || reason === "MissingProviderToken")) return result("config");
+  // InvalidProviderToken is retried once with a new token (the tick turns a second one fatal).
   if (status === 403 && (reason === "ExpiredProviderToken" || reason === "InvalidProviderToken")) return result("remint");
   if (status === 410) return result("unregistered");
   if (status === 429 && reason === "TooManyRequests") return result("tooMany");

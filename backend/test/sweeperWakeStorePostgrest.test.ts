@@ -39,10 +39,7 @@ Deno.test("postgrest wake store: upsert, claim, delete, failure, prune", async (
   await withStub(
     (s) => {
       if (s.path === "rpc/claim_sweeper_wakes") return [{ device_token: "t1", environment: "development", user_id: "u1" }];
-      if (s.method === "GET" && s.query.includes("select=failures")) return { failures: 2 };
-      if (s.method === "GET" && s.query.includes("select=device_token,moments")) {
-        return [{ device_token: "t1", moments: ["2026-11-20T04:00:00+00:00", "2026-11-20T05:00:00+00:00"] }, { device_token: "t2", moments: ["2026-11-20T05:00:00+00:00"] }];
-      }
+      if (s.path === "rpc/bump_sweeper_failure") return 3;
       if (s.method === "DELETE") return [{ device_token: "t1" }, { device_token: "t2" }];
       return null;
     },
@@ -65,19 +62,28 @@ Deno.test("postgrest wake store: upsert, claim, delete, failure, prune", async (
       assert.strictEqual(seen[2].method + " " + seen[2].path + " " + seen[2].query, "DELETE sweeper_wakes user_id=eq.u1&select=device_token");
 
       assert.strictEqual(await store.markFailure("t1"), 3);
-      const patch = seen.find((s) => s.method === "PATCH")!;
-      assert.deepStrictEqual(patch.body, { failures: 3 });
-      assert.match(patch.query, /device_token=eq\.t1/);
+      let last = seen[seen.length - 1];
+      assert.strictEqual(last.path, "rpc/bump_sweeper_failure");
+      assert.deepStrictEqual(last.body, { token: "t1" });
+
+      await store.resetFailures("t1");
+      last = seen[seen.length - 1];
+      assert.strictEqual(last.method + " " + last.path + " " + last.query, "PATCH sweeper_wakes device_token=eq.t1&failures=gt.0");
+      assert.deepStrictEqual(last.body, { failures: 0 });
 
       await store.deleteToken("t9");
-      const del = seen[seen.length - 1];
-      assert.strictEqual(del.method + " " + del.path + " " + del.query, "DELETE sweeper_wakes device_token=eq.t9");
+      last = seen[seen.length - 1];
+      assert.strictEqual(last.method + " " + last.path + " " + last.query, "DELETE sweeper_wakes device_token=eq.t9");
 
-      seen.length = 0;
       await store.pruneMoments(new Date("2026-11-20T04:30:00Z"), ["t1", "t2"]);
-      const patches = seen.filter((s) => s.method === "PATCH");
-      assert.strictEqual(patches.length, 1, "only the row with an old moment is rewritten");
-      assert.deepStrictEqual(patches[0].body, { moments: ["2026-11-20T05:00:00+00:00"] });
+      last = seen[seen.length - 1];
+      assert.strictEqual(last.path, "rpc/prune_sweeper_moments");
+      assert.deepStrictEqual(last.body, { tokens: ["t1", "t2"], before: "2026-11-20T04:30:00.000Z" });
+      assert.ok(!seen.some((s) => s.method === "GET"), "nothing reads and writes back");
+
+      assert.strictEqual(await store.deleteStale(new Date("2026-10-21T00:00:00Z")), 2);
+      last = seen[seen.length - 1];
+      assert.strictEqual(last.method + " " + last.path + " " + last.query, "DELETE sweeper_wakes updated_at=lt.2026-10-21T00:00:00.000Z&select=device_token");
     },
   );
 });

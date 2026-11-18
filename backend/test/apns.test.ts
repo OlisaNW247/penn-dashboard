@@ -7,6 +7,7 @@ import {
   apnsCredentialsFromEnv,
   forgetProviderToken,
   hostFor,
+  iatFor,
   providerToken,
   readAPNsAnswer,
   sendBackgroundPush,
@@ -39,7 +40,7 @@ Deno.test("apns: the provider token is a valid ES256 JWS with kid, iss and iat",
   const jwt = await signProviderToken({ keyPEM: pem, keyID: "ABC123DEFG", teamID: "24A3TDB277", now: NOW });
   const [h, c, sig] = jwt.split(".");
   assert.deepStrictEqual(JSON.parse(new TextDecoder().decode(unb64url(h))), { alg: "ES256", kid: "ABC123DEFG" });
-  assert.deepStrictEqual(JSON.parse(new TextDecoder().decode(unb64url(c))), { iss: "24A3TDB277", iat: Math.floor(NOW / 1000) });
+  assert.deepStrictEqual(JSON.parse(new TextDecoder().decode(unb64url(c))), { iss: "24A3TDB277", iat: iatFor(NOW) });
   const raw = unb64url(sig);
   assert.strictEqual(raw.length, 64); // raw r||s, not DER
   const ok = await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, publicKey, raw.buffer as ArrayBuffer, new TextEncoder().encode(`${h}.${c}`));
@@ -87,7 +88,9 @@ Deno.test("apns: Apple's answers map to outcomes (design 3.4)", () => {
   assert.strictEqual(out(400, "PayloadEmpty"), "failed");
   assert.strictEqual(out(403, "ExpiredProviderToken"), "remint");
   assert.strictEqual(out(403, "InvalidProviderToken"), "remint");
-  assert.strictEqual(out(403, "Forbidden"), "failed");
+  for (const r of ["BadTopic", "TopicDisallowed", "MissingTopic", "BadCertificate", "BadCertificateEnvironment"]) assert.strictEqual(out(400, r), "config", r);
+  for (const r of ["Forbidden", "MissingProviderToken"]) assert.strictEqual(out(403, r), "config", r);
+  assert.strictEqual(out(403, "SomethingNew"), "failed");
   assert.strictEqual(out(410, "Unregistered"), "unregistered");
   assert.strictEqual(out(429, "TooManyRequests"), "tooMany");
   assert.strictEqual(out(429, "TooManyProviderTokenUpdates"), "providerTokenAbuse");
@@ -107,20 +110,38 @@ Deno.test("apns: a transport failure is status 0 and never carries the url", asy
   assert.ok(!JSON.stringify(r).includes(TOKEN));
 });
 
-Deno.test("apns: the provider token is cached for 50 minutes, shared, and forgettable", async () => {
+Deno.test("apns: iat is the 20-minute window's start, so two mints in one window agree", async () => {
+  const { pem } = await makeKey();
+  const claimsOf = (jwt: string) => JSON.parse(new TextDecoder().decode(unb64url(jwt.split(".")[1])));
+  const a = await signProviderToken({ keyPEM: pem, keyID: "K", teamID: "T", now: Date.UTC(2026, 10, 20, 4, 21, 5) });
+  const b = await signProviderToken({ keyPEM: pem, keyID: "K", teamID: "T", now: Date.UTC(2026, 10, 20, 4, 39, 59) });
+  const c = await signProviderToken({ keyPEM: pem, keyID: "K", teamID: "T", now: Date.UTC(2026, 10, 20, 4, 40, 0) });
+  assert.strictEqual(claimsOf(a).iat, claimsOf(b).iat);
+  assert.strictEqual(claimsOf(a).iat, Date.UTC(2026, 10, 20, 4, 20, 0) / 1000);
+  assert.strictEqual(claimsOf(c).iat, Date.UTC(2026, 10, 20, 4, 40, 0) / 1000);
+  assert.strictEqual(iatFor(Date.UTC(2026, 10, 20, 4, 20, 0)), Date.UTC(2026, 10, 20, 4, 20, 0) / 1000);
+});
+
+Deno.test("apns: the provider token is cached for 50 minutes of its own age, shared, and forgettable", async () => {
   const { pem } = await makeKey();
   const credentials = { keyPEM: pem, keyID: "KEYID00003", teamID: "T", topic: "t" };
   forgetProviderToken("KEYID00003");
   const [a, b] = await Promise.all([providerToken(credentials, NOW), providerToken(credentials, NOW)]);
   assert.strictEqual(a, b);
-  assert.strictEqual(await providerToken(credentials, NOW + 49 * 60_000), a);
-  const later = await providerToken(credentials, NOW + 51 * 60_000);
+  // NOW is 04:30; the token's iat is the 04:20 window start, so it is 50 minutes old at 05:10.
+  assert.strictEqual(await providerToken(credentials, NOW + 39 * 60_000), a);
+  const later = await providerToken(credentials, NOW + 41 * 60_000);
   assert.notStrictEqual(later, a);
-  const again = await providerToken(credentials, NOW + 52 * 60_000);
+  const again = await providerToken(credentials, NOW + 42 * 60_000);
   assert.strictEqual(again, later);
   forgetProviderToken("KEYID00003");
-  const reminted = await providerToken(credentials, NOW + 53 * 60_000);
-  assert.notStrictEqual(reminted, later);
+  // A remint inside the same 20-minute window carries the same claims (and
+  // so tells Apple of no token "update"), whatever the signature does.
+  const reminted = await providerToken(credentials, NOW + 43 * 60_000);
+  assert.strictEqual(reminted.split(".")[1], later.split(".")[1]);
+  forgetProviderToken("KEYID00003");
+  const nextWindow = await providerToken(credentials, NOW + 60 * 60_000);
+  assert.notStrictEqual(nextWindow.split(".")[1], later.split(".")[1]);
 });
 
 Deno.test("apns: credentials come from the environment and a missing one is named, not shown", () => {

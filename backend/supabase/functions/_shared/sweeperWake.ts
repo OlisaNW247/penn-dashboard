@@ -20,6 +20,7 @@ export const PRUNE_AFTER_MS = 5 * MINUTE_MS;
 export const MAX_FAILURES = 3;
 export const CLAIM_LIMIT = 2000;
 
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
 const ALLOWED_KEYS = new Set(["action", "token", "environment", "moments", "plan"]);
 
 export interface WakeValue {
@@ -33,6 +34,13 @@ export interface WakeValue {
 export type WakeValidation = { ok: true; value: WakeValue } | { ok: false; reason: string };
 
 const truncateToMinute = (ms: number): number => Math.floor(ms / MINUTE_MS) * MINUTE_MS;
+
+/** `{ "action": "delete" }` carries nothing else; extra keys are refused like a put's. */
+export function validateDeleteBody(body: unknown): { ok: true } | { ok: false; reason: string } {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return { ok: false, reason: "invalid_body" };
+  for (const key of Object.keys(body)) if (key !== "action") return { ok: false, reason: "forbidden_field" };
+  return { ok: true };
+}
 
 export function validateWakeBody(body: unknown, now: Date): WakeValidation {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return { ok: false, reason: "invalid_body" };
@@ -52,6 +60,7 @@ export function validateWakeBody(body: unknown, now: Date): WakeValidation {
   const seen = new Set<number>();
   for (const raw of b.moments) {
     if (typeof raw !== "string") return { ok: false, reason: "invalid_moment" };
+    if (!ISO_INSTANT.test(raw)) return { ok: false, reason: "invalid_moment" };
     const parsed = Date.parse(raw);
     if (Number.isNaN(parsed)) return { ok: false, reason: "invalid_moment" };
     const minute = truncateToMinute(parsed);
@@ -96,21 +105,28 @@ export interface SweeperWakeStore {
   /** Rows with a moment at `minute` that have not been claimed for it or a later minute,
    *  claimed in the same operation, at most `limit`. */
   claim(minute: Date, limit: number): Promise<ClaimedRow[]>;
-  /** Counts one more failed send and answers the new total. */
+  /** Counts one more failed send and answers the new total (in place, one statement). */
   markFailure(token: string): Promise<number>;
+  /** A 200 for this row: its failure count starts again (three in a row delete it). */
+  resetFailures(token: string): Promise<void>;
   deleteToken(token: string): Promise<void>;
-  /** Removes moments earlier than `before` from the named rows. */
+  /** Removes moments earlier than `before` from the named rows, in place. */
   pruneMoments(before: Date, tokens: string[]): Promise<void>;
+  /** Deletes rows whose phone has not uploaded since `before`; answers how many. */
+  deleteStale(before: Date): Promise<number>;
 }
 
 interface MemoryRow extends WakeRow {
   lastSentFor: Date | null;
   failures: number;
+  updatedAt: Date;
 }
 
 /** The dumbest correct implementation: the SQL's rules, spelled out. */
 export class MemorySweeperWakeStore implements SweeperWakeStore {
   rows = new Map<string, MemoryRow>();
+  /** Tests move this to age rows. */
+  clock: () => Date = () => new Date();
 
   upsert(row: WakeRow): Promise<void> {
     const previous = this.rows.get(row.token);
@@ -119,6 +135,7 @@ export class MemorySweeperWakeStore implements SweeperWakeStore {
       moments: [...row.moments],
       lastSentFor: previous?.lastSentFor ?? null,
       failures: 0,
+      updatedAt: this.clock(),
     });
     return Promise.resolve();
   }
@@ -153,9 +170,26 @@ export class MemorySweeperWakeStore implements SweeperWakeStore {
     return Promise.resolve(row.failures);
   }
 
+  resetFailures(token: string): Promise<void> {
+    const row = this.rows.get(token);
+    if (row) row.failures = 0;
+    return Promise.resolve();
+  }
+
   deleteToken(token: string): Promise<void> {
     this.rows.delete(token);
     return Promise.resolve();
+  }
+
+  deleteStale(before: Date): Promise<number> {
+    let n = 0;
+    for (const [token, row] of this.rows) {
+      if (row.updatedAt.getTime() < before.getTime()) {
+        this.rows.delete(token);
+        n++;
+      }
+    }
+    return Promise.resolve(n);
   }
 
   pruneMoments(before: Date, tokens: string[]): Promise<void> {
@@ -167,16 +201,11 @@ export class MemorySweeperWakeStore implements SweeperWakeStore {
   }
 }
 
-const PRUNE_SELECT_CHUNK = 100;
-
-/** The production store. Every method is one PostgREST request except
- *  `markFailure` and `pruneMoments`, which read and then write. That is
- *  deliberate: the claim is what must be atomic, and it is (the
- *  `claim_sweeper_wakes` function, one UPDATE). A row is claimed by one tick
- *  at a time, so only one tick ever fails or prunes it; and PostgREST has no
- *  array filter or `failures + 1`, so the alternative is a second SQL
- *  function for two statements that cannot race. If the tick's "took" ever
- *  says pruning is slow, that function is the fix. */
+/** The production store. Every method is one PostgREST request. The claim,
+ *  the failure bump and the prune are SQL functions (migration
+ *  `20261118090000_sweeper_wake.sql`) because each must act on the row as it
+ *  is now: a prune that read the moments and wrote them back could overwrite
+ *  a list the phone uploaded in between with a stale one. */
 export class PostgrestSweeperWakeStore implements SweeperWakeStore {
   constructor(private readonly client: SupabaseClient) {}
 
@@ -210,13 +239,14 @@ export class PostgrestSweeperWakeStore implements SweeperWakeStore {
   }
 
   async markFailure(token: string): Promise<number> {
-    const { data, error } = await this.client.from("sweeper_wakes").select("failures").eq("device_token", token).maybeSingle();
+    const { data, error } = await this.client.rpc("bump_sweeper_failure", { token });
     if (error) throw error;
-    if (!data) return 0;
-    const failures = (data.failures as number) + 1;
-    const { error: updateError } = await this.client.from("sweeper_wakes").update({ failures }).eq("device_token", token);
-    if (updateError) throw updateError;
-    return failures;
+    return Number(data ?? 0);
+  }
+
+  async resetFailures(token: string): Promise<void> {
+    const { error } = await this.client.from("sweeper_wakes").update({ failures: 0 }).eq("device_token", token).gt("failures", 0);
+    if (error) throw error;
   }
 
   async deleteToken(token: string): Promise<void> {
@@ -225,17 +255,15 @@ export class PostgrestSweeperWakeStore implements SweeperWakeStore {
   }
 
   async pruneMoments(before: Date, tokens: string[]): Promise<void> {
-    for (let i = 0; i < tokens.length; i += PRUNE_SELECT_CHUNK) {
-      const chunk = tokens.slice(i, i + PRUNE_SELECT_CHUNK);
-      const { data, error } = await this.client.from("sweeper_wakes").select("device_token, moments").in("device_token", chunk);
-      if (error) throw error;
-      for (const row of (data ?? []) as Array<{ device_token: string; moments: string[] }>) {
-        const kept = row.moments.filter((m) => Date.parse(m) >= before.getTime());
-        if (kept.length === row.moments.length) continue;
-        const { error: updateError } = await this.client.from("sweeper_wakes").update({ moments: kept }).eq("device_token", row.device_token);
-        if (updateError) throw updateError;
-      }
-    }
+    if (tokens.length === 0) return;
+    const { error } = await this.client.rpc("prune_sweeper_moments", { tokens, before: before.toISOString() });
+    if (error) throw error;
+  }
+
+  async deleteStale(before: Date): Promise<number> {
+    const { data, error } = await this.client.from("sweeper_wakes").delete().lt("updated_at", before.toISOString()).select("device_token");
+    if (error) throw error;
+    return (data ?? []).length;
   }
 }
 
@@ -271,15 +299,27 @@ export interface TickDeps {
 export interface TickCounts {
   disabled?: boolean;
   claimed: number;
+  /** Requests Apple answered (any status). A send that never reached Apple is `unreachable`. */
   sent: number;
   byStatus: Record<string, number>;
+  unreachable: number;
   deleted: number;
+  /** Rows deleted because their phone has not uploaded in 30 days. */
+  aged: number;
+  /** Store calls (a bump, a delete, a reset, a prune) that failed; the tick carried on. */
+  storeErrors: number;
   took: number;
 }
 
+/** A phone that is alive re-uploads at least every ten minutes while open, so
+ *  thirty days untouched is a dead install whose token Apple has not yet told us about. */
+export const STALE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
+
 export async function runTick(deps: TickDeps): Promise<TickCounts> {
   const startedAt = deps.now();
-  if (deps.disabled) return { disabled: true, claimed: 0, sent: 0, byStatus: {}, deleted: 0, took: 0 };
+  if (deps.disabled) {
+    return { disabled: true, claimed: 0, sent: 0, byStatus: {}, unreachable: 0, deleted: 0, aged: 0, storeErrors: 0, took: 0 };
+  }
   const concurrency = Math.max(1, deps.concurrency ?? 32);
   const minute = new Date(truncateToMinute(startedAt));
 
@@ -299,10 +339,32 @@ export async function runTick(deps: TickDeps): Promise<TickCounts> {
     byStatus[key] = (byStatus[key] ?? 0) + 1;
   };
   let sent = 0;
+  let unreachable = 0;
   let deleted = 0;
+  let aged = 0;
+  let storeErrors = 0;
   let fatal: TickFatal | null = null;
-  let configErrorLogged = false;
+  const loggedClasses = new Set<string>();
   const reminted = new Set<ApnsEnvironment>();
+
+  // A store call that fails (a PostgREST error) is counted and named by its
+  // class, once per class per tick, and never stops the tick: the summary
+  // line and the prune still run. The error's message is never logged.
+  const guarded = async <T>(fn: () => Promise<T>): Promise<T | undefined> => {
+    try {
+      return await fn();
+    } catch (err) {
+      storeErrors++;
+      const name = err instanceof Error ? err.constructor.name : typeof err;
+      if (!loggedClasses.has(name)) {
+        loggedClasses.add(name);
+        deps.log(`sweeper-wake: store call failed (${name})`);
+      }
+      return undefined;
+    }
+  };
+
+  aged = (await guarded(() => deps.store.deleteStale(new Date(startedAt - STALE_AFTER_MS)))) ?? 0;
 
   const sendOne = async (row: ClaimedRow): Promise<void> => {
     let result: ApnsResult;
@@ -325,32 +387,39 @@ export async function runTick(deps: TickDeps): Promise<TickCounts> {
       // fault, so the row is neither counted nor deleted. The message names
       // a variable, never a value.
       bump("error");
-      if (!configErrorLogged) {
-        configErrorLogged = true;
+      if (!loggedClasses.has("send")) {
+        loggedClasses.add("send");
         deps.log(`sweeper-wake: send failed before reaching Apple (${err instanceof Error ? err.message : "unknown"})`);
       }
+      return;
+    }
+    if (result.status === 0) {
+      // A connection that never reached Apple says nothing about the token.
+      unreachable++;
       return;
     }
     sent++;
     bump(String(result.status));
     switch (result.outcome) {
       case "ok":
+        await guarded(() => deps.store.resetFailures(row.token));
+        return;
       case "tooMany":
         return;
       case "unregistered":
-        await deps.store.deleteToken(row.token);
-        deleted++;
+        if ((await guarded(async () => (await deps.store.deleteToken(row.token), true))) === true) deleted++;
         return;
+      case "config":
+        // BadTopic, Forbidden and kin: the setup is wrong for every row, so
+        // fail loudly and count nothing against anyone.
+        throw new TickFatal(`APNs refused the request for a reason in our setup (${result.status} ${result.reason ?? "no reason"})`);
       case "providerTokenAbuse":
         throw new TickFatal("APNs says provider tokens are being minted too often");
       default: {
-        // badToken, serverError, failed. A status of 0 is a connection that
-        // never reached Apple, which says nothing about the token.
-        if (result.status === 0) return;
-        const failures = await deps.store.markFailure(row.token);
-        if (failures >= MAX_FAILURES) {
-          await deps.store.deleteToken(row.token);
-          deleted++;
+        // badToken, serverError, failed: three in a row delete the row.
+        const failures = await guarded(() => deps.store.markFailure(row.token));
+        if (failures !== undefined && failures >= MAX_FAILURES) {
+          if ((await guarded(async () => (await deps.store.deleteToken(row.token), true))) === true) deleted++;
         }
       }
     }
@@ -375,12 +444,11 @@ export async function runTick(deps: TickDeps): Promise<TickCounts> {
     throw fatal;
   }
 
-  const survivors = rows.map((r) => r.token);
-  if (survivors.length > 0) await deps.store.pruneMoments(new Date(minute.getTime() - PRUNE_AFTER_MS), survivors);
+  if (rows.length > 0) await guarded(() => deps.store.pruneMoments(new Date(minute.getTime() - PRUNE_AFTER_MS), rows.map((r) => r.token)));
 
   const took = deps.now() - startedAt;
   deps.log(
-    `sweeper-wake tick ${minute.toISOString()}: claimed ${rows.length}, sent ${sent}, status ${JSON.stringify(byStatus)}, deleted ${deleted}, took ${took} ms`,
+    `sweeper-wake tick ${minute.toISOString()}: claimed ${rows.length}, sent ${sent}, status ${JSON.stringify(byStatus)}, unreachable ${unreachable}, deleted ${deleted}, aged ${aged}, store errors ${storeErrors}, took ${took} ms`,
   );
-  return { claimed: rows.length, sent, byStatus, deleted, took };
+  return { claimed: rows.length, sent, byStatus, unreachable, deleted, aged, storeErrors, took };
 }
