@@ -112,13 +112,15 @@ New files:
   `hasCanvasAssignmentID`, `hasGradescopeID`, `submitsOnPaper` and is
   snapshotted at `DashboardViewModel.reload` like `requiresNoSubmission`
   is. **Quiet by kind, per the overseer's brief:** nothing to submit, in
-  class, off canvas, recurring, found exam, no Canvas or Gradescope id
-  (a manual task, or a module row Canvas never resolved). The plan's
+  class, off canvas, recurring, found exam, and a **feed** item with no
+  Canvas or Gradescope id (a module row Canvas never resolved into an
+  assignment). **The student's own manual one-off tasks ring exactly as
+  today** (overseer's correction, 2026-11-18: the student finishes those
+  with a swipe, which already cancels the alarm; silence is the dangerous
+  side of Marco's rule, and a proven behaviour is not changed without his
+  word). Recurring occurrences stay quiet, today's rule. The plan's
   `zeroPoints` and `optionalTitle` rules are left out: the plan itself
   lists the word list as needing Marco's approval, and nobody has given it.
-  **Note for Marco:** the "no confirmable id" rule silences the Sweeper for
-  the student's own manual tasks, which ring today; the overseer's brief
-  asked for it and the rule is one line to flip if he disagrees.
 - `LUI/SubmissionObservation.swift`:
   `SubmissionObservation.cancellations(submittedAssignmentIDs: Set<String>,
   items: [DashItem], settings: SweeperSettings) -> (requestIDs: [String],
@@ -355,8 +357,16 @@ built in parallel and gated together. About 30 hours.
   Gradescope-only armed item in the window; `syncGradescope` is not changed.
 - `project.yml` and `App/Info.plist`: `remote-notification` beside `fetch`
   in `UIBackgroundModes`, pinned by a test in the `VoiceDictationTests`
-  shape (`SweeperWakePlistTests`); `App/LHFApp.entitlements` gains
-  `aps-environment` = `development` (Xcode rewrites it at archive).
+  shape (`SweeperWakePlistTests`). **`aps-environment` is NOT added to
+  `App/LHFApp.entitlements` here** (overseer's correction, 2026-11-18): the
+  signed phone build on Marco's Mac must keep working, and the entitlement
+  needs Push Notifications on the App ID first. Olisa's step, in order:
+  enable Push Notifications on `com.lhf.lowhangingfruit`, then add
+  `<key>aps-environment</key><string>development</string>` beside the Time
+  Sensitive key (Xcode rewrites it to `production` at archive). Until then
+  `registerForRemoteNotifications` fails at runtime, the DEBUG wake log
+  records one `register-failed` line, nothing is sent, and the app runs as
+  Release 1.
 - `docs/PRIVACY.md`: the design's §5 three edits, in the same commit as the
   registration code. `docs/appstore/REVIEW_NOTES.md`: two sentences.
 - Tests: `SweeperWakePlanTests`, `SweeperWakeRulesTests` (gates, the
@@ -398,12 +408,10 @@ Stated plainly, so nobody reads the gate as proof of delivery:
   first question; the Vercel-front fallback is not built until it says no).
 - That `pg_cron` and `pg_net` are enabled on the project and the two Vault
   secrets exist (Marco or Olisa, by hand, never in a migration).
-- That the device build signs with `aps-environment` (Push Notifications
-  must be enabled on the App ID `com.lhf.lowhangingfruit`; Xcode's
-  automatic signing can add it when the account's role allows, otherwise
-  Olisa does it in the portal). If the signed build is refused for it, the
-  entitlement line is the one to remove until the capability exists;
-  the app then counts `didFailToRegister` and runs as Release 1.
+- Registration itself: `aps-environment` is not in the entitlements until
+  Olisa enables Push Notifications on the App ID and adds the line (above),
+  so on every build from this branch registration fails, the DEBUG log says
+  so, and the app runs as Release 1.
 - That a push wakes the phone, how often, and that the 30-second budget
   holds (the `push` lines in `debugWakeLogV1`, read off the plist).
 - The rate-limit headers Penn's Canvas returns to the planner poll
@@ -420,8 +428,9 @@ Stated plainly, so nobody reads the gate as proof of delivery:
   `true` (the default here) or is flipped at archive time if the key is
   not in place.
 - Olisa: the two APNs keys (Production and Sandbox), Push Notifications on
-  the App ID, the `.p8` files into the Supabase secrets named above; yes or
-  changes to the `docs/PRIVACY.md` paragraph.
+  the App ID and then the `aps-environment` line in `App/LHFApp.entitlements`,
+  the `.p8` files into the Supabase secrets named above; yes or changes to
+  the `docs/PRIVACY.md` paragraph.
 
 ## Hours
 
