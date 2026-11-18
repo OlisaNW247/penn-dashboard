@@ -229,6 +229,17 @@ export const RESULT_DAILY_LIMIT = 8;
 export const RESULT_TOTAL_LIMIT = 60;
 export const RESULT_IMAGE_BYTES = 300000;
 export const SUGGESTION_LIMIT = 20;
+// A ceiling on `captures` across every ambassador, enforced inside the same
+// INSERTs as the per-ambassador limits. The arithmetic that makes it necessary:
+// one ambassador may hold 96 feed frames of 200,000 bytes and 60 results of
+// 300,000 bytes, about 26 MB decoded, or about 34 MB of base64 text, and each
+// ambassador's limits are independent, so a roster of thirty leaked or hostile
+// codes could store about a gigabyte in a database that holds the founders' real
+// numbers. A global number bounds the whole table whatever the roster size.
+// 1500 rows is roughly 300 MB at the very worst and far less in practice (a
+// downscaled screenshot is nearer 100 KB). Founders make room by deleting
+// recordings and results they have dealt with.
+export const CAPTURES_GLOBAL_LIMIT = 1500;
 
 const utcDayStart = () => new Date().toISOString().slice(0, 10) + "T00:00:00.000Z";
 
@@ -242,8 +253,14 @@ export async function captureCounts(env, amb) {
   return { feed: { total: by("feed").total, today: by("feed").today }, result: { total: by("result").total, today: by("result").today } };
 }
 
+export async function capturesFull(env) {
+  const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM captures").first();
+  return (row?.n ?? 0) >= CAPTURES_GLOBAL_LIMIT;
+}
+
 // One still of a recording. Returns "stored", "duplicate" (this batch and seq
-// are already held, which is a client retry and not an error) or "limit".
+// are already held, which is a client retry and not an error), "full" (the
+// global ceiling refused it) or "limit" (an ambassador's own limit).
 // NOT EXISTS makes the retry a no-write inside the same statement, so two
 // copies of one frame arriving together still store one.
 export async function addFeedFrame(env, amb, { batch, seq, mime, image }) {
@@ -253,9 +270,10 @@ export async function addFeedFrame(env, amb, { batch, seq, mime, image }) {
      WHERE NOT EXISTS (SELECT 1 FROM captures WHERE ambassador_id = ?1 AND kind = 'feed' AND batch = ?2 AND seq = ?3)
        AND (SELECT COUNT(*) FROM captures WHERE ambassador_id = ?1 AND kind = 'feed' AND ts >= ?6) < ?7
        AND (SELECT COUNT(*) FROM captures WHERE ambassador_id = ?1 AND kind = 'feed') < ?8
-       AND (SELECT COUNT(*) FROM captures WHERE ambassador_id = ?1 AND kind = 'feed' AND batch = ?2) < ?9`,
+       AND (SELECT COUNT(*) FROM captures WHERE ambassador_id = ?1 AND kind = 'feed' AND batch = ?2) < ?9
+       AND (SELECT COUNT(*) FROM captures) < ?10`,
   )
-    .bind(amb.id, batch, seq, mime, image, utcDayStart(), FEED_DAILY_LIMIT, FEED_TOTAL_LIMIT, FEED_FRAMES_PER_RECORDING)
+    .bind(amb.id, batch, seq, mime, image, utcDayStart(), FEED_DAILY_LIMIT, FEED_TOTAL_LIMIT, FEED_FRAMES_PER_RECORDING, CAPTURES_GLOBAL_LIMIT)
     .run();
   if ((r.meta?.changes ?? 0) > 0) return "stored";
   const dup = await env.DB.prepare(
@@ -263,7 +281,8 @@ export async function addFeedFrame(env, amb, { batch, seq, mime, image }) {
   )
     .bind(amb.id, batch, seq)
     .first();
-  return dup ? "duplicate" : "limit";
+  if (dup) return "duplicate";
+  return (await capturesFull(env)) ? "full" : "limit";
 }
 
 export async function addResult(env, amb, { platform, style, upvotes, views, note, mime, image }) {
@@ -271,11 +290,13 @@ export async function addResult(env, amb, { platform, style, upvotes, views, not
     `INSERT INTO captures (ambassador_id, kind, platform, style, upvotes, views, note, mime, image)
      SELECT ?1, 'result', ?2, ?3, ?4, ?5, ?6, ?7, ?8
      WHERE (SELECT COUNT(*) FROM captures WHERE ambassador_id = ?1 AND kind = 'result' AND ts >= ?9) < ?10
-       AND (SELECT COUNT(*) FROM captures WHERE ambassador_id = ?1 AND kind = 'result') < ?11`,
+       AND (SELECT COUNT(*) FROM captures WHERE ambassador_id = ?1 AND kind = 'result') < ?11
+       AND (SELECT COUNT(*) FROM captures) < ?12`,
   )
-    .bind(amb.id, platform, style, upvotes, views, note, mime, image, utcDayStart(), RESULT_DAILY_LIMIT, RESULT_TOTAL_LIMIT)
+    .bind(amb.id, platform, style, upvotes, views, note, mime, image, utcDayStart(), RESULT_DAILY_LIMIT, RESULT_TOTAL_LIMIT, CAPTURES_GLOBAL_LIMIT)
     .run();
-  return (r.meta?.changes ?? 0) > 0;
+  if ((r.meta?.changes ?? 0) > 0) return "stored";
+  return (await capturesFull(env)) ? "full" : "limit";
 }
 
 // Founder only. Metadata, never the image: the bytes are fetched one at a time
@@ -320,8 +341,10 @@ export async function deleteCapture(env, { id, amb, batch }) {
 }
 
 // ---- suggestions: a post a founder wants one ambassador to try.
+// A departed ambassador counts as not existing: their code is dead, so nothing
+// new is addressed to them.
 export async function ambassadorExists(env, id) {
-  return !!(await env.DB.prepare("SELECT 1 AS x FROM ambassadors WHERE id = ?1").bind(id).first());
+  return !!(await env.DB.prepare("SELECT 1 AS x FROM ambassadors WHERE id = ?1 AND status <> 'left'").bind(id).first());
 }
 
 // Returns false when nothing was written (unknown ambassador, or at the limit).
@@ -329,7 +352,7 @@ export async function addSuggestion(env, ambassadorId, { text, reply }) {
   const r = await env.DB.prepare(
     `INSERT INTO suggestions (ambassador_id, text, reply)
      SELECT ?1, ?2, ?3
-     WHERE EXISTS (SELECT 1 FROM ambassadors WHERE id = ?1)
+     WHERE EXISTS (SELECT 1 FROM ambassadors WHERE id = ?1 AND status <> 'left')
        AND (SELECT COUNT(*) FROM suggestions WHERE ambassador_id = ?1) < ?4`,
   )
     .bind(ambassadorId, text, reply, SUGGESTION_LIMIT)

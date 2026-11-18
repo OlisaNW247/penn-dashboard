@@ -103,6 +103,7 @@ var c=document.createElement('canvas');c.width=Math.max(1,Math.round(w*scale));c
 var x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(im,0,0,c.width,c.height);
 for(var q=0.8;q>=0.25;q-=0.1){var b=await toBlob(c,q);if(b&&b.size<=max)return b}}
 throw new Error('big')}
+function num(v){return String(v).replace(/[,\s]/g,'')}
 function say(el,t,bad){el.textContent=t;el.className='small'+(bad?' err':'')}
 async function send(body){
 var r=await fetch(CAPTURE.url,{method:'POST',headers:{'content-type':'application/json',accept:'application/json'},body:JSON.stringify(body)});
@@ -118,22 +119,31 @@ var fin=document.getElementById('feedFiles'),fmsg=document.getElementById('feedM
 var fs=CAPTURE.feed;
 function fcount(){fcnt.textContent=fs.sentToday+' of '+fs.dailyLimit+' today'}
 fcount();
-fin.addEventListener('change',function(){var n=fin.files?fin.files.length:0;fname.textContent=n?(n>fs.framesPerRecording?fs.framesPerRecording+' of '+n+' pictures will be sent':n+(n===1?' picture':' pictures')):'no pictures chosen'});
+// batch and sent belong to the current file selection: a failed press resumes
+// at the first unsent frame under the same batch id (the server answers 200 for a
+// batch+seq it already holds, so re-sending the failed one is safe), and choosing
+// new files starts a new batch.
+var batch=null,sent=0,busy=false;
+function reset(){batch=null;sent=0}
+fin.addEventListener('change',function(){reset();var n=fin.files?fin.files.length:0;fname.textContent=n?(n>fs.framesPerRecording?fs.framesPerRecording+' of '+n+' pictures will be sent':n+(n===1?' picture':' pictures')):'no pictures chosen'});
 ff.addEventListener('submit',async function(ev){
 ev.preventDefault();
+if(busy)return;
 var files=Array.prototype.slice.call(fin.files||[],0,fs.framesPerRecording);
 if(!files.length){say(fmsg,'choose a few screenshots first.',true);return}
-fbtn.disabled=true;var batch=batchId(),done=0;
+if(sent>=files.length)reset();
+if(!batch)batch=batchId();
+busy=true;fbtn.disabled=true;
 try{
-for(var i=0;i<files.length;i++){
-say(fmsg,'sent '+done+' of '+files.length+'...');
-var blob=await shrink(files[i],fs.frameBytes);
-var res=await send({kind:'feed',batch:batch,seq:i,image:await b64(blob)});
-if(!res.ok){say(fmsg,(res.message||'that did not send. try again.')+' ('+done+' of '+files.length+' sent)',true);fbtn.disabled=false;return}
-done++;fs.sentToday++;fs.stored++;fcount()}
-say(fmsg,'sent '+done+' of '+files.length+'. thank you.');ff.reset();fname.textContent='no pictures chosen'}
-catch(e){say(fmsg,"couldn't read one of those pictures. sent "+done+' of '+files.length+'.',true)}
-fbtn.disabled=false})}
+while(sent<files.length){
+say(fmsg,'sent '+sent+' of '+files.length+'...');
+var blob=await shrink(files[sent],fs.frameBytes);
+var res=await send({kind:'feed',batch:batch,seq:sent,image:await b64(blob)});
+if(!res.ok){say(fmsg,(res.message||'that did not send. try again.')+' ('+sent+' of '+files.length+' sent)',true);return}
+sent++;fs.sentToday++;fs.stored++;fcount()}
+say(fmsg,'sent '+sent+' of '+files.length+'. thank you.');ff.reset();fname.textContent='no pictures chosen';reset()}
+catch(e){say(fmsg,'that did not send. press send to try again. ('+sent+' of '+files.length+' sent)',true)}
+finally{busy=false;fbtn.disabled=false}})}
 
 var rf=document.getElementById('resultForm');
 if(rf){
@@ -147,7 +157,7 @@ ev.preventDefault();
 var fl=rin.files&&rin.files[0];if(!fl){say(rmsg,'choose the screenshot first.',true);return}
 rbtn.disabled=true;say(rmsg,'sending...');
 try{var blob=await shrink(fl,rs.imageBytes);
-var res=await send({kind:'result',image:await b64(blob),platform:checked('platform'),style:checked('style'),upvotes:rf.elements.upvotes.value,views:rf.elements.views.value,note:rf.elements.note.value});
+var res=await send({kind:'result',image:await b64(blob),platform:checked('platform'),style:checked('style'),upvotes:num(rf.elements.upvotes.value),views:num(rf.elements.views.value),note:rf.elements.note.value});
 if(res.ok){rs.sentToday++;rs.stored++;rcount();say(rmsg,res.message||'sent.');rf.reset();rname.textContent='no image chosen'}
 else say(rmsg,res.message||'that did not send. try again.',true)}
 catch(e){say(rmsg,"couldn't read that picture. try another.",true)}
@@ -594,8 +604,17 @@ export function founderPage({ stats, origin, secret, flash, created }) {
       ${Object.entries(byStyle).map(([k, rs]) => `<tr><td>${esc(k)}</td><td class="num">${rs.length}</td><td class="num">${avg(rs.map((r) => r.upvotes))}</td><td class="num">${avg(rs.map((r) => r.views))}</td></tr>`).join("")}</table>`
     : "";
   const resultsHtml = resultRows.length
-    ? `${styleTable}<table class="small"><tr><th>who</th><th>school</th><th>where</th><th>style</th><th class="num">upvotes</th><th class="num">views</th><th>note</th><th></th><th></th></tr>
-      ${resultRows.map((r) => `<tr><td>${esc(r.ambassador)}<br><span class="muted">${stamp(r.ts)}</span></td><td>${esc(SCHOOLS[r.school]?.name ?? r.school)}</td><td>${esc(r.platform)}</td><td>${esc(r.style)}</td><td class="num">${r.upvotes ?? "—"}</td><td class="num">${r.views ?? "—"}</td><td>${esc(r.note)}</td><td>${thumb(r)}</td><td><form method="post" action="${base}/capture-delete" onsubmit="return confirm('delete this result?')"><input type="hidden" name="id" value="${r.id}"><button class="small ghost">delete</button></form></td></tr>`).join("")}</table>`
+    ? `${styleTable}${resultRows
+        .map(
+          (r) => `<div class="card">
+        <p class="small mono">${esc(r.ambassador)} · ${esc(SCHOOLS[r.school]?.name ?? r.school)} · ${stamp(r.ts)}</p>
+        <p class="small">${esc(r.platform)} · ${esc(r.style)} · <b>${r.upvotes ?? "—"}</b> upvotes · <b>${r.views ?? "—"}</b> views</p>
+        ${r.note ? `<p class="msg">${esc(r.note)}</p>` : ""}
+        <div>${thumb(r)}</div>
+        <form method="post" action="${base}/capture-delete" onsubmit="return confirm('delete this result?')"><input type="hidden" name="id" value="${r.id}"><button class="small ghost">delete</button></form>
+      </div>`,
+        )
+        .join("")}`
     : `<p class="muted">no results yet.</p>`;
 
   const body = `

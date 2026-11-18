@@ -274,11 +274,28 @@ async function form(request, max = MAX_BODY) {
     return { error: badRequest() };
   }
   const f = Object.create(null);
+  // The untrimmed values, for the one place that must not forgive stray
+  // whitespace: a founder action's ids (see rawId). Ordinary text fields keep
+  // reading the trimmed `f`.
+  const rawValues = Object.create(null);
   for (const k of Object.keys(raw)) {
     const v = raw[k];
-    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") f[k] = String(v).trim().slice(0, max);
+    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+      f[k] = String(v).trim().slice(0, max);
+      rawValues[k] = String(v).slice(0, max);
+    }
   }
-  return { f };
+  return { f, rawValues };
+}
+
+// An id is digits and nothing else, checked against the value as it was sent:
+// form() trims every value, so a trimmed "1 " would pass as the id 1 and act on
+// row 1. 0 means "not a valid id". The wrong fix is trimming less in form(),
+// which every text field relies on.
+const ID_PATTERN = /^[1-9][0-9]{0,9}$/;
+function rawId(rawValues, key) {
+  const v = rawValues[key];
+  return typeof v === "string" && ID_PATTERN.test(v) ? Number(v) : 0;
 }
 
 // A field as a trimmed string capped at `max`, or "" when missing.
@@ -364,6 +381,7 @@ async function handleIdea(request, env, amb, base) {
 // rule that the bytes decide the type. Two kinds, one route.
 const CAPTURE_PLATFORMS = ["fizz", "sidechat", "yikyak", "other"];
 const CAPTURE_NOTE_MAX = 300;
+const FULL_MESSAGE = "we're full right now. tell olisa or marco.";
 const COUNT_MAX = 10000000;
 
 // Decodes nothing but the first 16 characters. `maxBytes` is the decoded size
@@ -387,7 +405,9 @@ function checkCaptureImage(request, raw, maxBytes) {
 
 // A count the ambassador typed: digits only, in range, else null (stored NULL).
 function countField(f, key) {
-  const t = field(f, key, 20);
+  // "1,200" and "1 200" are how people write a thousand: strip commas and spaces
+  // first. "1.2k", "12.5", "-5" and "1e3" are not digits and stay NULL.
+  const t = field(f, key, 20).replace(/[,\s]/g, "");
   if (!/^\d{1,8}$/.test(t)) return null;
   const n = Number(t);
   return n <= COUNT_MAX ? n : null;
@@ -416,13 +436,14 @@ async function handleCapture(request, env, amb, base) {
     // either this frame is already held, which is a retry and answers 200, or a
     // limit was reached.
     const outcome = await addFeedFrame(env, amb, { batch, seq: Number(seqText), mime, image });
+    if (outcome === "full") return ideaError(request, 429, FULL_MESSAGE);
     if (outcome === "limit") return ideaError(request, 429, "that's all we can hold for now. thank you.");
     return redirectBack(base + "#feed", "sent.", request);
   }
 
   const platformText = field(f, "platform", 20).toLowerCase();
   const styleText = field(f, "style", 20).toLowerCase();
-  const stored = await addResult(env, amb, {
+  const outcome = await addResult(env, amb, {
     platform: CAPTURE_PLATFORMS.includes(platformText) ? platformText : "other",
     style: CAPTURE_STYLES.some((s) => s.key === styleText) ? styleText : "other",
     upvotes: countField(f, "upvotes"),
@@ -431,7 +452,8 @@ async function handleCapture(request, env, amb, base) {
     mime,
     image,
   });
-  if (!stored) return ideaError(request, 429, "that's all we can hold for now. thank you.");
+  if (outcome === "full") return ideaError(request, 429, FULL_MESSAGE);
+  if (outcome !== "stored") return ideaError(request, 429, "that's all we can hold for now. thank you.");
   return redirectBack(base + "#result", "sent.", request);
 }
 
@@ -613,7 +635,7 @@ async function founderRoutes(request, env, parts, url) {
     if (action === "capture") {
       // Same inert, sandboxed delivery as an idea's image. The route lives under
       // the founder secret only: an ambassador's code opens none of /f/.
-      const id = /^\d{1,10}$/.test(arg || "") ? parseInt(arg, 10) : 0;
+      const id = ID_PATTERN.test(arg || "") ? Number(arg) : 0;
       const row = id && parts.length === 3 ? await captureImage(env, id) : null;
       if (!row) return notFound();
       return new Response(decodeBase64(row.image), {
@@ -650,12 +672,10 @@ async function founderRoutes(request, env, parts, url) {
     // An id is digits and nothing else. parseInt would read "1e3" and "0x10"
     // as 1 and 0, and a clamp would turn "-1" into 1, so a mistyped or hostile
     // id would quietly act on the first row: for idea-delete, the wrong idea.
-    const idText = field(f, "id", 12);
-    const id = /^[1-9][0-9]{0,9}$/.test(idText) ? Number(idText) : 0;
+    const id = rawId(parsed.rawValues, "id");
     // capture-seen and capture-delete take either one row's id or a whole
     // recording as (amb, batch), both held to the same strict rule.
-    const ambText = field(f, "amb", 12);
-    const ambId = /^[1-9][0-9]{0,9}$/.test(ambText) ? Number(ambText) : 0;
+    const ambId = rawId(parsed.rawValues, "amb");
     const batch = field(f, "batch", 64);
     const batchOk = /^[a-z0-9]{8,32}$/.test(batch);
     const captureTarget = id ? { id } : ambId && batchOk ? { amb: ambId, batch } : null;

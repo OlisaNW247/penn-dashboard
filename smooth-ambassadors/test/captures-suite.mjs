@@ -8,6 +8,8 @@ const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 const HTML = Buffer.from("<!doctype html><script>alert(1)</script>");
 const padded = (head, total) => Buffer.concat([head, Buffer.alloc(total - head.length, 7)]);
 
+// Written out on purpose: the built-file run must not import the source module.
+const GLOBAL_CEILING = 1500;
 let counter = 0;
 const batchId = () => `b${Date.now().toString(36)}${(counter++).toString(36)}xxxxxxxx`.slice(0, 16).replace(/[^a-z0-9]/g, "a");
 
@@ -81,11 +83,11 @@ export function captureTests({ test, skip, req, founder, db, label = "" }) {
   });
 
   t("captures: junk numbers store NULL, unknown platform and style become other", async () => {
-    for (const bad of ["abc", "-5", "1e3", "10000001", "", "12.5"]) {
+    for (const bad of ["abc", "-5", "1e3", "10000001", "", "12.5", "1.2k"]) {
       assert.equal((await result("b", { upvotes: bad, views: bad, platform: "myspace", style: "weird" })).status, 200, bad);
     }
     const rows = (await capsOf("b")).filter((c) => c.kind === "result");
-    assert.equal(rows.length, 6);
+    assert.equal(rows.length, 7);
     assert.ok(rows.every((c) => c.upvotes === null && c.views === null && c.platform === "other" && c.style === "other"));
     assert.equal((await result("c", { upvotes: "10000000", views: "0" })).status, 200);
     const ok = (await capsOf("c"))[0];
@@ -329,5 +331,93 @@ export function captureTests({ test, skip, req, founder, db, label = "" }) {
     assert.match(founderPage, /id="feeds"/);
     assert.match(founderPage, /id="results"/);
     assert.match(founderPage, /send a post to try/);
+  });
+
+  t("captures: thousands separators are accepted, other shapes stay NULL", async () => {
+    await add("n", "Cap n", "uva");
+    for (const [v, want] of [["1,200", 1200], ["1 200", 1200], ["1,234,567", 1234567], ["1.2k", null], ["12.5", null], ["-5", null], ["1e3", null], ["1,2,x", null]]) {
+      assert.equal((await result("n", { upvotes: v, views: v })).status, 200, v);
+      const row = (await capsOf("n")).filter((c) => c.kind === "result").sort((a, b) => b.id - a.id)[0];
+      assert.deepEqual([row.upvotes, row.views], [want, want], v);
+      if ((await capsOf("n")).length >= 8) break;
+    }
+  });
+
+  t("captures: ids with surrounding whitespace act on nothing, in every founder action", async () => {
+    await add("w", "Cap w", "uva");
+    assert.equal((await frame("w", { batch: batchId(), seq: "0" })).status, 200);
+    assert.equal((await asJSON(`/a/${amb.w.token}/idea`, { note: "ws idea" })).status, 200);
+    assert.equal((await asForm(`${F}/suggest`, { id: String(amb.w.id), text: "ws suggestion" })).status, 303);
+    const ex = await exportJSON();
+    const cap = ex.captures.find((c) => c.ambassadorId === amb.w.id);
+    const idea = ex.ideas.find((i) => i.ambassadorId === amb.w.id);
+    const sug = ex.suggestions.find((x) => x.ambassadorId === amb.w.id);
+    const wrap = (n) => [`${n} `, ` ${n}`, `${n}\n`, `\t${n}`];
+    for (const [action, n] of [["capture-delete", cap.id], ["capture-seen", cap.id], ["suggest-delete", sug.id], ["idea-delete", idea.id]]) {
+      for (const v of wrap(n)) assert.equal((await asForm(`${F}/${action}`, { id: v })).status, 400, `${action} ${JSON.stringify(v)}`);
+    }
+    for (const v of wrap(amb.w.id)) {
+      assert.equal((await asForm(`${F}/suggest`, { id: v, text: "nope" })).status, 400, JSON.stringify(v));
+      assert.equal((await asForm(`${F}/capture-delete`, { amb: v, batch: cap.batch })).status, 400);
+    }
+    const after = await exportJSON();
+    assert.equal(after.captures.filter((c) => c.ambassadorId === amb.w.id).length, 1);
+    assert.equal(after.captures.find((c) => c.id === cap.id).seenAt, null);
+    assert.equal(after.suggestions.filter((x) => x.ambassadorId === amb.w.id).length, 1);
+    assert.equal(after.ideas.filter((i) => i.ambassadorId === amb.w.id).length, 1);
+    // the exact digits still work, so the refusal is about the whitespace
+    assert.equal((await asForm(`${F}/capture-delete`, { id: String(cap.id) })).status, 303);
+  });
+
+  t("captures: the capture image route is as strict about ids as the posts", async () => {
+    await add("z", "Cap z", "uva");
+    assert.equal((await frame("z", { batch: batchId(), seq: "0" })).status, 200);
+    const c = (await capsOf("z"))[0];
+    assert.equal((await req(`${F}/capture/${c.id}`)).status, 200);
+    for (const bad of [`0${c.id}`, `${c.id}%20`, `+${c.id}`, `${c.id}/x`, `00${c.id}`]) {
+      assert.equal((await req(`${F}/capture/${bad}`)).status, 404, bad);
+    }
+  });
+
+  t("captures: suggest for a departed ambassador is refused like an unknown one", async () => {
+    await add("l", "Cap l", "uva");
+    assert.equal((await asForm(`${F}/update`, { id: String(amb.l.id), status: "left" })).status, 303);
+    const r = await asForm(`${F}/suggest`, { id: String(amb.l.id), text: "too late" });
+    assert.equal(r.status, 404);
+    assert.equal(await r.text(), "no such ambassador.");
+    assert.equal((await exportJSON()).suggestions.filter((x) => x.ambassadorId === amb.l.id).length, 0);
+  });
+
+  t("captures: a global ceiling of 1500 rows refuses writes with its own message", async () => {
+    await add("full", "Cap full", "clark");
+    const d = await db();
+    const now = (await d.prepare("SELECT COUNT(*) AS n FROM captures").first()).n;
+    const room = GLOBAL_CEILING - now;
+    assert.ok(room > 0);
+    // Another ambassador's rows fill the table. They are removed again below, so
+    // the tests after this one still have room.
+    const old = new Date(Date.now() - 86400000 * 3).toISOString();
+    const ids = await add("filler", "Cap filler", "clark").then(() => amb.filler.id);
+    try {
+      const stmts = [];
+      for (let i = 0; i < room - 1; i++) {
+        stmts.push(d.prepare("INSERT INTO captures (ambassador_id, ts, kind, batch, seq, mime, image) VALUES (?1, ?2, 'feed', ?3, ?4, 'image/jpeg', 'AAAA')").bind(ids, old, `fill${Math.floor(i / 16)}xxxxxxxx`, i % 16));
+      }
+      // the filler's own limits would be passed too, which does not matter: only the global rule is under test
+      await d.batch(stmts);
+      assert.equal((await frame("full", { batch: batchId(), seq: "0" })).status, 200, "one slot left");
+      const r = await frame("full", { batch: batchId(), seq: "0" });
+      assert.equal(r.status, 429);
+      assert.deepEqual(await r.json(), { ok: false, message: "we're full right now. tell olisa or marco." });
+      const r2 = await result("full", {});
+      assert.equal(r2.status, 429);
+      assert.equal((await r2.json()).message, "we're full right now. tell olisa or marco.");
+      // deleting makes room again
+      const mine = (await capsOf("full"))[0];
+      assert.equal((await asForm(`${F}/capture-delete`, { id: String(mine.id) })).status, 303);
+      assert.equal((await result("full", {})).status, 200);
+    } finally {
+      await d.prepare("DELETE FROM captures WHERE ambassador_id = ?1").bind(ids).run();
+    }
   });
 }
