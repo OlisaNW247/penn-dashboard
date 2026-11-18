@@ -86,7 +86,85 @@ catch(e){say('that did not send. check your connection.',true)}
 btn.disabled=false});
 })();`;
 
-export function ambassadorPage({ amb, stats, ideas = { total: 0, today: 0 }, designScans = {}, origin, flash }) {
+// The client half of "show us your feed" and "how did a post do". Each picture
+// is shrunk on a canvas (longest side 1200px, JPEG, quality lowered until it is
+// under the size the server allows) and posted as JSON, one request per
+// picture. The server checks everything again, so none of this is trusted.
+const CAPTURE_JS = String.raw`
+(function(){
+if(typeof CAPTURE==='undefined')return;
+function load(fl){return new Promise(function(res,rej){var u=URL.createObjectURL(fl),im=new Image();im.onload=function(){URL.revokeObjectURL(u);res(im)};im.onerror=function(){URL.revokeObjectURL(u);rej(new Error('bad'))};im.src=u})}
+function toBlob(c,q){return new Promise(function(r){c.toBlob(r,'image/jpeg',q)})}
+function b64(b){return new Promise(function(res,rej){var r=new FileReader();r.onload=function(){res(String(r.result).split(',')[1]||'')};r.onerror=rej;r.readAsDataURL(b)})}
+async function shrink(fl,max){
+var im=await load(fl),w=im.naturalWidth,h=im.naturalHeight,s=Math.min(1,1200/Math.max(w,h));
+for(var scale=s;scale>0.15;scale*=0.8){
+var c=document.createElement('canvas');c.width=Math.max(1,Math.round(w*scale));c.height=Math.max(1,Math.round(h*scale));
+var x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(im,0,0,c.width,c.height);
+for(var q=0.8;q>=0.25;q-=0.1){var b=await toBlob(c,q);if(b&&b.size<=max)return b}}
+throw new Error('big')}
+function say(el,t,bad){el.textContent=t;el.className='small'+(bad?' err':'')}
+async function send(body){
+var r=await fetch(CAPTURE.url,{method:'POST',headers:{'content-type':'application/json',accept:'application/json'},body:JSON.stringify(body)});
+var j=await r.json().catch(function(){return{}});
+return{ok:r.ok&&j.ok,message:j.message,status:r.status}}
+function batchId(){var a='abcdefghijklmnopqrstuvwxyz0123456789',o='',v=new Uint8Array(12);
+if(window.crypto&&crypto.getRandomValues)crypto.getRandomValues(v);else for(var i=0;i<12;i++)v[i]=Math.floor(Math.random()*256);
+for(var k=0;k<12;k++)o+=a[v[k]%a.length];return o}
+
+var ff=document.getElementById('feedForm');
+if(ff){
+var fin=document.getElementById('feedFiles'),fmsg=document.getElementById('feedMsg'),fbtn=document.getElementById('feedSend'),fcnt=document.getElementById('feedCount'),fname=document.getElementById('feedFileName');
+var fs=CAPTURE.feed;
+function fcount(){fcnt.textContent=fs.sentToday+' of '+fs.dailyLimit+' today'}
+fcount();
+fin.addEventListener('change',function(){var n=fin.files?fin.files.length:0;fname.textContent=n?(n>fs.framesPerRecording?fs.framesPerRecording+' of '+n+' pictures will be sent':n+(n===1?' picture':' pictures')):'no pictures chosen'});
+ff.addEventListener('submit',async function(ev){
+ev.preventDefault();
+var files=Array.prototype.slice.call(fin.files||[],0,fs.framesPerRecording);
+if(!files.length){say(fmsg,'choose a few screenshots first.',true);return}
+fbtn.disabled=true;var batch=batchId(),done=0;
+try{
+for(var i=0;i<files.length;i++){
+say(fmsg,'sent '+done+' of '+files.length+'...');
+var blob=await shrink(files[i],fs.frameBytes);
+var res=await send({kind:'feed',batch:batch,seq:i,image:await b64(blob)});
+if(!res.ok){say(fmsg,(res.message||'that did not send. try again.')+' ('+done+' of '+files.length+' sent)',true);fbtn.disabled=false;return}
+done++;fs.sentToday++;fs.stored++;fcount()}
+say(fmsg,'sent '+done+' of '+files.length+'. thank you.');ff.reset();fname.textContent='no pictures chosen'}
+catch(e){say(fmsg,"couldn't read one of those pictures. sent "+done+' of '+files.length+'.',true)}
+fbtn.disabled=false})}
+
+var rf=document.getElementById('resultForm');
+if(rf){
+var rin=document.getElementById('resultFile'),rmsg=document.getElementById('resultMsg'),rbtn=document.getElementById('resultSend'),rcnt=document.getElementById('resultCount'),rname=document.getElementById('resultFileName'),rs=CAPTURE.results;
+function rcount(){rcnt.textContent=rs.sentToday+' of '+rs.dailyLimit+' today'}
+rcount();
+rin.addEventListener('change',function(){var fl=rin.files&&rin.files[0];rname.textContent=fl?fl.name:'no image chosen'});
+function checked(name){var e=rf.querySelector('input[name='+name+']:checked');return e?e.value:''}
+rf.addEventListener('submit',async function(ev){
+ev.preventDefault();
+var fl=rin.files&&rin.files[0];if(!fl){say(rmsg,'choose the screenshot first.',true);return}
+rbtn.disabled=true;say(rmsg,'sending...');
+try{var blob=await shrink(fl,rs.imageBytes);
+var res=await send({kind:'result',image:await b64(blob),platform:checked('platform'),style:checked('style'),upvotes:rf.elements.upvotes.value,views:rf.elements.views.value,note:rf.elements.note.value});
+if(res.ok){rs.sentToday++;rs.stored++;rcount();say(rmsg,res.message||'sent.');rf.reset();rname.textContent='no image chosen'}
+else say(rmsg,res.message||'that did not send. try again.',true)}
+catch(e){say(rmsg,"couldn't read that picture. try another.",true)}
+rbtn.disabled=false})}
+})();`;
+
+export function ambassadorPage({
+  amb,
+  stats,
+  ideas = { total: 0, today: 0 },
+  designScans = {},
+  playbook = null,
+  suggested = [],
+  captures = null,
+  origin,
+  flash,
+}) {
   const school = SCHOOLS[amb.school];
   const schoolLower = school.name.toLowerCase();
   const links = ambassadorLinks(origin, amb);
@@ -149,6 +227,51 @@ export function ambassadorPage({ amb, stats, ideas = { total: 0, today: 0 }, des
 
   const paused = amb.paused_until && new Date(amb.paused_until) > new Date();
 
+  // "what works": static, from templates/playbook.json. Every string is escaped
+  // even though it is ours, so a future edit cannot put markup on the page.
+  const exampleHtml = (playbook?.examples ?? [])
+    .map(
+      (e) => `<div class="card">
+        <p class="sh">${esc(e.title)}</p>
+        <p class="msg" style="white-space:pre-line">${esc(e.post)}</p>
+        <p class="small"><b>reply:</b> ${esc(e.reply)}</p>
+        <p class="small mono">${esc(e.score)}</p>
+        <p class="small muted">${esc(e.why)}</p>
+      </div>`,
+    )
+    .join("");
+  const playbookHtml = playbook
+    ? `<section class="sec t-lemon"><h2 id="works">what works</h2>
+      <p><b>${esc(playbook.lead)}</b></p>
+      <ul>${playbook.steps.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>
+      ${exampleHtml}
+    </section>`
+    : "";
+  const suggestedHtml = suggested.length
+    ? `<section class="sec t-grape"><h2 id="try">posts to try, from olisa and marco</h2>
+      ${suggested
+        .map(
+          (x) => `<div class="card">
+        <p class="msg" style="white-space:pre-line">${esc(x.text)}</p>
+        ${x.reply ? `<p class="small"><b>reply:</b> ${esc(x.reply)}</p>` : ""}
+        <p><button class="small" data-copy="${attr(x.text)}">copy post</button>${x.reply ? ` <button class="small ghost" data-copy="${attr(x.reply)}">copy reply</button>` : ""}</p>
+      </div>`,
+        )
+        .join("")}
+    </section>`
+    : "";
+  const cap = captures ?? {
+    feed: { framesPerRecording: 16, frameBytes: 200000, sentToday: 0, dailyLimit: 32, stored: 0, limit: 96 },
+    results: { imageBytes: 300000, sentToday: 0, dailyLimit: 8, stored: 0, limit: 60 },
+    styles: [],
+  };
+  const platformChips = [["fizz", "fizz"], ["sidechat", "sidechat"], ["yikyak", "yik yak"], ["other", "other"]]
+    .map(([k, v]) => `<label class="chip"><input type="radio" name="platform" value="${attr(k)}"${k === "fizz" ? " checked" : ""}>${esc(v)}</label>`)
+    .join("");
+  const styleChips = cap.styles
+    .map((st, i) => `<label class="chip"><input type="radio" name="style" value="${attr(st.key)}"${i === 0 ? " checked" : ""}>${esc(st.label)}</label>`)
+    .join("");
+
   const body = `
     <h1>hey ${esc(firstName(amb.name))}</h1>
     <p class="job"><b>the job: get smooth in front of as many eyes as you can.</b> spam the chats. put up posters. post every day. bring back what people say and ideas for smooth.</p>
@@ -162,9 +285,11 @@ export function ambassadorPage({ amb, stats, ideas = { total: 0, today: 0 }, des
       <a class="jump t-marigold" href="#idea"><span class="gl">${ICON_IDEA}</span><b>poster idea</b><span>send us a design</span></a>
     </nav>
     <nav class="tabs noprint">
-      <a href="#numbers">numbers</a><a href="#posters">posters</a><a href="#idea">poster idea</a><a href="#messages">messages</a><a href="#drop">log a drop</a><a href="#feedback">feedback</a>
+      <a href="#works">what works</a>${suggested.length ? `<a href="#try">posts to try</a>` : ""}<a href="#numbers">numbers</a><a href="#posters">posters</a><a href="#idea">poster idea</a><a href="#feed">your feed</a><a href="#result">post result</a><a href="#messages">messages</a><a href="#drop">log a drop</a><a href="#feedback">feedback</a>
     </nav>
 
+    ${playbookHtml}
+    ${suggestedHtml}
     <section class="sec t-teal"><h2 id="numbers">your numbers</h2>
       <div class="stats">
         <div class="stat t-tomato"><b>${stats.linkOpens + stats.posterOpens}</b><span>your link opens</span><small>${stats.linkOpensRecent + stats.posterOpensRecent} in ${stats.days}d</small></div>
@@ -189,6 +314,35 @@ export function ambassadorPage({ amb, stats, ideas = { total: 0, today: 0 }, des
         <textarea id="ideaNote" name="note" maxlength="500" placeholder="what's the idea, where would it go"></textarea>
         <p class="row"><button id="ideaSend" type="submit">send idea</button><span id="ideaCount" class="small muted mono">${ideas.total} of ${IDEA_TOTAL_LIMIT} sent</span></p>
         <p id="ideaMsg" class="small" role="status"></p>
+      </form>
+    </section>
+
+    <section class="sec t-teal"><h2 id="feed">show us your feed</h2>
+      <p class="small">scroll your school's anonymous feed and screenshot what's getting upvotes.</p>
+      <p class="small">we'll write posts for you from it.</p>
+      <form id="feedForm" method="post" action="${base}/capture">
+        <div class="file"><label class="btn small ghost" style="margin:0;font:600 14px var(--body);color:var(--ink)"><input id="feedFiles" type="file" accept="image/*" multiple>choose screenshots</label><span id="feedFileName" class="small muted">no pictures chosen</span></div>
+        <p class="row"><button id="feedSend" type="submit">send</button><span id="feedCount" class="small muted mono"></span></p>
+        <p id="feedMsg" class="small" role="status"></p>
+        <p class="small muted">check nothing private is in the pictures.</p>
+      </form>
+    </section>
+
+    <section class="sec t-tomato"><h2 id="result">how did a post do</h2>
+      <form id="resultForm" method="post" action="${base}/capture">
+        <div class="file"><label class="btn small ghost" style="margin:0;font:600 14px var(--body);color:var(--ink)"><input id="resultFile" type="file" accept="image/*">choose screenshot</label><span id="resultFileName" class="small muted">no image chosen</span></div>
+        <label>where</label>
+        <div class="chips">${platformChips}</div>
+        <label>what kind of post</label>
+        <div class="chips">${styleChips}</div>
+        <label for="resultUp">upvotes (optional)</label>
+        <input id="resultUp" name="upvotes" inputmode="numeric" maxlength="8" autocomplete="off">
+        <label for="resultViews">views (optional)</label>
+        <input id="resultViews" name="views" inputmode="numeric" maxlength="8" autocomplete="off">
+        <label for="resultNote">note (optional)</label>
+        <textarea id="resultNote" name="note" maxlength="300" placeholder="anything we should know"></textarea>
+        <p class="row"><button id="resultSend" type="submit">send</button><span id="resultCount" class="small muted mono"></span></p>
+        <p id="resultMsg" class="small" role="status"></p>
       </form>
     </section>
 
@@ -238,7 +392,7 @@ export function ambassadorPage({ amb, stats, ideas = { total: 0, today: 0 }, des
     </section>
     <p class="small muted">questions: text marco at +1 202 320 3802.</p>`;
 
-  const script = `var IDEA=${scriptJSON({ url: `${base}/idea`, sent: ideas.total, limit: IDEA_TOTAL_LIMIT })};${IDEA_JS}`;
+  const script = `var IDEA=${scriptJSON({ url: `${base}/idea`, sent: ideas.total, limit: IDEA_TOTAL_LIMIT })};${IDEA_JS}var CAPTURE=${scriptJSON({ url: `${base}/capture`, feed: cap.feed, results: cap.results })};${CAPTURE_JS}`;
   return layout({ title: `smooth · ${firstName(amb.name)}`, body, script, who: `${amb.name} · ${schoolLower}` });
 }
 
@@ -269,6 +423,19 @@ export function stickersPage({ amb, origin, qrSvg }) {
 export function founderPage({ stats, origin, secret, flash, created }) {
   const base = `/f/${secret}`;
   const lb = stats.leaderboard;
+  const suggestions = stats.suggestions ?? [];
+  const suggestionsOf = (id) => {
+    const mine = suggestions.filter((x) => x.ambassadorId === id);
+    return mine.length
+      ? `<div class="small"><strong>posts to try</strong>${mine
+          .map(
+            (x) => `<div class="row"><span class="msg">${esc(x.text)}${x.reply ? ` <span class="muted">· reply: ${esc(x.reply)}</span>` : ""}</span>
+          <form method="post" action="${base}/suggest-delete"><input type="hidden" name="id" value="${x.id}"><button class="small ghost">delete</button></form></div>`,
+          )
+          .join("")}</div>`
+      : "";
+  };
+
 
   const createdHtml = created
     ? `<div class="card">
@@ -301,6 +468,7 @@ export function founderPage({ stats, origin, secret, flash, created }) {
           <button class="small ghost">save</button>
         </form>
         <form method="post" action="${base}/replied" class="row small"><input type="hidden" name="id" value="${a.id}"><button class="small ghost">they replied</button></form>
+        ${suggestionsOf(a.id)}
       </details>`,
     )
     .join("");
@@ -375,18 +543,81 @@ export function founderPage({ stats, origin, secret, flash, created }) {
         .join("")
     : `<p class="muted">no ideas yet.</p>`;
 
+  const captures = stats.captures ?? [];
+  const stamp = (ts) => esc(ago(ts));
+  const thumb = (c) =>
+    `<a href="${base}/capture/${c.id}" target="_blank" rel="noopener"><img class="thumb" style="display:inline-block;max-width:90px;max-height:90px;margin:2px" loading="lazy" src="${base}/capture/${c.id}" alt="capture from ${attr(c.ambassador)}"></a>`;
+
+  // One card per recording: the stills share an ambassador and a batch id.
+  const feedRows = captures.filter((c) => c.kind === "feed");
+  const batches = new Map();
+  for (const c of feedRows) {
+    const key = `${c.ambassadorId}/${c.batch}`;
+    if (!batches.has(key)) batches.set(key, { first: c, frames: [] });
+    batches.get(key).frames.push(c);
+  }
+  const newFeeds = [...batches.values()].filter((b) => b.frames.some((c) => !c.seenAt)).length;
+  const feedsHtml = batches.size
+    ? [...batches.values()]
+        .sort((a, b) => (a.first.ts < b.first.ts ? 1 : -1))
+        .map((b) => {
+          const c = b.first;
+          const hidden = `<input type="hidden" name="amb" value="${c.ambassadorId}"><input type="hidden" name="batch" value="${attr(c.batch)}">`;
+          const unseen = b.frames.some((x) => !x.seenAt);
+          return `<div class="card ${unseen ? "" : "muted"}">
+          <p class="small muted mono">${esc(c.ambassador)} · ${esc(SCHOOLS[c.school]?.name ?? c.school)} · ${stamp(c.ts)} · ${b.frames.length} frame${b.frames.length === 1 ? "" : "s"}${unseen ? "" : " · seen"}</p>
+          <div>${[...b.frames].sort((x, y) => x.seq - y.seq).map(thumb).join("")}</div>
+          <form method="post" action="${base}/suggest" class="small">
+            <input type="hidden" name="id" value="${c.ambassadorId}">
+            <label>send a post to try</label>
+            <textarea name="text" maxlength="600" required aria-label="post to try"></textarea>
+            <input name="reply" maxlength="300" placeholder="reply to leave under it (optional)" aria-label="reply">
+            <button class="small">send a post to try</button>
+          </form>
+          <div class="row">
+            ${unseen ? `<form method="post" action="${base}/capture-seen">${hidden}<button class="small">seen</button></form>` : ""}
+            <form method="post" action="${base}/capture-delete" onsubmit="return confirm('delete this recording?')">${hidden}<button class="small ghost">delete</button></form>
+          </div></div>`;
+        })
+        .join("")
+    : `<p class="muted">no recordings yet.</p>`;
+
+  const resultRows = captures.filter((c) => c.kind === "result");
+  const avg = (xs) => {
+    const v = xs.filter((n) => n !== null && n !== undefined);
+    return v.length ? Math.round(v.reduce((a, n) => a + n, 0) / v.length) : "—";
+  };
+  const byStyle = {};
+  for (const r of resultRows) (byStyle[r.style || "other"] ??= []).push(r);
+  const styleTable = resultRows.length
+    ? `<table class="small"><tr><th>style</th><th class="num">posts</th><th class="num">avg upvotes</th><th class="num">avg views</th></tr>
+      ${Object.entries(byStyle).map(([k, rs]) => `<tr><td>${esc(k)}</td><td class="num">${rs.length}</td><td class="num">${avg(rs.map((r) => r.upvotes))}</td><td class="num">${avg(rs.map((r) => r.views))}</td></tr>`).join("")}</table>`
+    : "";
+  const resultsHtml = resultRows.length
+    ? `${styleTable}<table class="small"><tr><th>who</th><th>school</th><th>where</th><th>style</th><th class="num">upvotes</th><th class="num">views</th><th>note</th><th></th><th></th></tr>
+      ${resultRows.map((r) => `<tr><td>${esc(r.ambassador)}<br><span class="muted">${stamp(r.ts)}</span></td><td>${esc(SCHOOLS[r.school]?.name ?? r.school)}</td><td>${esc(r.platform)}</td><td>${esc(r.style)}</td><td class="num">${r.upvotes ?? "—"}</td><td class="num">${r.views ?? "—"}</td><td>${esc(r.note)}</td><td>${thumb(r)}</td><td><form method="post" action="${base}/capture-delete" onsubmit="return confirm('delete this result?')"><input type="hidden" name="id" value="${r.id}"><button class="small ghost">delete</button></form></td></tr>`).join("")}</table>`
+    : `<p class="muted">no results yet.</p>`;
+
   const body = `
     <h1>ambassadors</h1>
     <p class="muted small">private. this url is the key, don't share it.</p>
     <p class="row noprint"><a class="btn small ghost" href="${base}/export.json">export json</a><a class="btn small ghost" href="/" target="_blank" rel="noopener">public dashboard (new tab)</a></p>
     ${flash ? `<p class="ok">${esc(flash)}</p>` : ""}
     <nav class="tabs">
-      <a href="#ideas">poster ideas${newIdeas ? ` · ${newIdeas}` : ""}</a><a href="#perf">performance</a><a href="#roster">roster</a><a href="#add">add</a><a href="#digest">digest</a><a href="#moments">campus moments</a><a href="#feedback">feedback</a>
+      <a href="#ideas">poster ideas${newIdeas ? ` · ${newIdeas}` : ""}</a><a href="#feeds">feed recordings${newFeeds ? ` · ${newFeeds}` : ""}</a><a href="#results">post results</a><a href="#perf">performance</a><a href="#roster">roster</a><a href="#add">add</a><a href="#digest">digest</a><a href="#moments">campus moments</a><a href="#feedback">feedback</a>
     </nav>
     ${createdHtml}
 
     <section class="sec t-marigold"><h2 id="ideas">poster ideas <span class="muted">${newIdeas} new · ${stats.ideas.length} total</span></h2>
       ${ideasHtml}
+    </section>
+
+    <section class="sec t-teal"><h2 id="feeds">feed recordings <span class="muted">${newFeeds} new · ${batches.size} total</span></h2>
+      ${feedsHtml}
+    </section>
+
+    <section class="sec t-tomato"><h2 id="results">post results <span class="muted">${resultRows.length} total</span></h2>
+      ${resultsHtml}
     </section>
 
     <section class="sec t-teal"><h2 id="perf">by school <span class="muted">last ${stats.days} days</span></h2>

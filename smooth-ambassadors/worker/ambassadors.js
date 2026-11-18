@@ -7,14 +7,16 @@
 //   /a/{token}/stickers         printable QR sheet of their poster codes
 //   /a/{token}/me.json          their own numbers
 //   /a/{token}/plan.json        the app's plan
-//   POST /a/{token}/drop|post|check|feedback|pause|idea
+//   POST /a/{token}/drop|post|check|feedback|pause|idea|capture
 //   /a/_fonts/{name}.woff2      the page fonts, served from here (no third-party host)
 //   /r/{ref}/s/{channel}        PUBLIC share link (group chat, fizz, ...) → App Store
 //   /r/{ref}/p/{design}         PUBLIC poster/sticker code → App Store
 //                               (also increments the school/design counter)
 //                               both keep working after the ambassador leaves
-//   /f/{FOUNDER_TOKEN}          founder view (+ POST add|update|reminder|replied|feedback-seen|idea-seen|idea-delete)
+//   /f/{FOUNDER_TOKEN}          founder view (+ POST add|update|reminder|replied|feedback-seen|idea-seen|idea-delete|
+//                               suggest|suggest-delete|capture-seen|capture-delete)
 //   /f/{FOUNDER_TOKEN}/idea/{id}  a poster idea's image bytes (founders only)
+//   /f/{FOUNDER_TOKEN}/capture/{id}  a capture's image bytes (founders only)
 //   /f/{FOUNDER_TOKEN}/export.json
 //   /api/leaderboard            public, school level only
 
@@ -23,6 +25,7 @@ import { CHANNELS, SCHOOLS, designsFor, isValidCombo, posterName, scanKey } from
 import { fontResponse } from "./fonts.js";
 import messages from "./templates/messages.json";
 import checklist from "./templates/checklist.json";
+import playbook from "./templates/playbook.json";
 import { ambassadorLinks } from "./digest.js";
 import { html } from "./html.js";
 import {
@@ -44,6 +47,23 @@ import {
   markFeedbackSeen,
   IDEA_DAILY_LIMIT,
   IDEA_TOTAL_LIMIT,
+  FEED_FRAMES_PER_RECORDING,
+  FEED_DAILY_LIMIT,
+  FEED_TOTAL_LIMIT,
+  FEED_FRAME_BYTES,
+  RESULT_DAILY_LIMIT,
+  RESULT_TOTAL_LIMIT,
+  RESULT_IMAGE_BYTES,
+  addFeedFrame,
+  addResult,
+  captureCounts,
+  captureImage,
+  markCaptureSeen,
+  deleteCapture,
+  addSuggestion,
+  ambassadorExists,
+  deleteSuggestion,
+  suggestionsFor,
   addIdea,
   deleteIdea,
   ideaCounts,
@@ -84,6 +104,8 @@ function redirectBack(path, flash, request) {
 async function planPayload(env, amb, url, pub) {
   const stats = await ambassadorStats(env, amb);
   const ideas = await ideaCounts(env, amb);
+  const caps = await captureCounts(env, amb);
+  const suggested = await suggestionsFor(env, amb.id);
   const designScans = await schoolDesignScans(env, amb.school);
   const links = ambassadorLinks(pub, amb);
   const anonParam = url.searchParams.get("anon");
@@ -135,6 +157,39 @@ async function planPayload(env, amb, url, pub) {
     })),
     dashboard: `${pub}/?school=${amb.school}`,
     ideas: { sent: ideas.total, limit: IDEA_TOTAL_LIMIT, dailyLimit: IDEA_DAILY_LIMIT },
+    // Added 2026-11-18, additive: what works, posts a founder wants this
+    // ambassador to try (only theirs), and the capture uploads' limits.
+    playbook: { lead: playbook.lead, steps: playbook.steps, examples: playbook.examples },
+    suggested: suggested.map((x) => ({ id: x.id, text: x.text, reply: x.reply, ts: x.ts })),
+    captures: capturesPlan(caps),
+  };
+}
+
+export const CAPTURE_STYLES = [
+  { key: "question", label: "question" },
+  { key: "list", label: "slipped into a list" },
+  { key: "pitch", label: "straight pitch" },
+  { key: "other", label: "something else" },
+];
+
+function capturesPlan(c) {
+  return {
+    feed: {
+      framesPerRecording: FEED_FRAMES_PER_RECORDING,
+      frameBytes: FEED_FRAME_BYTES,
+      sentToday: c.feed.today,
+      dailyLimit: FEED_DAILY_LIMIT,
+      stored: c.feed.total,
+      limit: FEED_TOTAL_LIMIT,
+    },
+    results: {
+      imageBytes: RESULT_IMAGE_BYTES,
+      sentToday: c.result.today,
+      dailyLimit: RESULT_DAILY_LIMIT,
+      stored: c.result.total,
+      limit: RESULT_TOTAL_LIMIT,
+    },
+    styles: CAPTURE_STYLES,
   };
 }
 
@@ -305,6 +360,81 @@ async function handleIdea(request, env, amb, base) {
   return redirectBack(base + "#idea", "sent. thank you.", request);
 }
 
+// ---- captures. Same body cap as an idea (an image rides in it as base64), same
+// rule that the bytes decide the type. Two kinds, one route.
+const CAPTURE_PLATFORMS = ["fizz", "sidechat", "yikyak", "other"];
+const CAPTURE_NOTE_MAX = 300;
+const COUNT_MAX = 10000000;
+
+// Decodes nothing but the first 16 characters. `maxBytes` is the decoded size
+// the caller allows. Returns { mime, image } or { response }.
+function checkCaptureImage(request, raw, maxBytes) {
+  const bad = () => ({ response: ideaError(request, 400, "that isn't a picture we can use. jpeg, png or webp.") });
+  const image = raw.replace(/^data:[^,]{0,100};base64,/i, "").replace(/\s+/g, "");
+  if (!image) return { response: ideaError(request, 400, "add a picture.") };
+  if (image.length < 16 || image.length % 4 === 1 || !/^[A-Za-z0-9+/]+={0,2}$/.test(image)) return bad();
+  const pad = image.endsWith("==") ? 2 : image.endsWith("=") ? 1 : 0;
+  if (Math.floor((image.length * 3) / 4) - pad > maxBytes) return { response: ideaError(request, 413, "that is too big. try a smaller image.") };
+  let head;
+  try {
+    head = Uint8Array.from(atob(image.slice(0, 16)), (c) => c.charCodeAt(0));
+  } catch {
+    return bad();
+  }
+  const mime = sniffImage(head);
+  return mime ? { mime, image } : bad();
+}
+
+// A count the ambassador typed: digits only, in range, else null (stored NULL).
+function countField(f, key) {
+  const t = field(f, key, 20);
+  if (!/^\d{1,8}$/.test(t)) return null;
+  const n = Number(t);
+  return n <= COUNT_MAX ? n : null;
+}
+
+async function handleCapture(request, env, amb, base) {
+  const parsed = await form(request, IDEA_BODY_MAX);
+  if (parsed.error) {
+    const status = parsed.error.status;
+    return ideaError(request, status, status === 413 ? "that is too big. try a smaller image." : "bad request");
+  }
+  const f = parsed.f;
+  const kind = field(f, "kind", 20);
+  if (kind !== "feed" && kind !== "result") return ideaError(request, 400, "bad request");
+  const checked = checkCaptureImage(request, field(f, "image", IDEA_BODY_MAX), kind === "feed" ? FEED_FRAME_BYTES : RESULT_IMAGE_BYTES);
+  if (checked.response) return checked.response;
+  const { mime, image } = checked;
+
+  if (kind === "feed") {
+    const batch = field(f, "batch", 64);
+    const seqText = field(f, "seq", 10);
+    if (!/^[a-z0-9]{8,32}$/.test(batch) || !/^\d{1,2}$/.test(seqText) || Number(seqText) >= FEED_FRAMES_PER_RECORDING) {
+      return ideaError(request, 400, "bad request");
+    }
+    // The limits live inside the insert (see addFeedFrame). If it wrote nothing,
+    // either this frame is already held, which is a retry and answers 200, or a
+    // limit was reached.
+    const outcome = await addFeedFrame(env, amb, { batch, seq: Number(seqText), mime, image });
+    if (outcome === "limit") return ideaError(request, 429, "that's all we can hold for now. thank you.");
+    return redirectBack(base + "#feed", "sent.", request);
+  }
+
+  const platformText = field(f, "platform", 20).toLowerCase();
+  const styleText = field(f, "style", 20).toLowerCase();
+  const stored = await addResult(env, amb, {
+    platform: CAPTURE_PLATFORMS.includes(platformText) ? platformText : "other",
+    style: CAPTURE_STYLES.some((s) => s.key === styleText) ? styleText : "other",
+    upvotes: countField(f, "upvotes"),
+    views: countField(f, "views"),
+    note: field(f, "note", CAPTURE_NOTE_MAX * 4).trim().slice(0, CAPTURE_NOTE_MAX),
+    mime,
+    image,
+  });
+  if (!stored) return ideaError(request, 429, "that's all we can hold for now. thank you.");
+  return redirectBack(base + "#result", "sent.", request);
+}
+
 function decodeBase64(b64) {
   if (typeof Uint8Array.fromBase64 === "function") return Uint8Array.fromBase64(b64);
   const bin = atob(b64);
@@ -368,7 +498,7 @@ async function publicRoutes(request, env, parts) {
   return notFound();
 }
 
-const AMBASSADOR_POSTS = ["drop", "post", "check", "feedback", "pause", "idea"];
+const AMBASSADOR_POSTS = ["drop", "post", "check", "feedback", "pause", "idea", "capture"];
 
 async function ambassadorRoutes(request, env, parts, url) {
   const [token, action, arg] = parts;
@@ -390,12 +520,14 @@ async function ambassadorRoutes(request, env, parts, url) {
   if (request.method === "GET") {
     if (arg !== undefined) return notFound();
     if (!action) {
-      const [stats, ideas, designScans] = await Promise.all([
+      const [stats, ideas, designScans, caps, suggested] = await Promise.all([
         ambassadorStats(env, amb),
         ideaCounts(env, amb),
         schoolDesignScans(env, amb.school),
+        captureCounts(env, amb),
+        suggestionsFor(env, amb.id),
       ]);
-      return html(ambassadorPage({ amb, stats, ideas, designScans, origin: pub, flash: url.searchParams.get("ok") }));
+      return html(ambassadorPage({ amb, stats, ideas, designScans, playbook, suggested, captures: capturesPlan(caps), origin: pub, flash: url.searchParams.get("ok") }));
     }
     if (action === "stickers") return html(stickersPage({ amb, origin: pub, qrSvg }));
     if (action === "plan.json") {
@@ -411,6 +543,7 @@ async function ambassadorRoutes(request, env, parts, url) {
   if (request.method === "POST") {
     if (arg !== undefined || !AMBASSADOR_POSTS.includes(action)) return notFound();
     if (action === "idea") return handleIdea(request, env, amb, base);
+    if (action === "capture") return handleCapture(request, env, amb, base);
     const parsed = await form(request);
     if (parsed.error) return parsed.error;
     const f = parsed.f;
@@ -477,6 +610,23 @@ async function founderRoutes(request, env, parts, url) {
         },
       });
     }
+    if (action === "capture") {
+      // Same inert, sandboxed delivery as an idea's image. The route lives under
+      // the founder secret only: an ambassador's code opens none of /f/.
+      const id = /^\d{1,10}$/.test(arg || "") ? parseInt(arg, 10) : 0;
+      const row = id && parts.length === 3 ? await captureImage(env, id) : null;
+      if (!row) return notFound();
+      return new Response(decodeBase64(row.image), {
+        headers: {
+          "content-type": row.mime,
+          "x-content-type-options": "nosniff",
+          "cache-control": "private, no-store",
+          "content-security-policy": "default-src 'none'; sandbox",
+          "content-disposition": "inline",
+          "referrer-policy": "no-referrer",
+        },
+      });
+    }
     if (arg !== undefined) return notFound();
     if (!action) {
       const days = Math.min(90, Math.max(1, parseInt(url.searchParams.get("days") || "14", 10) || 14));
@@ -493,7 +643,7 @@ async function founderRoutes(request, env, parts, url) {
   }
 
   if (request.method === "POST") {
-    if (!["add", "update", "reminder", "replied", "feedback-seen", "idea-seen", "idea-delete"].includes(action)) return notFound();
+    if (!["add", "update", "reminder", "replied", "feedback-seen", "idea-seen", "idea-delete", "suggest", "suggest-delete", "capture-seen", "capture-delete"].includes(action)) return notFound();
     const parsed = await form(request);
     if (parsed.error) return parsed.error;
     const f = parsed.f;
@@ -502,7 +652,16 @@ async function founderRoutes(request, env, parts, url) {
     // id would quietly act on the first row: for idea-delete, the wrong idea.
     const idText = field(f, "id", 12);
     const id = /^[1-9][0-9]{0,9}$/.test(idText) ? Number(idText) : 0;
-    if (action !== "add" && !id) return badRequest();
+    // capture-seen and capture-delete take either one row's id or a whole
+    // recording as (amb, batch), both held to the same strict rule.
+    const ambText = field(f, "amb", 12);
+    const ambId = /^[1-9][0-9]{0,9}$/.test(ambText) ? Number(ambText) : 0;
+    const batch = field(f, "batch", 64);
+    const batchOk = /^[a-z0-9]{8,32}$/.test(batch);
+    const captureTarget = id ? { id } : ambId && batchOk ? { amb: ambId, batch } : null;
+    if (action === "capture-seen" || action === "capture-delete") {
+      if (!captureTarget) return badRequest();
+    } else if (action !== "add" && !id) return badRequest();
     switch (action) {
       case "add": {
         try {
@@ -530,6 +689,27 @@ async function founderRoutes(request, env, parts, url) {
       case "idea-delete":
         await deleteIdea(env, id);
         return redirectBack(base + "#ideas", "deleted.");
+      case "capture-seen":
+        await markCaptureSeen(env, captureTarget);
+        return redirectBack(base + "#feeds");
+      case "capture-delete":
+        await deleteCapture(env, captureTarget);
+        return redirectBack(base + "#feeds", "deleted.");
+      case "suggest": {
+        const text = field(f, "text", 2400).trim();
+        if (!text || text.length > 600) return ideaError(request, 400, "the post should be 1 to 600 characters.");
+        const reply = field(f, "reply", 1200).trim().slice(0, 300);
+        // At most 20 per ambassador, enforced inside the insert (addSuggestion).
+        if (!(await addSuggestion(env, id, { text, reply }))) {
+          return (await ambassadorExists(env, id))
+            ? ideaError(request, 429, "that ambassador already has 20 to try. delete one first.")
+            : ideaError(request, 404, "no such ambassador.");
+        }
+        return redirectBack(base + "#feeds", "sent.");
+      }
+      case "suggest-delete":
+        await deleteSuggestion(env, id);
+        return redirectBack(base + "#roster", "deleted.");
       default:
         return notFound();
     }

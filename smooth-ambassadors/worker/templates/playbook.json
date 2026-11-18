@@ -1,0 +1,15 @@
+{
+  "_help": "What works, shown on the ambassador's page and sent in plan.json as `playbook`. Lowercase, short, no links in the examples.",
+  "lead": "the posts that work don't look like ads.",
+  "steps": [
+    "scroll your school's feed first. see what's getting upvotes this week.",
+    "borrow the format, not the words: a question, a ranking, whatever everyone is reposting.",
+    "keep smooth out of the pitch. slip it in, or ask the question it answers.",
+    "when someone asks what smooth is, reply \"Smooth for Students on the App Store\". no link.",
+    "answering your own question? the app tags you OP. get a friend to answer, or own it."
+  ],
+  "examples": [
+    { "key": "question", "title": "ask the question", "post": "What do you guys use to stop missing assignments?", "reply": "Smooth for Students on the App Store", "score": "22 upvotes at penn", "why": "a pain everyone has, in nine words. smooth is an answer in the comments, never the post." },
+    { "key": "list", "title": "slip it into a list", "post": "Post HOCO Frat Rankings 🔥🔥🔥🔥\nS: [frat], [frat], [frat]\nA: [frat], [frat]\nB: Smooth, [frat]\nC: [frat], [frat]\nD: [frat]", "reply": "Smooth for Students on the App Store", "score": "65 upvotes at penn", "why": "a format that was already blowing up. smooth in the B tier made someone comment \"wtf is smooth\", and the answer got upvoted too." }
+  ]
+}

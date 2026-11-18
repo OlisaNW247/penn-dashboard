@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { Miniflare } from "miniflare";
 import { ideaTests } from "./ideas-suite.mjs";
+import { captureTests } from "./captures-suite.mjs";
 
 const { SITES_ORIGINAL, SITES_EDITED } = process.env;
 const skip = SITES_ORIGINAL && SITES_EDITED ? false : "set SITES_ORIGINAL and SITES_EDITED to run";
@@ -301,6 +302,15 @@ test("a left ambassador's code stops working, their stickers still count the sch
 // The same idea, plan.json, page and font checks as test/routes.test.mjs, now
 // against the built single file next to the untouched host code.
 ideaTests({
+  test,
+  skip,
+  label: "built file: ",
+  founder: FOUNDER,
+  db: () => edited.getD1Database("DB"),
+  req: (path, init) => req(edited, path, init),
+});
+
+captureTests({
   test,
   skip,
   label: "built file: ",
