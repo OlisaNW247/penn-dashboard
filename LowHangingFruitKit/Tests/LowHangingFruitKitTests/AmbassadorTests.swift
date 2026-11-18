@@ -200,6 +200,17 @@ final class FakeAmbassadorService: AmbassadorService, @unchecked Sendable {
     var planRequests: [(code: String, anon: AmbassadorAnonApp, tz: Int)] = []
     var ideas: [(code: String, note: String, image: Data?)] = []
     var ideaError: AmbassadorClientError?
+    var captures: [(code: String, fields: [String: String])] = []
+    /// Thrown by `sendCapture` once `failCapturesAfter` have been accepted.
+    var captureError: AmbassadorClientError?
+    var failCapturesAfter = 0
+
+    func sendCapture(code: String, fields: [String: String]) async throws {
+        if offline { throw AmbassadorClientError.network }
+        if let captureError, captures.count >= failCapturesAfter { throw captureError }
+        guard plans[code] != nil else { throw AmbassadorClientError.unknownCode }
+        captures.append((code, fields))
+    }
 
     func sendIdea(code: String, note: String, imageJPEG: Data?) async throws {
         if offline { throw AmbassadorClientError.network }
@@ -765,9 +776,249 @@ struct AmbassadorWiringTests {
     @Test("ambassador mode never mentions ratings or reviews")
     func noReviews() throws {
         for file in ["AmbassadorPage.swift", "AmbassadorModel.swift", "AmbassadorReminders.swift",
-                     "AmbassadorPostersView.swift", "PosterIdeaSheet.swift"] {
+                     "AmbassadorPostersView.swift", "PosterIdeaSheet.swift",
+                     "FeedRecordingSheet.swift", "PostResultSheet.swift"] {
             let source = try uiSource(file).lowercased()
             #expect(!source.contains("5 star") && !source.contains("five star") && !source.contains("rate the app"), "\(file)")
         }
+    }
+}
+
+// MARK: - Playbook, suggestions and captures (2026-11-18)
+
+@Suite("Ambassador playbook and captures in the plan")
+struct AmbassadorCapturePlanTests {
+    static let base = #"{"name":"Maya","school":"uva""#
+
+    @Test("all three new keys decode when present")
+    func present() throws {
+        let json = Self.base + #"""
+        ,"playbook":{"lead":"the posts that work don't look like ads.","steps":["one","two"],
+           "examples":[{"key":"question","title":"ask the question","post":"What do you use?","reply":"Smooth","score":"22 upvotes at penn","why":"it's a question"},
+                       {"key":"list","title":"slip it into a list","post":"a\nb"}]},
+         "suggested":[{"id":3,"text":"hello","reply":"world","ts":"2026-11-18T12:00:00.000Z"},{"id":4,"text":"bare"}],
+         "captures":{"feed":{"framesPerRecording":16,"frameBytes":200000,"sentToday":0,"dailyLimit":32,"stored":3,"limit":96},
+                     "results":{"imageBytes":300000,"sentToday":0,"dailyLimit":8,"stored":0,"limit":60},
+                     "styles":[{"key":"question","label":"question"},{"key":"list","label":"slipped into a list"}]}}
+        """#
+        let plan = try AmbassadorPlan.decode(Data(json.utf8))
+        #expect(plan.playbook?.steps == ["one", "two"])
+        #expect(plan.playbook?.examples.count == 2)
+        #expect(plan.playbook?.examples.first?.score == "22 upvotes at penn")
+        #expect(plan.playbook?.examples.last?.reply == nil)
+        #expect(plan.suggested?.map(\.id) == [3, 4])
+        #expect(plan.suggested?.last?.reply == nil)
+        #expect(plan.captures?.feed?.stored == 3)
+        #expect(plan.captures?.feed?.limit == 96)
+        #expect(plan.captures?.results?.dailyLimit == 8)
+        #expect(plan.captures?.styles?.map(\.key) == ["question", "list"])
+        let again = try AmbassadorPlan.decode(plan.encoded())
+        #expect(again == plan)
+    }
+
+    @Test("an older server omits them and the plan still decodes with nils")
+    func absent() throws {
+        let plan = try AmbassadorPlan.decode(Data((Self.base + "}").utf8))
+        #expect(plan.playbook == nil)
+        #expect(plan.suggested == nil)
+        #expect(plan.captures == nil)
+    }
+
+    @Test("a malformed captures, playbook or suggested reads as absent and the rest survives")
+    func malformed() throws {
+        let plan = try AmbassadorPlan.decode(Data((Self.base + #","captures":"lots","playbook":7,"suggested":"x"}"#).utf8))
+        #expect(plan.captures == nil)
+        #expect(plan.playbook == nil)
+        #expect(plan.suggested == nil)
+        #expect(plan.name == "Maya")
+        let partial = try AmbassadorPlan.decode(Data((Self.base + #","suggested":[{"id":1,"text":"ok"},{"id":"bad"}]}"#).utf8))
+        #expect(partial.suggested?.map(\.id) == [1])
+    }
+}
+
+@Suite("Feed recording frames")
+struct FeedRecordingFramesTests {
+    @Test("no times for a duration that is not a positive finite number")
+    func empty() {
+        for duration in [0, -3, Double.nan, Double.infinity, -Double.infinity] {
+            #expect(FeedRecordingFrames.sampleTimes(duration: duration).isEmpty)
+        }
+    }
+
+    @Test("counts and bounds for clips of different lengths")
+    func counts() {
+        #expect(FeedRecordingFrames.sampleTimes(duration: 1).count == 1)
+        let six = FeedRecordingFrames.sampleTimes(duration: 6)
+        #expect(six.count == 3 || six.count == 4)
+        #expect(FeedRecordingFrames.sampleTimes(duration: 30).count > 4)
+        #expect(FeedRecordingFrames.sampleTimes(duration: 30).count <= 16)
+        #expect(FeedRecordingFrames.sampleTimes(duration: 120).count == 16)
+        #expect(FeedRecordingFrames.sampleTimes(duration: 120, maxFrames: 5).count == 5)
+    }
+
+    @Test("times are strictly inside the clip, ascending and never closer than the spacing")
+    func spacing() {
+        for duration in [0.4, 1, 2.5, 6, 9, 30, 120, 600] as [Double] {
+            let times = FeedRecordingFrames.sampleTimes(duration: duration)
+            #expect(!times.isEmpty, "\(duration)")
+            #expect(times.allSatisfy { $0 > 0 && $0 < duration }, "\(duration)")
+            #expect(times == times.sorted(), "\(duration)")
+            if times.count > 1 {
+                let gaps = zip(times, times.dropFirst()).map { $1 - $0 }
+                #expect(gaps.allSatisfy { $0 >= 1.5 - 1e-9 }, "\(duration)")
+            }
+        }
+    }
+
+    @Test("a batch id is twelve of a-z0-9 and a second one differs")
+    func batchID() {
+        let first = FeedRecordingFrames.newBatchID()
+        let second = FeedRecordingFrames.newBatchID()
+        #expect(first.range(of: "^[a-z0-9]{12}$", options: .regularExpression) != nil)
+        #expect(first != second)
+    }
+
+    @Test("a decoded picture goes through the same shrink and encode path")
+    func cgImageEntry() throws {
+        let png = try #require(PosterImageFixtures.png(width: 3000, height: 2000))
+        let source = try #require(CGImageSourceCreateWithData(png as CFData, nil))
+        let image = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        let jpeg = try #require(PosterIdeaImage.prepared(cgImage: image, maxDimension: 1200, maxBytes: 200_000))
+        #expect(Array(jpeg.prefix(3)) == [0xFF, 0xD8, 0xFF])
+        #expect(jpeg.count <= 200_000)
+        let size = try #require(PosterImageFixtures.size(of: jpeg))
+        #expect(max(size.width, size.height) <= 1200)
+    }
+}
+
+@Suite("Ambassador capture bodies")
+struct AmbassadorCaptureBodyTests {
+    @Test("a feed still carries kind, batch, a decimal seq and base64")
+    func feed() {
+        let jpeg = Data([0xFF, 0xD8, 0xFF])
+        let body = AmbassadorClient.feedFrameBody(batch: "abc123def456", seq: 11, jpeg: jpeg)
+        #expect(body == ["kind": "feed", "batch": "abc123def456", "seq": "11", "image": jpeg.base64EncodedString()])
+    }
+
+    @Test("a result omits upvotes, views and note when they are not given")
+    func resultOptional() {
+        let jpeg = Data([1, 2, 3])
+        let bare = AmbassadorClient.resultBody(jpeg: jpeg, platform: "fizz", style: "list", upvotes: nil, views: nil, note: "  ")
+        #expect(bare == ["kind": "result", "image": jpeg.base64EncodedString(), "platform": "fizz", "style": "list"])
+        let full = AmbassadorClient.resultBody(jpeg: jpeg, platform: "yikyak", style: "pitch", upvotes: 123, views: 4500, note: "ok")
+        #expect(full["upvotes"] == "123")
+        #expect(full["views"] == "4500")
+        #expect(full["note"] == "ok")
+        #expect(Set(full.keys) == ["kind", "image", "platform", "style", "upvotes", "views", "note"])
+    }
+}
+
+@MainActor
+@Suite("Ambassador capture uploads", .serialized)
+struct AmbassadorCaptureModelTests {
+    private func withModel(_ body: @MainActor (AmbassadorModel, FakeAmbassadorService) async throws -> Void) async rethrows {
+        let before = NotificationScheduler.reservedForeignSlots
+        defer { NotificationScheduler.reservedForeignSlots = before }
+        let suite = "ambassador-capture-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let service = FakeAmbassadorService()
+        service.plans[AmbassadorModelTests.code] = AmbassadorModelTests.plan()
+        final class Box: @unchecked Sendable { var code: String?; init(_ c: String?) { code = c } }
+        let box = Box(AmbassadorModelTests.code)
+        let model = AmbassadorModel(defaults: defaults, client: service, center: FakeAmbassadorCenter(),
+                                    loadCode: { box.code }, saveCode: { box.code = $0 }, removeCode: { box.code = nil },
+                                    timeZone: TimeZone(secondsFromGMT: -5 * 3600)!)
+        try await body(model, service)
+    }
+
+    @Test("every still goes under one batch id with seq 0...n-1")
+    func oneBatch() async {
+        await withModel { model, service in
+            let frames = (0..<3).map { Data([UInt8($0), 0xFF]) }
+            #expect(await model.sendFeedFrames(frames) == true)
+            #expect(service.captures.count == 3)
+            #expect(service.captures.map { $0.fields["seq"] } == ["0", "1", "2"])
+            #expect(Set(service.captures.compactMap { $0.fields["batch"] }).count == 1)
+            #expect(service.captures.allSatisfy { $0.fields["kind"] == "feed" })
+            #expect(model.feedProgress == nil)
+            #expect(model.lastError == nil)
+        }
+    }
+
+    @Test("a 429 stops the upload and says so")
+    func limit() async {
+        await withModel { model, service in
+            service.captureError = .limitReached
+            service.failCapturesAfter = 2
+            let frames = (0..<5).map { Data([UInt8($0)]) }
+            #expect(await model.sendFeedFrames(frames) == false)
+            #expect(service.captures.count == 2)
+            #expect(model.lastError == "that\u{2019}s the limit for today")
+            #expect(model.feedProgress == nil)
+        }
+    }
+
+    @Test("no frames is an error and sends nothing")
+    func noFrames() async {
+        await withModel { model, service in
+            #expect(await model.sendFeedFrames([]) == false)
+            #expect(model.lastError == "couldn\u{2019}t read that recording")
+            #expect(service.captures.isEmpty)
+        }
+    }
+
+    @Test("a result with an undecodable picture sends nothing")
+    func badPicture() async {
+        await withModel { model, service in
+            let ok = await model.sendPostResult(imageData: Data([1, 2, 3, 4]), platform: "fizz", style: "list",
+                                                upvotes: nil, views: nil, note: "")
+            #expect(ok == false)
+            #expect(model.lastError == "couldn\u{2019}t read that picture")
+            #expect(service.captures.isEmpty)
+        }
+    }
+
+    @Test("a result with a real picture is sent as a result")
+    func goodPicture() async throws {
+        let png = try #require(PosterImageFixtures.png(width: 400, height: 300))
+        await withModel { model, service in
+            let ok = await model.sendPostResult(imageData: png, platform: "sidechat", style: "question",
+                                                upvotes: 12, views: nil, note: "hi")
+            #expect(ok == true)
+            let sent = service.captures.first?.fields
+            #expect(sent?["kind"] == "result")
+            #expect(sent?["upvotes"] == "12")
+            #expect(sent?["views"] == nil)
+            #expect(sent?["note"] == "hi")
+        }
+    }
+}
+
+@Suite("Ambassador capture wiring")
+struct AmbassadorCaptureWiringTests {
+    private func page() throws -> String {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/LowHangingFruitUI/AmbassadorPage.swift")
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    @Test("the page lists job, playbook, suggested, today in order and tracking before feedback")
+    func order() throws {
+        let page = try page()
+        let body = try #require(page.range(of: "if model.isSignedIn {"))
+        func at(_ name: String) throws -> String.Index {
+            try #require(page.range(of: name, range: body.upperBound..<page.endIndex)).lowerBound
+        }
+        let job = try at("jobSection")
+        let playbook = try at("playbookSection")
+        let suggested = try at("suggestedSection")
+        let today = try at("todaySection")
+        let tracking = try at("trackingSection")
+        let feedback = try at("feedbackSection")
+        #expect(job < playbook && playbook < suggested && suggested < today)
+        #expect(tracking < feedback)
+        #expect(page.contains("FeedRecordingSheet()") && page.contains("PostResultSheet()"))
     }
 }

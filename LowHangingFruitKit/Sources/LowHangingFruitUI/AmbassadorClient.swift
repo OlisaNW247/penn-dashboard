@@ -21,6 +21,10 @@ protocol AmbassadorService: Sendable {
     /// `POST /a/{code}/idea`: a poster idea, a note and/or one JPEG. The only
     /// call that carries a picture off the phone, and only on "send".
     func sendIdea(code: String, note: String, imageJPEG: Data?) async throws
+    /// `POST /a/{code}/capture`: one still of a feed recording, or one post
+    /// result screenshot, as the string fields `feedFrameBody` and
+    /// `resultBody` build.
+    func sendCapture(code: String, fields: [String: String]) async throws
 }
 
 enum AmbassadorClientError: Error, Equatable {
@@ -84,6 +88,37 @@ struct AmbassadorClient: AmbassadorService {
         request.timeoutInterval = 60
         request.httpBody = try JSONEncoder().encode(Self.ideaBody(note: note, imageJPEG: imageJPEG))
         try await deliver(request)
+    }
+
+    func sendCapture(code: String, fields: [String: String]) async throws {
+        var request = URLRequest(url: baseURL.appendingPathComponent("a/\(code)/capture"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        // A still is up to 200 KB base64-encoded, like a picture in an idea.
+        request.timeoutInterval = 60
+        request.httpBody = try JSONEncoder().encode(fields)
+        try await deliver(request)
+    }
+
+    /// One feed still's JSON: `kind`, the recording's `batch` id, the frame's
+    /// position `seq` as a decimal string and the base64 JPEG. Pure, for the
+    /// test.
+    nonisolated static func feedFrameBody(batch: String, seq: Int, jpeg: Data) -> [String: String] {
+        ["kind": "feed", "batch": batch, "seq": String(seq), "image": jpeg.base64EncodedString()]
+    }
+
+    /// A post result's JSON. `upvotes`, `views` and `note` are left out when
+    /// they were not given, because the server reads an absent key as "not
+    /// said" and an empty string as a value. Pure, for the test.
+    nonisolated static func resultBody(jpeg: Data, platform: String, style: String,
+                                       upvotes: Int?, views: Int?, note: String) -> [String: String] {
+        var body = ["kind": "result", "image": jpeg.base64EncodedString(), "platform": platform, "style": style]
+        if let upvotes { body["upvotes"] = String(upvotes) }
+        if let views { body["views"] = String(views) }
+        let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { body["note"] = trimmed }
+        return body
     }
 
     /// The idea's JSON: `note` always (possibly empty), and `image` (base64)
