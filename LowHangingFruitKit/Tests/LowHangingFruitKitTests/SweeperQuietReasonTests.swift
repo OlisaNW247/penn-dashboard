@@ -46,15 +46,37 @@ struct SweeperQuietReasonTests {
         #expect(SweeperSettings().quietReason(for: i, courseRemindersOn: on) == .foundExam)
     }
 
-    @Test("Only a modules row with no Canvas assignment id is quiet for want of an id")
+    @Test("A modules row with no Canvas assignment id is no longer quiet: it is buzz-only")
     func noConfirmableID() {
+        // Was `.noConfirmableID` (silence). Marco, 2026-11-18: nothing goes
+        // quiet, an unconfirmable item gets the three buzzes instead.
         let s = SweeperSettings()
-        #expect(s.quietReason(for: item(source: .canvasModules, url: nil), courseRemindersOn: on) == .noConfirmableID)
-        #expect(s.quietReason(for: item(source: .canvasModules), courseRemindersOn: on) == nil)
+        let bare = item(source: .canvasModules, url: nil)
+        #expect(s.quietReason(for: bare, courseRemindersOn: on) == nil)
+        #expect(s.qualifies(bare, now: now, horizon: horizon, courseRemindersOn: on))
+        #expect(SweeperSettings.isBuzzOnly(bare))
+        #expect(!SweeperSettings.isBuzzOnly(item(source: .canvasModules)))
         // A bare .canvas row, a Gradescope row and a linked pair ring as ever.
-        #expect(s.quietReason(for: item(url: nil), courseRemindersOn: on) == nil)
-        #expect(s.quietReason(for: item(source: .gradescope, url: nil), courseRemindersOn: on) == nil)
-        #expect(s.quietReason(for: item(url: nil, linkedID: "gradescope:zz"), courseRemindersOn: on) == nil)
+        for i in [item(url: nil), item(source: .gradescope, url: nil), item(url: nil, linkedID: "gradescope:zz")] {
+            #expect(s.quietReason(for: i, courseRemindersOn: on) == nil)
+            #expect(!SweeperSettings.isBuzzOnly(i))
+        }
+    }
+
+    @Test("An external-tool-only item is armed but buzz-only; a mixed one is not")
+    func externalTool() {
+        let s = SweeperSettings()
+        var tool = item()
+        tool.isExternalTool = true
+        #expect(s.quietReason(for: tool, courseRemindersOn: on) == nil)
+        #expect(s.qualifies(tool, now: now, horizon: horizon, courseRemindersOn: on))
+        #expect(SweeperSettings.isBuzzOnly(tool))
+        #expect(GradeItem(id: "1", name: "Survey", pointsPossible: 0, dueAt: nil,
+                          submissionTypes: ["external_tool"]).isExternalToolOnly)
+        #expect(!GradeItem(id: "2", name: "Both", pointsPossible: 0, dueAt: nil,
+                           submissionTypes: ["external_tool", "online_upload"]).isExternalToolOnly)
+        #expect(!GradeItem(id: "3", name: "Unknown", pointsPossible: 0, dueAt: nil,
+                           submissionTypes: nil).isExternalToolOnly)
     }
 
     @Test("A manual task due in 3 hours still qualifies")

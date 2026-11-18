@@ -102,6 +102,17 @@ struct NoSubmissionCaveatTests {
         #expect(next == ["paper", "other-course"])
     }
 
+    @Test("The external-tool subset follows the same insert, remove, keep rule")
+    func externalToolSubsetFollowsCanvas() {
+        let snap = snapshot(courseID: "1", items: [
+            gradeItem("survey", submissionTypes: ["external_tool"]),
+            gradeItem("mixed", submissionTypes: ["external_tool", "online_upload"]),
+            gradeItem("was-tool", submissionTypes: ["online_upload"]),
+        ])
+        let next = AppState.updatedExternalToolIDs(cached: ["was-tool", "other-course"], snapshots: [snap])
+        #expect(next == ["survey", "other-course"])
+    }
+
     @Test("The same id later observed as submittable leaves the cache")
     func laterSubmittableLeavesCache() {
         // "a" was cached from an earlier refresh (the professor has since

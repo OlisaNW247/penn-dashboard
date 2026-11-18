@@ -978,6 +978,10 @@ final class NotificationScheduler: ObservableObject {
         // Each item's own lead, because a class can ring earlier or later than
         // the default: the plain reminder it replaces is the one at THAT lead.
         let loudLeadByItem = Dictionary(uniqueKeysWithValues: loud.map { ($0.item.id, TimeInterval($0.minutes * 60)) })
+        // Work nothing can confirm (`SweeperSettings.isBuzzOnly`) has no alarm
+        // in `plannedAlarms`, so its buzzes are returned whatever the delivery
+        // is: in alarm mode they are the only alert it has.
+        let buzzOnlyIDs = Set(loud.filter { SweeperSettings.isBuzzOnly($0.item) }.map { $0.item.assignment.id })
         let loudByItem = loud.map { alert in
             (id: alert.item.assignment.id,
              requests: Self.loudRequests(for: alert, now: now, nameOverrides: nameOverrides))
@@ -1037,7 +1041,7 @@ final class NotificationScheduler: ObservableObject {
         // that is none, or just those of the items whose alarm AlarmKit would
         // not take. See `loudAlertsAsAlarms` above.
         let buzzes = loudByItem
-            .filter { !loudAlertsAsAlarms || buzzFallbackAssignmentIDs.contains($0.id) }
+            .filter { !loudAlertsAsAlarms || buzzFallbackAssignmentIDs.contains($0.id) || buzzOnlyIDs.contains($0.id) }
             .flatMap(\.requests)
         let budget = max(0, Self.maxPending - buzzes.count - Self.reservedForeignSlots)
 
@@ -1214,6 +1218,11 @@ final class NotificationScheduler: ObservableObject {
         let horizon = now.addingTimeInterval(Double(Self.horizonDays) * 86_400)
         let selection = loudAlerts(from: items.filter { !$0.isFactCancelled }, now: now, horizon: horizon, preferences: prefs)
             .map(\.item)
+            // Unconfirmable work is buzzed, never alarmed (`isBuzzOnly`). It
+            // stays in `loudAlerts`' selection (and the nearest-ten cut), so
+            // `plannedRequests` returns its buzzes; leaving it out of this
+            // plan is what keeps "exactly one of alarm or buzzes" true.
+            .filter { !SweeperSettings.isBuzzOnly($0) }
         // One call per item, because each class resolves its own lead and
         // sound and `alarms` takes one of each. Order is the selection's.
         let settings = sweeperSettings

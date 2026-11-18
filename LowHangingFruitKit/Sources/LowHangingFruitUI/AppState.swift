@@ -372,6 +372,13 @@ final class AppState: ObservableObject {
     /// title names a quiz or exam), which the launch refresh corrects.
     @Published private(set) var onPaperCanvasAssignmentIDs: Set<String> = []
 
+    /// Canvas assignments whose only submission type is an external tool
+    /// (`GradeItem.isExternalToolOnly`), persisted under
+    /// `externalToolCanvasAssignmentIDsKey` and updated by the same per-item
+    /// rule as the sets above. The Sweeper reads it: such work can never be
+    /// confirmed submitted, so it gets the three buzzes, not an alarm.
+    @Published private(set) var externalToolCanvasAssignmentIDs: Set<String> = []
+
     /// Settings → "ai assist". Default
     /// **true**, absent-key-means-on, same idiom as
     /// on: it runs under LHF's own
@@ -978,6 +985,8 @@ final class AppState: ObservableObject {
     /// Backs `onPaperCanvasAssignmentIDs`. Device-local, never mirrored, for
     /// the reasons the key just above gives.
     private static let onPaperCanvasAssignmentIDsKey = "onPaperCanvasAssignmentIDsV1"
+    /// Backs `externalToolCanvasAssignmentIDs`. Device-local, as the two above.
+    private static let externalToolCanvasAssignmentIDsKey = "externalToolCanvasAssignmentIDsV1"
     private static let announcementWatcherEnabledKey = "announcementWatcherEnabledV1"
     /// Backs `announcementAIEnabled`. Default-**on** now — see that
     /// property's doc comment — so, like `announcementWatcherEnabledKey`
@@ -1269,6 +1278,9 @@ final class AppState: ObservableObject {
         )
         self.onPaperCanvasAssignmentIDs = Set(
             UserDefaults.lhf.stringArray(forKey: Self.onPaperCanvasAssignmentIDsKey) ?? []
+        )
+        self.externalToolCanvasAssignmentIDs = Set(
+            UserDefaults.lhf.stringArray(forKey: Self.externalToolCanvasAssignmentIDsKey) ?? []
         )
         // Both default to true (absent-key-means-on, per each property's doc
         // comment) but MUST be read back from UserDefaults.lhf rather than
@@ -5296,6 +5308,8 @@ final class AppState: ObservableObject {
         UserDefaults.lhf.removeObject(forKey: Self.noSubmissionCanvasAssignmentIDsKey)
         onPaperCanvasAssignmentIDs = []
         UserDefaults.lhf.removeObject(forKey: Self.onPaperCanvasAssignmentIDsKey)
+        externalToolCanvasAssignmentIDs = []
+        UserDefaults.lhf.removeObject(forKey: Self.externalToolCanvasAssignmentIDsKey)
         gradeWatcher.clearAll(keepingHistory: keepingStudentWork)
         // Drop the durable ledger's Canvas rows too, or a disconnected
         // account's unfinished work survives in the store and reappears on
@@ -9540,6 +9554,12 @@ final class AppState: ObservableObject {
         return onPaperCanvasAssignmentIDs.contains(id)
     }
 
+    /// True when Canvas lists an external tool as this assignment's only
+    /// submission type (`externalToolCanvasAssignmentIDs`).
+    func isExternalTool(_ assignment: Assignment) -> Bool {
+        assignment.canvasAssignmentID.map { externalToolCanvasAssignmentIDs.contains($0) } ?? false
+    }
+
     /// The cache-backed, works-offline twin of `autoSubmittedNoSubmissionIDs`
     /// below. That function only ever runs as part of a live grade refresh —
     /// it writes durable ledger state (`applySubmissionState`) once one
@@ -9701,6 +9721,14 @@ final class AppState: ObservableObject {
                 Array(onPaperCanvasAssignmentIDs).sorted(),
                 forKey: Self.onPaperCanvasAssignmentIDsKey
             )
+            externalToolCanvasAssignmentIDs = Self.updatedExternalToolIDs(
+                cached: externalToolCanvasAssignmentIDs,
+                snapshots: Array(gradeWatcher.snapshots.values)
+            )
+            UserDefaults.lhf.set(
+                Array(externalToolCanvasAssignmentIDs).sorted(),
+                forKey: Self.externalToolCanvasAssignmentIDsKey
+            )
         }
 
         // Persist onto the ledger so the next cold launch already knows what's
@@ -9821,6 +9849,22 @@ final class AppState: ObservableObject {
             for category in snapshot.categories {
                 for item in category.items {
                     if item.submitsOnPaper { next.insert(item.id) } else { next.remove(item.id) }
+                }
+            }
+        }
+        return next
+    }
+
+    /// The same per-item replace again, for the external-tool-only set.
+    static func updatedExternalToolIDs(
+        cached: Set<String>,
+        snapshots: [CourseGradeSnapshot]
+    ) -> Set<String> {
+        var next = cached
+        for snapshot in snapshots {
+            for category in snapshot.categories {
+                for item in category.items {
+                    if item.isExternalToolOnly { next.insert(item.id) } else { next.remove(item.id) }
                 }
             }
         }

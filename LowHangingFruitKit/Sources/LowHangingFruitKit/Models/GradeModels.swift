@@ -90,6 +90,16 @@ public struct GradeItem: Sendable, Hashable, Codable, Identifiable {
     public var submitsOnPaper: Bool {
         requiresNoSubmission && (submissionTypes?.contains("on_paper") ?? false)
     }
+
+    /// True when the only way to hand this in is an external tool (a survey, a
+    /// publisher's site): `submission_types == ["external_tool"]`. Such a tool
+    /// never reports back to Canvas, so no read can ever confirm it, and the
+    /// Sweeper gives it the three buzzes instead of an alarm
+    /// (`SweeperSettings.isBuzzOnly`). `["external_tool", "online_upload"]` is
+    /// not this: Canvas can confirm the upload.
+    public var isExternalToolOnly: Bool {
+        submissionTypes == ["external_tool"]
+    }
 }
 
 /// One Canvas assignment group. `weight` is Canvas's `group_weight` — it is

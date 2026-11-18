@@ -1388,13 +1388,33 @@ Keep this current. It is the fastest way for a new session to know what exists.
      `SweeperSettings.quietReason(for:)`; `qualifies` is that rule plus the
      date checks, so the planner and the Sweeper page's countdown card can
      never disagree): in class, off canvas (both the old nothing-to-submit
-     set), recurring, found exam, class off, reminders off, and the one new
-     reason, a `.canvasModules` row Canvas never resolved into an assignment
-     (`noConfirmableID`: nothing could ever confirm it). A `.canvas` row
+     set), recurring, found exam, class off, reminders off. A `.canvas` row
      rings whatever its URL, a Gradescope row has its id by construction,
      and **the student's own manual tasks ring exactly as before** (the
      overseer's correction of 2026-11-18: the swipe that finishes one already
-     cancels its alarm, and silence is the dangerous side). The plan's
+     cancels its alarm, and silence is the dangerous side). **Unconfirmable
+     work buzzes instead of ringing** (Marco, the evening of 2026-11-18,
+     after the alarm rang for an anonymous survey he had done: "edge cases
+     like these not to have a smooth sweeper, but instead a triple
+     notification at the smooth sweeping time"): `SweeperSettings.isBuzzOnly`
+     names a Canvas item whose `submission_types` is exactly
+     `["external_tool"]` (an outside tool never reports back to Canvas, so
+     no read can ever confirm it; the grades fetch keeps the ids in
+     `externalToolCanvasAssignmentIDsV1` beside the on-paper set, so an item
+     is known only after the first grades fetch that lists it) and a
+     `.canvasModules` row with no Canvas assignment id (which until that
+     evening was fully quiet as `noConfirmableID`; that reason is gone). Such
+     an item stays in `loudAlerts`' selection and the nearest-ten cut, is
+     left out of `plannedAlarms`, and `plannedRequests` returns its three
+     `loud:` buzzes whatever the delivery, so "exactly one of alarm or
+     buzzes" still holds (`BuzzOnlyDeliveryTests`). The buzzes are cancelled
+     by the student's swipe or "turned in" like any other. Two things left
+     as they are, knowingly: the Sweeper page's card still says "rings" for
+     a buzz-only item (the buzzes do ring, three times), and `nextSweep`
+     still counts a buzz-only item as the next ring, so the last-hour poll
+     reads the planner for work the planner cannot confirm: harmless and a
+     few requests. Compiled and tested, on Marco's phone the same night,
+     not yet heard. The plan's
      zero-points and optional-title rules are not built: the word list
      needs Marco's word. No new student-facing switch. (4) **The last-hour
      poll and the server wake:** see Background. The wake is the one thing

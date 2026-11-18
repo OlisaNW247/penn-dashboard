@@ -17,9 +17,6 @@ enum SweeperQuietReason: String, CaseIterable, Sendable {
     case offCanvas
     case recurring
     case foundExam
-    /// A manual task or a row Canvas never resolved: nothing could ever
-    /// confirm it was handed in, so nothing could ever cancel its alarm.
-    case noConfirmableID
     case classOff
     case remindersOff
     /// Reserved seam for a verdict pooled from classmates. Nobody produces it.

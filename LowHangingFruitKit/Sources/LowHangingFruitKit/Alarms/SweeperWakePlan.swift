@@ -22,7 +22,10 @@ public enum SweeperWakePlan {
     public static let defaultHorizon: TimeInterval = 48 * 3600
     public static let defaultCap = 24
 
-    /// `fireDates` are the alarms' ring instants. Output: whole-minute UTC
+    /// `fireDates` are the alarms' ring instants. Buzz-only work (an external
+    /// tool, a row with no Canvas id) has no alarm and so no moment here: a
+    /// planner read could never cancel it anyway.
+    /// Output: whole-minute UTC
     /// instants, strictly after `now`, at most `horizon` ahead, ascending,
     /// deduplicated, the nearest `cap` of them.
     public static func moments(

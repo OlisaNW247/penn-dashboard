@@ -54,6 +54,22 @@ struct SweeperSettings: Equatable, Sendable {
         return quietReason(for: item, courseRemindersOn: courseRemindersOn) == nil
     }
 
+    /// Work nothing can ever confirm as handed in, which therefore gets the
+    /// three Time Sensitive buzzes at the sweep time and never an alarm
+    /// (Marco, 2026-11-18, after an alarm rang for a survey he had done: an
+    /// external tool never reports back to Canvas, so no read could cancel
+    /// it). Two cases: a Canvas item whose only submission type is an external
+    /// tool, and a `.canvasModules` row Canvas never resolved to an assignment
+    /// id. Silence was the rejected fix for both (the second used to be
+    /// `.noConfirmableID`): nothing goes quiet, only the delivery changes, and
+    /// the buzzes are still cancelled by the student's own tick. A mixed
+    /// `["external_tool", "online_upload"]` item is not here; Canvas can
+    /// confirm the upload.
+    nonisolated static func isBuzzOnly(_ item: DashItem) -> Bool {
+        if item.isExternalTool { return true }
+        return item.assignment.source == .canvasModules && item.assignment.canvasAssignmentID == nil
+    }
+
     /// Why the Sweeper is quiet for `item`, or nil when it is armed. The kind
     /// rules of `qualifies`, in one place and one order, so the Sweeper page
     /// can say *why* and the planner can never disagree with it. Dates and
@@ -74,18 +90,6 @@ struct SweeperSettings: Equatable, Sendable {
         }
         if RecurringTask.isOccurrence(item.assignment) { return .recurring }
         if item.isFoundExam { return .foundExam }
-        // Only a modules row whose Canvas assignment id is nil is quiet: it
-        // could never be confirmed submitted, so nothing could cancel its
-        // alarm. A `.canvas` feed row rings as it always has, whatever its URL
-        // (real Canvas rows carry the id, and even one without can be
-        // confirmed through SubmissionMatcher's title fallback), a
-        // `.gradescope` row has its Gradescope id by construction, and the
-        // student's own manual task has no id by nature and keeps ringing.
-        // Silence is the dangerous side, and a proven behaviour is not
-        // changed without Marco's word.
-        if item.assignment.source == .canvasModules && item.assignment.canvasAssignmentID == nil {
-            return .noConfirmableID
-        }
         if excludedCourses.contains(course) { return .classOff }
         if !courseRemindersOn(course) { return .remindersOff }
         return nil

@@ -26,6 +26,10 @@ struct DashItem: Identifiable, Equatable {
     /// (`AppState.submitsOnPaper`): the one case "in class" is true for a
     /// Canvas assignment. Snapshotted at `reload` like the field above.
     var submitsOnPaper: Bool = false
+    /// Canvas says the only submission type is an external tool
+    /// (`AppState.isExternalTool`): nothing can confirm it, so the Sweeper
+    /// buzzes for it rather than ringing an alarm. Snapshotted at `reload`.
+    var isExternalTool: Bool = false
     /// What the opened card offers to take away (`OwnTaskRemoval`): "delete" on
     /// the student's own one-off task, "stop repeating" on an occurrence of a
     /// recurring one, nil for everything else. Snapshotted at `reload` time for
@@ -332,6 +336,7 @@ final class DashboardViewModel: ObservableObject {
                                   completedAt: nil,
                                   requiresNoSubmission: state.requiresNoSubmission(a),
                                   submitsOnPaper: state.submitsOnPaper(a),
+                                  isExternalTool: state.isExternalTool(a),
                                   removal: OwnTaskRemoval.offered(for: a, isUsingFixtureData: isFixture),
                                   fact: state.factDisplay[a.id],
                                   agentDraft: state.agentDraftDisplay(forItemID: a.id)))
@@ -360,6 +365,7 @@ final class DashboardViewModel: ObservableObject {
                                   completedAt: state.completedAt(a) ?? priorByID[a.id]?.completedAt,
                                   requiresNoSubmission: state.requiresNoSubmission(a),
                                   submitsOnPaper: state.submitsOnPaper(a),
+                                  isExternalTool: state.isExternalTool(a),
                                   canMarkActive: !state.completionIsLockedByCanvas(a),
                                   agentSubmittedBy: agentSubmitted[a.id]))
         }
