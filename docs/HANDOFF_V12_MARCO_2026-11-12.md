@@ -73,11 +73,39 @@ poster-scan tracker's own site. It is **not** Supabase and nothing in
 `backend/` knows about it. It is deployed by a ChatGPT session that owns the
 Sites project, from a zip this repo builds; `smooth-ambassadors/docs/deploy.md`
 says how. Two deploys are live (2026-11-11 and 2026-11-12). A third zip was
-handed to Olisa on 2026-11-12 and **whether it is deployed is not recorded
-here**: it removes the checklist from the web page, puts the job line on
-top, and carries the rewritten anonymous posts. Until it is live, the app's
-"today" post and "more messages" still show the older, shorter texts,
-because the server writes them.
+handed to Olisa on 2026-11-12 and **was not deployed** (the live site read
+on 2026-11-18 still had the checklist and the older posts). A newer zip of
+2026-11-18 replaces it and also carries everything in section 2a below.
+Until it is live, the app's "today" post and "more messages" still show the
+older, shorter texts, and the three new sections of 2a stay hidden, because
+the server writes all of them.
+
+### 2a. Added on 2026-11-18, after this page was first written
+
+Olisa posted twice on Sidechat without a pitch (a question, and Smooth
+slipped into a ranking) and both did well, so he asked for the ambassador
+page to teach that, and for two ways to learn from each campus:
+
+- **"what works"**, second on the page: one line ("the posts that work
+  don't look like ads."), five short steps and the two examples. The text
+  comes from the server (`plan.playbook`), so it can change without a build.
+- **"from the founders"**, when there is anything: posts Olisa or you wrote
+  for that ambassador on the founder page, each with a copy button.
+- **"help us help you"**, after the posters: "show us your feed" (the
+  ambassador picks a screen recording of their school's anonymous app; the
+  phone cuts up to 16 stills out of it and sends the stills, never the
+  video) and "how did a post do" (a screenshot, the app, the kind of post,
+  upvotes and views).
+- New files: `FeedRecordingSheet.swift`, `PostResultSheet.swift`,
+  `FeedRecordingFrames.swift` in the Kit. `docs/PRIVACY.md` says what the
+  two uploads send.
+
+It compiled and passed on the runner (CLAUDE.md → Test baseline) and has
+never run on a phone. The parts only a phone can settle: picking a video in
+the photo picker and getting it as a file, cutting stills from a real
+screen recording, and how long that takes on a two-minute clip. This is
+five sections of copy on a page you have not designed, so it is squarely in
+"your pass on the page" below.
 
 Rules that are easy to break by accident:
 

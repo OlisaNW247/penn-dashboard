@@ -1250,7 +1250,38 @@ Keep this current. It is the fastest way for a new session to know what exists.
      would say so), and Ed is never named, because it is read at Penn
      only while the rest is true at any school. Known and not fixed: Yik
      Yak is reported to cap a post at 200 characters, which every post
-     exceeded with its link even before this. **Since 2026-11-11 (Olisa: "clear where they can
+     exceeded with its link even before this. **Since 2026-11-18 the page
+     also teaches what works and collects what each campus looks like**
+     (Olisa, after two of his own Sidechat posts did well with no pitch in
+     them, a question at 22 upvotes and Smooth slipped into a frat ranking
+     at 65: "have these 2 be examples and then encourage the ambassador to
+     scroll through their own anonymous chat page to see what is already
+     viral", "allow for ambassadors to screenrecord the current state of
+     their schools anonymous chat forum", "submit screenshots of how their
+     posts perform"). Three sections, each hidden when the server sends
+     nothing for it: **"what works"**, second on the page (`plan.playbook`:
+     a lead, five steps, the two examples; the ranking example names no
+     real fraternity, `[frat]` stands in, because the repo is public and an
+     ambassador elsewhere has to write their own anyway); **"from the
+     founders"** (`plan.suggested`: posts a founder wrote for that one
+     ambassador on the founder page, with copy buttons); and **"help us
+     help you"** after the posters, two rows. "show us your feed" opens
+     `FeedRecordingSheet`: a `PhotosPicker` for one screen recording, which
+     `FeedRecordingFrames` (Kit, AVFoundation) turns into at most 16 JPEG
+     stills of at most 200,000 bytes on the phone; the stills are sent one
+     by one under one batch id and **the video never leaves the phone**
+     (the site keeps pictures as text in D1, where a video cannot go, and
+     stills are what a founder reads anyway). "how did a post do" opens
+     `PostResultSheet`: one screenshot, the app it was on, the kind of post
+     and the upvotes and views the ambassador types. Both go to
+     `POST /a/{code}/capture`; only founders can see them; the founder page
+     lists recordings and results (with averages by kind of post) and has
+     "send a post to try". Limits are the server's: 32 stills a day and 96
+     stored, 8 results a day and 60 stored, 1,500 pictures across everyone.
+     The website has the same three things, with screenshots where the app
+     takes a recording. `docs/PRIVACY.md` changed in the same commit.
+     Compiled and tested on the runner, reviewed for security, driven in
+     Chromium; never on a phone. **Since 2026-11-11 (Olisa: "clear where they can
      access all posters and view the dashboard", "a clear option to upload
      poster ideas") a "posters" section sits right after today's post**:
      "all posters" opens an in-app gallery of the school's designs as a
@@ -1519,7 +1550,24 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v12` (2026-11-12, degree progress switched off): 3880 tests /
+**Current on `v12` (2026-11-18, the ambassador playbook and uploads): 3896
+tests / 382 suites, all green, `swift test --no-parallel` on the GitHub
+macOS runner in 111 s, with the unsigned iOS `xcodebuild`, Deno and the
+extension suite green in the same run (manual run 44416363502 at
+`9299202`; the commits after it change only `smooth-ambassadors/` and
+notes).** +16 tests and +5 suites over 3880 / 377, all in
+`AmbassadorTests.swift`: the three new plan keys decoding (and a malformed
+one not costing the plan), `FeedRecordingFrames.sampleTimes` and the batch
+id, the two request bodies, the model's feed and result paths against the
+fake, and the page-order scan. It took two runs: the first failed on
+`AmbassadorPlan.swift` alone, where an edit had pasted the new types between
+two of `Poster`'s properties. No test cuts stills from a real video; that
+needs a phone. The ambassador Worker's own suite (separate, never added to
+these counts): 68 pass with `npm test`, and 54 of 54 with the built
+single-file artifact beside the original site (`test/sites.test.mjs`), plus
+the rehearsal on the real scan backup, 22 checks, none failing.
+
+Before it: **on `v12` (2026-11-12, degree progress switched off): 3880 tests /
 377 suites, all green, `swift test --no-parallel` on the GitHub macOS runner
 in 116 s, with the unsigned iOS `xcodebuild`, Deno and the extension suite
 green in the same run (manual run 43287443467 at `1ed52b2`; the commits
@@ -2925,6 +2973,18 @@ itself.
 
 ## Traps that have already bitten
 
+- **A strict check on a value that was trimmed first is not strict.** The
+  founder routes refuse any id that is not plain digits
+  (`/^[1-9][0-9]{0,9}$/`), a rule added on 2026-11-11 after `-1` and `1e3`
+  were coerced into row 1. On 2026-11-18 the verifier posted `id="1 "` to
+  the new `capture-delete` and a row was deleted: `form()` trims every
+  value on the way in, so the check saw `"1"`. The same was true of every
+  older founder action. Ids are now checked against the raw, untrimmed
+  value (`rawId` in `smooth-ambassadors/worker/ambassadors.js`), and text
+  fields keep their trimming. The wrong fix is adding `\s*` to the pattern
+  or dropping the trim for everything: the first makes the check agree with
+  the bug, the second changes what a pasted feedback box stores. When a
+  rule is about what was sent, apply it to what was sent.
 - **A count and then an insert is not a limit.** Poster ideas
   (2026-11-11) were capped at five a day per ambassador by reading the
   count and inserting if it was under five. The verifier sent twenty at
@@ -4055,7 +4115,25 @@ none is a ship line.
   `plan.json` decodes on a device. He reported nothing about the posters
   section, the gallery or an idea upload. The job-first layout that
   followed (checklist removed, web page on top) and its website twin
-  compiled on the runner and are not yet on the phone or deployed. Unseen:
+  compiled on the runner and are not yet on the phone or deployed. **Read
+  on 2026-11-18: the live site is still the second deploy**; the zip of
+  2026-11-12 never went up, and the zip of 2026-11-18 replaces it. Until
+  that one is deployed the app shows the old posts and none of the
+  2026-11-18 sections, which is the correct quiet behaviour against an
+  older server and also means nobody can try them. **The 2026-11-18 work
+  has never run on a phone.** What only a phone settles: that the photo
+  picker hands a screen recording over as a file (`PickedMovie`'s
+  `FileRepresentation` was written without a compiler and has only been
+  compiled, never run); that `AVAssetImageGenerator` cuts readable stills
+  from a real iOS screen recording, and how long sixteen take on a
+  two-minute clip (nothing shows progress while it reads beyond a
+  spinner); that a still of a dark feed at 1200 pixels and 200 KB is
+  legible; and the two sheets in dark mode. The stills are evenly spaced,
+  not chosen: a fast scroll can land between posts, and near-duplicates
+  are not dropped. On the website the upload script ran in desktop
+  Chromium only, so iOS Safari and HEIC screenshots are untried. The
+  founder page has no way to see how full the picture store is short of
+  the 429. Unseen:
   the
   daily notification firing and surviving the next reschedule pass (the
   carve-out is unit-tested, the center is not), a cold launch from its

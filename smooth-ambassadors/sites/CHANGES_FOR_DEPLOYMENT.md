@@ -46,7 +46,8 @@ What that means for the deploy:
   `AMBASSADORS.md` and the new reference migration. Every existing route,
   every existing `plan.json` key and the public dashboard are unchanged.
 - **Storage.** Pictures are base64 text in D1. The worst case is about
-  34 MB per ambassador and about 540 MB at the global ceiling. If the Sites
+  34 MB per ambassador and about 600 MB at the global ceiling (nearer
+  200 MB in practice, since a shrunk screenshot is about 100 KB). If the Sites
   database has a size limit below that, say so and the ceiling
   (`CAPTURES_GLOBAL_LIMIT` in the generated section) can be lowered.
 - Check after deploying (no `/scan/...` or `/r/...` link needs opening):

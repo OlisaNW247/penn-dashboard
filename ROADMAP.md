@@ -55,7 +55,10 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   phone, the daily reminder and its tap, dark mode), the merge with `v11`
   (five files conflict, six Swift files merge without a marker and need
   reading), a test code and paragraph for App Review, a new build number,
-  and the third server zip if it is not deployed yet.
+  and the server zip of 2026-11-18, which is not deployed (it replaces the
+  one of 2026-11-12, which never went up). Also unseen on any phone: the
+  2026-11-18 sections (what works, from the founders, the feed recording
+  and post-result sheets).
 - **Degree progress is switched off** (2026-11-12, Olisa: not ready;
   `FeatureFlags.degreeProgress = false`, nothing deleted). The item below is
   what turning it back on still needs.
@@ -948,6 +951,16 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-18.** Ambassador mode learns from what worked. Olisa's two
+  Sidechat posts that did well (a question; Smooth slipped into a ranking)
+  are the examples in a new "what works" section, which tells an
+  ambassador to scroll their own feed first and copy the format. Two new
+  uploads: a screen recording of their school's feed (the phone sends
+  stills cut from it, not the video) so the founders can write posts for
+  that campus, and a screenshot of how a post did with its upvotes and
+  views. The founder page can send an ambassador a post to try. On `v12`,
+  compiled on the runner, not on a phone; the server half is a zip waiting
+  for a deploy.
 - **2026-11-12.** Ambassador mode after its first look on a phone: the
   "getting started" checklist is gone, the page opens on the job and a
   filled "open my web page" button, feedback is "feedback and ideas" and

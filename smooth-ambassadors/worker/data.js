@@ -236,8 +236,9 @@ export const SUGGESTION_LIMIT = 20;
 // ambassador's limits are independent, so a roster of thirty leaked or hostile
 // codes could store about a gigabyte in a database that holds the founders' real
 // numbers. A global number bounds the whole table whatever the roster size.
-// 1500 rows is roughly 300 MB at the very worst and far less in practice (a
-// downscaled screenshot is nearer 100 KB). Founders make room by deleting
+// 1500 rows is 450 MB decoded at the very worst (every row a 300,000-byte
+// result), about 600 MB as base64 text, and far less in practice (a downscaled
+// screenshot is nearer 100 KB, so nearer 200 MB of text). Founders make room by deleting
 // recordings and results they have dealt with.
 export const CAPTURES_GLOBAL_LIMIT = 1500;
 
