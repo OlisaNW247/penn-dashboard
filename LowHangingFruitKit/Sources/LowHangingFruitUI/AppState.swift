@@ -271,6 +271,28 @@ final class AppState: ObservableObject {
     /// dashboard is mounted, which is also when there is nothing to re-plan
     /// from. `disconnectCanvas` runs it (`replanRemindersAfterDisconnect`).
     var reminderReplanner: (@MainActor () async -> Void)?
+
+    /// Takes back the reminders, buzzes and Sweeper alarm of work a source has
+    /// just confirmed submitted, at the moment of observation rather than at
+    /// the next full re-plan. Wired where `reminderReplanner` is (`ContentView`
+    /// and `LHFBackgroundRefresh.run()`), for the same reason: the scheduler
+    /// and the dashboard's items belong to the view layer. It receives ids
+    /// that may be ledger ids, a twin's `linkedID` or Canvas assignment ids;
+    /// `SubmissionObservation.cancellations` matches all three. Nil while no
+    /// dashboard is mounted. Never completes anything.
+    var submissionCanceller: (@MainActor (Set<String>, WakeSource) async -> Void)?
+
+    /// The one door the three observation points use (the grades fetch, the
+    /// structured sources and Gradescope, plus the last-hour poll). The
+    /// callers are synchronous, so the cancel is fired in a main-actor `Task`:
+    /// the cancel is a few removals and an AlarmKit call that must not hold up
+    /// a sync, and its ordering against a re-plan is the scheduler's
+    /// serializer's job, not the caller's. Empty sets and fixture data do
+    /// nothing.
+    func noteSubmittedIDs(_ ids: Set<String>, source: WakeSource) {
+        guard !ids.isEmpty, !isUsingFixtureData, let canceller = submissionCanceller else { return }
+        Task { @MainActor in await canceller(ids, source) }
+    }
     private var pendingReminderReplan: Task<Void, Never>?
 
     /// Assignments whose completion `commitCompletion` has already written to
@@ -504,6 +526,14 @@ final class AppState: ObservableObject {
     /// Test seams: a canned fetch result and the course list to read it with.
     var structuredSourcesRunForTesting: CanvasStructuredSourcesClient.RunResult?
     var structuredSourcesCoursesForTesting: [CourseSummary]?
+    /// Test seam for the last-hour planner read (`fetchPlannerWindowForPoll`).
+    /// Where the Sweeper's counts are kept (`SweeperCounts`); a test points it
+    /// at a scratch suite so it never writes the shared defaults domain.
+    var sweeperCountsDefaults: UserDefaults = .lhf
+    var plannerWindowFetchForTesting: (@Sendable (Date, Date) async -> PlannerWindowResult)?
+    /// What the latest planner window read said, for the poller's back-off
+    /// (rate limit, the bucket's remaining requests). Memory only.
+    var lastPlannerWindowResult: PlannerWindowResult?
 
     // Facts the server read out of pooled course posts (`AppState+AppliedFacts.swift`).
     // Stored here because an extension cannot hold stored properties. Nil under
@@ -5711,11 +5741,18 @@ final class AppState: ObservableObject {
                 previous: gradescopeItems
             )
             // Same durable reconciliation as Canvas (see `sync()`).
+            // What was already read as submitted, taken before the reconcile
+            // so the cancel below is only for work that turned submitted in
+            // THIS read (a hook on the result; the scrape is untouched).
+            let gradescopeSubmittedBefore = Set(gradescopeItems.filter { $0.submitted }.map(\.id))
             if let store = assignmentStore {
                 reconcileGradescopeFetch(fetched, into: store)
             } else {
                 gradescopeItems = fetched
             }
+            noteSubmittedIDs(
+                Set(gradescopeItems.filter { $0.submitted }.map(\.id)).subtracting(gradescopeSubmittedBefore),
+                source: .gradescope)
             lastGradescopeSync = Date()
             // Re-stamp the Gradescope session after every authenticated
             // fetch, as Canvas already does (`GradeWatcherStore`,
@@ -9610,6 +9647,13 @@ final class AppState: ObservableObject {
             if !notifications.isEmpty {
                 pendingTurnedInNotices += notifications
             }
+            // Cancel the alarm now, not at the next re-plan. Deliberately not
+            // `newlySubmitted`: that set is shaped for notices (no-submission
+            // items removed); a cancel for such an item is harmless and its
+            // alarm never existed. These are Canvas assignment ids, which
+            // `SubmissionObservation.cancellations` matches through
+            // `canvasAssignmentID`.
+            noteSubmittedIDs(observedSubmitted.subtracting(previousSubmittedIDs), source: .grades)
         }
 
         // Self-healing no-submission id cache (the dashboard card's caveat

@@ -30,6 +30,8 @@ struct ContentView: View {
     @StateObject private var vm: DashboardViewModel
 
     @Environment(\.scenePhase) private var scenePhase
+    /// The last-hour poll (`LastHourPoller`): runs while the scene is active.
+    @State private var lastHourPoller = LastHourPoller()
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
     @Environment(\.feedbackNoticeContext) private var feedbackNoticeContext
@@ -281,6 +283,19 @@ struct ContentView: View {
                 vm.reload(preservingEdits: true)
                 await scheduler.reschedule(from: vm.items)
             }
+            // Work a source has just confirmed submitted: take its reminders,
+            // buzzes and alarm back now, through the scheduler's serializer,
+            // instead of at the next full re-plan. Never completes anything.
+            state.submissionCanceller = { [weak vm, weak scheduler] ids, source in
+                guard let vm, let scheduler else { return }
+                let started = Date()
+                let counts = await scheduler.cancelForSubmitted(ids, items: vm.items, source: source)
+                #if DEBUG
+                DebugWakeLog.record(source: source, outcome: "cancel", duration: Date().timeIntervalSince(started),
+                                    cancelledRequests: counts.requests, cancelledAlarms: counts.alarms)
+                #endif
+                _ = counts
+            }
             // Berserk alarms never ring for preview or demo data. The scheduler
             // asks at every reschedule (`BerserkAlarmPlan.alarmsAllowed`), so a
             // probe rather than a flag copied in here, where it would go stale
@@ -400,6 +415,7 @@ struct ContentView: View {
             // itself. If it replans before that drain, the drain's own
             // replan (`needsReplan`) follows and takes the finished item's
             // buzzes back out.
+            lastHourPoller.start(state: state, scheduler: scheduler, vm: vm)
             await refreshSessionSourcesAtLaunch()
             // Silent auto-refresh loop while the dashboard is on screen.
             while !Task.isCancelled {
@@ -410,13 +426,20 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
+                lastHourPoller.start(state: state, scheduler: scheduler, vm: vm)
                 Task {
                     await scheduler.refreshAuthStatus()
                     // Before `refresh()`, whose first step is the network. See
                     // `replanFromLedger`.
                     await replanFromLedger()
+                    // Inside the last hour before an alarm, ask Canvas's
+                    // planner now, ahead of `refresh()` and its grades fetch
+                    // (which the 15-minute throttle may skip).
+                    await pollInsideTheHour(source: .foreground)
                     await refresh()
                 }
+            } else {
+                lastHourPoller.stop()
             }
         }
         // The reconnect cover (below) keeps this view mounted, so nothing
@@ -1049,8 +1072,21 @@ struct ContentView: View {
         // and only a `.dead` answer starts the renewal waited on next.
         await state.awaitPendingSessionProbe()
         await state.awaitPendingSilentRenewal()
+        // The throttle lift: inside the last hour before an alarm, one planner
+        // read now, before the grades fetch and regardless of its throttle.
+        await pollInsideTheHour(source: .launch)
         await fetchSessionSources()
         await settleAfterFetch()
+    }
+
+    /// One planner read when a Sweeper alarm is within the hour
+    /// (`AppState.pollPlannerWindowIfInsideTheHour`, the one place that is
+    /// decided). Skipped until the dashboard is bound, because `vm.items` is
+    /// empty before that and an empty list has no next ring.
+    private func pollInsideTheHour(source: WakeSource) async {
+        guard isDashboardBound else { return }
+        let ring = scheduler.nextSweep(in: vm.items)?.ringAt
+        await state.pollPlannerWindowIfInsideTheHour(nextRing: ring, source: source)
     }
 
     /// Reloads the dashboard from the ledger and re-plans the reminders and

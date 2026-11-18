@@ -3,7 +3,7 @@ import Foundation
 /// Where a check for a submission started. A fixed set, so a line can never
 /// carry anything else.
 enum WakeSource: String, Sendable {
-    case foreground, launch, poll, bg, push
+    case foreground, launch, poll, bg, push, grades, gradescope, structured
 }
 
 #if DEBUG

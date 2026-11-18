@@ -178,8 +178,13 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
      it afterwards.
   Also open: the phone's course-material sync reported `manifest failed ·
   uploaded 0 · errors 7` on 2026-11-03, which would starve extraction.
-- **The Sweeper rings only when it should** (the release after 3.5.0 (21);
-  planned 2026-11-16, not started). Marco's "Yes, plan it" of 2026-11-16
+- **The Sweeper rings only when it should** (for 3.5.0 (21), Marco's
+  decision of 2026-11-17/18; **Release 1 built 2026-11-18 on
+  `claude/sweeper-build-0a4dd0`, blind**, the server wake in progress on the
+  same branch; `docs/SWEEPER_BUILD_PLAN_2026-11-18.md` is the build order;
+  what is left is the device checks under CLAUDE.md → Known gaps and the
+  merge into the release line at Marco's word; the paragraph below is the
+  plan as written on 2026-11-16). Marco's "Yes, plan it" of 2026-11-16
   answered the research's one question: the server may hold, per install,
   an APNs device token and the minutes at which that install wants to be
   woken, and nothing about which course, which work, a session or a state.
@@ -1126,6 +1131,19 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-18.** Release 1 of the Sweeper accuracy plan, on
+  `claude/sweeper-build-0a4dd0` for 3.5.0, blind: a read that sees a
+  submission cancels that item's reminders, buzzes and AlarmKit alarm at
+  once (`cancelForSubmitted`, three observation points); only a confirmed
+  `.submitted` read cancels, an unknown read changes nothing
+  (`SubmissionRead`); the quiet rules by kind in one named rule
+  (`SweeperQuietReason`; the one new reason is a module row with no Canvas
+  id; manual tasks ring as before); a planner poll every minute inside the
+  last hour while open, and one read past the grades throttle at launch, on
+  return to the foreground and in a background wake
+  (`LastHourPoller`, `applyPlannerWindow`); `debugWakeLogV1` and
+  `sweeperCountsV1`. Not built, by the plan's own ask for Marco's word: the
+  zero-points and optional-title rules.
 - **2026-11-17.** The agent connection switched off for 3.5.0 (`FeatureFlags.agentConnection = false`, `claude/v12-isolate-ab8b22`, `docs/V12_ISOLATION_2026-11-17.md`): the flag already hid Profile, `smooth://link` and both passes; the cached-draft chip and prev's "submitted by you" line, which read the phone's cache and attempt store and not the flag, now guard on `agentSurfacesAllowed`. Nothing deleted; `v11` keeps the feature.
 - **2026-11-12.** Ambassador mode after its first look on a phone: the
   "getting started" checklist is gone, the page opens on the job and a

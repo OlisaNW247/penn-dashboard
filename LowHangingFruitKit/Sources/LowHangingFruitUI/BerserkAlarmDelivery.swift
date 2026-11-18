@@ -44,12 +44,18 @@ protocol BerserkAlarmBackend: AnyObject {
     /// Stops one alarm (the student's own stop from inside the app). Stop,
     /// then cancel, errors ignored.
     func stopAlarm(id: UUID)
+    /// Cancels exactly these alarms, idle or ringing, errors ignored. For work
+    /// confirmed submitted (`NotificationScheduler.cancelForSubmitted`), which
+    /// removes an alarm days ahead of its ring. Defaulted so the Mac and the
+    /// fakes that do not care keep compiling.
+    func cancel(ids: Set<UUID>)
 }
 
 extension BerserkAlarmBackend {
     func alertingAlarmIDs() -> [UUID]? { [] }
     func alertingUpdates() -> AsyncStream<[UUID]> { AsyncStream { $0.finish() } }
     func stopAlarm(id: UUID) {}
+    func cancel(ids: Set<UUID>) {}
 }
 
 /// Where a reschedule puts its notifications: the notification center in the

@@ -183,6 +183,7 @@ public enum LHFBackgroundRefresh {
         // once Duo has asked, 20 s budget). `beginWake` sets it before it
         // returns.
         let wake = LiveAppStateRegistry.shared.beginWake()
+        SweeperCounts.increment(SweeperCounts.wakesBG)
         // `AppState.init` no longer recomputes the clock-only expiry when it
         // could probe (it cannot know it is a background wake yet); now the
         // context is marked, recompute so a cold wake still gets its
@@ -192,6 +193,26 @@ public enum LHFBackgroundRefresh {
         defer { wake.end() }
         let state = wake.state
         let scheduler = NotificationScheduler()
+
+        // Work a sync below confirms submitted is taken off the plan at that
+        // moment, not at the `replan` further down (a wake may not get that
+        // far). Bound only when no dashboard already did, and unbound at the
+        // end only if this wake bound it: a live `ContentView` owns its own.
+        // The items are built the way `replan` builds them, at call time.
+        let boundCanceller = state.submissionCanceller == nil
+        if boundCanceller {
+            state.submissionCanceller = { [scheduler, weak state] ids, source in
+                guard let state else { return }
+                let started = Date()
+                let counts = await scheduler.cancelForSubmitted(ids, items: dashboardItems(for: state), source: source)
+                #if DEBUG
+                DebugWakeLog.record(source: source, outcome: "cancel", duration: Date().timeIntervalSince(started),
+                                    cancelledRequests: counts.requests, cancelledAlarms: counts.alarms)
+                #endif
+                _ = counts
+            }
+        }
+        defer { if boundCanceller { state.submissionCanceller = nil } }
 
         // Fixture/demo/preview data must never trigger real network activity
         // — the foreground path relies on the same guard inside individual
@@ -208,6 +229,16 @@ public enum LHFBackgroundRefresh {
         await state.syncIfConfigured()
         await AutoSyncCoordinator.syncConnectedServices(state: state)
         await AutoSyncCoordinator.refreshCanvasGrades(state: state)
+
+        // The throttle lift: the grades fetch above is held to 15 minutes, so
+        // inside the last hour before an alarm this one planner read makes
+        // sure the wake has asked Canvas about the work whatever the throttle
+        // said. After the fetch, before the replan, so the replan plans from
+        // what it learned. Counts and a DEBUG line only; one request.
+        if scheduler.isEnabled {
+            let ring = scheduler.nextSweep(in: dashboardItems(for: state))?.ringAt
+            await state.pollPlannerWindowIfInsideTheHour(nextRing: ring, source: .bg)
+        }
 
         // Re-plan the reminders and alarms from what the syncs just found.
         // Until this existed a wake synced and could post "Turned in ✓" but
@@ -266,13 +297,21 @@ public enum LHFBackgroundRefresh {
     @MainActor
     private static func replan(scheduler: NotificationScheduler, state: AppState) async {
         guard scheduler.isEnabled else { return }
+        await scheduler.rescheduleWithoutPrompting(from: dashboardItems(for: state))
+    }
+
+    /// The dashboard's items as they stand now, from a view model bound to
+    /// `state`: what `replan`, the wake's planner read and the cancel at
+    /// observation all plan from.
+    @MainActor
+    private static func dashboardItems(for state: AppState) -> [DashItem] {
         let dashboard = DashboardViewModel()
         dashboard.bind(to: state)
         // `bind` has loaded once; this is the call the foreground makes after a
         // fetch (`ContentView.settleAfterFetch`), so the items are the post-sync
         // ones even if a publish from the syncs has not been handled yet.
         dashboard.reload(preservingEdits: true)
-        await scheduler.rescheduleWithoutPrompting(from: dashboard.items)
+        return dashboard.items
     }
 }
 #endif

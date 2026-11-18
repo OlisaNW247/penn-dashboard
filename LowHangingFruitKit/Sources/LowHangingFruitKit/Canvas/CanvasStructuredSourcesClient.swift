@@ -109,19 +109,10 @@ public struct CanvasStructuredSourcesClient: Sendable {
         var state = Budget()
 
         // User-wide endpoints first.
-        let plannerQuery = [
-            URLQueryItem(name: "start_date", value: Self.iso8601(plannerStart)),
-            URLQueryItem(name: "end_date", value: Self.iso8601(plannerEnd)),
-            URLQueryItem(name: "per_page", value: "100"),
-        ]
-        switch await pages(path: "api/v1/planner/items", query: plannerQuery, state: &state) {
-        case let .done(pages, complete):
-            let decoded = CanvasStructuredDecoding.decode(CanvasPlannerItem.self, fromPages: pages)
-            result.planner = decoded.elements
-            result.droppedCount += decoded.dropped
-            result.plannerCompleted = complete
-        case .failed:
-            break
+        if let planner = await plannerLeg(start: plannerStart, end: plannerEnd, state: &state) {
+            result.planner = planner.items
+            result.droppedCount += planner.dropped
+            result.plannerCompleted = planner.complete
         }
 
         if !state.stopped {
@@ -155,6 +146,37 @@ public struct CanvasStructuredSourcesClient: Sendable {
         result.rateLimited = state.rateLimited
         result.sessionExpired = state.sessionExpired
         return result
+    }
+
+    /// The planner leg of `fetch`, alone: the one request the last-hour poll
+    /// makes every minute while an alarm is about to ring. Same path, query
+    /// shape, paging, rate-limit floor and 401 handling as the planner leg of
+    /// a full run, because it is that code (`plannerLeg`). Never throws.
+    public func fetchPlannerWindow(start: Date, end: Date) async -> PlannerWindowResult {
+        var state = Budget()
+        let leg = await plannerLeg(start: start, end: end, state: &state)
+        return PlannerWindowResult(
+            items: leg?.items ?? [], completed: leg?.complete ?? false,
+            rateLimited: state.rateLimited, sessionExpired: state.sessionExpired,
+            remaining: state.lastRemaining)
+    }
+
+    /// Shared by `fetch` and `fetchPlannerWindow`; nil when the read failed
+    /// outright (no page at all).
+    private func plannerLeg(start: Date, end: Date, state: inout Budget)
+        async -> (items: [CanvasPlannerItem], dropped: Int, complete: Bool)? {
+        let plannerQuery = [
+            URLQueryItem(name: "start_date", value: Self.iso8601(start)),
+            URLQueryItem(name: "end_date", value: Self.iso8601(end)),
+            URLQueryItem(name: "per_page", value: "100"),
+        ]
+        switch await pages(path: "api/v1/planner/items", query: plannerQuery, state: &state) {
+        case let .done(pages, complete):
+            let decoded = CanvasStructuredDecoding.decode(CanvasPlannerItem.self, fromPages: pages)
+            return (decoded.elements, decoded.dropped, complete)
+        case .failed:
+            return nil
+        }
     }
 
     private func fetchCourse(_ course: inout CourseResult, state: inout Budget) async {
@@ -214,6 +236,8 @@ public struct CanvasStructuredSourcesClient: Sendable {
     private struct Budget {
         var rateLimited = false
         var sessionExpired = false
+        /// The newest `X-Rate-Limit-Remaining` any response carried.
+        var lastRemaining: Double?
         var stopped: Bool { rateLimited || sessionExpired }
     }
 
@@ -268,6 +292,7 @@ public struct CanvasStructuredSourcesClient: Sendable {
             }
             collected.append(stripped)
 
+            if let remaining = Self.remaining(in: http) { state.lastRemaining = remaining }
             if let remaining = Self.remaining(in: http), remaining < rateLimitFloor {
                 // This page is valid and kept; just stop asking for more.
                 state.rateLimited = true
@@ -319,3 +344,25 @@ public struct CanvasStructuredSourcesClient: Sendable {
         return formatter.string(from: date)
     }
 }
+
+/// The answer of one planner read on its own (`fetchPlannerWindow`).
+public struct PlannerWindowResult: Sendable, Equatable {
+    public var items: [CanvasPlannerItem]
+    /// Every page read, with nothing cut short. Only a complete read may
+    /// be believed about what a student has handed in.
+    public var completed: Bool
+    public var rateLimited: Bool
+    public var sessionExpired: Bool
+    /// The last `X-Rate-Limit-Remaining` seen, when Canvas sent one.
+    public var remaining: Double?
+
+    public init(items: [CanvasPlannerItem] = [], completed: Bool = false, rateLimited: Bool = false,
+                sessionExpired: Bool = false, remaining: Double? = nil) {
+        self.items = items
+        self.completed = completed
+        self.rateLimited = rateLimited
+        self.sessionExpired = sessionExpired
+        self.remaining = remaining
+    }
+}
+

@@ -31,6 +31,10 @@ enum SubmissionObservation {
             for offset in LeadOffset.allCases {
                 requestIDs.append("\(NotificationScheduler.requestIdentifierPrefix)\(a.id):\(offset.rawValue)")
             }
+            // The Sweeper's fallback buzzes (`loud:<id>:<1...loudAlertCount>`):
+            // when AlarmKit is unavailable or refused, these three pending
+            // requests are the whole alert, and they are not `due:` requests.
+            requestIDs.append(contentsOf: NotificationScheduler.loudIdentifiers(forAssignmentID: a.id))
             guard let due = item.due else { continue }
             for minutes in NotificationScheduler.sweeperMinuteOptions {
                 let fireDate = due.addingTimeInterval(-TimeInterval(minutes * 60))

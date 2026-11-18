@@ -221,12 +221,38 @@ final class NotificationScheduler: ObservableObject {
     /// behind a foreground pass must not be allowed to prompt just because
     /// the pass it joined was.
     private struct PassRequest {
-        let items: [DashItem]
+        /// Nil for a pass that only cancels (`cancelForSubmitted`).
+        let items: [DashItem]?
         let mayPrompt: Bool
+        /// Cancels for work confirmed submitted, applied before any re-plan in
+        /// the same pass. They ride in the request, and `merge` below
+        /// concatenates them, so a cancel folded into a running pass is never
+        /// lost to a later re-plan replacing it (nor a re-plan to a cancel).
+        var cancels: [CancelJob] = []
+
+        init(items: [DashItem]?, mayPrompt: Bool, cancels: [CancelJob] = []) {
+            self.items = items
+            self.mayPrompt = mayPrompt
+            self.cancels = cancels
+        }
+
+        static func merged(waiting: PassRequest, arriving: PassRequest) -> PassRequest {
+            // A re-plan is a function of its items, so the newest one wins; a
+            // cancel-only arrival keeps the waiting re-plan.
+            let items = arriving.items ?? waiting.items
+            let mayPrompt = arriving.items != nil ? arriving.mayPrompt : waiting.mayPrompt
+            return PassRequest(items: items, mayPrompt: mayPrompt, cancels: waiting.cancels + arriving.cancels)
+        }
+    }
+
+    private struct CancelJob {
+        let ids: Set<String>
+        let items: [DashItem]
+        let source: WakeSource
     }
 
     /// Makes `reschedule` run one pass at a time; see `RescheduleSerializer`.
-    private let reschedulePasses = RescheduleSerializer<PassRequest>()
+    private let reschedulePasses = RescheduleSerializer<PassRequest>(merge: PassRequest.merged)
 
     private static let enabledKey      = "notif.enabled"
     private static let offsetsKey      = "notif.leadOffsets"
@@ -482,14 +508,71 @@ final class NotificationScheduler: ObservableObject {
     }
 
     private func submitPass(_ request: PassRequest, now: Date) async {
-        lastScheduledItems = request.items
-        rescheduleGeneration += 1
+        if let items = request.items {
+            lastScheduledItems = items
+            rescheduleGeneration += 1
+        }
         var firstPassNow: Date? = now
         await reschedulePasses.submit(request) { request in
             let passNow = firstPassNow ?? Date()
             firstPassNow = nil
-            await self.performReschedule(from: request.items, now: passNow, mayPrompt: request.mayPrompt)
+            for job in request.cancels { self.performCancel(job) }
+            if let items = request.items {
+                await self.performReschedule(from: items, now: passNow, mayPrompt: request.mayPrompt)
+            }
         }
+    }
+
+    /// Takes back, at once, the reminders, buzzes and Sweeper alarm of work a
+    /// source has just confirmed submitted, instead of waiting for the next
+    /// full re-plan (up to 15 minutes later, or a background wake that may not
+    /// come: Marco's 2026-11-03 reminder fifteen minutes after he handed in).
+    ///
+    /// Runs through the same serializer as `reschedule`, so it cannot
+    /// interleave with a pass that is adding the very requests it removes. If a
+    /// pass is running the job is folded into it and runs first in the rerun;
+    /// the return value is then (0, 0), the real counts being in
+    /// `SweeperCounts`. **Never completes anything**: a Canvas-observed
+    /// submission is `canvasSubmitted`, not the student's own tick, and the
+    /// next ordinary re-plan drops the item by its own rules anyway. Only a
+    /// confirmed `.submitted` read gets here; the alarm stays armed days ahead
+    /// otherwise.
+    @discardableResult
+    func cancelForSubmitted(_ ids: Set<String>, items: [DashItem],
+                            source: WakeSource = .foreground) async -> (requests: Int, alarms: Int) {
+        guard !ids.isEmpty else { return (0, 0) }
+        let before = lastCancelCounts
+        let job = CancelJob(ids: ids, items: items, source: source)
+        await reschedulePasses.submit(PassRequest(items: nil, mayPrompt: false, cancels: [job]), perform: { request in
+            for job in request.cancels { self.performCancel(job) }
+            if let items = request.items {
+                await self.performReschedule(from: items, now: Date(), mayPrompt: request.mayPrompt)
+            }
+        })
+        let after = lastCancelCounts
+        return (after.requests - before.requests, after.alarms - before.alarms)
+    }
+
+    /// Running totals of what cancels removed, read as a difference by
+    /// `cancelForSubmitted` so it can report its own counts.
+    private var lastCancelCounts: (requests: Int, alarms: Int) = (0, 0)
+
+    private func performCancel(_ job: CancelJob) {
+        let plan = SubmissionObservation.cancellations(submittedAssignmentIDs: job.ids, items: job.items)
+        guard !plan.requestIDs.isEmpty || !plan.alarmIDs.isEmpty else { return }
+        let sink: any PendingNotificationSink = notificationSinkOverride ?? self
+        sink.removePending(identifiers: plan.requestIDs)
+        if let backend = activeAlarmBackend() {
+            // A ringing alarm is stopped first (stopping is what silences it),
+            // then every id the item could have been scheduled under is
+            // cancelled; ids AlarmKit never held are ignored.
+            backend.stopRinging(among: plan.alarmIDs)
+            backend.cancel(ids: plan.alarmIDs)
+        }
+        lastCancelCounts.requests += plan.requestIDs.count
+        lastCancelCounts.alarms += plan.alarmIDs.count
+        SweeperCounts.increment(SweeperCounts.cancelledAtObservation, by: 1, defaults: defaults)
+        SweeperCounts.increment(SweeperCounts.cancelledKey(job.source.rawValue), by: 1, defaults: defaults)
     }
 
     private func performReschedule(from items: [DashItem], now: Date, mayPrompt: Bool) async {

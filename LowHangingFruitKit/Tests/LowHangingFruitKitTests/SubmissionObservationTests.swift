@@ -16,6 +16,7 @@ struct SubmissionObservationTests {
 
     func expectedRequests(_ id: String) -> Set<String> {
         Set(LeadOffset.allCases.map { "due:\(id):\($0.rawValue)" })
+            .union((1...NotificationScheduler.loudAlertCount).map { "loud:\(id):\($0)" })
     }
 
     func expectedAlarms(_ id: String, due: Date) -> Set<UUID> {
@@ -34,7 +35,7 @@ struct SubmissionObservationTests {
         let a = item("a", due: due), b = item("b", due: due)
         let r = SubmissionObservation.cancellations(submittedAssignmentIDs: [a.id], items: [a, b])
         #expect(Set(r.requestIDs) == expectedRequests(a.id))
-        #expect(r.requestIDs.count == LeadOffset.allCases.count)
+        #expect(r.requestIDs.count == LeadOffset.allCases.count + NotificationScheduler.loudAlertCount)
         #expect(r.alarmIDs == expectedAlarms(a.id, due: due))
         #expect(r.alarmIDs.count == NotificationScheduler.sweeperMinuteOptions.count * SweeperSound.allCases.count)
         #expect(r.requestIDs.allSatisfy { !$0.contains(b.id) })
@@ -64,10 +65,20 @@ struct SubmissionObservationTests {
     func undatedAndNoMatch() {
         let undated = item("a", due: nil)
         let r = SubmissionObservation.cancellations(submittedAssignmentIDs: [undated.id], items: [undated])
-        #expect(r.requestIDs.count == LeadOffset.allCases.count)
+        #expect(r.requestIDs.count == LeadOffset.allCases.count + NotificationScheduler.loudAlertCount)
         #expect(r.alarmIDs.isEmpty)
         let none = SubmissionObservation.cancellations(submittedAssignmentIDs: ["nope"], items: [undated])
         #expect(none.requestIDs.isEmpty && none.alarmIDs.isEmpty)
+    }
+
+    @Test("The three fallback buzzes are cancelled too, exactly loudAlertCount per matched item")
+    func loudBuzzes() {
+        let a = item("a", due: due), b = item("b", due: due)
+        let r = SubmissionObservation.cancellations(submittedAssignmentIDs: [a.id], items: [a, b])
+        let loud = r.requestIDs.filter { $0.hasPrefix("loud:") }
+        #expect(loud.count == NotificationScheduler.loudAlertCount)
+        #expect(Set(loud) == Set(NotificationScheduler.loudIdentifiers(forAssignmentID: a.id)))
+        #expect(loud.allSatisfy { !$0.contains(b.id) })
     }
 
     @Test("The request id prefix is the scheduler's own")

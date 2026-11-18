@@ -1350,6 +1350,46 @@ Keep this current. It is the fastest way for a new session to know what exists.
      before your miss an assignment.", corrected on 2026-10-24) was removed
      the same evening at Olisa's word, seeing it on his phone ("Remove the
      text under smooth sweeper"); the section ends at the classes row.
+     **The Sweeper rings only when it should, Release 1 (2026-11-18,
+     `claude/sweeper-build-0a4dd0`, for 3.5.0; compiled and tested, never
+     on a phone; `docs/SWEEPER_BUILD_PLAN_2026-11-18.md`, built from
+     `docs/SWEEPER_ACCURACY_PLAN_2026-11-16.md`).** Marco's rule, verbatim:
+     "no dont want no alarm option as this cd lead to someone missing an
+     assignemnt". So the alarm is still armed days ahead from `plannedAlarms`
+     exactly as before, and the work is the cancel. (1) **Cancel at
+     observation:** the moment a read sees an item submitted, that item's
+     pending reminders (`due:<id>:<offset>`), its three buzzes
+     (`loud:<id>:<n>`) and its AlarmKit alarm under every `(minutes, sound)`
+     the Sweeper can resolve to (`SubmissionObservation.cancellations`) are
+     taken back and a ringing one stopped (`NotificationScheduler.
+     cancelForSubmitted`, inside the `RescheduleSerializer` so it never
+     interleaves with a pass; the replan's diff is now the backstop). Three
+     observation points call it through `AppState.submissionCanceller`:
+     `updateSubmissionState` (the grades fetch, `observedSubmitted` minus
+     the previous set), `applyStructuredSources` (a Planner tick or
+     `submitted` flag newly in `structuredCompletedItemIDs`) and
+     `syncGradescope` (a Gradescope row whose `submitted` went true). Nothing
+     calls `markCompleted`: a Canvas-observed submission is `canvasSubmitted`,
+     never the student's tick (Traps). (2) **Only a confirmed read cancels:**
+     `SubmissionRead` names what a read said (`submitted`, `unsubmitted`,
+     `unknown`) and only `.submitted` cancels; a 401, a 403, a truncated
+     page or an item absent from it is `.unknown`, counted in
+     `sweeperCountsV1.readsUnknown`, and changes nothing (Traps, "an
+     unknown read is not an unsubmitted one"). (3) **Quiet by kind, one
+     rule with a name per reason** (`SweeperQuietReason`,
+     `SweeperSettings.quietReason(for:)`; `qualifies` is that rule plus the
+     date checks, so the planner and the Sweeper page's countdown card can
+     never disagree): in class, off canvas (both the old nothing-to-submit
+     set), recurring, found exam, class off, reminders off, and the one new
+     reason, a `.canvasModules` row Canvas never resolved into an assignment
+     (`noConfirmableID`: nothing could ever confirm it). A `.canvas` row
+     rings whatever its URL, a Gradescope row has its id by construction,
+     and **the student's own manual tasks ring exactly as before** (the
+     overseer's correction of 2026-11-18: the swipe that finishes one already
+     cancels its alarm, and silence is the dangerous side). The plan's
+     zero-points and optional-title rules are not built: the word list
+     needs Marco's word. No new student-facing switch. (4) **The last-hour
+     poll:** see Background.
   5. classes (rename, hide, delete/restore; "add recurring task")
   6. notifications (per-class reminders, lead times, announcements on
      dashboard, items with nothing to submit, the announcement "ai assist"
@@ -1488,6 +1528,33 @@ Keep this current. It is the fastest way for a new session to know what exists.
   foreground (seen 2026-10-23: twenty silent minutes after an install).
   Marco's `parked/launch-submission-refresh` was the source; merged as
   written it would have run the drains at launch too.
+  **The last-hour planner poll (2026-11-18, Release 1 of the Sweeper
+  accuracy work, blind).** While Smooth is in the foreground and the next
+  Sweeper ring (`NotificationScheduler.nextSweep`) is inside the next 60
+  minutes, `LastHourPoller` (owned by `ContentView`, started on `.active`
+  and at launch, stopped on `.background`) reads
+  `GET /api/v1/planner/items` once a minute for the window `[now − 1 h,
+  now + 2 h]` with the saved Canvas cookies
+  (`CanvasStructuredSourcesClient.fetchPlannerWindow`, the planner leg of
+  the structured-sources run factored out, nothing else in that client
+  changed) and hands the answer to `AppState.applyPlannerWindow`, which
+  applies only `submitted` / `marked_complete` to the additive
+  `structuredCompletedItemIDs` (a student's un-tick override wins) and
+  cancels at observation. It never touches dismissals, section dates or
+  module rows, never calls `refreshCanvasGrades`, and is outside that
+  fetch's 15-minute throttle by construction (`LastHourPoll.cadence` is the
+  pure rule). A 403, a rate-limit answer or `X-Rate-Limit-Remaining` under
+  100 backs the poll off five minutes (`pollsBackedOff`); no saved session
+  backs off the same without counting. **The throttle lift:** a cold
+  launch (`refreshSessionSourcesAtLaunch`), a return to the foreground
+  (`.active`) and a `BGAppRefreshTask` wake each make one planner read at
+  once when a ring is inside the hour
+  (`AppState.pollPlannerWindowIfInsideTheHour`, the one method all four
+  callers share; in the wake it sits after `refreshCanvasGrades` and before
+  `replan`, pinned by `LaunchRefreshStructureTests`). Every read and wake
+  writes a `debugWakeLogV1` line (Commands). The rate-limit headers Penn's
+  Canvas returns to the poll have not been read off a phone yet (Known
+  gaps).
 - **Widget** (`LHFWidget/`, a separate process). Next-due list in small and
   medium; lock-screen inline, rectangular, and circular ("N due" within 24
   hours). It shows the app's published snapshot whenever one decodes,
@@ -1796,6 +1863,19 @@ value). It prints `LHF-DIAG` lines and keeps them in `UserDefaults.lhf`
 `debugSessionDiagnosticsV1`. Run it before `-LHFAgeCanvasSession`, or
 together with it (the snapshot is taken first).
 
+Since 2026-11-18 (blind) a DEBUG build also keeps `debugWakeLogV1` in
+`UserDefaults.lhf` (last 50 lines, `DebugWakeLog`): one line per Sweeper
+read or wake, "<time> <source> <outcome> <ms>ms cancelled <n> request(s)
+<m> alarm(s)", where source is `foreground`, `launch`, `poll`, `bg`,
+`push`, `grades`, `gradescope` or `structured`; never a title, id or URL.
+Beside it, in Release and DEBUG alike, `sweeperCountsV1` (`SweeperCounts`):
+`armed`, `cancelledAtObservation.<source>`, `readsUnknown`, `polls`,
+`pollsBackedOff`, `wakes.bg`, `wakes.push`, `moments.sent`. Counts only.
+Read both off the App Group plist with the `devicectl` copy above. They
+exist because the 2026-11-16 plan says the Sweeper's accuracy is proven by
+counts (`rangSubmitted` to zero), and nothing on a device said before
+which read did the work.
+
 Since 2026-10-19 (blind) the App Group plist also holds one-line summaries of the
 last announcement sync (`lastAnnouncementSyncSummaryV1`: where it exited,
 Canvas count, eligible, finds, errors, processed, the first error's kind,
@@ -1837,6 +1917,21 @@ account signed into Xcode. Submitting for review is a separate, manual
 step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
+
+**Current on `claude/sweeper-build-0a4dd0` (2026-11-18, Release 1 of the
+Sweeper accuracy work): 4213 tests / 415 suites, `swift test --no-parallel`
+alone on Marco's Mac (92.6 s, helper domain cleared first), with one red on
+the first run, `BackgroundWakeReplanTests` "the re-plan builds its items the
+way the dashboard does", a source scan pinned to `replan`'s old single body
+after the wake's item assembly moved into `dashboardItems(for:)`; re-pinned
+to the two-part shape (nothing loosened) and green alone. +55 / +9 over
+4158 / 406, nothing removed: `SubmissionReadTests`, `LastHourPollTests`,
+`SweeperQuietReasonTests`, `SubmissionObservationTests`, `DebugWakeLogTests`,
+`CancelAtObservationTests`, `PlannerWindowClientTests`,
+`PlannerWindowApplyTests`, `LastHourPollerTests`, and three source-scan
+cases in `LaunchRefreshStructureTests`. The unsigned iOS Debug build
+(`generic/platform=iOS`, `CODE_SIGNING_ALLOWED=NO`) of the same tree
+succeeded. Nothing on a phone.**
 
 **Current on `claude/v12-isolate-ab8b22` (2026-11-17, the agent connection
 switched off for 3.5.0): 4158 tests / 406 suites, all green, `swift test
@@ -3477,6 +3572,23 @@ itself.
 
 ## Traps that have already bitten
 
+- **An unknown read is not an unsubmitted one, and neither arms or disarms
+  anything** (2026-11-18, named when the Sweeper's reads got faster). The
+  planner answers a page or less for a two-hour window, so an item missing
+  from a truncated or rate-limited page, a 401 after the session lapsed, a
+  403 under Canvas's leaky bucket, or a timed-out GET all look, to code that
+  diffs sets, like "not submitted"; and a page that lists the item without a
+  `submissions` object looks like nothing. `SubmissionRead.verdict` makes the
+  three answers distinct and `cancels` is true for `.submitted` alone;
+  `applyPlannerWindow` applies nothing when `completed`, `rateLimited` or
+  `sessionExpired` say the page cannot be trusted, and counts
+  `readsUnknown`. The wrong fixes, both tempting once a poll runs every
+  minute: treating a missing item as unsubmitted (which would re-arm an
+  alarm a swipe took back) or treating a 403 as submitted (which would
+  silence a real deadline). A snapshotted "has a Canvas id" flag defaulting
+  to false was the same trap from the other side: every `DashItem` built
+  without it went quiet (Marco's rule forbids silence by accident), so the
+  quiet rule reads the assignment itself.
 - **A fixed 30-minute expiry on a chunked upload threw away a finished
   upload** (2026-11-12, Marco's PHYS 0151 Worksheet 10.1 from a Claude cloud
   session; fixed on `claude/agent-debug-998a30`, Deno 902, **live since
@@ -4770,6 +4882,20 @@ none is a ship line.
 
 ## Known gaps
 
+- **Release 1 of the Sweeper accuracy work is compiled and tested, never on a
+  phone** (2026-11-18, `claude/sweeper-build-0a4dd0`). To see on Marco's
+  phone, in this order: a DEBUG build with an item due inside the hour and
+  an alarm set (the Sweeper page's countdown); submit it on canvas.upenn.edu
+  with Smooth open; within about a minute `debugWakeLogV1` gains a `poll`
+  line with `cancelled 1 request(s)` or more and the countdown card is gone,
+  without waiting for the 15-minute grades throttle. Then the same with
+  Smooth in the background for a `bg` line (a wake has never been watched on
+  a phone; the plan's Phase 4 measurement, three lines in 48 hours, stands).
+  Read `X-Rate-Limit-Remaining` and `X-Request-Cost` off the first real
+  planner response and write them here. Unbuilt on purpose: the plan's
+  zero-points and optional-title quiet rules (Marco's word list). The floor
+  the plan names stays: a force-quit app with a website submission inside
+  the last hour rings once; "turned in" on the alarm silences it.
 - **The agent connection is off in 3.5.0 (2026-11-17), and the off state has only been compiled and tested, not seen on a phone.** What to look at on a phone that ran a `v11` build (Marco's): no "drafted by claude" chip on Problem Set 7's card, no "submitted by you · drafted by claude" in prev, no "connected agent" section in Profile, and `smooth://link?c=…` opening nothing. The phone's `agentConnectionEnabledV1`, draft cache and attempt record stay on disk unread until a Canvas disconnect. The server still holds Marco's snapshot and connection; turning the feature back on later reads them as before. The entries below about the agent connection describe `v11`, where it stays.
 - **The sliding upload expiry is live; a real cloud-session upload under it
   has not been watched** (deployed 2026-11-16 02:48 UTC from
@@ -5491,7 +5617,14 @@ none is a ship line.
     `docs/SWEEPER_ACCURACY_PLAN_2026-11-16.md` (`ROADMAP.md` → Now; it
     supersedes `docs/REMINDER_SUBMISSION_FIX_SESSION_PROMPT.md`);
     `LHFBackgroundRefresh.run()` does replan since the hardening work,
-    unverified on a phone, and hits the same 15-minute throttle.
+    unverified on a phone, and hits the same 15-minute throttle. **Since
+    2026-11-18 (Release 1, blind):** every read that sees a submission
+    cancels the item's reminders, buzzes and alarm at once, the foreground
+    polls the planner every minute inside the last hour, and the launch,
+    the foreground return and the background wake each read the planner
+    past the grades throttle when a ring is inside the hour (What the app
+    does → Profile → reminders, and → Background). The closed-app case
+    waits for the server wake (phase 2 of the same branch).
   - **Canvas partial failure.** When one site of a class fails and another
     succeeds, the 15-minute throttle arms for both and the failed one keeps
     its old snapshot (`GradeWatcherStore` `fetchedAny`).

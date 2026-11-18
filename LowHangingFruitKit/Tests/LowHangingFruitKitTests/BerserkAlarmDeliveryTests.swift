@@ -112,6 +112,10 @@ final class FakeAlarmBackend: BerserkAlarmBackend {
     func stopRinging(among finished: Set<UUID>) {
         BerserkAlarmEngine.stopRinging(among: finished, in: store)
     }
+
+    func cancel(ids: Set<UUID>) {
+        BerserkAlarmEngine.cancel(ids: ids, in: store)
+    }
 }
 
 /// The notification center, as a list. Like the real one, adding a request
