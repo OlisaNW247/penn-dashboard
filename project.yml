@@ -114,8 +114,15 @@ targets:
         # the permitted-identifiers list must match
         # `LHFBackgroundRefresh.taskID` exactly or registration/submission
         # silently fail against each other.
+        # `remote-notification` is the mode Apple requires before a silent
+        # push may wake the app ("To receive background notifications, you
+        # must add the remote notifications background mode"): the Sweeper's
+        # server wake (docs/SERVER_SWEEPER_DESIGN_2026-11-17.md). The
+        # `aps-environment` entitlement is deliberately NOT in
+        # App/LHFApp.entitlements yet; that is Olisa's step.
         UIBackgroundModes:
           - fetch
+          - remote-notification
         BGTaskSchedulerPermittedIdentifiers:
           - com.lhf.lowhangingfruit.refresh
     settings:

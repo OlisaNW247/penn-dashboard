@@ -385,8 +385,15 @@ final class NotificationScheduler: ObservableObject {
         } else {
             cancelAll()
             cancelAlarms()
+            onSweeperWakeInputOff?()
         }
     }
+
+    /// Told when a switch the server wake depends on goes off (reminders, the
+    /// Sweeper), so the server forgets this phone's moments at once rather
+    /// than at the next foreground. Bound by `ContentView`, which owns the
+    /// `AppState`; nil anywhere else, which is the old behaviour.
+    var onSweeperWakeInputOff: (@MainActor () -> Void)?
 
     /// Whether any switch the Profile page shows is on. The empty answer is a
     /// real, saved state (see `init`), and it is invisible in a list of
@@ -414,6 +421,7 @@ final class NotificationScheduler: ObservableObject {
     func setLoudAlertEnabled(_ on: Bool) {
         loudAlertEnabled = on
         defaults.set(on, forKey: Self.loudAlertKey)
+        if !on { onSweeperWakeInputOff?() }
     }
 
     // MARK: Reschedule (idempotent)

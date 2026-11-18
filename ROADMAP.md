@@ -506,7 +506,10 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
 - **The Sweeper as a server-held alarm clock** (Marco, 2026-11-17: "help me
   understand how we can do a smooth sweeper and have it belong to a server
   … research submission status before we send out the smooth sweeper").
-  Two documents, design only, nothing built: `docs/SERVER_SWEEPER_EXPLAINED_2026-11-17.md`
+  **Built on 2026-11-18 on `claude/sweeper-build-0a4dd0` for 3.5.0, both
+  halves, verified on neither** (Done recently; what Olisa and Marco must do
+  before a push can arrive is under CLAUDE.md → Known gaps). Two documents
+  were the design: `docs/SERVER_SWEEPER_EXPLAINED_2026-11-17.md`
   (plain language: what a closed iPhone can and cannot do, what the server
   holds and never holds, one alarm start to finish, every failure ending in
   "the alarm rings as set") and `docs/SERVER_SWEEPER_DESIGN_2026-11-17.md`
@@ -1131,6 +1134,23 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-18.** Release 2 of the Sweeper accuracy plan, the server wake,
+  on `claude/sweeper-build-0a4dd0`, built to
+  `docs/SERVER_SWEEPER_DESIGN_2026-11-17.md`: the `sweeper_wakes` table and
+  `sweeper-wake` function (a device token and at most 24 wake minutes per
+  install, a `pg_cron` tick that claims in one statement and sends one
+  silent APNs push per due minute with Apple's exact headers, a dedicated
+  tick secret, config errors failing the tick loudly instead of deleting
+  rows, a 30-day age-out; Deno 942, sql-check green with the cron paths
+  skipped; **not deployed**), and the phone's half (`SweeperWakePlan`,
+  `sweeperWakePass` after each replan, the app delegate's three callbacks,
+  `runWake(.push)` doing only the planner read, the cancel and a no-prompt
+  replan inside a once-only 25 s race, `remote-notification` in both
+  plists, `FeatureFlags.sweeperWake = true`; `docs/PRIVACY.md` and the
+  review notes say what leaves the phone). Not in the tree on purpose: the
+  `aps-environment` entitlement (Olisa's step, after Push Notifications on
+  the App ID) and the push wake's Gradescope leg. Nothing has met Apple or
+  a phone.
 - **2026-11-18.** Release 1 of the Sweeper accuracy plan, on
   `claude/sweeper-build-0a4dd0` for 3.5.0, blind: a read that sees a
   submission cancels that item's reminders, buzzes and AlarmKit alarm at

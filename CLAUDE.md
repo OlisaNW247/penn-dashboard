@@ -1397,7 +1397,11 @@ Keep this current. It is the fastest way for a new session to know what exists.
      cancels its alarm, and silence is the dangerous side). The plan's
      zero-points and optional-title rules are not built: the word list
      needs Marco's word. No new student-facing switch. (4) **The last-hour
-     poll:** see Background.
+     poll and the server wake:** see Background. The wake is the one thing
+     here that leaves the phone: a device token and at most 24 wake
+     minutes, nothing about which work (`docs/PRIVACY.md` → "A wake-up call
+     for the Sweeper"), deleted when reminders or the Sweeper go off, on
+     Canvas disconnect and with the account.
   5. classes (rename, hide, delete/restore; "add recurring task")
   6. notifications (per-class reminders, lead times, announcements on
      dashboard, items with nothing to submit, the announcement "ai assist"
@@ -1563,6 +1567,50 @@ Keep this current. It is the fastest way for a new session to know what exists.
   writes a `debugWakeLogV1` line (Commands). The rate-limit headers Penn's
   Canvas returns to the poll have not been read off a phone yet (Known
   gaps).
+  **The server wake (2026-11-18, Release 2 of the same work, behind
+  `FeatureFlags.sweeperWake = true`; built to
+  `docs/SERVER_SWEEPER_DESIGN_2026-11-17.md`; compiled and tested, never on
+  a phone, the function never deployed, and no push can arrive until
+  Olisa's steps under Known gaps).** A closed app runs no code of ours at
+  any time, so the phone asks the server to nudge it: after each replan,
+  `AppState.sweeperWakePass` (from `settleAfterFetch`, foreground only, Penn
+  installs with a backend past onboarding, reminders and the Sweeper on, a
+  token known) computes from `plannedAlarms` the minutes it wants to be
+  woken at, `fireDate − 15 min` and `− 3 min` truncated to the minute, UTC,
+  deduplicated, at most 24 inside 48 hours (`SweeperWakePlan.moments`,
+  Kit, pure), and sends `{ action: "put", token, environment, moments,
+  plan }` to `sweeper-wake` (`SweeperWakeClient`; exactly those five keys,
+  pinned) at most every 10 minutes unless the plan hash or the token
+  changed. Nothing about which item: the server holds a device token and
+  minutes. The token comes from `UIApplication.registerForRemoteNotifications()`
+  (`SweeperWakeRegistrar`, at every passing foreground; no permission
+  prompt, a background push needs none) through a minimal
+  `@UIApplicationDelegateAdaptor` in `App/LHFApp.swift` (`LHFAppDelegate`,
+  three callbacks, logic in `LHFSweeperWake`), kept in memory and
+  `sweeperWakeTokenV1`. `{ action: "delete" }` goes when reminders or the
+  Sweeper switch go off (`NotificationScheduler.onSweeperWakeInputOff`), on
+  Canvas disconnect (`withdrawSweeperWakeIfSent`, ungated by the flag), and
+  at a foreground with the flag off, each only if `sweeperWakeEverSentV1`
+  says a row may exist. **The push wake:**
+  `application(_:didReceiveRemoteNotification:fetchCompletionHandler:)` (the
+  completion-handler form, never the async form: Traps) →
+  `LHFBackgroundRefresh.handlePushWake` → `runWake(.push)` inside
+  `PushWakeRace` (25 s, the completion handler called exactly once from
+  whichever path finishes). `.push` does only: `beginWake` (the
+  `.background` context, so nothing latches and no Duo push or password is
+  ever typed), a saved session not clock-expired (else `pushNoSession`,
+  `.noData`), one planner read of the window (`pollPlannerWindow`,
+  unconditional, the server only pushes inside it), the cancel at
+  observation, `replan` with `rescheduleWithoutPrompting`, a `push` log
+  line. No feed sync, no grades fetch, no course material, no Ed, no
+  laptop sync, no notices, no renewal (`PushWakeTests` scans the file for
+  each). `runWake(.refresh)` is the old `run()` unchanged. `UIBackgroundModes`
+  carries `remote-notification` beside `fetch` in both `project.yml` and
+  `App/Info.plist` (`SweeperWakePlistTests`). Not built: the design's
+  Gradescope leg in the push wake (`GradescopeClient` has no one-course
+  scrape outside `syncGradescope`, Olisa's), so a Gradescope-only item is
+  cancelled by a wake only through the `.refresh` wake's full sync. When
+  no push arrives the alarm rings as armed: that is the floor, not a bug.
 - **Widget** (`LHFWidget/`, a separate process). Next-due list in small and
   medium; lock-screen inline, rectangular, and circular ("N due" within 24
   hours). It shows the app's published snapshot whenever one decodes,
@@ -1878,7 +1926,10 @@ read or wake, "<time> <source> <outcome> <ms>ms cancelled <n> request(s)
 `push`, `grades`, `gradescope` or `structured`; never a title, id or URL.
 Beside it, in Release and DEBUG alike, `sweeperCountsV1` (`SweeperCounts`):
 `armed`, `cancelledAtObservation.<source>`, `readsUnknown`, `polls`,
-`pollsBackedOff`, `wakes.bg`, `wakes.push`, `moments.sent`. Counts only.
+`pollsBackedOff`, `wakes.bg`, `wakes.push`, `moments.sent`, `registerFailed`,
+`putFailed`, `pushNoSession`. Counts only. A `register-failed` line at every
+foreground is what a build without the `aps-environment` entitlement looks
+like (Known gaps), and is expected until Olisa's step.
 Read both off the App Group plist with the `devicectl` copy above. They
 exist because the 2026-11-16 plan says the Sweeper's accuracy is proven by
 counts (`rangSubmitted` to zero), and nothing on a device said before
@@ -1926,8 +1977,22 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
-**Current on `claude/sweeper-build-0a4dd0` (2026-11-18, Release 1 of the
-Sweeper accuracy work): 4213 tests / 415 suites, `swift test --no-parallel`
+**Current on `claude/sweeper-build-0a4dd0` (2026-11-18, the server wake,
+phase 2): 4254 tests / 421 suites, all green, `swift test --no-parallel`
+alone on Marco's Mac (92.8 s, helper domain cleared first), exactly
++41 / +6 over the Release 1 run below: `SweeperWakePlanTests` 9,
+`SweeperWakeRulesTests` 3, `SweeperWakeClientTests` 5,
+`SweeperWakePassTests` 13, `PushWakeTests` 8, `SweeperWakePlistTests` 3;
+nothing removed, no existing test changed. The eight skipped tests are the
+agent and degree ones that skip while their flags are off, as before. The
+unsigned iOS Debug build (`generic/platform=iOS`, `CODE_SIGNING_ALLOWED=NO`)
+of the same tree succeeded, the only compile of `App/LHFApp.swift`'s new
+delegate and of `BackgroundRefresh.swift`'s push wake. Deno 942 (from 902),
+`deno task check` clean, Node 67 (from 51), `sql-check.sh` green on Docker
+with the `pg_cron` / `pg_net` paths skipped. Nothing on a phone, nothing
+deployed.**
+
+**Before it, the same day (Release 1): 4213 tests / 415 suites, `swift test --no-parallel`
 alone on Marco's Mac (92.6 s, helper domain cleared first), with one red on
 the first run, `BackgroundWakeReplanTests` "the re-plan builds its items the
 way the dashboard does", a source scan pinned to `replan`'s old single body
@@ -4904,6 +4969,44 @@ none is a ship line.
   zero-points and optional-title quiet rules (Marco's word list). The floor
   the plan names stays: a force-quit app with a website submission inside
   the last hour rings once; "turned in" on the alarm silences it.
+- **The server wake (Release 2) is built on both sides and verified on
+  neither** (2026-11-18, `claude/sweeper-build-0a4dd0`; Deno 942, Swift
+  green, the unsigned iOS build green). Nothing here has met Apple, a live
+  Supabase project or a phone, and nothing can until these happen, in this
+  order. **Olisa:** make the two APNs authentication keys in the developer
+  portal (one Production, one Sandbox; Apple now scopes team keys per
+  environment), set the Supabase function secrets `LHF_APNS_KEY_P8_PRODUCTION`,
+  `LHF_APNS_KEY_ID_PRODUCTION`, `LHF_APNS_KEY_P8_SANDBOX`,
+  `LHF_APNS_KEY_ID_SANDBOX`, `LHF_APNS_TEAM_ID` (`24A3TDB277`),
+  `LHF_APNS_TOPIC` (`com.lhf.lowhangingfruit`) and `LHF_SWEEPER_TICK_SECRET`
+  (a random value); enable Push Notifications on the App ID
+  `com.lhf.lowhangingfruit`, then add `aps-environment` = `development` to
+  `App/LHFApp.entitlements` beside the Time Sensitive key (deliberately
+  not in this tree: without the capability the signed phone build would
+  fail; Xcode rewrites it to `production` at archive, check the archived
+  `.app` with `codesign -d --entitlements -`). **Marco or Olisa, on the
+  project:** enable the `pg_cron` and `pg_net` extensions (Integrations →
+  Cron), create the two Vault secrets `sweeper_wake_tick_url` (the
+  function's `/tick` URL) and `sweeper_wake_tick_secret` (the same value as
+  `LHF_SWEEPER_TICK_SECRET`), then at Marco's go run `node
+  backend/scripts/deploy-sweeper.mjs` (the migration, `sweeper-wake`,
+  `delete-account`) and `node backend/scripts/sweeper-wake-e2e.mjs`, whose
+  first question is whether the Edge runtime's `fetch` reaches Apple over
+  HTTP/2 (a fake token answering `400 BadDeviceToken` is yes; a status 0 is
+  no, and then the send moves to the Vercel front, not built). **Marco, in
+  App Store Connect:** the privacy label gains Identifiers → Device ID,
+  "App Functionality", "Linked to the user", "not used for tracking"; the
+  review notes carry the two silent-push sentences already. **Then the
+  phone:** a Debug build registers (`environment: development`), the
+  Sweeper page shows an alarm 20 minutes out, `sweeperCountsV1.moments.sent`
+  rises, and `debugWakeLogV1` gains a `push` line within a minute of each
+  of the two moments, or does not, which is also the measurement; then the
+  laptop-submit case with Smooth closed but not force-quit. Until the
+  entitlement exists every foreground logs `register-failed` and the app
+  runs as Release 1; with the flag on nothing else changes. Known limits
+  by design: the push wake has no Gradescope leg; `put` has no rate limit
+  (PROTOCOL → Limitations); the cron job and the Vault reads have run on
+  no database (postgres:16 in the Docker check has neither extension).
 - **The agent connection is off in 3.5.0 (2026-11-17), and the off state has only been compiled and tested, not seen on a phone.** What to look at on a phone that ran a `v11` build (Marco's): no "drafted by claude" chip on Problem Set 7's card, no "submitted by you · drafted by claude" in prev, no "connected agent" section in Profile, and `smooth://link?c=…` opening nothing. The phone's `agentConnectionEnabledV1`, draft cache and attempt record stay on disk unread until a Canvas disconnect. The server still holds Marco's snapshot and connection; turning the feature back on later reads them as before. The entries below about the agent connection describe `v11`, where it stays.
 - **The sliding upload expiry is live; a real cloud-session upload under it
   has not been watched** (deployed 2026-11-16 02:48 UTC from

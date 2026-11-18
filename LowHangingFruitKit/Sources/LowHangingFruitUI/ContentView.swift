@@ -283,6 +283,12 @@ struct ContentView: View {
                 vm.reload(preservingEdits: true)
                 await scheduler.reschedule(from: vm.items)
             }
+            // The server wake forgets this phone the moment reminders or the
+            // Sweeper go off. Weak: `NotificationScheduler` owns the closure.
+            scheduler.onSweeperWakeInputOff = { [weak state] in
+                guard let state else { return }
+                Task { @MainActor in await state.withdrawSweeperWakeIfSent() }
+            }
             // Work a source has just confirmed submitted: take its reminders,
             // buzzes and alarm back now, through the scheduler's serializer,
             // instead of at the next full re-plan. Never completes anything.
@@ -1159,6 +1165,11 @@ struct ContentView: View {
         // it too.
         state.refreshAnnouncementBadge()
         if scheduler.isEnabled { await scheduler.reschedule(from: vm.items) }
+        // The server wake: ask iOS for a token (no prompt) and tell the server
+        // when the plan's moments changed. Foreground only; never a wake.
+        SweeperWakeRegistrar.registerIfNeeded(state: state, scheduler: scheduler)
+        await state.sweeperWakePass(plan: scheduler.plannedAlarms(from: vm.items),
+                                    remindersOn: scheduler.isEnabled, sweeperOn: scheduler.loudAlertEnabled)
     }
 
     /// Drains "Turned in ✓" confirmations the same way grade changes drain —

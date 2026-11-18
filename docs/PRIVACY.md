@@ -305,6 +305,22 @@ on-device alone:
   with classmates, so the model is asked about each class once, not once
   per student.
 
+- **A wake-up call for the Sweeper (Penn, follows your reminder settings;
+  since 3.5.0).** The Smooth Sweeper is an alarm your iPhone rings even when
+  Smooth is closed, so Smooth has to cancel it beforehand once your work is
+  in. To give it a chance to check close to the deadline while it is closed,
+  your phone sends our server two things: the device token Apple issues this
+  install for push notifications (it identifies the install to Apple, not
+  you to us), and a short list of minutes at which the phone would like to
+  be woken, at most twenty-four over two days. At those minutes our server
+  sends your phone a silent push with nothing in it; your phone wakes for a
+  few seconds, asks Canvas or Gradescope with your own login whether the
+  work is in, and cancels the alarm only if it is. The server never learns
+  which class, which assignment, when it is due or whether you submitted:
+  the minutes are just minutes, and we do not log them. Apple may deliver
+  these pushes late or not at all, and never after you force-quit the app,
+  so they help the alarm; they never control it.
+
 - **An anonymous account id.** The first time you launch the app, it creates an
   anonymous account with our backend — no email, no password, no name — so the
   server can tell your enrollment and quota apart from every other student's
@@ -558,6 +574,11 @@ and API access.
   deleted when you revoke the connection (its record), turn the feature off,
   disconnect Canvas or delete your account (all of them), and a draft is
   deleted when you submit or decline it.
+- **Your wake-up schedule**, if reminders and the Sweeper are on: one row per
+  install holding the push token and the next minutes to wake you, replaced
+  on every refresh, deleted when you turn reminders off, disconnect Canvas or
+  delete your account, and deleted by us when Apple says the token is no
+  longer valid.
 
 ## Deleting your data
 
@@ -568,7 +589,8 @@ anonymous account itself, and it removes the Canvas calendar feed address, the
 saved PennKey password and the Ed Discussion session from this phone, and it
 unpairs every laptop: their anonymous accounts and encrypted sync copies are
 deleted too. It also revokes every connected AI assistant and deletes the
-stored work list and the drafts. The confirmation says so before you tap it. If our server can't be reached at that moment, your login still comes off
+stored work list and the drafts, and deletes your Sweeper wake-up schedule
+(the push token and the minutes). The confirmation says so before you tap it. If our server can't be reached at that moment, your login still comes off
 the phone right away, and the app keeps retrying the server-side deletion
 on later launches until it succeeds (Settings shows "couldn't reach smooth
 · will retry" meanwhile). If the server refuses the deletion outright, the

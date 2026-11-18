@@ -95,6 +95,17 @@ extension AppState {
     @discardableResult
     func pollPlannerWindowIfInsideTheHour(nextRing: Date?, source: WakeSource, now: Date = Date()) async -> Bool {
         guard LastHourPoll.insideTheHour(now: now, nextRing: nextRing) else { return false }
+        return await pollPlannerWindow(source: source, now: now)
+    }
+
+    /// The read itself, with no hour check: the one body both the hour-gated
+    /// callers above and a server wake share, so the counting and the DEBUG
+    /// line exist once. A push wake calls it directly because the server only
+    /// sends inside the window (`docs/SERVER_SWEEPER_DESIGN_2026-11-17.md` §4),
+    /// and the phone's own idea of "the next ring" may be missing in a cold
+    /// process that has not built a dashboard.
+    @discardableResult
+    func pollPlannerWindow(source: WakeSource, now: Date = Date()) async -> Bool {
         let window = LastHourPoll.window(now: now)
         guard let result = await fetchPlannerWindowForPoll(start: window.start, end: window.end) else {
             SweeperCounts.increment(SweeperCounts.readsUnknown, defaults: sweeperCountsDefaults)

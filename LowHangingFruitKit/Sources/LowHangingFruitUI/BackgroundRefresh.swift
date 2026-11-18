@@ -1,6 +1,7 @@
 #if canImport(BackgroundTasks) && os(iOS)
 import Foundation
 import os
+import UIKit
 // `@preconcurrency`: BackgroundTasks' ObjC-bridged types (`BGTask`,
 // `BGAppRefreshTask`, `BGTaskScheduler`) predate Swift 6's Sendable audits.
 // Without this, capturing a `BGAppRefreshTask` across the actor hop below
@@ -132,7 +133,7 @@ public enum LHFBackgroundRefresh {
             // process crashes or is killed mid-refresh, the chain of future
             // wakes survives that crash instead of silently dying with it.
             scheduleNext()
-            await run()
+            await runWake(kind: .refresh)
             completeOnce(success: true)
         }
 
@@ -140,6 +141,101 @@ public enum LHFBackgroundRefresh {
             work.cancel()
             completeOnce(success: false)
         }
+    }
+
+    /// What woke the process. `.refresh` is the `BGAppRefreshTask` wake and
+    /// does everything it always did (`run()`, unchanged). `.push` is the
+    /// server's silent push (`docs/SERVER_SWEEPER_DESIGN_2026-11-17.md` §4):
+    /// it does one thing, ask Canvas whether Sweeper work was handed in.
+    enum WakeKind: Sendable { case refresh, push }
+
+    /// The one entry both wakes go through. `.refresh` is `run()` as it was
+    /// (the source scans of `BackgroundWakeReplanTests` and
+    /// `LaunchRefreshStructureTests` still read that body); `.push` answers
+    /// whether it cancelled anything.
+    @MainActor @discardableResult
+    static func runWake(kind: WakeKind) async -> Bool {
+        switch kind {
+        case .refresh:
+            await run()
+            return false
+        case .push:
+            return await runPush()
+        }
+    }
+
+    /// `application(_:didReceiveRemoteNotification:fetchCompletionHandler:)`,
+    /// called by the app delegate on the main thread. The completion-handler
+    /// form on purpose, and the completion is called exactly once, on the main
+    /// actor, whichever of the work and the 25-second timeout comes first
+    /// (`PushWakeRace`; CLAUDE.md → Traps, the async `didReceive` form).
+    @MainActor
+    public static func handlePushWake(
+        userInfo: [AnyHashable: Any],
+        completion: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        PushWakeRace.run(
+            work: { await runWake(kind: .push) },
+            completion: { newData in completion(newData ? .newData : .noData) })
+    }
+
+    /// The push wake. Only: the live state marked `.background` (so a renewal
+    /// can neither latch the session dead nor start a Duo push, and the saved
+    /// password is never typed), a session that exists and is not clock-
+    /// expired, one planner read of the last-hour window, the cancel at
+    /// observation, and the no-prompt re-plan. No feed sync, no grades fetch,
+    /// no course material, no Ed, no laptop sync, no notices, no renewal.
+    /// Returns whether Canvas confirmed anything submitted.
+    @MainActor
+    private static func runPush() async -> Bool {
+        let wake = LiveAppStateRegistry.shared.beginWake()
+        SweeperCounts.increment(SweeperCounts.wakesPush)
+        defer { wake.end() }
+        let state = wake.state
+        let started = Date()
+        guard FeatureFlags.sweeperWake, !state.isUsingFixtureData else { return false }
+
+        // A saved login that Canvas has not outlived. With none, the wake ends
+        // here: it never starts a renewal of its own.
+        guard state.hasCanvasCredentials, !SessionCookieStore.isExpired(service: .canvas) else {
+            SweeperCounts.increment(SweeperCounts.pushNoSession)
+            #if DEBUG
+            DebugWakeLog.record(source: .push, outcome: "no-session", duration: Date().timeIntervalSince(started),
+                                cancelledRequests: 0, cancelledAlarms: 0)
+            #endif
+            return false
+        }
+
+        let scheduler = NotificationScheduler()
+        let boundCanceller = state.submissionCanceller == nil
+        if boundCanceller {
+            state.submissionCanceller = { [scheduler, weak state] ids, source in
+                guard let state else { return }
+                let began = Date()
+                let counts = await scheduler.cancelForSubmitted(ids, items: dashboardItems(for: state), source: source)
+                #if DEBUG
+                DebugWakeLog.record(source: source, outcome: "cancel", duration: Date().timeIntervalSince(began),
+                                    cancelledRequests: counts.requests, cancelledAlarms: counts.alarms)
+                #endif
+                _ = counts
+            }
+        }
+        defer { if boundCanceller { state.submissionCanceller = nil } }
+
+        let before = state.structuredCompletedItemIDs
+        await state.pollPlannerWindow(source: .push)
+        let confirmed = state.structuredCompletedItemIDs != before
+
+        // The Gradescope leg of the design's §4.2 step 7 is not built:
+        // `GradescopeClient` has no one-course scrape that does not go through
+        // `syncGradescope`, which is not this wake's to change.
+
+        await replan(scheduler: scheduler, state: state)
+        #if DEBUG
+        DebugWakeLog.record(source: .push, outcome: confirmed ? "confirmed" : "nothing new",
+                            duration: Date().timeIntervalSince(started), cancelledRequests: 0, cancelledAlarms: 0)
+        #endif
+        return confirmed
     }
 
     /// The actual refresh, mirroring `ContentView`'s foreground

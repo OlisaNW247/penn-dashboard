@@ -189,6 +189,26 @@ enum FeatureFlags {
     /// that are skipped while it is false run again by themselves.
     static let degreeProgress = false
 
+    /// **The server wake for the Sweeper: a silent push that makes the phone
+    /// ask Canvas whether work was handed in, 15 and 3 minutes before a ring.**
+    /// While this is true a Penn install with reminders and the Sweeper on
+    /// registers for remote notifications (no permission prompt: a silent push
+    /// needs none), tells the server a list of whole-minute instants and a
+    /// hash of that list (`SweeperWakeClient`, `docs/PRIVACY.md`), and, when a
+    /// push arrives, runs one planner read from the phone's own Canvas session
+    /// (`LHFBackgroundRefresh.runWake(.push)`). The alarm stays armed
+    /// regardless; only a confirmed submitted read takes it back.
+    ///
+    /// **On because it can only ever help:** the server sends nothing until a
+    /// build carries the `aps-environment` entitlement (Olisa's step, not in
+    /// this tree), so until then registration fails, the DEBUG wake log says
+    /// `register-failed` once and the app runs as before.
+    ///
+    /// **Off registers nothing and sends nothing.** A phone that had sent a
+    /// list before (`sweeperWakeEverSentV1`) makes one `delete` at its next
+    /// foreground so the server forgets its token and moments.
+    static let sweeperWake = true
+
     /// Evaluates a token-store read only while the experiment is enabled.
     /// Keeping the guard around the closure (rather than around its result)
     /// is load-bearing: Keychain reads are synchronous and must not happen at

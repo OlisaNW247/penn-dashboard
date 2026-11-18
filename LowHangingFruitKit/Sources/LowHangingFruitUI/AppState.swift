@@ -531,6 +531,20 @@ final class AppState: ObservableObject {
     /// at a scratch suite so it never writes the shared defaults domain.
     var sweeperCountsDefaults: UserDefaults = .lhf
     var plannerWindowFetchForTesting: (@Sendable (Date, Date) async -> PlannerWindowResult)?
+    /// The server wake's memory (`AppState+SweeperWake.swift`): the device
+    /// token (also in `UserDefaults.lhf`, so a cold launch has it), the hash of
+    /// the last list the server was sent and when. Memory only, so a relaunch
+    /// sends once, which is what a server that lost the row needs.
+    var sweeperWakeToken: String?
+    var isSweeperWakeRunning = false
+    var lastSweeperWakePlanHash: String?
+    var lastSweeperWakeSentAt: Date?
+    /// Where the wake's flags live; a test points it at a scratch suite.
+    var sweeperWakeDefaults: UserDefaults = .lhf
+    /// Test seam for the two `sweeper-wake` calls.
+    var sweeperWakeTransportForTesting: SweeperWakeTransport?
+    /// Test seam: stands in for `canUseSweeperWake`'s install facts.
+    var sweeperWakeAvailabilityForTesting: Bool?
     /// What the latest planner window read said, for the poller's back-off
     /// (rate limit, the bucket's remaining requests). Memory only.
     var lastPlannerWindowResult: PlannerWindowResult?
@@ -5232,6 +5246,10 @@ final class AppState: ObservableObject {
         if let backend = BackendServices.client {
             Task.detached { _ = try? await AgentConnectionClient(client: backend).deleteSnapshot() }
         }
+        // The Sweeper's server wake goes too: the server forgets this phone's
+        // token and moments. Ungated by the flag, like the agent's, but only
+        // when a list was ever sent.
+        Task { @MainActor [weak self] in await self?.withdrawSweeperWakeIfSent() }
         UserDefaults.lhf.removeObject(forKey: SharedDefaults.agentConnectionEnabledKey)
         agentConnectionEnabled = false
         hasAgentConnections = false

@@ -49,6 +49,9 @@ enum SweeperCounts {
     static let wakesBG = "wakesBG"
     static let wakesPush = "wakesPush"
     static let momentsSent = "momentsSent"
+    static let registerFailed = "registerFailed"
+    static let putFailed = "putFailed"
+    static let pushNoSession = "pushNoSession"
 
     /// "cancelledAtObservation.<source>", where source is a `WakeSource` word
     /// or "grades" / "gradescope".
