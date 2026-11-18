@@ -300,7 +300,7 @@ export function captureTests({ test, skip, req, founder, db, label = "" }) {
 
   t("captures: the ambassador page shows the playbook, the new sections and no private code in post texts", async () => {
     const page = await (await req(`/a/${amb.c.token}`)).text();
-    assert.match(page, /the posts that work don't look like ads\./);
+    assert.match(page, /the posts that work don(?:'|&#39;|&#x27;)t look like ads\./);
     assert.match(page, /id="works"/);
     assert.match(page, /id="feed"/);
     assert.match(page, /id="result"/);
@@ -308,7 +308,7 @@ export function captureTests({ test, skip, req, founder, db, label = "" }) {
     assert.match(page, /check nothing private is in the pictures\./);
     assert.match(page, /name="robots" content="noindex,nofollow"/);
     assert.match(page, /name="referrer" content="no-referrer"/);
-    assert.doesNotMatch(page, /https?:\/\/(?!example\.test|apps\.apple\.com|smooth-poster-scans)[a-z0-9.-]+\//i.source ? /src="https?:\/\/(?!example\.test)/ : /x^/);
+    assert.doesNotMatch(page, /(?:src|href)="https?:\/\/(?!example\.test|apps\.apple\.com)/, "no third-party hosts");
     const p = await plan("c");
     const texts = [p.today?.text ?? "", ...p.messages.map((m) => m.text), ...p.playbook.examples.flatMap((e) => [e.post, e.reply])];
     for (const text of texts) assert.ok(!text.includes(amb.c.token), "no private code in post texts");

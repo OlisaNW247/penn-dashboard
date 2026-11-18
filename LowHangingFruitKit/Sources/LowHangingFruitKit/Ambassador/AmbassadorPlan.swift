@@ -93,7 +93,24 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
     /// been scanned, when the server says.
     public struct Poster: Codable, Equatable, Sendable, Identifiable {
         public var key: String
-        /// What the founders have learned works on the anonymous apps: one line
+        public var name: String
+        public var image: String
+        public var scans: Int?
+        public var id: String { key }
+
+        public init(key: String, name: String, image: String, scans: Int? = nil) {
+            self.key = key
+            self.name = name
+            self.image = image
+            self.scans = scans
+        }
+
+        /// https only: a plain-http or custom-scheme URL from a server is
+        /// never loaded or handed to the share sheet.
+        public var imageURL: URL? { AmbassadorPlan.httpsURL(image) }
+    }
+
+    /// What the founders have learned works on the anonymous apps: one line
     /// of lead, a few steps and worked examples. Written by the server and
     /// never by the app, so every field degrades: a missing `steps` is empty
     /// and a malformed example is dropped, not the whole playbook.
@@ -227,23 +244,6 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
                 styles = nil
             }
         }
-    }
-
-    public var name: String
-        public var image: String
-        public var scans: Int?
-        public var id: String { key }
-
-        public init(key: String, name: String, image: String, scans: Int? = nil) {
-            self.key = key
-            self.name = name
-            self.image = image
-            self.scans = scans
-        }
-
-        /// https only: a plain-http or custom-scheme URL from a server is
-        /// never loaded or handed to the share sheet.
-        public var imageURL: URL? { AmbassadorPlan.httpsURL(image) }
     }
 
     /// How many poster ideas this ambassador has sent, against the server's
