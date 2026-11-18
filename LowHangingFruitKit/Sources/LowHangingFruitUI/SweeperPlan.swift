@@ -51,11 +51,44 @@ struct SweeperSettings: Equatable, Sendable {
         courseRemindersOn: (String) -> Bool
     ) -> Bool {
         guard !item.isCompleted, let due = item.due, due > now, due <= horizon else { return false }
-        guard !item.showsNothingToSubmit, !RecurringTask.isOccurrence(item.assignment) else { return false }
-        guard !item.isFoundExam else { return false }
-        guard !excludedCourses.contains(item.assignment.course) else { return false }
-        guard courseRemindersOn(item.assignment.course) else { return false }
-        return true
+        return quietReason(for: item, courseRemindersOn: courseRemindersOn) == nil
+    }
+
+    /// Why the Sweeper is quiet for `item`, or nil when it is armed. The kind
+    /// rules of `qualifies`, in one place and one order, so the Sweeper page
+    /// can say *why* and the planner can never disagree with it. Dates and
+    /// completion stay in `qualifies`. The first rule that applies wins;
+    /// `.inClass` and `.offCanvas` are what "nothing to submit" returns
+    /// (`.nothingToSubmit` exists for grouping only).
+    nonisolated func quietReason(
+        for item: DashItem,
+        courseRemindersOn: (String) -> Bool
+    ) -> SweeperQuietReason? {
+        let course = item.assignment.course
+        if item.showsNothingToSubmit {
+            let word = NothingToSubmitLabel.text(
+                isEvent: item.assignment.kind == .event,
+                submitsOnPaper: item.submitsOnPaper,
+                title: item.assignment.title)
+            return word == NothingToSubmitLabel.inClass ? .inClass : .offCanvas
+        }
+        if RecurringTask.isOccurrence(item.assignment) { return .recurring }
+        if item.isFoundExam { return .foundExam }
+        // Only a modules row whose Canvas assignment id is nil is quiet: it
+        // could never be confirmed submitted, so nothing could cancel its
+        // alarm. A `.canvas` feed row rings as it always has, whatever its URL
+        // (real Canvas rows carry the id, and even one without can be
+        // confirmed through SubmissionMatcher's title fallback), a
+        // `.gradescope` row has its Gradescope id by construction, and the
+        // student's own manual task has no id by nature and keeps ringing.
+        // Silence is the dangerous side, and a proven behaviour is not
+        // changed without Marco's word.
+        if item.assignment.source == .canvasModules && item.assignment.canvasAssignmentID == nil {
+            return .noConfirmableID
+        }
+        if excludedCourses.contains(course) { return .classOff }
+        if !courseRemindersOn(course) { return .remindersOff }
+        return nil
     }
 }
 

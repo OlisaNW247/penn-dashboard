@@ -1269,11 +1269,16 @@ final class NotificationScheduler: ObservableObject {
         return name
     }
 
+    /// The start of every due-date reminder's request id. One constant so the
+    /// code that cancels a submitted item's requests builds the same ids the
+    /// planner does instead of re-typing the string.
+    nonisolated static let requestIdentifierPrefix = "due:"
+
     /// Stable, unique per (assignment, lead time) — the property `reschedule`'s
     /// cancel-and-re-add cycle depends on, since a request that re-plans to the
     /// same identifier simply replaces itself.
     private static func identifier(for candidate: Candidate) -> String {
-        "due:\(candidate.item.assignment.id):\(candidate.offset.rawValue)"
+        "\(requestIdentifierPrefix)\(candidate.item.assignment.id):\(candidate.offset.rawValue)"
     }
 
     /// Shares `budget` slots out: the reminders that fire inside `urgentWindow`
