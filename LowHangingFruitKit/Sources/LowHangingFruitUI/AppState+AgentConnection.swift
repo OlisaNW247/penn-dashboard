@@ -24,10 +24,21 @@ extension AppState {
 
     /// Same conditions as `canSyncWithLaptop`, behind the feature's kill switch.
     var canUseAgentConnection: Bool {
+        agentSurfacesAllowed && canSyncWithLaptop
+    }
+
+    /// The kill switch alone, for the surfaces that read what is already on
+    /// the phone rather than the server: the draft chip and prev's "submitted
+    /// by you" line. They used to show whenever the cache or the attempt
+    /// store held something, so a phone that had the feature kept drawing
+    /// them after the switch went off. The DEBUG demo is allowed through, as
+    /// `-LHFShowDegree` is for the degree screen, because it never reaches
+    /// the server.
+    var agentSurfacesAllowed: Bool {
         #if DEBUG
         if debugAgentDemo != nil { return true }
         #endif
-        return FeatureFlags.agentConnection && canSyncWithLaptop
+        return FeatureFlags.agentConnection
     }
 
     // MARK: Opt-in

@@ -7,7 +7,7 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-11-12 on `v11` (`origin/v12` merged in: ambassador mode ships in 3.5.0 (21), degree progress stays off). Before that, 2026-11-12 on `v12` (degree: weekly reads, the full view, Wharton concentrations; the Now entry). Before that, 2026-11-10 on `v12` (degree progress rewritten against the real Path@Penn). Before that, 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
+Last updated 2026-11-17 on `claude/v12-isolate-ab8b22` (the agent connection switched off for 3.5.0; it stays on `v11`). Before that, 2026-11-12 on `v11` (`origin/v12` merged in: ambassador mode ships in 3.5.0 (21), degree progress stays off). Before that, 2026-11-12 on `v12` (degree: weekly reads, the full view, Wharton concentrations; the Now entry). Before that, 2026-11-10 on `v12` (degree progress rewritten against the real Path@Penn). Before that, 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
 backend half went live 2026-11-05 01:20-01:45 UTC, the evening of 2026-11-04
 US Eastern). Before that, 2026-10-28 on `release/3.4.0` (the 3.4.0 release,
 renamed from 3.3.1 that afternoon when PR #16 was folded in). Before
@@ -48,6 +48,7 @@ These block shipping, or would make shipping risky. The launch-prep
 work of 2026-10-09/10 is summarised, with the order to take these in,
 in `docs/LAUNCH_PREP_HANDOFF.md`.
 
+- **3.5.0 (21) ships without the agent connection** (Marco, 2026-11-17: "we're not going to actually go with the agent stuff from V11 ... V12 will be solely the ambassador stuff and just some of the other stuff"). `FeatureFlags.agentConnection = false` on `claude/v12-isolate-ab8b22` with the two leaks closed (the cached draft chip, prev's "submitted by" line), the agent tests skipping while off, and the review notes, listing and privacy text without it (`docs/V12_ISOLATION_2026-11-17.md`: route A, flag off, over route B, a branch that deletes the code, which would cost two days and make `v11` unmergeable). Marco settled the rest the same day: "keep all but agent" (the Sweeper page and header button, the scroll fix, swipe both ways, the squircle header, the wordmark backflip, the hovering shapes, the Atkinson class code, the truthful in-class label, the held course-material sync, the assignment-PDF pass, the update-wall changes list, the ambassador header all ship). Left for Marco: merging the branch into the release line, the phone check of the off state, the stamp, archive and upload. The agent-connection item below is now `v11`'s, not this release's.
 - **Ship 3.5.0 (21), the v11 release, now with ambassador mode** (`origin/v12`
   merged into `v11` on 2026-11-12, degree progress off; `docs/V11_RETURN_2026-11-11.md` is
   the short checklist). The backend is fully deployed (2026-11-11: the three
@@ -1099,6 +1100,7 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-17.** The agent connection switched off for 3.5.0 (`FeatureFlags.agentConnection = false`, `claude/v12-isolate-ab8b22`, `docs/V12_ISOLATION_2026-11-17.md`): the flag already hid Profile, `smooth://link` and both passes; the cached-draft chip and prev's "submitted by you" line, which read the phone's cache and attempt store and not the flag, now guard on `agentSurfacesAllowed`. Nothing deleted; `v11` keeps the feature.
 - **2026-11-12.** Ambassador mode after its first look on a phone: the
   "getting started" checklist is gone, the page opens on the job and a
   filled "open my web page" button, feedback is "feedback and ideas" and

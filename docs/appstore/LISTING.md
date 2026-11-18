@@ -1,8 +1,10 @@
 # App Store listing — copy & metadata
 
-_Last updated: 2026-11-11. Draft for **3.5.0** (build 21): What's New, the
-Sweeper and CONNECT AN AI ASSISTANT paragraphs, the Promotional text and the
-Description count are new; the rest is the 3.1.0 rewrite of 2026-10-20 (build 13), which went straight
+_Last updated: 2026-11-17. Draft for **3.5.0** (build 21): What's New, the
+Sweeper paragraph, the Promotional text and the Description count are new
+(the CONNECT AN AI ASSISTANT paragraph of 2026-11-11 came out on 2026-11-17:
+the agent connection is switched off, `docs/V12_ISOLATION_2026-11-17.md`;
+Marco: "keep all but agent", so the rest of the list stands); the rest is the 3.1.0 rewrite of 2026-10-20 (build 13), which went straight
 to App Review from `v8`. The product is **Smooth** (display name and copy
 only — the bundle id stays `com.lhf.lowhangingfruit`, and internal names such
 as module names, app-group names, and defaults keys keep their LHF spelling).
@@ -41,7 +43,7 @@ within limits.
 
 ## Promotional text (≤170, editable anytime)
 
-Every Canvas deadline in one calm list, soonest first, with an alarm for anything you haven't turned in. Now Claude can draft work for you to review and submit. (160)
+Every Canvas deadline in one calm list, soonest first, with an alarm for anything you haven't turned in. Now with its own Sweeper page. (131)
 
 ## Description
 
@@ -81,15 +83,6 @@ course material, with tappable source links. Follow-ups work. An AI model
 writes the answer; offline or over the daily limit, Smooth answers from what's
 already on your phone instead.
 
-CONNECT AN AI ASSISTANT
-Optional, at Penn, off until you turn it on. Add Smooth as a connector in
-Claude's settings, then approve the connection on your phone by matching a
-number. Claude can read your classes, work list and course material, and
-propose a draft for an assignment. The draft appears on its card, marked
-"drafted by claude." You review it and submit it to Canvas yourself, or
-decline. Claude never submits anything. Grades, your name and your logins are
-never shared. Switch it off in Profile and everything shared is deleted.
-
 FEATURES
 • One chronological list of everything due, soonest first
 • todo / all / prev views, and a filter by class
@@ -105,8 +98,7 @@ FEATURES
 
 PRIVATE BY DESIGN
 Your work, your completions, your name, and your Canvas and Gradescope logins
-stay on your phone, and the alarm runs entirely on it (unless you connect an
-assistant, above). Smooth talks to your
+stay on your phone, and the alarm runs entirely on it. Smooth talks to your
 school's Canvas, to Gradescope if you connect it, and to one small server of
 ours. That server does two things: it pools the course material everyone in a
 class can already see — syllabi, pages, assignment instructions,
@@ -119,30 +111,22 @@ deletes your account and its data from our server.
 Smooth is an independent app and is not affiliated with or endorsed by
 Instructure (Canvas), Turnitin (Gradescope), Ed Discussion, or any university.
 
-_Description: 3,957 characters including line breaks, within the 4,000 limit (3.5.0 cut words elsewhere to make room for the assistant paragraph)._
+_Description: 3,373 characters including line breaks, within the 4,000 limit (the 3.5.0 assistant paragraph came out on 2026-11-17 with the feature)._
 
 ## What's New in 3.5.0 (release notes, ≤4000)
 
-The Sweeper gets its own page, and Claude can draft work for you to review.
+The Sweeper gets its own page.
 
 • The Smooth Sweeper has its own page, opened from the alarm button in the
-  header: switch it on or off, see a countdown to the next alarm, and set the
-  lead time and sound for each class
-• Connect an AI assistant (optional, Penn): add Smooth as a connector in
-  Claude's settings, then approve the connection on your phone by matching a
-  number. Claude can read your classes, work list and course material, and
-  propose a draft for an assignment
-• A draft shows on the assignment's card as "drafted by claude." Open it to
-  review it and see what Canvas accepts, then submit it to Canvas from your
-  phone, or decline. Claude never submits anything
-• Profile → agent has the switch and the list of connected assistants;
-  turning it off deletes what was shared and disconnects them all
+  header: see a countdown to the next alarm, and set the lead time and sound
+  for each class
+• Swipe a card either way to complete it
 • Scrolling no longer sticks when your finger starts on a card
 • A card with nothing to hand in says "in class" or "off canvas" under its due
   time, whichever is true
 • The update screen lists what changed
 
-_What's New: 1,077 characters, within the 4,000 limit._
+_What's New: 448 characters, within the 4,000 limit._
 
 ## What's New in 3.4.1 (release notes, ≤4000)
 

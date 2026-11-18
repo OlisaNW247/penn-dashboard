@@ -329,7 +329,10 @@ struct V11PhoneStateTests {
         #expect(put.upperBound < redelete.lowerBound)
     }
 
-    @Test("a decline is refused once an attempt exists; a draft with a record never shows Submit again")
+    // Reads the chip's `checkCanvas`, which the kill switch hides since
+    // 2026-11-17; counted and skipped while the flag is off.
+    @Test("a decline is refused once an attempt exists; a draft with a record never shows Submit again",
+          .enabled(if: FeatureFlags.agentConnection))
     func declineAfterAttempt() async throws {
         try await withCleanKeys {
             let state = try makeState()

@@ -261,7 +261,7 @@ mode, the S app mark, and bundled type registered at runtime by
   draws the class code (Space Mono Bold, 9.5pt, +1.1) and five shippable
   alternatives with renders; no font changed.
 
-**Release state.** Live on the App Store: **3.4.1 (build 20) since 2026-11-08
+**Release state.** The next release, **3.5.0 (21)**, is the release line `claude/ambassador-header` (`v11` merged with Olisa's `v12`) **without the agent connection**: Marco decided on 2026-11-17 that it stays on `v11` for later (`FeatureFlags.agentConnection = false` on `claude/v12-isolate-ab8b22`, `docs/V12_ISOLATION_2026-11-17.md`; the backend stays deployed). Everything else on the line ships ("keep all but agent", the same day). Live on the App Store: **3.4.1 (build 20) since 2026-11-08
 at 22:29 UTC** (public iTunes
 lookup, read 2026-11-10), and the `update-manifest` floor is 3.4.1 (read the
 same day; `sync` refused a 3.4.0 install with 426 at 03:49 UTC on 2026-11-10,
@@ -1116,7 +1116,7 @@ Keep this current. It is the fastest way for a new session to know what exists.
      facts stay readable off the phone from the App Group plist
      (Commands). A Release build never showed any of it. The
      strings and `SignInHealthTests` remain.
-     **Connected agent (2026-11-11, Marco: "under accounts, in profile, it
+     **Connected agent (switched off 2026-11-17 with `FeatureFlags.agentConnection`, see "Connect an agent" below; the section is not drawn. 2026-11-11, Marco: "under accounts, in profile, it
      should have connected agent with a toggle and then list what is
      connected to your agent"; later the same day: "Connected agent should
      be a different block in profile under agent"; on 2026-11-12: "I want to
@@ -1498,8 +1498,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
   listed.
 - **Mac.** The same app, plus a menu-bar extra that keeps the sync loop
   alive (`LHFScenes.swift`) and open-at-login.
-- **Connect an agent** (2026-11-08, `agent/connection-v11`, compiled, never
-  on a phone; behind `FeatureFlags.agentConnection`, Penn installs past
+- **Connect an agent** (**Switched off on 2026-11-17** at Marco's word ("we're not going to actually go with the agent stuff from V11 ... V12 will be solely the ambassador stuff and just some of the other stuff"): `FeatureFlags.agentConnection = false`, so 3.5.0 (21) ships without it. No Profile section, no `smooth://link`, no snapshot or drafts pass, no chip, no review sheet, no notice; a draft cache or attempt record a `v11` build left on a phone is not read (`agentDraftDisplay`, `agentSubmittedNamesByItemID` and the cache seed guard on `agentSurfacesAllowed`, the two readers that leaked past the flag). Nothing deleted; the backend stays deployed; the DEBUG `-LHFDemoAgent*` arguments still draw the screens from invented data. The agent tests that need the flag skip themselves while it is off and `killSwitchOff` runs only then (`docs/V12_ISOLATION_2026-11-17.md`). Everything below describes it as built.
+  Built 2026-11-08, `agent/connection-v11`; behind `FeatureFlags.agentConnection`, Penn installs past
   onboarding with a backend only). Profile → connected agent holds the
   on switch and the connected agents (since 2026-11-11 a
   section of its own after accounts, see Profile above; before, a pushed
@@ -1520,7 +1520,7 @@ Keep this current. It is the fastest way for a new session to know what exists.
   delete the server's list and revoke every agent. `docs/PRIVACY.md` →
   "Connecting an AI assistant" is the student-facing text. Copy in
   `AgentConnectionCopy`, pinned by `AgentConnectionCopyTests`.
-- **Drafts from an agent, and submitting them** (2026-11-10, v11 Phases 3
+- **Drafts from an agent, and submitting them** (**switched off on 2026-11-17** with the agent connection above, same flag, same reasons; the review sheet, the chip and prev's "submitted by you · drafted by" are unreachable and a cached draft is not read. Built 2026-11-10, v11 Phases 3
   and 4, phone half; on `claude/v11-phone-c7aaf2`, compiled and tested,
   **never on a phone and never against Canvas**). `agentDraftsPass`
   (`AppState+AgentDrafts.swift`) runs right after `agentSnapshotPass` in
@@ -1837,6 +1837,24 @@ account signed into Xcode. Submitting for review is a separate, manual
 step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
+
+**Current on `claude/v12-isolate-ab8b22` (2026-11-17, the agent connection
+switched off for 3.5.0): 4158 tests / 406 suites, all green, `swift test
+--no-parallel` alone on Marco's Mac (91 s, after `defaults delete
+swiftpm-testing-helper` with no other run on the machine); the unsigned iOS
+Debug build (`generic/platform=iOS`, `CODE_SIGNING_ALLOWED=NO`) of the same
+tree succeeded.** +4 / +1 over the 4154 / 405 record, every one accounted
+for: +3 / +1 were already on the release line `claude/ambassador-header`
+above that record and had never been through a full run (`AmbassadorTests`
++1 test and its suite from the ambassador header, `CompletionSwipeTests` +2
+from the either-way swipe); +1 is `AgentDraftsStateTests.killSwitchOff`,
+which runs only while `FeatureFlags.agentConnection` is false. Eight tests
+are counted and skipped: the five `DegreeWiringTests` fixture tests (as
+before) and three agent tests that read what the switch now hides
+(`AgentDraftsStateTests` "the card's view" and "prev: a draft the student
+sent", `V11PhoneStateTests` "a decline is refused once an attempt exists");
+setting the flag back to `true` runs them and skips `killSwitchOff`.
+Nothing deleted.
 
 **Deno on `claude/agent-debug-998a30` (2026-11-12, off the `v12` merge
 `79b3a99`): 902 passed, 0 failed (898 + 4: the sliding upload expiry, its
@@ -4702,6 +4720,7 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
+| `claude/v12-isolate-ab8b22` | **2026-11-17, off `claude/ambassador-header` `05ee0a8`, local, not merged.** The agent connection switched off for 3.5.0 (`FeatureFlags.agentConnection = false`), its two leaks closed, its tests skipping while off, the review notes, listing and privacy text without it; `docs/V12_ISOLATION_2026-11-17.md` has the inventory and the route comparison. The session that started it merges at Marco's word. |
 | `claude/ambassador-header` | **2026-11-12, off the `v12` merge `82bea86`, local, not merged: a design change waiting on Marco's approval.** While signed in as an ambassador the dashboard title is a marigold medal and "Ambassador" with the wordmark's squiggle under it, in place of "Smooth {weekday}" (`ContentView.ambassadorTitle`; Marco's ask that day). Before sign-in nothing changes. The Debug build of `1a4ceaa` is on Marco's iPhone 17 Pro since 15:16 local, over the pre-stamp 3.4.1 (20) build of `f03dce0`; so the merged `v12` tree first reached his phone through this branch. 20 targeted tests green; the full gate was run on its base, not on it. |
 | `claude/font-research-22067c` | 2026-11-11, off `v11-master`, docs only, merged into `v11-master` at `fee63ba`. The class-code font research and renders (`docs/FONT_RESEARCH_2026-11-11.md`). Safe to delete. |
 | `claude/v11-ui-pass-84648c` | **2026-11-11, off `v11-master` `0936f29`, local, not merged.** Marco's UI pass: one Sweeper title with the switch row, the header button as an alarm glyph with a once-only new dot, the agent in its own Profile "agent" section, the slop cut; then the five asks of the same afternoon (the + and Sweeper swap colours, the "on" row under the title, hovering shapes on ask, a triple-tap backflip of the wordmark, a slightly larger header title), with Simulator photos in `docs/v11-ui/` and `docs/V11_UI_PHOTOS_2026-11-11.md`. The session that started it merges. |
@@ -4751,6 +4770,7 @@ none is a ship line.
 
 ## Known gaps
 
+- **The agent connection is off in 3.5.0 (2026-11-17), and the off state has only been compiled and tested, not seen on a phone.** What to look at on a phone that ran a `v11` build (Marco's): no "drafted by claude" chip on Problem Set 7's card, no "submitted by you · drafted by claude" in prev, no "connected agent" section in Profile, and `smooth://link?c=…` opening nothing. The phone's `agentConnectionEnabledV1`, draft cache and attempt record stay on disk unread until a Canvas disconnect. The server still holds Marco's snapshot and connection; turning the feature back on later reads them as before. The entries below about the agent connection describe `v11`, where it stays.
 - **The sliding upload expiry is live; a real cloud-session upload under it
   has not been watched** (deployed 2026-11-16 02:48 UTC from
   `claude/agent-debug-998a30` `afa64bb`: `agent-auth` v17, `mcp` v16,

@@ -11,14 +11,17 @@
 > Profile > ambassador is for a handful of student volunteers who help spread the word about Smooth at their schools. It asks for a code we text them (no account, no password) and then shows a suggested post for the day, a copy button, a daily local reminder they can turn off, and their own link-open counts. It never asks for or rewards App Store ratings or reviews. To see it, enter this test code: <code>. Any other student sees only the row.
 > ```
 
-## To paste for 3.5.0 (21), 2026-11-12
+## To paste for 3.5.0 (21), 2026-11-17
 
-Draft, 3,994 characters (the cap is 4,000). Since 2026-11-12 it also
-carries the AMBASSADOR MODE paragraph; `<code>` is the test code Olisa
-makes in the founder view, pasted into App Store Connect only, never here.
-Same shape as the block below, trimmed to make room for the agent
-connection (Guideline 5.1.2(i)); every earlier fact is kept. The Sweeper
-walkthrough item now points at the header's alarm button and its page.
+Since 2026-11-17 the block describes no agent connection: Marco held the
+feature back (`FeatureFlags.agentConnection = false`,
+`docs/V12_ISOLATION_2026-11-17.md`), so a paragraph about it would be a
+claim about an unexposed feature (Guideline 2.3.1), and the privacy and
+networking lines are back to "the work list stays on the device". The
+AMBASSADOR MODE paragraph stays; `<code>` is the test code Olisa makes in
+the founder view, pasted into App Store Connect only, never here. Every
+earlier fact is kept. The Sweeper walkthrough item points at the header's
+alarm button and its page.
 
 ```text
 HOW TO REVIEW WITHOUT A SCHOOL LOGIN
@@ -40,14 +43,11 @@ A dashboard for university students: their own Canvas deadlines (calendar feed a
 ALARMS AND NOTIFICATIONS
 The Sweeper rings before work the student has not turned in (10 minutes by default, on by default): on iOS 26 one AlarmKit alarm, full screen like Clock, after asking permission once; on earlier iOS, or if refused, three Time Sensitive notifications.
 
-CONNECT AN AI ASSISTANT (5.1.2(i))
-Optional, Penn only, off by default; the demo can't show it (it needs a real Canvas session and Claude). In Profile > connected agent the student turns the switch on, adds Smooth as a connector in Claude's settings, and approves the connection on the phone by picking the number the sign-in page shows. Claude (Anthropic) can then read the student's classes, work list and pooled course material and propose a draft; never grades, name, cookies or passwords. The student reviews the draft on the assignment's card and submits it to Canvas from the phone with their own session, or declines. The agent cannot submit and our server never talks to Canvas. Turning the switch off deletes the server's copy and revokes every agent.
-
 AMBASSADOR MODE
 Profile > ambassador mode is for a few student volunteers who promote Smooth at their schools. It asks for a code we send them (no account, no password) and shows the job, a suggested post for the day with a copy button, their school's posters, a feedback box, a daily local reminder they can turn off, and their link-open counts. It never asks for or rewards ratings or reviews. To see it, enter this test code: <code>. Any other student sees only the row.
 
 PRIVACY AND NETWORKING
-- Grades, completions, the name and login cookies stay on the device (cookies in the Keychain, this device only); the work list leaves it only if the assistant switch is on.
+- Grades, completions, the work list, the name and login cookies stay on the device (cookies in the Keychain, this device only).
 - At Penn, our backend (Supabase) pools non-personal course material (syllabi, pages, assignment descriptions, announcements, Ed staff posts) per Canvas course and answers "ask" through an AI model via OpenRouter; questions and answers are not stored. The announcement "ai assist" is on by default; Profile > notifications turns it off. Each install has an anonymous account (no email or name); disconnecting Canvas deletes it.
 - No analytics, tracking, ads or third-party SDKs.
 
@@ -55,14 +55,14 @@ STAY SIGNED IN (PENN ONLY)
 A one-line notice above Penn's login page says signing in saves the PennKey on this device. After a verified sign-in in the app's own login web view, the PennKey is kept in the device Keychain (this device only, never synced, sent only to Penn's login page) to sign the student back in. Duo is never bypassed; one rejected password turns it off; disconnecting Canvas deletes it; preview mode never uses it.
 
 THIRD-PARTY SERVICES (5.2.2)
-Smooth is an independent client for services the student already uses, with their own credentials, showing only their own data; not affiliated with Instructure (Canvas), Turnitin (Gradescope), Ed Discussion, Anthropic or any university.
+Smooth is an independent client for services the student already uses, with their own credentials, showing only their own data; not affiliated with Instructure (Canvas), Turnitin (Gradescope), Ed Discussion or any university.
 ```
 
-_Character count of the block above: 3990 (limit 4,000), measured on the text between the fences._
+_Character count of the block above: 3174 (limit 4,000), measured on the text between the fences._
 
-**Before submitting:** re-read the App Store privacy label for the agent
-connection ("data shared with third parties: course material, coursework" when
-the agent switch is on); the label in `LISTING.md` still lists only the 2026-09 answers.
+**Before submitting:** the App Store privacy label needs no agent-connection
+answers for 3.5.0 (the feature is off); the label in `LISTING.md` still lists
+the 2026-09 answers, which hold.
 
 What's New: paste the 3.5.0 text from `LISTING.md`.
 

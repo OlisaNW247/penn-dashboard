@@ -12,9 +12,9 @@ below: a summary of it, including which items are done, goes with each
 question you ask "the tree"; if you pair the Smooth Chrome extension, it
 travels end-to-end encrypted between your own phone and your own laptop,
 where we cannot read it; and if you turn on iCloud sync, it goes to your own
-iCloud. If you turn on "connected agent", your list of work (never grades,
-never your name) is kept readable on our server so an AI assistant you
-connect, such as Claude, can read it; it is off by default. Course materials — syllabi, course pages, assignment descriptions,
+iCloud. (A "connected agent" option that would keep your list of work, never
+grades or your name, readable on our server for an AI assistant you connect
+is described below, but it is switched off in this build.) Course materials — syllabi, course pages, assignment descriptions,
 files the instructor attached to assignments (PDFs only), announcements — are pooled with classmates in the same Canvas course, so
 everyone shares one copy instead of each of you re-fetching it. Questions you
 ask "the tree" are answered by an AI model running on our server. The
@@ -398,6 +398,11 @@ nothing until you pair it with your phone.
   laptop, along with everything listed under "Deleting your data".
 
 ## Connecting an AI assistant (optional, Penn, off by default)
+
+- **Not in this build.** The feature below is switched off in the app since
+  2026-11-17 and has no screen, switch or network call in it; nothing here
+  happens until a later release turns it back on. The section stays so the
+  promise is on record for that release.
 
 - **What it is.** From Profile → connected agent, you can let an
   AI assistant you already use read your classes through Smooth, and propose

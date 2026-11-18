@@ -111,7 +111,7 @@ extension AppState {
         #if DEBUG
         if debugAgentDemo != nil { fixture = false }
         #endif
-        guard !fixture, let draft = agentDraft(forItemID: itemID) else { return nil }
+        guard agentSurfacesAllowed, !fixture, let draft = agentDraft(forItemID: itemID) else { return nil }
         let record = agentSubmitAttempts.record(for: draft.id)
         return AgentDraftDisplay(
             draftID: draft.id, agentName: draft.agentName.lowercased(), preview: draft.preview(maxLines: 2, maxCharacters: 160),
@@ -196,7 +196,7 @@ extension AppState {
     /// agent's name, for every draft the phone sent and Canvas took. Read
     /// once per dashboard rebuild (the store is a small file).
     func agentSubmittedNamesByItemID() -> [String: String] {
-        guard !isUsingFixtureData else { return [:] }
+        guard agentSurfacesAllowed, !isUsingFixtureData else { return [:] }
         var names: [String: String] = [:]
         for record in agentSubmitAttempts.all() where record.outcome == .submitted {
             let name = (record.agentName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)

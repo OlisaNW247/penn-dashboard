@@ -600,8 +600,10 @@ final class AppState: ObservableObject {
     var isAgentSnapshotRunning = false
     /// The student's open drafts (AppState+AgentDrafts.swift), newest first.
     /// Seeded from the content-free cache so a relaunch draws the card chips
-    /// before the first poll; the poll replaces it whole.
-    @Published var agentDrafts: [AgentDraft] = AgentDraftCache.load(from: .lhf)
+    /// before the first poll; the poll replaces it whole. With the kill
+    /// switch off the cache is left unread (a build that had the feature may
+    /// have written one), so no chip can outlive the switch.
+    @Published var agentDrafts: [AgentDraft] = FeatureFlags.agentConnection ? AgentDraftCache.load(from: .lhf) : []
     var lastAgentDraftsAt: Date?
     var isAgentDraftsRunning = false
     /// "Claude drafted …" notices the last drafts pass found, drained by

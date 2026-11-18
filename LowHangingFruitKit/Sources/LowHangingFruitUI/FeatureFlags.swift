@@ -146,9 +146,23 @@ enum FeatureFlags {
     ///
     /// **This is the kill switch for every agent-connection surface on the
     /// phone**: the `smooth://link` handler, the Settings section, the
-    /// snapshot upload. False leaves none of them reachable and uploads
-    /// nothing. The branch is unmerged, so it is on while it is built.
-    static let agentConnection = true
+    /// snapshot upload, the drafts poll, the "drafted by" chip on a card,
+    /// the review sheet and prev's "submitted by you · drafted by". False
+    /// leaves none of them reachable and uploads nothing; a draft cache or
+    /// an attempt record an earlier build left on the phone is not read.
+    ///
+    /// **Off since 2026-11-17, at Marco's word** ("we're not going to
+    /// actually go with the agent stuff from V11 ... V12 will be solely the
+    /// ambassador stuff and just some of the other stuff"), so that 3.5.0
+    /// ships ambassador mode without the agent connection. Nothing was
+    /// deleted: the code, its tests, the deployed backend (`agent-auth`,
+    /// `mcp`, `agent-snapshot`) and anything a phone cached stay, and the
+    /// DEBUG `-LHFDemoAgentState` arguments still draw the screens from
+    /// invented data (they never reach the server). What was still open when
+    /// it went off is in CLAUDE.md → Known gaps. To bring it back, set this
+    /// to `true`; the tests skipped while it is false run again by
+    /// themselves (`docs/V12_ISOLATION_2026-11-17.md`).
+    static let agentConnection = false
     /// **A degree screen, read from Path@Penn with the student's own login.**
     /// Profile → classes gets a "degree" row that opens the student's
     /// audit (what is met, in progress and open, block by block) and a "what

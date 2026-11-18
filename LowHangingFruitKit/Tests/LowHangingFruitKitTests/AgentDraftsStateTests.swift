@@ -53,7 +53,11 @@ struct AgentDraftsStateTests {
         }
     }
 
-    @Test("the card's view: the chip and preview, then check canvas once a submission went out")
+    // The next two read the chip and prev's line, which guard on the kill
+    // switch since 2026-11-17 (`agentSurfacesAllowed`); they are counted and
+    // skipped while it is off, and `killSwitchOff` below runs only then.
+    @Test("the card's view: the chip and preview, then check canvas once a submission went out",
+          .enabled(if: FeatureFlags.agentConnection))
     func display() async throws {
         try await withCleanKeys {
             let state = try makeState()
@@ -118,7 +122,8 @@ struct AgentDraftsStateTests {
         #expect(item.agentChipText == "drafted by claude" && item.factCaveatText == nil)
     }
 
-    @Test("prev: a draft the student sent says submitted by you, drafted by its agent")
+    @Test("prev: a draft the student sent says submitted by you, drafted by its agent",
+          .enabled(if: FeatureFlags.agentConnection))
     func submittedInPrev() async throws {
         try await withCleanKeys {
             let state = try makeState()
@@ -226,6 +231,45 @@ struct AgentDraftsStateTests {
             #expect(state.shownAssignment(forItemID: "nothing") == nil)
             state.completeAfterAgentSubmit(itemID: "gradescope:ps8")
             #expect(state.isCompleted(card))
+        }
+    }
+
+    /// The one test that runs only while the agent connection is switched
+    /// off (2026-11-17, `docs/V12_ISOLATION_2026-11-17.md`): what a phone that
+    /// ran a `v11` build holds (a cached draft, a submitted attempt record,
+    /// the opt-in on) draws nothing and starts nothing. Turning the flag back
+    /// on skips this one and runs the two above again; nothing is deleted.
+    @Test("with the kill switch off a cached draft and an attempt record draw no chip, no line, no link, no pass",
+          .enabled(if: !FeatureFlags.agentConnection))
+    func killSwitchOff() async throws {
+        try await withCleanKeys {
+            let draft = AgentDraft(id: "smd_old", assignmentID: Self.item.id, kind: .text, body: "left over", clientName: "Claude")
+            // What the previous build left behind, written before `init` runs.
+            AgentDraftCache.save([draft], to: .lhf)
+            let state = try makeState()
+            state.assignments = [Self.item]
+            #expect(state.agentDrafts.isEmpty, "the cache is not read while the flag is off")
+            #expect(!state.agentSurfacesAllowed)
+            #expect(!state.canUseAgentConnection)
+
+            // Even a draft put into memory (the demo path, or a stale poll)
+            // and a submitted record draw nothing on a card or in prev.
+            state.agentDrafts = [draft]
+            state.agentSubmitAttempts = AgentSubmitAttemptStore(fileURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("AgentDraftsState-off-\(UUID().uuidString)/attempts.json"))
+            try state.agentSubmitAttempts.begin(draftID: "smd_sent", assignmentID: Self.item.id, agentName: "Claude")
+            state.agentSubmitAttempts.finish(draftID: "smd_sent", outcome: .submitted, canvasSubmissionID: "1")
+            #expect(state.agentDraftDisplay(forItemID: Self.item.id) == nil)
+            #expect(state.agentSubmittedNamesByItemID().isEmpty)
+
+            // No link, no passes, whatever the opt-in says.
+            let url = try #require(URL(string: "smooth://link?c=abcdef0123456789abcdef"))
+            #expect(state.pendingAgentLink(from: url) == nil)
+            state.agentConnectionEnabled = true
+            await state.agentSnapshotPass(force: true)
+            await state.agentDraftsPass(force: true)
+            #expect(state.lastAgentSnapshotAt == nil && state.lastAgentDraftsAt == nil)
+            state.agentConnectionEnabled = false
         }
     }
 }
