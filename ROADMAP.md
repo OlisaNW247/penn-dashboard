@@ -498,6 +498,32 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
 
 ## Next: features
 
+- **The Sweeper as a server-held alarm clock** (Marco, 2026-11-17: "help me
+  understand how we can do a smooth sweeper and have it belong to a server
+  … research submission status before we send out the smooth sweeper").
+  Two documents, design only, nothing built: `docs/SERVER_SWEEPER_EXPLAINED_2026-11-17.md`
+  (plain language: what a closed iPhone can and cannot do, what the server
+  holds and never holds, one alarm start to finish, every failure ending in
+  "the alarm rings as set") and `docs/SERVER_SWEEPER_DESIGN_2026-11-17.md`
+  (Release 2 of `docs/SWEEPER_ACCURACY_PLAN_2026-11-16.md` worked to the
+  field and hour: the phone uploads a device token and at most 24 wake
+  minutes, no items; a `sweeper_wakes` table, `pg_cron` every minute through
+  `pg_net` into a `sweeper-wake` function that sends one silent APNs push
+  per due row with Apple's headers and status handling quoted; the push wake
+  runs the planner read, a Gradescope page only for Gradescope-only items,
+  and cancels on a confirmed "submitted" alone; the fallback is the armed
+  alarm ringing; PRIVACY.md and PROTOCOL.md text; about 45 hours in eight
+  phases after Release 1 ships). It also closes, from Instructure's own
+  pages and `notification.rb`, that Canvas offers a student no push,
+  webhook or receipt an outside app can use: Live Events are the
+  institution's, push channels need Instructure's developer key, and "All
+  Submissions" is instructor-and-admin only. Six departures from the plan's
+  §2 are listed in its §11 (two APNs keys, Gradescope in the wake, not
+  `refreshCanvasGrades` in the 30 seconds, a tick secret and answer-first
+  tick, `verify_jwt = false` with `requireUser`, the 410 timestamp in
+  milliseconds). Needs from Olisa: the APNs key(s) and Push Notifications
+  on the App ID; from Marco: the deploy go and the privacy label.
+
 - **Where the Sweeper's accuracy can come from** (Marco, 2026-11-16: "super
   important that like smooth sweeper only goes off when it needs to").
   `docs/SWEEPER_STATUS_RESEARCH_2026-11-16.md`: no iOS mechanism runs our
