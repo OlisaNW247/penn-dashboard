@@ -1090,8 +1090,22 @@ struct ContentView: View {
     /// decided). Skipped until the dashboard is bound, because `vm.items` is
     /// empty before that and an empty list has no next ring.
     private func pollInsideTheHour(source: WakeSource) async {
-        guard isDashboardBound else { return }
+        guard isDashboardBound else {
+            #if DEBUG
+            DebugWakeLog.record(source: source, outcome: "skip unbound", duration: 0,
+                                cancelledRequests: 0, cancelledAlarms: 0)
+            #endif
+            return
+        }
         let ring = scheduler.nextSweep(in: vm.items)?.ringAt
+        #if DEBUG
+        if !LastHourPoll.insideTheHour(now: Date(), nextRing: ring) {
+            let word = ring == nil ? "skip nil-ring"
+                : (ring! <= Date() ? "skip past-ring" : "skip far-ring")
+            DebugWakeLog.record(source: source, outcome: word, duration: 0,
+                                cancelledRequests: 0, cancelledAlarms: 0)
+        }
+        #endif
         await state.pollPlannerWindowIfInsideTheHour(nextRing: ring, source: source)
     }
 
@@ -1165,6 +1179,12 @@ struct ContentView: View {
         // it too.
         state.refreshAnnouncementBadge()
         if scheduler.isEnabled { await scheduler.reschedule(from: vm.items) }
+        // Backstop: the minute poller is foreground-only and has, once on a
+        // device, made no read while an alarm was inside the hour
+        // (2026-11-18). This makes every refresh pass inside the hour a
+        // planner read as well, outside the grades fetch's 15-minute
+        // throttle; outside the hour it costs nothing.
+        await pollInsideTheHour(source: .foreground)
         // The server wake: ask iOS for a token (no prompt) and tell the server
         // when the plan's moments changed. Foreground only; never a wake.
         SweeperWakeRegistrar.registerIfNeeded(state: state, scheduler: scheduler)

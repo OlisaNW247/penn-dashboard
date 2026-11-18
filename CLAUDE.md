@@ -1924,6 +1924,14 @@ Since 2026-11-18 (blind) a DEBUG build also keeps `debugWakeLogV1` in
 read or wake, "<time> <source> <outcome> <ms>ms cancelled <n> request(s)
 <m> alarm(s)", where source is `foreground`, `launch`, `poll`, `bg`,
 `push`, `grades`, `gradescope` or `structured`; never a title, id or URL.
+Since the evening of 2026-11-18 the minute loop writes its own trace under
+source `poll`: "poller start" / "poller stop", and "tick nil-ring", "tick
+far-ring", "tick past-ring" or "tick poll" (inside the hour, whether this
+minute polled or waited) only when the word changes from the last tick; and
+a foreground, launch or refresh-pass check that does not poll writes "skip
+unbound" / "skip nil-ring" / "skip far-ring" / "skip past-ring" under its
+source, one per pass, so a long idle stretch fills the 50 lines in a few
+hours. Read the log soon after a test.
 Beside it, in Release and DEBUG alike, `sweeperCountsV1` (`SweeperCounts`):
 `armed`, `cancelledAtObservation.<source>`, `readsUnknown`, `polls`,
 `pollsBackedOff`, `wakes.bg`, `wakes.push`, `moments.sent`, `registerFailed`,
@@ -4957,8 +4965,24 @@ none is a ship line.
 ## Known gaps
 
 - **Release 1 of the Sweeper accuracy work is on Marco's phone since
-  2026-11-18 (the Debug build of `b1a6aa8`, launched by nobody yet) and
-  nothing of it has been watched there** (built on `claude/sweeper-build-0a4dd0`). To see on Marco's
+  2026-11-18, and its first live test failed: the alarm rang on work he had
+  submitted with Smooth on screen, and no planner read ran.** At 21:48 UTC
+  Marco edited Bonus Worksheet 10.3 (PHYS 0151) to 22:19, submitted it at
+  about 21:55 with the dashboard open, and the Sweeper rang at 21:59. The
+  phone's `sweeperCountsV1` had no `polls` and no `readsUnknown`, so
+  `pollPlannerWindow` was never reached in eleven minutes inside the hour.
+  `LastHourPollerWiringTests` (added the same evening) rebuilds the case
+  through the real `LastHourPoller.start(state:scheduler:vm:)`, scheduler
+  and view model, and polls on the first tick, so the rule is sound and the
+  fault is in how the device runs the loop. Not found yet. Two things went
+  on the phone that night (the Debug build that followed `ab5e592`): a
+  DEBUG trace in the loop (Commands) and a backstop, every `settleAfterFetch`
+  pass inside the hour makes one planner read (`pollInsideTheHour(source:
+  .foreground)`, pinned by `LaunchRefreshStructureTests`), so a refresh pass
+  reads even if the minute loop does not. The next test's `debugWakeLogV1`
+  says what the loop saw. The "foreground register-failed" lines in that
+  log are written by the refresh pass, not by a scene change, so they do
+  not show whether the app was on screen. To see on Marco's
   phone, in this order: a DEBUG build with an item due inside the hour and
   an alarm set (the Sweeper page's countdown); submit it on canvas.upenn.edu
   with Smooth open; within about a minute `debugWakeLogV1` gains a `poll`

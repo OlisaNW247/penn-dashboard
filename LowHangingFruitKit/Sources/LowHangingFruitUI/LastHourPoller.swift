@@ -29,6 +29,11 @@ final class LastHourPoller {
     private let clock: () -> Date
     private let sleeper: (TimeInterval) async -> Void
     private let countsDefaults: UserDefaults
+    /// DEBUG trace sink: one fixed-vocabulary word per line, never an id,
+    /// title or URL. The default writes `DebugWakeLog` (to `.lhf`) in DEBUG
+    /// only; a test injects a capture, as it injects `countsDefaults`.
+    private let log: (String) -> Void
+    private var lastTickWord: String?
     private var task: Task<Void, Never>?
     private(set) var lastPoll: Date?
     private(set) var backedOffUntil: Date?
@@ -36,6 +41,7 @@ final class LastHourPoller {
     init(
         clock: @escaping () -> Date = { Date() },
         countsDefaults: UserDefaults = .lhf,
+        log: ((String) -> Void)? = nil,
         sleep: @escaping (TimeInterval) async -> Void = { seconds in
             try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
         }
@@ -43,6 +49,16 @@ final class LastHourPoller {
         self.clock = clock
         self.countsDefaults = countsDefaults
         self.sleeper = sleep
+        if let log {
+            self.log = log
+        } else {
+            self.log = { word in
+                #if DEBUG
+                DebugWakeLog.record(source: .poll, outcome: word, duration: 0,
+                                    cancelledRequests: 0, cancelledAlarms: 0, defaults: countsDefaults)
+                #endif
+            }
+        }
     }
 
     var isRunning: Bool { task != nil }
@@ -68,6 +84,7 @@ final class LastHourPoller {
         poll: @escaping @MainActor (Date?) async -> PlannerWindowResult?
     ) {
         guard task == nil else { return }
+        log("poller start")
         task = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
@@ -81,6 +98,7 @@ final class LastHourPoller {
     }
 
     func stop() {
+        if task != nil { log("poller stop") }
         task?.cancel()
         task = nil
     }
@@ -92,6 +110,16 @@ final class LastHourPoller {
         let now = clock()
         let decision = LastHourPoll.cadence(
             now: now, nextRing: nextRing, lastPoll: lastPoll, backedOffUntil: backedOffUntil)
+        let word: String
+        if let nextRing {
+            if nextRing <= now { word = "tick past-ring" }
+            else if nextRing.timeIntervalSince(now) > 3600 { word = "tick far-ring" }
+            // Inside the hour, waiting for the minute and polling are one
+            // state for the trace: the poll itself writes "planner ok", and
+            // two alternating words would fill the 50-line log in half an hour.
+            else { word = "tick poll" }
+        } else { word = "tick nil-ring" }
+        if word != lastTickWord { lastTickWord = word; log(word) }
         guard case .poll = decision else { return decision }
         lastPoll = now
         guard let result = await poll(nextRing) else {

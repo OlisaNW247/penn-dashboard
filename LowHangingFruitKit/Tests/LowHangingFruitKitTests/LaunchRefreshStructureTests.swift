@@ -130,6 +130,8 @@ struct LaunchRefreshStructureTests {
             "vm.reload(preservingEdits: true)",
             "state.refreshAnnouncementBadge()",
             "scheduler.reschedule(from: vm.items)",
+            "pollInsideTheHour(source: .foreground)",
+            "SweeperWakeRegistrar.registerIfNeeded",
         ]
         let positions = try calls.map { call in try #require(settle.range(of: call), "missing \(call)").lowerBound }
         #expect(zip(positions, positions.dropFirst()).allSatisfy(<))
