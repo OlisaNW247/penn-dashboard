@@ -1270,8 +1270,11 @@ Keep this current. It is the fastest way for a new session to know what exists.
      twice on the page, once under "what works" with the score and the
      reason and once as the thing to copy; and an ambassador is handed
      the same two posts on alternate days for good, so the playbook's
-     "borrow the format, not the words" is doing the real work. Compiled
-     on the runner, not on a phone, not deployed. **Since 2026-11-18 the page
+     "borrow the format, not the words" is doing the real work. The page
+     also pulls to refresh since the same evening (`.refreshable`, a
+     plain `model.refresh()`), because the plan is cached for half an
+     hour and the posts in it are the server's. Compiled on the runner,
+     not on a phone; the server half went live the same day. **Since 2026-11-18 the page
      also teaches what works and collects what each campus looks like**
      (Olisa, after two of his own Sidechat posts did well with no pitch in
      them, a question at 22 upvotes and Smooth slipped into a frat ranking
@@ -1571,14 +1574,15 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v12` (2026-11-19, a post's reply on the ambassador page): 3899
-tests / 382 suites, all green, `swift test --no-parallel` on the GitHub
-macOS runner in 81 s, with the unsigned iOS `xcodebuild`, Deno and the
-extension suite green in the same run (manual run 44428456247 at
-`471158b`; the commits after it change only `smooth-ambassadors/` and
-notes).** +3 over 3896, all in `AmbassadorTests.swift`: `replies` and
-`replyRoundTrip` in the plan suite, `replyShown` in the wiring suite. It
-compiled at the first attempt. The ambassador Worker's own suite (separate,
+**Current on `v12` (2026-11-19, a post's reply and pull to refresh on the
+ambassador page): 3900 tests / 382 suites, all green, `swift test
+--no-parallel` on the GitHub macOS runner in 96 s, with the unsigned iOS
+`xcodebuild`, Deno and the extension suite green in the same run (manual
+run 44429983182 at `5079c65`; the commit after it changes only notes).** +4
+over 3896, all in `AmbassadorTests.swift`: `replies` and `replyRoundTrip`
+in the plan suite, `replyShown` and `pullToRefresh` in the wiring suite
+(3899 at `471158b`, run 44428456247, before the last). Both compiled at the
+first attempt. The ambassador Worker's own suite (separate,
 never added to these counts) after the bank was cut to two posts: 70 pass
 with `npm test`, 54 of 54 with the built single-file artifact beside the
 original site, the rehearsal on the real scan backup 22 checks with none
@@ -4175,6 +4179,18 @@ none is a ship line.
   it is, the live `messages` are still the six written ones and "today"
   is still a written post, which is exactly what he asked to be rid of.
   The app half of it (the reply row) needs a rebuild onto the phone.
+  **That sixth zip went live within the hour** (read from here: `messages`
+  is `question` and `list`, each with `reply`; `today` is one of the two
+  with its reply; six tips). Olisa's phone still showed the six written
+  messages minutes later and he asked twice for them to go: the app keeps
+  a fetched plan for 30 minutes (`AmbassadorModel.staleAfter`) and had no
+  way to ask again short of an action that refetches (changing the
+  anonymous-app picker does). The page now has pull to refresh. The tell
+  for next time: texts on the phone older than the live `plan.json` are a
+  cached plan, not a failed deploy; and `refresh()` swallows every error,
+  a decode failure included, so if a pull ever changes nothing, compare
+  the live JSON's field types with `AmbassadorPlan.init(from:)` (done by
+  hand that evening: they matched).
   **The 2026-11-18 sections have still not been reported on from a
   phone.** What only a phone settles: that the photo
   picker hands a screen recording over as a file (`PickedMovie`'s

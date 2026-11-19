@@ -72,11 +72,10 @@ does → Profile → 8 is the full description. In short:
 poster-scan tracker's own site. It is **not** Supabase and nothing in
 `backend/` knows about it. It is deployed by a ChatGPT session that owns the
 Sites project, from a zip this repo builds; `smooth-ambassadors/docs/deploy.md`
-says how. Three deploys are live (2026-11-11, 2026-11-12 and, on
-2026-11-19, the zip of 2026-11-18, which carries everything in section 2a
-below). One more zip is waiting: the two-posts change of section 2b. Until
-it is live, the app's "today" post and "more messages" still show the
-written posts Olisa asked to be removed, because the server writes them.
+says how. Everything built so far is live: 2026-11-11, 2026-11-12, and on
+2026-11-19 both the zip of 2026-11-18 (section 2a below) and the two-posts
+change (section 2b). The app keeps a fetched plan for 30 minutes; pull the
+ambassador page down to ask the server again.
 
 ### 2a. Added on 2026-11-18, after this page was first written
 
@@ -197,8 +196,7 @@ In rough order.
    number it has seen, so check TestFlight → Builds there before choosing
    the next one. Whether 3.4.1 is live was not readable from the cloud
    session (Apple's lookup did not answer).
-6. **The two-posts server zip** of 2026-11-19, if it is not deployed yet
-   (section 2).
+6. Nothing is waiting on the server side as of 2026-11-19 (section 2).
 
 Known and left alone: Yik Yak is reported to cap a post at 200 characters,
 and every anonymous post is longer than that once its link is counted. If an
