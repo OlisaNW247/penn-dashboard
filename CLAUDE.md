@@ -5002,7 +5002,21 @@ none is a ship line.
   reads even if the minute loop does not. The next test's `debugWakeLogV1`
   says what the loop saw. The "foreground register-failed" lines in that
   log are written by the refresh pass, not by a scene change, so they do
-  not show whether the app was on screen. To see on Marco's
+  not show whether the app was on screen. **Read on 2026-11-19 at 20:55
+  UTC, the trace found the shape:** "poller stop" at 19:47:42 with no start
+  after it, while two refresh passes ran at 20:53 (the same at 04:26 the
+  day before), so the app was alive and refreshing with the poller stopped.
+  `.onChange(of: scenePhase)` stopped it on `.inactive` (a system overlay,
+  Face ID, the alarm's own alert, the app switcher) and nothing restarted
+  it while the scene stayed inactive, or the later `.active` was never
+  delivered. Since that evening (committed with this line) the poller
+  stops only on `.background`, every `settleAfterFetch` pass restarts it if
+  it is not running (`start` is idempotent), and the trace words carry the
+  reason ("poller start active | task | settle", "poller stop background").
+  Pinned by `LaunchRefreshStructureTests.pollerStopsOnlyInBackground`. Not
+  yet on a phone. The same read showed `wakesBG` 27 in a day and two
+  cancellations at observation (one `grades`, one `structured`), so the
+  background wake and the cancel path both run on a real phone. To see on Marco's
   phone, in this order: a DEBUG build with an item due inside the hour and
   an alarm set (the Sweeper page's countdown); submit it on canvas.upenn.edu
   with Smooth open; within about a minute `debugWakeLogV1` gains a `poll`

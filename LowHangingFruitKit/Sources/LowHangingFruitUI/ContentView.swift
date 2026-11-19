@@ -421,7 +421,7 @@ struct ContentView: View {
             // itself. If it replans before that drain, the drain's own
             // replan (`needsReplan`) follows and takes the finished item's
             // buzzes back out.
-            lastHourPoller.start(state: state, scheduler: scheduler, vm: vm)
+            lastHourPoller.start(state: state, scheduler: scheduler, vm: vm, reason: .task)
             await refreshSessionSourcesAtLaunch()
             // Silent auto-refresh loop while the dashboard is on screen.
             while !Task.isCancelled {
@@ -432,7 +432,7 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
-                lastHourPoller.start(state: state, scheduler: scheduler, vm: vm)
+                lastHourPoller.start(state: state, scheduler: scheduler, vm: vm, reason: .active)
                 Task {
                     await scheduler.refreshAuthStatus()
                     // Before `refresh()`, whose first step is the network. See
@@ -444,8 +444,16 @@ struct ContentView: View {
                     await pollInsideTheHour(source: .foreground)
                     await refresh()
                 }
-            } else {
-                lastHourPoller.stop()
+            } else if phase == .background {
+                // Only `.background` stops it. DEBUG traces of 2026-11-19
+                // (20:53Z, and 04:26Z the day before) show "poller stop" with
+                // no start after it while two refresh passes still ran: an
+                // `.active -> .inactive` (a system overlay, Face ID, the
+                // alarm's own full-screen alert, the app switcher) stopped
+                // it, and nothing restarted it while the scene stayed
+                // inactive. A planner GET while inactive is harmless and the
+                // 5-minute loop keeps running then anyway.
+                lastHourPoller.stop(reason: .background)
             }
         }
         // The reconnect cover (below) keeps this view mounted, so nothing
@@ -1184,6 +1192,13 @@ struct ContentView: View {
         // (2026-11-18). This makes every refresh pass inside the hour a
         // planner read as well, outside the grades fetch's 15-minute
         // throttle; outside the hour it costs nothing.
+        // Revive the poller on every refresh pass: `start` is idempotent
+        // (it guards `task == nil`), so a running one costs nothing, and a
+        // stopped one is back even when the `.active` transition was never
+        // delivered to `.onChange`.
+        if scenePhase != .background {
+            lastHourPoller.start(state: state, scheduler: scheduler, vm: vm, reason: .settle)
+        }
         await pollInsideTheHour(source: .foreground)
         // The server wake: ask iOS for a token (no prompt) and tell the server
         // when the plan's moments changed. Foreground only; never a wake.

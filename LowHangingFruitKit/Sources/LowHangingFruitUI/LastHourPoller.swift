@@ -7,7 +7,7 @@ import LowHangingFruitKit
 /// every tick, so a student with no alarm near costs Canvas nothing).
 ///
 /// **Foreground only, and owned by `ContentView`** beside the 5-minute loop:
-/// started when the scene is active, stopped on `.inactive` / `.background`.
+/// started when the scene is active, stopped on `.background` only.
 /// A `Task` created from the main actor and sleeping in this class never
 /// reaches a system-queue closure, which is the shape of the background-
 /// refresh crash (CLAUDE.md → Traps); the background wake has its own single
@@ -65,8 +65,10 @@ final class LastHourPoller {
 
     /// The app's wiring: the next ring from the scheduler's own rule (the same
     /// one the Sweeper page's card uses) and a read through `AppState`.
-    func start(state: AppState, scheduler: NotificationScheduler, vm: DashboardViewModel) {
+    func start(state: AppState, scheduler: NotificationScheduler, vm: DashboardViewModel,
+               reason: StartReason = .task) {
         start(
+            reason: reason,
             nextRing: { [weak scheduler, weak vm] in
                 guard let scheduler, let vm else { return nil }
                 return scheduler.nextSweep(in: vm.items)?.ringAt
@@ -80,11 +82,12 @@ final class LastHourPoller {
 
     /// The loop, with its inputs injected. Starting twice keeps the first.
     func start(
+        reason: StartReason = .task,
         nextRing: @escaping @MainActor () -> Date?,
         poll: @escaping @MainActor (Date?) async -> PlannerWindowResult?
     ) {
         guard task == nil else { return }
-        log("poller start")
+        log("poller start \(reason.rawValue)")
         task = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
@@ -97,8 +100,13 @@ final class LastHourPoller {
         }
     }
 
-    func stop() {
-        if task != nil { log("poller stop") }
+    /// Fixed vocabularies for the trace (DebugWakeLog rule): why a poller
+    /// started or stopped, so the next trace says which caller revived it.
+    enum StartReason: String { case active, task, settle }
+    enum StopReason: String { case background, inactive, other }
+
+    func stop(reason: StopReason = .other) {
+        if task != nil { log("poller stop \(reason.rawValue)") }
         task?.cancel()
         task = nil
     }

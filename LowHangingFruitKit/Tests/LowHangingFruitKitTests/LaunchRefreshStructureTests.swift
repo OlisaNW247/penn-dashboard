@@ -176,6 +176,19 @@ struct LaunchRefreshStructureTests {
         #expect(!source.contains("fetchPlannerWindow("), "the view never builds its own read")
     }
 
+    @Test("the poller stops only in background, and every settle pass revives it")
+    func pollerStopsOnlyInBackground() throws {
+        let source = Self.codeOnly(try Self.uiSource("ContentView.swift"))
+        let stops = Self.ranges(of: "lastHourPoller.stop(", in: source)
+        #expect(stops.count == 1)
+        let stop = try #require(stops.first)
+        let before = String(source[..<stop.lowerBound].suffix(60))
+        #expect(before.contains("phase == .background"), "inactive must not stop the poller")
+        let settle = try Self.body(ofFunctionDeclaredWith: "func settleAfterFetch() async", in: source)
+        #expect(settle.contains("lastHourPoller.start("))
+        #expect(settle.contains("scenePhase != .background"))
+    }
+
     @Test("the wake's planner read sits after refreshCanvasGrades and before the replan, through the shared method")
     func wakeReadBetweenGradesAndReplan() throws {
         let source = Self.codeOnly(try Self.uiSource("BackgroundRefresh.swift"))
