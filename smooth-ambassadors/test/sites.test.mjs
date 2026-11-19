@@ -222,9 +222,9 @@ test("the token is nowhere in posts or stickers, and the old routes are gone", {
   const plan = await (await req(edited, `/a/${token}/plan.json?anon=fizz&tz=300`)).json();
   const texts = [plan.today.text, ...plan.messages.map((m) => m.text)];
   for (const t of texts) assert.ok(!t.includes(token), t);
-  for (const t of texts)
-    for (const m of t.match(/https?:\/\/\S*\/(?:a|r)\/\S+/g) || []) assert.match(m, new RegExp(`/r/${ref}/`), m);
-  assert.ok(plan.messages.some((m) => m.text.includes(`/r/${ref}/s/`)));
+  for (const t of texts) assert.doesNotMatch(t, /http/);
+  assert.deepEqual(plan.messages.map((m) => m.key), ["question", "list"]);
+  assert.equal(plan.today.reply, "Smooth for Students on the App Store");
   assert.match(plan.page, new RegExp(`/a/${token}$`));
   assert.ok(!(await (await req(edited, `/a/${token}/stickers`)).text()).includes(token));
   const page = await (await req(edited, `/a/${token}`)).text();
