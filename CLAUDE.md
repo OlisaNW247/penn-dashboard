@@ -1250,7 +1250,28 @@ Keep this current. It is the fastest way for a new session to know what exists.
      would say so), and Ed is never named, because it is read at Penn
      only while the rest is true at any school. Known and not fixed: Yik
      Yak is reported to cap a post at 200 characters, which every post
-     exceeded with its link even before this. **Since 2026-11-18 the page
+     exceeded with its link even before this. **Since 2026-11-19 none of
+     those posts exist** (Olisa, with the build on his phone: "remove all
+     the AI generated texts we have and put only these 2"). The bank is
+     his two Sidechat posts and nothing else: the question ("What do you
+     guys use to stop missing assignments?") and the ranking with Smooth
+     in the B tier, `[frat]` standing in for names. Neither has a link or
+     a pitch; each carries a reply, "Smooth for Students on the App
+     Store", which the server sends as an optional `reply` beside
+     `today` and each `messages` entry and the app draws under the post
+     with "then reply:" and a "copy reply" button (`replyBlock` in
+     `AmbassadorPage.swift`). Today's post alternates between the two and
+     there is no rest day; the rest-day code stays for an older server.
+     The texts must equal the playbook's examples, which a Worker test
+     holds. The sweeper and Ed wording rules above now bind only posts a
+     founder writes by hand. The web page gained one "copy my link"
+     button under its numbers, because the posts were the only place a
+     tracked share link had been shown. Known: the two posts appear
+     twice on the page, once under "what works" with the score and the
+     reason and once as the thing to copy; and an ambassador is handed
+     the same two posts on alternate days for good, so the playbook's
+     "borrow the format, not the words" is doing the real work. Compiled
+     on the runner, not on a phone, not deployed. **Since 2026-11-18 the page
      also teaches what works and collects what each campus looks like**
      (Olisa, after two of his own Sidechat posts did well with no pitch in
      them, a question at 22 upvotes and Smooth slipped into a frat ranking
@@ -1550,7 +1571,20 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v12` (2026-11-18, the ambassador playbook and uploads): 3896
+**Current on `v12` (2026-11-19, a post's reply on the ambassador page): 3899
+tests / 382 suites, all green, `swift test --no-parallel` on the GitHub
+macOS runner in 81 s, with the unsigned iOS `xcodebuild`, Deno and the
+extension suite green in the same run (manual run 44428456247 at
+`471158b`; the commits after it change only `smooth-ambassadors/` and
+notes).** +3 over 3896, all in `AmbassadorTests.swift`: `replies` and
+`replyRoundTrip` in the plan suite, `replyShown` in the wiring suite. It
+compiled at the first attempt. The ambassador Worker's own suite (separate,
+never added to these counts) after the bank was cut to two posts: 70 pass
+with `npm test`, 54 of 54 with the built single-file artifact beside the
+original site, the rehearsal on the real scan backup 22 checks with none
+failing, and both copy buttons driven in Chromium.
+
+Before it: **on `v12` (2026-11-18, the ambassador playbook and uploads): 3896
 tests / 382 suites, all green, `swift test --no-parallel` on the GitHub
 macOS runner in 111 s, with the unsigned iOS `xcodebuild`, Deno and the
 extension suite green in the same run (manual run 44416363502 at
@@ -4128,7 +4162,20 @@ none is a ship line.
   page had no job box). So that build shows the job-first layout and the
   old posts, and hides every 2026-11-18 section; his first remark was that
   the messages still lacked his two posts, which is this and nothing in
-  the app. **The 2026-11-18 sections have still never been seen on a
+  the app. **Later on 2026-11-19 the ChatGPT session deployed that zip**
+  (its report: uploads, post results, the playbook and suggested posts
+  passed live checks, test data removed). Read from here right after,
+  read-only, no scan or `/r/` link opened: `plan.json` carries
+  `playbook` (both examples, five steps), `suggested` and `captures`; the
+  page has the job box and "what works"; `/` and `/api/stats` answer,
+  with the same two totals above the 2026-11-10 backup as before and none
+  below; `POST /` is 405 and an unknown code 404. So the build already on
+  his phone shows those sections from its next plan fetch. **The
+  two-posts change of the same day is a sixth zip, not deployed**: until
+  it is, the live `messages` are still the six written ones and "today"
+  is still a written post, which is exactly what he asked to be rid of.
+  The app half of it (the reply row) needs a rebuild onto the phone.
+  **The 2026-11-18 sections have still not been reported on from a
   phone.** What only a phone settles: that the photo
   picker hands a screen recording over as a file (`PickedMovie`'s
   `FileRepresentation` was written without a compiler and has only been

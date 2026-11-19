@@ -188,12 +188,16 @@ export function ambassadorPage({
   const messagesHtml = messages.messages
     .map((m) => {
       const text = fillMsg(m.text, { ...vars, link: links.share(m.channel) });
+      // Since 2026-11-19 the bank is two posts with no link in them (the pitch
+      // is the reply), so an "opens" count under one would always describe a
+      // link the card does not show. It stays for any post that carries one.
+      const hasLink = m.text.includes("{link}");
       return `<div class="card">
         <div class="row" style="justify-content:space-between"><strong>${esc(m.label)}</strong>
           <button class="small" data-copy="${attr(text)}">copy message</button></div>
         <p class="msg" style="white-space:pre-line">${esc(text)}</p>
-        ${m.reply ? `<p class="small muted">then reply: <span class="msg">${esc(m.reply)}</span> <button class="small ghost" data-copy="${attr(m.reply)}">copy reply</button></p>` : ""}
-        <p class="small muted mono">opens: ${allByKey[`link:${m.channel}`] ?? 0} total · ${recentByKey[`link:${m.channel}`] ?? 0} last ${stats.days}d</p>
+        ${m.reply ? `<div class="row" style="justify-content:space-between"><p class="small"><b>then reply:</b> ${esc(m.reply)}</p><button class="small ghost" data-copy="${attr(m.reply)}">copy reply</button></div>` : ""}
+        ${hasLink ? `<p class="small muted mono">opens: ${allByKey[`link:${m.channel}`] ?? 0} total · ${recentByKey[`link:${m.channel}`] ?? 0} last ${stats.days}d</p>` : ""}
       </div>`;
     })
     .join("");
@@ -309,6 +313,7 @@ export function ambassadorPage({
         <div class="stat t-grape"><b>${stats.posts}</b><span>posts you've logged</span></div>
       </div>
       <p class="small muted">opens are taps, repeats included, not people. <a href="${attr(dashboardHref)}" target="_blank" rel="noopener">${esc(schoolLower)} scan dashboard (new tab)</a></p>
+      <p class="small muted">for dms and group chats: <button class="small" data-copy="${attr(links.share("dm"))}">copy my link</button></p>
     </section>
 
     <section class="sec t-tomato"><h2 id="posters">${esc(schoolLower)} posters</h2>
@@ -358,7 +363,7 @@ export function ambassadorPage({
     </section>
 
     <section class="sec t-cobalt"><h2 id="messages">messages, ready to paste</h2>
-      <p class="muted small">each carries your own link. change the words to sound like you.</p>
+      <p class="muted small">no link in the post. swap in your own school's names.</p>
       ${messagesHtml}
       <details><summary>posting tips</summary><ul class="small">${messages.posting_tips.map((t) => `<li>${esc(t)}</li>`).join("")}</ul></details>
     </section>

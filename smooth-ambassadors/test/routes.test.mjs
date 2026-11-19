@@ -280,23 +280,18 @@ test("plan.json messages are exactly the playbook's two examples (drift guard)",
 });
 
 test("today alternates the two posts, never rests, and carries the reply", async () => {
+  const { dailyPost } = await import("../worker/data.js");
   const [q, l] = playbookExamples();
   const seen = [];
-  for (let d = 0; d < 4; d++) {
-    const when = Date.now() + d * 86400000;
-    const realNow = Date.now;
-    Date.now = () => when;
-    try {
-      const p = await (await get(`/a/${token}/plan.json?anon=fizz&tz=300`)).json();
-      assert.notEqual(p.today.kind, "rest");
-      assert.equal(p.today.reply, REPLY);
-      seen.push(p.today.text);
-    } finally {
-      Date.now = realNow;
-    }
+  for (let d = 100; d < 104; d++) {
+    const t = dailyPost({ daily: bank().daily, dayIndex: d, anonApp: "sidechat" });
+    assert.notEqual(t.kind, "rest");
+    assert.equal(t.reply, REPLY);
+    seen.push(t.text);
   }
   assert.ok(seen.every((t) => t === q.post || t === l.post));
   for (let i = 1; i < seen.length; i++) assert.notEqual(seen[i], seen[i - 1]);
+  assert.equal(new Set(seen).size, 2);
 });
 
 test("the bank holds only the two posts, with no links or placeholders", () => {
@@ -330,9 +325,13 @@ test("the token is nowhere in posts, messages or stickers; only the ref is", asy
   assert.ok(!stickers.includes(token), "stickers page");
   const page = await (await get(`/a/${token}`)).text();
   assert.doesNotMatch(page, new RegExp(`/a/${token}/(s|p)/`));
-  assert.match(page, new RegExp(`/r/${ref}/s/`));
   assert.match(page, /copy reply/);
   assert.ok(page.includes(playbookExamples()[0].post));
+  // The two posts carry no link, so the page keeps one "copy my link" button
+  // on the public ref: without it the tracked share links would be nowhere.
+  assert.match(page, new RegExp(`/r/${ref}/s/dm"`));
+  assert.match(page, /copy my link/);
+  assert.doesNotMatch(page, /opens: \d+ total/);
 });
 
 test("the old token share and poster routes are gone and count nothing", async () => {

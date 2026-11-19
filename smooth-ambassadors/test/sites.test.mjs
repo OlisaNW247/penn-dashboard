@@ -229,7 +229,8 @@ test("the token is nowhere in posts or stickers, and the old routes are gone", {
   assert.ok(!(await (await req(edited, `/a/${token}/stickers`)).text()).includes(token));
   const page = await (await req(edited, `/a/${token}`)).text();
   assert.doesNotMatch(page, new RegExp(`/a/${token}/(s|p)/`));
-  assert.match(page, new RegExp(`/r/${ref}/s/`));
+  assert.match(page, /copy reply/);
+  assert.match(page, /\/r\/[a-z0-9]+\/s\/dm"/);
 
   const [scans, hits] = [await scansSnap(), await dbCount("amb_hits")];
   for (const p of [`/a/${token}/s/fizz`, `/a/${token}/p/ib`]) assert.equal((await req(edited, p)).status, 404, p);

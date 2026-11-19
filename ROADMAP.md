@@ -55,8 +55,8 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   phone, the daily reminder and its tap, dark mode), the merge with `v11`
   (five files conflict, six Swift files merge without a marker and need
   reading), a test code and paragraph for App Review, a new build number,
-  and the server zip of 2026-11-18, which is not deployed (it replaces the
-  one of 2026-11-12, which never went up). Also unseen on any phone: the
+  and the server zip of 2026-11-19 (the bank cut to two posts), which is
+  not deployed; the zip of 2026-11-18 went live on 2026-11-19. Also unseen on any phone: the
   2026-11-18 sections (what works, from the founders, the feed recording
   and post-result sheets).
 - **Degree progress is switched off** (2026-11-12, Olisa: not ready;
@@ -951,6 +951,14 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-19.** The ambassador post bank is two posts. Olisa had every
+  written post removed and kept only his two real Sidechat posts (the
+  question, the ranking), each with the reply "Smooth for Students on the
+  App Store", which the app and the web page now show under the post with
+  its own copy button. Today's post alternates between the two; no rest
+  day. The same day the 2026-11-18 server zip went live and the `v12`
+  build went onto Olisa's phone. On `v12`, compiled on the runner, not on
+  a phone; the server half is a new zip waiting for a deploy.
 - **2026-11-18.** Ambassador mode learns from what worked. Olisa's two
   Sidechat posts that did well (a question; Smooth slipped into a ranking)
   are the examples in a new "what works" section, which tells an

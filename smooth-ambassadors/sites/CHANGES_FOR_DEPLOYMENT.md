@@ -4,6 +4,44 @@ For the ChatGPT session that deploys project
 `appgprj_6aebbfcc56e48191a690c176014ceddf`. Base commit:
 `3770608515c285cc1e034f8be04e8d5e4c335640`.
 
+## Update, 2026-11-19 (small)
+
+This archive is the sixth. **The live site is the fifth** (read on
+2026-11-19 after its deploy: `plan.json` has `playbook`, `suggested` and
+`captures`, the page has the job box, and no scan total is below the
+2026-11-10 backup). This one changes text and one optional key. No new
+table, no new route, no new runtime variable.
+
+Olisa, the same day: "remove all the AI generated texts we have and put only
+these 2".
+
+- **The post bank is two posts.** Every written post is gone from
+  `worker/templates/messages.json`. What is left is the two that already
+  were the playbook's examples: the question ("What do you guys use to stop
+  missing assignments?") and the ranking with Smooth slipped into it. Neither
+  has a link or a pitch. Today's post alternates between them and there is no
+  rest day any more.
+- **A reply beside each post.** `plan.json` `today` and each entry of
+  `messages` gain an optional string `reply` ("Smooth for Students on the App
+  Store"). The ambassador page shows it under the post with a "copy reply"
+  button. Every other key is as before; `messages` now has two entries
+  (`question`, `list`) where it had six.
+- **One "copy my link" button** under "your numbers" on the ambassador page
+  (their `/r/{ref}/s/dm` link). The posts used to be the only place a
+  tracked share link was shown; with link-free posts it would have been
+  nowhere. The "opens" line under a post is gone because the post has no
+  link to count.
+- One posting tip that referred to a removed post is deleted (six remain).
+
+Check after deploying (no `/scan/...` or `/r/...` link needs opening):
+
+1. `GET /` and `GET /api/stats` look as before.
+2. Any ambassador's `plan.json`: `messages` is two entries with keys
+   `question` and `list`, each with `reply`; `today.text` is one of the two
+   posts and holds no `http`; `today.reply` is set.
+3. The ambassador page shows two message cards, each with "then reply:" and
+   "copy reply", and "copy my link" under the numbers.
+
 ## Update, 2026-11-18
 
 This archive is the fifth one. **The live site is still the third** (read on
