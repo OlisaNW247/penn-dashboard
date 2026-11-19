@@ -224,6 +224,7 @@ struct AmbassadorPage: View {
                     .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.smoothSurface))
                     .listRowSeparator(.hidden)
                 if !today.isRest {
+                    replyBlock(today.reply)
                     HStack(spacing: 10) {
                         Button {
                             copy(today.text)
@@ -289,6 +290,27 @@ struct AmbassadorPage: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.smoothSurface))
             .listRowSeparator(.hidden)
+    }
+
+    /// The follow-up reply under a post, with its own copy button. Nothing
+    /// when the server sent none (an older server) or an empty one.
+    @ViewBuilder
+    private func replyBlock(_ reply: String?) -> some View {
+        if let reply, !reply.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("then reply:")
+                    .font(.lhfSecondary(12))
+                    .foregroundStyle(Color.v2DateText)
+                Text(reply)
+                    .font(.lhfSecondary(13))
+                    .foregroundStyle(Color.v2DateText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                Button("copy reply") { copy(reply) }
+                    .buttonStyle(.bordered)
+                    .font(.lhfSecondary(14, weight: .semibold))
+            }
+        }
     }
 
     /// What has worked on the anonymous apps, from the server. Hidden when an
@@ -564,6 +586,7 @@ struct AmbassadorPage: View {
                                 .foregroundStyle(Color.v2DateText)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .textSelection(.enabled)
+                            replyBlock(message.reply)
                         }
                         .padding(.vertical, 2)
                     }

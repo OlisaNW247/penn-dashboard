@@ -575,7 +575,7 @@ export function dailyPost({ daily, dayIndex, anonApp = "fizz" }) {
   if (!daily?.length) return null;
   const entry = daily[((dayIndex % daily.length) + daily.length) % daily.length];
   const channel = entry.kind === "anon" ? (Object.hasOwn(CHANNELS, anonApp) ? anonApp : "fizz") : entry.kind === "rest" ? null : entry.kind;
-  return { kind: entry.kind, channel, platform: channel ? (Object.hasOwn(CHANNELS, channel) ? CHANNELS[channel] : channel) : "rest", text: entry.text };
+  return { kind: entry.kind, channel, platform: channel ? (Object.hasOwn(CHANNELS, channel) ? CHANNELS[channel] : channel) : "rest", text: entry.text, ...(entry.reply ? { reply: entry.reply } : {}) };
 }
 
 export function dayIndex(date = new Date(), tzOffsetMinutes = 300) {

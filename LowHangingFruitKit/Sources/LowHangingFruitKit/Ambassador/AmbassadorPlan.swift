@@ -44,13 +44,19 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
         public var channel: String?
         public var platform: String
         public var text: String
+        /// The follow-up the ambassador posts under their own post, where the
+        /// pitch lives so the post itself can read like any other. Optional
+        /// because an older server sends none, and then nothing new shows.
+        public var reply: String?
 
-        public init(dayIndex: Int, kind: String, channel: String?, platform: String, text: String) {
+        public init(dayIndex: Int, kind: String, channel: String?, platform: String, text: String,
+                    reply: String? = nil) {
             self.dayIndex = dayIndex
             self.kind = kind
             self.channel = channel
             self.platform = platform
             self.text = text
+            self.reply = reply
         }
 
         /// A rest day carries words but nothing to post.
@@ -62,13 +68,17 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
         public var label: String
         public var channel: String
         public var text: String
+        /// The follow-up reply to post under this message; absent from an
+        /// older server, in which case the row shows only the message.
+        public var reply: String?
         public var id: String { key }
 
-        public init(key: String, label: String, channel: String, text: String) {
+        public init(key: String, label: String, channel: String, text: String, reply: String? = nil) {
             self.key = key
             self.label = label
             self.channel = channel
             self.text = text
+            self.reply = reply
         }
     }
 

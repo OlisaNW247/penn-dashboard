@@ -191,7 +191,8 @@ export function ambassadorPage({
       return `<div class="card">
         <div class="row" style="justify-content:space-between"><strong>${esc(m.label)}</strong>
           <button class="small" data-copy="${attr(text)}">copy message</button></div>
-        <p class="msg">${esc(text)}</p>
+        <p class="msg" style="white-space:pre-line">${esc(text)}</p>
+        ${m.reply ? `<p class="small muted">then reply: <span class="msg">${esc(m.reply)}</span> <button class="small ghost" data-copy="${attr(m.reply)}">copy reply</button></p>` : ""}
         <p class="small muted mono">opens: ${allByKey[`link:${m.channel}`] ?? 0} total · ${recentByKey[`link:${m.channel}`] ?? 0} last ${stats.days}d</p>
       </div>`;
     })

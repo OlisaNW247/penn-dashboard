@@ -4120,8 +4120,16 @@ none is a ship line.
   2026-11-12 never went up, and the zip of 2026-11-18 replaces it. Until
   that one is deployed the app shows the old posts and none of the
   2026-11-18 sections, which is the correct quiet behaviour against an
-  older server and also means nobody can try them. **The 2026-11-18 work
-  has never run on a phone.** What only a phone settles: that the photo
+  older server and also means nobody can try them. **On 2026-11-19 the
+  Debug build of `v12` `7498f4d` went onto Olisa's iPhone** with
+  `scripts/build-to-phone.sh` (built, installed, launched, per his
+  terminal), and the live site read the same day was still the second
+  deploy (`plan.json` had no `playbook`, `suggested` or `captures`; the
+  page had no job box). So that build shows the job-first layout and the
+  old posts, and hides every 2026-11-18 section; his first remark was that
+  the messages still lacked his two posts, which is this and nothing in
+  the app. **The 2026-11-18 sections have still never been seen on a
+  phone.** What only a phone settles: that the photo
   picker hands a screen recording over as a file (`PickedMovie`'s
   `FileRepresentation` was written without a compiler and has only been
   compiled, never run); that `AVAssetImageGenerator` cuts readable stills
