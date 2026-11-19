@@ -89,6 +89,32 @@ struct AmbassadorPlanTests {
         #expect(throws: (any Error).self) { try AmbassadorPlan.decode(Data(#"{"school":"clark"}"#.utf8)) }
     }
 
+    @Test("a reply beside today's post and a message decodes; an older server's plan has none")
+    func replies() throws {
+        let withReply = Self.json
+            .replacingOccurrences(of: "\"text\":\"psa", with: "\"reply\":\"get it on the app store\",\"text\":\"psa")
+            .replacingOccurrences(of: "\"text\":\"hi {x}\"", with: "\"text\":\"hi {x}\",\"reply\":\"and a reply\"")
+        let plan = try AmbassadorPlan.decode(Data(withReply.utf8))
+        #expect(plan.today?.reply == "get it on the app store")
+        #expect(plan.messages?.first?.reply == "and a reply")
+        let old = try AmbassadorPlan.decode(Data(Self.json.utf8))
+        #expect(old.today?.reply == nil)
+        #expect(old.messages?.first?.reply == nil)
+    }
+
+    @Test("a today and a message with a reply round-trip through JSON")
+    func replyRoundTrip() throws {
+        let today = AmbassadorPlan.Today(dayIndex: 3, kind: "anon", channel: "fizz", platform: "fizz",
+                                         text: "a post", reply: "a reply")
+        let todayBack = try JSONDecoder().decode(AmbassadorPlan.Today.self, from: JSONEncoder().encode(today))
+        #expect(todayBack == today)
+        #expect(todayBack.reply == "a reply")
+        let message = AmbassadorPlan.Message(key: "k", label: "l", channel: "gc", text: "t", reply: "r")
+        let messageBack = try JSONDecoder().decode(AmbassadorPlan.Message.self, from: JSONEncoder().encode(message))
+        #expect(messageBack == message)
+        #expect(messageBack.reply == "r")
+    }
+
     @Test("a rest day has words and nothing to post; a pause in the future is a pause")
     func restAndPause() {
         let rest = AmbassadorPlan.Today(dayIndex: 1, kind: "rest", channel: nil, platform: "rest", text: "rest day.")
@@ -743,6 +769,16 @@ struct AmbassadorWiringTests {
         #expect(content.contains("path = [.profile, .ambassador]"))
         let settings = try uiSource("SettingsPage.swift")
         #expect(settings.contains("NavigationLink(value: ContentView.DashRoute.ambassador)"))
+    }
+
+    /// Olisa, 2026-11-19: the bank is his two Sidechat posts and nothing
+    /// else, and neither carries a pitch. The pitch is the reply, so a post
+    /// without its reply on the page is half of what he asked for.
+    @Test("the page draws a post's reply with its own copy button")
+    func replyShown() throws {
+        let page = try uiSource("AmbassadorPage.swift")
+        #expect(page.contains("copy reply"))
+        #expect(page.contains("then reply:"))
     }
 
     /// Olisa, from his phone on 2026-11-12: the checklist told a signed-in
