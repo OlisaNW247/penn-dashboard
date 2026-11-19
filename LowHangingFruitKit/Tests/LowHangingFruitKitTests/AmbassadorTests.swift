@@ -781,6 +781,14 @@ struct AmbassadorWiringTests {
         #expect(page.contains("then reply:"))
     }
 
+    /// The posts are the server's and the plan is cached for half an hour,
+    /// so without a pull a changed bank stays invisible on the phone.
+    @Test("pulling the page down fetches the plan again")
+    func pullToRefresh() throws {
+        let page = try uiSource("AmbassadorPage.swift")
+        #expect(page.contains(".refreshable { await model.refresh() }"))
+    }
+
     /// Olisa, from his phone on 2026-11-12: the checklist told a signed-in
     /// ambassador to download the app, so it went, and the page now opens on
     /// what the job is and on the web page, which had been the last row.

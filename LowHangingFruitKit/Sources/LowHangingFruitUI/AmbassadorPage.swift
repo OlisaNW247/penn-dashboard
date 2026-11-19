@@ -79,6 +79,12 @@ struct AmbassadorPage: View {
         .navigationBarTitleDisplayMode(.inline)
 #endif
         .task { await model.refreshIfStale() }
+        // The plan is kept for half an hour, and the posts in it are the
+        // server's. On 2026-11-19 Olisa had the written posts removed, the
+        // server changed within minutes, and his phone went on showing the
+        // old six with nothing he could do about it. A pull asks again;
+        // signed out it does nothing (`refresh` returns without a code).
+        .refreshable { await model.refresh() }
         .sheet(isPresented: $showPosters) {
             if let plan = model.plan {
                 AmbassadorPostersView(posters: plan.posters ?? [], schoolLabel: plan.schoolLabel)
