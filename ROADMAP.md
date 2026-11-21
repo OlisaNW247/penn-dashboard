@@ -1137,6 +1137,13 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-21.** Two sign-in fixes on the release line, from Marco's own
+  phone sitting on "duo needs you" for a day: the hidden sign-in renews
+  Duo's 30-day trust before it lapses (a weekly forced re-authentication
+  while the session is alive, `force_login=1`, latching nothing), and a
+  missed Duo push becomes one local notification after an hour. The
+  status line now says "every 30 days, smooth can get signed out".
+  CLAUDE.md → Stay signed in; Known gaps has the phone test.
 - **2026-11-18.** Release 2 of the Sweeper accuracy plan, the server wake,
   on `claude/sweeper-build-0a4dd0`, built to
   `docs/SERVER_SWEEPER_DESIGN_2026-11-17.md`: the `sweeper_wakes` table and

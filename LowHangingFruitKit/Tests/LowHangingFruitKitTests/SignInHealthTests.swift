@@ -103,13 +103,21 @@ struct SignInHealthTests {
         #expect(AppState.duoTrustExpiry(cookies: cookies, now: Self.reference) == nil)
     }
 
-    @Test("duoTrustExpiry: the latest of two expiries wins")
+    // Re-pinned 2026-11-21: the rule reads the remembered-device cookie
+    // (the `browsertrust` purpose tag) alone. Before that it took the
+    // latest expiry of ANY Duo cookie, and the jar on a real phone holds
+    // other Duo cookies that live a year beside a 30-day trust, so the
+    // trust-renewal window never opened. Fixture names are synthetic tags.
+    @Test("duoTrustExpiry: the latest of two trust cookies wins, other Duo cookies are ignored")
     func expiryLatestOfTwo() throws {
         let sooner = Self.reference.addingTimeInterval(10 * 86_400)
         let later = Self.reference.addingTimeInterval(29 * 86_400)
+        let yearOut = Self.reference.addingTimeInterval(370 * 86_400)
         let cookies = [
-            cookie(name: "trc|AAAA|BBBB", expiresDate: later),
-            cookie(name: "other", expiresDate: sooner),
+            cookie(name: "browsertrust|AAAA|BBBB", expiresDate: later),
+            cookie(name: "browsertrust|CCCC|DDDD", expiresDate: sooner),
+            cookie(name: "trc|AAAA|BBBB", expiresDate: yearOut),
+            cookie(name: "other", expiresDate: yearOut),
             cookie(name: "_duo_session"),
         ]
         let result = try #require(AppState.duoTrustExpiry(cookies: cookies, now: Self.reference))
@@ -119,7 +127,14 @@ struct SignInHealthTests {
     @Test("duoTrustExpiry: an expiry already in the past is ignored")
     func expiryPastIgnored() {
         let past = Self.reference.addingTimeInterval(-86_400)
-        #expect(AppState.duoTrustExpiry(cookies: [cookie(name: "trc|A|B", expiresDate: past)], now: Self.reference) == nil)
+        #expect(AppState.duoTrustExpiry(cookies: [cookie(name: "browsertrust|A|B", expiresDate: past)], now: Self.reference) == nil)
+    }
+
+    @Test("duoTrustExpiry: a jar with no trust cookie is nil whatever else lives in it")
+    func expiryNoTrustCookie() {
+        let yearOut = Self.reference.addingTimeInterval(370 * 86_400)
+        let cookies = [cookie(name: "trc|A|B", expiresDate: yearOut), cookie(name: "other", expiresDate: yearOut)]
+        #expect(AppState.duoTrustExpiry(cookies: cookies, now: Self.reference) == nil)
     }
 
     // MARK: plain renewal words

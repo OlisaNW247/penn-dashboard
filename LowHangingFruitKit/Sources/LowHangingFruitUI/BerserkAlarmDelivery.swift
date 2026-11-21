@@ -311,7 +311,14 @@ extension NotificationScheduler {
             // first pass after they were scheduled would remove them. They
             // reserve their slots out of the budget instead
             // (`NotificationScheduler.reservedForeignSlots`).
-            let stale = pending.filter { !plannedIDs.contains($0) && !AmbassadorReminders.isAmbassadorIdentifier($0) }
+            // The Duo notice (`duo:wait`) is spared the same way. It is posted
+            // for delivery at once, so it is rarely pending at all; one slot
+            // against the 60-slot budget needs no reservation (the cap has
+            // headroom), so `reservedForeignSlots` is unchanged.
+            let stale = pending.filter {
+                !plannedIDs.contains($0) && !AmbassadorReminders.isAmbassadorIdentifier($0)
+                    && !DuoWaitNotice.isDuoIdentifier($0)
+            }
             if !stale.isEmpty {
                 sink.removePending(identifiers: stale)
                 result.staleRemoved = stale.count

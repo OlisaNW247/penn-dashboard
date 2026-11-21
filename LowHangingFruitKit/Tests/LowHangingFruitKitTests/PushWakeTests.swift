@@ -38,7 +38,8 @@ struct PushWakeTests {
         for forbidden in ["syncIfConfigured", "refreshCanvasGrades", "syncConnectedServices", "refreshCourseKnowledge",
                           "deviceSyncPass", "postTurnedInNotifications", "startSilentCanvasRenewal",
                           "awaitPendingSilentRenewal", "attemptSilentCanvasRenewal", "runBackgroundKeepAliveProbe",
-                          "syncGradescope", "refreshEdDiscussion", "requestAuthorization", "setEnabled", "sweeperWakePass"] {
+                          "syncGradescope", "refreshEdDiscussion", "requestAuthorization", "setEnabled", "sweeperWakePass",
+                          "DuoWaitNotice", "postDuoWaitNoticeIfDue", "postDuoWaitNotification"] {
             #expect(!body.contains(forbidden), "the push wake must not call \(forbidden)")
         }
         #expect(!body.contains(".reschedule(from"))

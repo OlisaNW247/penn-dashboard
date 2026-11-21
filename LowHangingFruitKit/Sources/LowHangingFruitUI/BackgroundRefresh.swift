@@ -368,6 +368,10 @@ public enum LHFBackgroundRefresh {
             onCancel: { Task { @MainActor in state.abortSilentRenewal() } }
         )
 
+        // The missed-Duo-push notice, for a phone that is closed when the
+        // push goes unanswered. Refresh wake only: the push wake never posts.
+        await state.postDuoWaitNoticeIfDue(scheduler: scheduler)
+
         // Mirrors `ContentView.announceTurnedIn`: clear-then-post, so a
         // notice can't be posted twice even if this pass were somehow
         // re-entered.

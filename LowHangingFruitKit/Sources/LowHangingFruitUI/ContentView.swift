@@ -43,6 +43,9 @@ struct ContentView: View {
     /// reminder (`NotificationResponseRouter`) or a `smooth://ambassador`
     /// link (`RootView`), consumed here by pushing Profile → ambassador.
     @ObservedObject private var ambassador = AmbassadorModel.shared
+    /// A tap on the missed-Duo-push notice (`DuoWaitNotice`): opens the same
+    /// Canvas sign-in cover the "duo needs you" row does.
+    @ObservedObject private var duoNotice = DuoWaitNoticeInbox.shared
     /// Set in `.onAppear` once `vm` holds the dashboard's items, and read by
     /// `takeLoudAlertActions()`. Until then nothing is taken, because a tap
     /// handled against an empty `vm.items` completes nothing and re-plans the
@@ -260,8 +263,9 @@ struct ContentView: View {
         // A reminder tap or an ambassador link: land on the page, with
         // Profile under it. Read at appearance too, because a cold launch
         // from the notification sets the flag before this view exists.
-        .onAppear { openAmbassadorIfAsked() }
+        .onAppear { openAmbassadorIfAsked(); openDuoSignInIfAsked() }
         .onChange(of: ambassador.pendingOpen) { _, _ in openAmbassadorIfAsked() }
+        .onChange(of: duoNotice.pendingOpen) { _, _ in openDuoSignInIfAsked() }
         // Class renames live in AppState but are read by the cards, which are
         // deliberately AppState-free so they still render in previews.
         .environment(\.courseNameOverrides, state.courseNameOverrides)
@@ -367,6 +371,7 @@ struct ContentView: View {
             // render and this closure.
             isDashboardBound = true
             takeLoudAlertActions()
+            openDuoSignInIfAsked()
         }
         // Every later tap, with the dashboard already on screen.
         .onChange(of: actionInbox.queue) { _, queue in
@@ -540,6 +545,14 @@ struct ContentView: View {
             vm.reload(preservingEdits: true)
             rescheduleNotifications()
         }
+    }
+
+    private func openDuoSignInIfAsked() {
+        // Waits for the dashboard to bind (the loud-alert inbox's rule); this
+        // view only exists past onboarding and the update wall.
+        guard duoNotice.pendingOpen, isDashboardBound else { return }
+        duoNotice.consume()
+        state.restartOnboarding(for: .canvas)
     }
 
     private func openAmbassadorIfAsked() {
@@ -785,7 +798,7 @@ struct ContentView: View {
             statusLineLabel("approve the duo push on this phone")
         case .duoNeedsYou:
             Button { state.restartOnboarding(for: .canvas) } label: {
-                statusLineLabel("duo needs you \u{00B7} tap to finish")
+                statusLineLabel("duo needs you \u{00B7} tap to finish \u{2014} every 30 days, smooth can get signed out")
             }
             .buttonStyle(.plain)
         case .passwordChanged:
@@ -1173,6 +1186,9 @@ struct ContentView: View {
         // inside the cooldown). Rides this existing activation/5-minute
         // cadence rather than a timer of its own.
         state.retrySilentRenewalIfDue()
+        // Duo's trust, renewed before it lapses (a forced hidden sign-in,
+        // at most once a week, only while everything else is healthy).
+        state.renewDuoTrustIfDue()
         // Cheap (one cookie-jar read, no network) — refreshed on the same
         // activation/5-minute cadence as everything else here (and once at
         // launch by the `.task` above) so
@@ -1187,6 +1203,8 @@ struct ContentView: View {
         // it too.
         state.refreshAnnouncementBadge()
         if scheduler.isEnabled { await scheduler.reschedule(from: vm.items) }
+        // A Duo push nobody approved for an hour: one notice per latch.
+        await state.postDuoWaitNoticeIfDue(scheduler: scheduler)
         // Backstop: the minute poller is foreground-only and has, once on a
         // device, made no read while an alarm was inside the hour
         // (2026-11-18). This makes every refresh pass inside the hour a

@@ -783,6 +783,16 @@ final class NotificationScheduler: ObservableObject {
         }
     }
 
+    /// The missed-Duo-push notice (`DuoWaitNotice`). Same rules as the
+    /// turned-in confirmations: no permission prompt, nothing when reminders
+    /// are off. Answers whether it was handed to the system.
+    func postDuoWaitNotification() async -> Bool {
+        guard isEnabled else { return false }
+        await refreshAuthStatus()
+        guard authStatus == .authorized || authStatus == .provisional else { return false }
+        return (try? await center.add(DuoWaitNotice.request())) != nil
+    }
+
     /// "Claude drafted Problem Set 7", one per new agent draft
     /// (`AgentDraftNotices`). Same rules as the turned-in confirmations: no
     /// permission prompt, nothing when reminders are off. Identifiers use the

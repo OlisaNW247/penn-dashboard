@@ -469,10 +469,20 @@ Keep this current. It is the fastest way for a new session to know what exists.
     reconnecting" once a silent renewal has run 3 seconds, "approve the
     duo push on this phone" while a push waits, and the three the student
     must act on: "pennkey password changed · update in profile" (opens
-    Profile), "duo needs you · tap to finish" and "sign in to canvas"
-    (no login and no saved password), both opening the sign-in as a cover
-    over the dashboard, with an xmark to close it (it does not restart
-    onboarding; the lock-out trap below). The 24-hour clock,
+    Profile), "duo needs you · tap to finish — every 30 days, smooth can
+    get signed out" (Marco's wording, 2026-11-21, after his own phone sat
+    on that line for a day; it was "duo needs you · tap to finish") and
+    "sign in to canvas" (no login and no saved password), both opening the
+    sign-in as a cover over the dashboard, with an xmark to close it (it
+    does not restart onboarding; the lock-out trap below). **Since
+    2026-11-21 (blind) a missed Duo push is also a notification**: once the
+    awaiting-Duo latch over an expired session is an hour old, one local
+    notification, "sign in to canvas to keep smooth updated" (`duo:wait`,
+    `DuoWaitNotice`), posted from the foreground pass and the background
+    refresh wake (never the push wake), once per latch
+    (`duoWaitNoticePostedForLatchV1`), removed when the latch clears; a tap
+    opens the same cover once the dashboard is bound. Before it, a student
+    who missed the push had stale cards and one small line for days. The 24-hour clock,
     `canvasSessionExpired`, the confirmed-dead latch, a dead probe and a
     failed, timed-out or landed attempt never produce a line; that is the
     point. A "reconnect gradescope" banner
@@ -1967,6 +1977,12 @@ one of `text`, `textFileOnly`, `file`, `link`, `locked`, `offline`, `signIn`,
 nothing is persisted, so no call reaches the server. The screenshots of
 2026-11-11 (`docs/v11-ui/`) were taken with it.
 
+`-LHFRenewDuoTrustNow` (DEBUG only, 2026-11-21) treats Duo's remembered-device
+trust as about to lapse for that launch and forgets the last forced
+attempt, so the forced re-authentication (`force_login=1`, Stay signed in)
+runs on the first foreground pass; wait ten minutes after any password
+submission first, or the renewer refuses to fill.
+
 `-LHFAgeCanvasSession` (DEBUG only) backdates the saved Canvas cookies'
 `capturedAt` by 25 hours before launch, so the real renew-on-open path runs
 now instead of tomorrow. Every silent-renewal step in a DEBUG build is
@@ -2068,6 +2084,17 @@ account signed into Xcode. Submitting for review is a separate, manual
 step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
+
+**Current on `claude/ambassador-header` (2026-11-21, later: the Duo trust
+renewal and the missed-push notice): 4348 tests / 436 suites, `swift test
+--no-parallel` alone on Marco's Mac (180 s of tests), after one red in the
+full run: `SignInHealthTests` "the latest of two expiries wins" pinned the
+old any-Duo-cookie rule for `duoTrustExpiry` and was re-pinned to the
+trust-cookie rule with a year-long other cookie beside it (+1 test for the
+no-trust-cookie jar), green alone with the two new suites; the unsigned iOS
+Debug build of the same tree succeeded. +23 / +2 over 4325 / 434:
+`DuoTrustRenewalTests` (14), `DuoWaitNoticeTests` (8), the re-pin. Nothing
+on a phone; the force_login question is in Known gaps.**
 
 **Current on `claude/ambassador-header` (2026-11-21, the release line with
 `origin/v10` `d22ec49` and `origin/v12` `8fc16c8` merged in): 4325 tests /
@@ -3732,6 +3759,37 @@ itself.
 - **Failure handling.** One rejected password disables auto-login outright
   rather than retrying, so a typo or a changed password can't lock the
   PennKey account; Profile → accounts then shows "update password".
+- **Duo's trust is renewed before it lapses (2026-11-21, blind; never on a
+  phone).** Duo's remembered-device cookie lives 30 days from the last pass
+  through Duo, and a daily user never passes through Duo again: the
+  keepalive keeps Canvas alive, so no sign-in runs, so the trust expires
+  unnoticed, and the first day away after that ends on a push nobody
+  approves (Marco's phone, 2026-11-20/21: trust gone since the 2 November
+  Duo test, 28 hours away, "duo needs you" for a day; Olisa never saw it
+  only because he has not yet had a day away after his trust lapsed). So
+  `AppState.renewDuoTrustIfDue` (from `settleAfterFetch`, foreground, Penn,
+  `canAutoLoginSilently`) runs one hidden sign-in with
+  `force_login=1` on the SAML start URL (`CanvasSessionRenewer.startURL(for:
+  forceReauthentication:)`; without it Canvas lands on the dashboard and
+  Duo is never reached) while the trust has under 5 days left and the
+  session is alive (`shouldRenewDuoTrust`: never once the trust is gone,
+  which would send a push for nothing; at most once a week,
+  `duoTrustRenewalAttemptAtV1`, written only for an attempt that ran; outside
+  the 10-minute credential spacing and the 60-minute failed-submission
+  clock). The trust expiry is read from the remembered-device cookie alone
+  (`duoTrustExpiry`, the `browsertrust` purpose tag; the old "latest Duo
+  cookie" rule read a year-long cookie beside it and would never have
+  fired). A forced attempt that ends on Duo or on the login page records
+  its summary and latches nothing (no awaiting-Duo, no confirmed-dead, no
+  stand-down, no landing count, `applyRenewalOutcome(forced:)`), because it
+  ran over a live session and says nothing about it; `.renewed`,
+  `.passwordRejected` and `.timedOut` are handled as for any attempt.
+  Unproven until a phone runs it: whether Penn honours `force_login` by
+  re-asking the password and re-issuing Duo's trust silently, and whether
+  the live Canvas session survives a timed-out forced attempt.
+  `-LHFRenewDuoTrustNow` (DEBUG) treats the trust as about to lapse for one
+  launch; read "duo trust renewal: extended" or "unchanged" in
+  `debugRenewalLogV1` afterwards.
 - **Duo: the credential never reaches it; the app taps its buttons.**
   The stored credential only ever reaches the IdP's password field, never a
   Duo prompt. Since 2026-11-02, in a FOREGROUND attempt only, the hidden
@@ -5790,6 +5848,18 @@ none is a ship line.
   `debugRenewalLogV1` for "finished: <host> <path>", "login form check",
   "credential fill result", "duo push sent" and "duo push approved"; the
   per-navigation lines are DEBUG-only and were added for this check.
+- **The Duo trust renewal and the missed-push notice (2026-11-21) are
+  compiled and tested, never on a phone.** The one real unknown is
+  `force_login=1`: whether Penn's identity provider re-asks the password
+  and Duo re-issues the 30-day trust without a push. The test is a DEBUG
+  build with `-LHFRenewDuoTrustNow` on Marco's phone (its trust runs to
+  2026-12-21), then `debugRenewalLogV1`: "duo trust renewal: extended" is
+  a pass; "unchanged" with a "finished: … duosecurity …" line before it
+  means Duo was reached and did not extend; "unchanged" with no Duo line
+  means Canvas ignored the flag and the renewal is a no-op. The notice has
+  not been seen either (post it by letting a latch age an hour, or read the
+  pending requests). Not built: a trust-renewal for a student whose trust
+  is already gone (by design: that is the ordinary sign-in and a push).
 - **Duo passcode autofill is unverified.** `DuoPasscodeAutofill`
   (2026-10-30) is tested only as a string; whether Duo's Universal Prompt
   field gets matched, and whether iOS then offers the SMS code, needs a

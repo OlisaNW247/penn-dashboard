@@ -1100,6 +1100,8 @@ final class AppState: ObservableObject {
     /// When `autoLoginAwaitingDuo` was last latched. Absent on a latch set by
     /// an older build, which reads as "old enough" for the foreground retry.
     private static let autoLoginAwaitingDuoSinceKey = "autoLoginAwaitingDuoSinceV1"
+    /// When the last forced Duo-trust renewal was started (`renewDuoTrustIfDue`).
+    static let duoTrustRenewalAttemptAtKey = "duoTrustRenewalAttemptAtV1"
     /// When a foreground attempt last submitted the saved password and did
     /// not end `.renewed`; the next foreground submission waits an hour
     /// (`CanvasSessionRenewer.failedSubmissionSpacing`), across relaunches.
@@ -1657,6 +1659,16 @@ final class AppState: ObservableObject {
             lastSilentRenewalAttemptAt = nil
             UserDefaults.lhf.removeObject(forKey: Self.lastBackgroundSilentRenewalAttemptAtKey)
             lastBackgroundSilentRenewalAttemptAt = nil
+        }
+        // `-LHFRenewDuoTrustNow`: treats Duo's trust as about to lapse for
+        // this launch (infinite horizon) and forgets the last forced
+        // renewal, so the owner can watch a forced re-authentication on a
+        // phone whose trust is weeks away. The rule's other guards (live
+        // session, no Duo wait, password not rejected, spacing of the
+        // password itself) still apply.
+        if ProcessInfo.processInfo.arguments.contains("-LHFRenewDuoTrustNow") {
+            debugRenewDuoTrustNow = true
+            UserDefaults.lhf.removeObject(forKey: Self.duoTrustRenewalAttemptAtKey)
         }
         // `-LHFSubmitSpike <courseID> <assignmentID>`: Phase 0 diagnostic for
         // docs/AGENT_CONNECTION_RESEARCH_2026-11-08.md §8 items 1-2. Submits a
@@ -2877,6 +2889,9 @@ final class AppState: ObservableObject {
             UserDefaults.lhf.set(now.timeIntervalSince1970, forKey: Self.autoLoginAwaitingDuoSinceKey)
         } else {
             UserDefaults.lhf.removeObject(forKey: Self.autoLoginAwaitingDuoSinceKey)
+            // The wait is over: the "sign in" notice for it (DuoWaitNotice)
+            // is stale, and the next latch is a new one that may post again.
+            DuoWaitNotice.latchCleared()
         }
     }
 
@@ -3033,6 +3048,8 @@ final class AppState: ObservableObject {
     /// `-LHFForgetDuoTrust`: no session probe (pre-expiry or keepalive) for
     /// this process, so the aged clock goes straight to the renewal.
     private var debugSkipSessionProbe = false
+    /// `-LHFRenewDuoTrustNow` (DEBUG launch argument): see `init`.
+    private var debugRenewDuoTrustNow = false
     private var loggedProbeSkip = false
 
     /// `-LHFSubmitSpike`'s trail, kept like `debugRenewalLogV1` so it can be
@@ -3074,7 +3091,7 @@ final class AppState: ObservableObject {
     /// the renewer's in-flight guard would have made it anyway; skipping it
     /// here keeps the stored task and the in-flight flag describing the real
     /// attempt rather than a redundant instant `.notAttempted`.
-    func startSilentCanvasRenewal(cooldown: TimeInterval? = nil) {
+    func startSilentCanvasRenewal(cooldown: TimeInterval? = nil, forceReauthentication: Bool = false) {
         guard pendingSilentRenewal == nil else { return }
         // Nothing left to try silently (item 15); see the property.
         guard !silentRenewalCannotProceed else { return }
@@ -3083,7 +3100,7 @@ final class AppState: ObservableObject {
         isSilentRenewalInFlight = true
         silentRenewalStartedAt = Date()
         pendingSilentRenewal = Task { @MainActor [weak self] in
-            _ = await self?.performSilentCanvasRenewal(cooldown: cooldown)
+            _ = await self?.performSilentCanvasRenewal(cooldown: cooldown, forceReauthentication: forceReauthentication)
             self?.finishSilentCanvasRenewal(generation: generation)
         }
     }
@@ -3332,11 +3349,121 @@ final class AppState: ObservableObject {
         startSilentCanvasRenewal()
     }
 
+    /// Pure rule: should the foreground start a FORCED sign-in now, to get
+    /// Duo's remembered-device trust renewed before it lapses?
+    ///
+    /// Why. Duo's trust is a cookie in the hidden login store and lasts 30
+    /// days from the last pass through Duo. The keepalive keeps Canvas's own
+    /// session alive for a daily user, so Duo is never visited and the trust
+    /// silently runs out. The first time that student then leaves for over a
+    /// day, the silent sign-in types the saved PennKey, reaches Duo, finds no
+    /// trust, Duo sends a push nobody approves, and the app latches "duo
+    /// needs you" (the owner's phone, 2026-11-21). Passing through Duo while
+    /// the student is at the phone and the trust is still good renews it
+    /// without a push.
+    ///
+    /// Only inside `horizon` before the trust ends, and only when it has not
+    /// ended: with the trust already gone a forced sign-in would send a push
+    /// for nothing, and the ordinary path (`retrySilentRenewalIfDue`) handles
+    /// that case. The session must be working (a broken one is the ordinary
+    /// path's job), no Duo wait, no rejected password, no attempt in flight,
+    /// no login pane. Attempts are `spacing` apart and the password's own
+    /// foreground spacing applies, so this can never type the password
+    /// more than the renewer already would.
+    ///
+    /// The wrong fixes: renewing whenever trust is missing or old (pushes a
+    /// phone that was fine); a renewal without `force_login` (Canvas lands on
+    /// the dashboard and Duo is never reached, so nothing is renewed); and
+    /// a retry on every refresh (the password would be typed hourly).
+    nonisolated static func shouldRenewDuoTrust(
+        trustExpiry: Date?,
+        now: Date,
+        sessionExpired: Bool,
+        awaitingDuo: Bool,
+        disabledReason: String?,
+        lastTrustRenewalAttemptAt: Date?,
+        lastCredentialSubmissionAt: Date?,
+        lastFailedCredentialSubmissionAt: Date? = nil,
+        renewalInFlight: Bool,
+        loginPaneActive: Bool,
+        isPenn: Bool,
+        canAutoLoginSilently: Bool = true,
+        horizon: TimeInterval = 5 * 24 * 3600,
+        spacing: TimeInterval = 7 * 24 * 3600,
+        credentialSpacing: TimeInterval = CanvasSessionRenewer.foregroundCredentialSpacing,
+        failedSpacing: TimeInterval = CanvasSessionRenewer.failedSubmissionSpacing
+    ) -> Bool {
+        guard isPenn, canAutoLoginSilently else { return false }
+        guard let trustExpiry, trustExpiry > now, trustExpiry.timeIntervalSince(now) <= horizon else { return false }
+        guard !sessionExpired, !awaitingDuo, disabledReason == nil else { return false }
+        guard !renewalInFlight, !loginPaneActive else { return false }
+        if let last = lastTrustRenewalAttemptAt {
+            let age = now.timeIntervalSince(last)
+            guard age >= 0, age >= spacing else { return false }
+        }
+        if let last = lastCredentialSubmissionAt, now.timeIntervalSince(last) < credentialSpacing { return false }
+        // A password that just failed waits out the renewer's own hour.
+        if let last = lastFailedCredentialSubmissionAt, now.timeIntervalSince(last) < failedSpacing { return false }
+        return true
+    }
+
+    /// Foreground only, from `ContentView.refresh()` right after
+    /// `retrySilentRenewalIfDue`. Starts one hidden, forced sign-in when
+    /// `shouldRenewDuoTrust` says so (see it for why). Same attempt as any
+    /// silent renewal otherwise: same credential closure, budget and
+    /// outcome handling.
+    func renewDuoTrustIfDue(now: Date = Date()) {
+        guard renewalContext == .foreground, !isUsingFixtureData else { return }
+        var horizon = 5.0 * 24 * 3600
+        #if DEBUG
+        if debugRenewDuoTrustNow { horizon = .infinity }
+        #endif
+        let lastAttempt = (UserDefaults.lhf.object(forKey: Self.duoTrustRenewalAttemptAtKey) as? Double)
+            .map { Date(timeIntervalSince1970: $0) }
+        guard Self.shouldRenewDuoTrust(
+            trustExpiry: duoTrustExpiry,
+            now: now,
+            sessionExpired: canvasSessionExpired,
+            awaitingDuo: autoLoginAwaitingDuo,
+            disabledReason: autoLoginDisabledReason,
+            lastTrustRenewalAttemptAt: lastAttempt,
+            lastCredentialSubmissionAt: Self.persistedCredentialSubmissionAt(),
+            lastFailedCredentialSubmissionAt: failedCredentialSubmissionAt,
+            renewalInFlight: isSilentRenewalInFlight,
+            loginPaneActive: isCanvasLoginPaneActive,
+            isPenn: canvasInstallation.id == CanvasInstallation.penn.id,
+            canAutoLoginSilently: canAutoLoginSilently,
+            horizon: horizon
+        ) else { return }
+        guard pendingSilentRenewal == nil, !silentRenewalCannotProceed else { return }
+        let before = duoTrustExpiry
+        startSilentCanvasRenewal(forceReauthentication: true)
+        #if DEBUG
+        Task { @MainActor [weak self] in
+            await self?.awaitPendingSilentRenewal()
+            await self?.refreshDuoRememberSummary()
+            let extended = (self?.duoTrustExpiry).map { after in before.map { after > $0 } ?? true } ?? false
+            DebugRenewalLog.record("duo trust renewal: \(extended ? "extended" : "unchanged")")
+        }
+        #endif
+    }
+
     /// Records one outcome in the summary, the retry bookkeeping and the
     /// consecutive-landing count, then persists them. The writes honour
     /// `persistsConfirmedDeadFlag` so `noteRenewalOutcomeForTesting` stays out
     /// of the shared defaults domain, for the reason given there.
-    private func recordSilentRenewal(kind: RenewalOutcomeKind, context: RenewalContext, at now: Date) {
+    private func recordSilentRenewal(kind: RenewalOutcomeKind, context: RenewalContext, at now: Date, forcedWithoutLatch: Bool = false) {
+        // A forced Duo-trust attempt that reached Duo or the login page
+        // writes its summary and nothing else: the landing streak, the
+        // stand-down and the last-outcome slot are read by rules about the
+        // ordinary sign-in and must not hear about it.
+        if forcedWithoutLatch {
+            lastSilentRenewalSummary = Self.renewalSummary(kind: kind, at: now, context: context)
+            if persistsConfirmedDeadFlag, let summary = lastSilentRenewalSummary {
+                UserDefaults.lhf.set(summary, forKey: Self.lastSilentRenewalSummaryKey)
+            }
+            return
+        }
         // Landing count first. Only a foreground landing counts toward the
         // "second consecutive" rule; a background landing neither adds to it
         // nor resets it. `.timedOut` is unknown and leaves it alone.
@@ -3458,6 +3585,7 @@ final class AppState: ObservableObject {
         defaults.removeObject(forKey: Self.lastBackgroundSilentRenewalAttemptAtKey)
         defaults.removeObject(forKey: Self.silentRenewalConsecutiveLandingsKey)
         defaults.removeObject(forKey: Self.lastCredentialSubmissionAtKey)
+        defaults.removeObject(forKey: Self.duoTrustRenewalAttemptAtKey)
     }
 
     // MARK: - Duo remembered-device diagnostics
@@ -3579,8 +3707,27 @@ final class AppState: ObservableObject {
     /// beside a fresher one. A date already in the past is ignored so an
     /// expired cookie never counts as trust. Reads only `expiresDate`, never a name or a value, and is
     /// `nonisolated` for the same reason as its sibling above.
+    ///
+    /// Only Duo's remembered-device cookies count (2026-11-21): the jar also
+    /// holds other Duo cookies that live a year, and the max over all of them
+    /// kept the renewal's five-day window from ever opening. The cookie's
+    /// purpose tag is the part of its name before the first `|`
+    /// (`duoCookieDisplayName` explains the tag is not a secret and the part
+    /// after the `|` is); the remembered-device tag is `browsertrust`.
     nonisolated static func duoTrustExpiry(cookies: [HTTPCookie], now: Date) -> Date? {
-        cookies.compactMap { $0.expiresDate }.filter { $0 > now }.max()
+        cookies
+            .filter { duoCookieTag($0.name) == duoTrustCookieTag }
+            .compactMap { $0.expiresDate }
+            .filter { $0 > now }
+            .max()
+    }
+
+    nonisolated static let duoTrustCookieTag = "browsertrust"
+
+    /// The purpose tag of a Duo cookie name: everything before the first `|`.
+    nonisolated static func duoCookieTag(_ name: String) -> String {
+        guard let separator = name.firstIndex(of: "|") else { return name }
+        return String(name[name.startIndex..<separator])
     }
 
     /// Truncates a Duo cookie name to everything before its first `|` plus
@@ -4305,7 +4452,7 @@ final class AppState: ObservableObject {
     /// A background `AppState` gets `CanvasSessionRenewer.backgroundTimeout`
     /// so the attempt fits inside the system's wake budget.
     @discardableResult
-    private func performSilentCanvasRenewal(cooldown: TimeInterval? = nil) async -> CanvasSessionRenewer.Outcome {
+    private func performSilentCanvasRenewal(cooldown: TimeInterval? = nil, forceReauthentication: Bool = false) async -> CanvasSessionRenewer.Outcome {
         guard !isUsingFixtureData else {
             #if DEBUG
             DebugRenewalLog.record("requested, skipped: fixture data (-LHFDemoData)")
@@ -4383,7 +4530,9 @@ final class AppState: ObservableObject {
                 now: Date(),
                 madeForegroundAttemptThisProcess: madeForegroundRenewalThisProcess
             )
-        if isForegroundAttempt { madeForegroundRenewalThisProcess = true }
+        // A forced Duo-trust attempt must not spend the once-per-open Duo
+        // retry grant the ordinary path keeps for a real latch.
+        if isForegroundAttempt && !forceReauthentication { madeForegroundRenewalThisProcess = true }
         defer { duoRetryGrantedForThisAttempt = false }
 
         let attemptTimeout = renewalContext == .background
@@ -4400,15 +4549,23 @@ final class AppState: ObservableObject {
         let outcome = await renewer.renewIfNeeded(
             timeout: attemptTimeout,
             cooldown: attemptSpacing,
-            isBackground: renewalContext == .background
+            isBackground: renewalContext == .background,
+            forceReauthentication: forceReauthentication
         )
+        // Recorded only when the attempt actually ran (not gated away), so a
+        // refused start does not cost the week.
+        if forceReauthentication {
+            if case .notAttempted = outcome {} else {
+                UserDefaults.lhf.set(Date().timeIntervalSince1970, forKey: Self.duoTrustRenewalAttemptAtKey)
+            }
+        }
         // The account may have been disconnected, switched or re-keyed while
         // the attempt ran (item 14): its verdict is about an account that is
         // gone and must change nothing here.
         guard !Self.renewalResultIsStale(startedGeneration: startedGeneration, currentGeneration: canvasAccountGeneration) else {
             return .abortedByLoginPane
         }
-        applyRenewalOutcome(outcome)
+        applyRenewalOutcome(outcome, forced: forceReauthentication)
 
         guard outcome == .renewed else { return outcome }
         let cookies = await AutoSyncCoordinator.canvasCookies(forHost: canvasInstallation.host)
@@ -4421,7 +4578,7 @@ final class AppState: ObservableObject {
     /// — always applies, pulled out of `performSilentCanvasRenewal()` so
     /// `noteRenewalOutcomeForTesting(_:)` below can drive the exact same code
     /// a real attempt runs without needing a real network round trip.
-    private func applyRenewalOutcome(_ outcome: CanvasSessionRenewer.Outcome) {
+    private func applyRenewalOutcome(_ outcome: CanvasSessionRenewer.Outcome, forced: Bool = false) {
         // Wired on EVERY outcome, not just `.renewed` — the whole point of
         // the sticky dead-state fix is that a foreground `.needsDuo` or a
         // second `.landedOnLoginPage` (real proof the session is dead
@@ -4430,6 +4587,29 @@ final class AppState: ObservableObject {
         // comment) must reach `canvasSessionExpired` too, not just a
         // successful renewal.
         let context = renewalContext
+        // A forced attempt (Duo trust renewal) runs over a session that is
+        // alive. Its Duo prompt or its login-page landing says nothing about
+        // that session, so it records the summary and latches nothing: no
+        // awaiting-Duo, no confirmed-dead, no stand-down, no landing counts.
+        // `.renewed`, `.passwordRejected` and `.timedOut` are handled as for
+        // any attempt (a rejection is real; a timeout changes nothing).
+        let forcedWithoutLatch: Bool = {
+            guard forced else { return false }
+            switch outcome {
+            case .needsDuo, .landedOnLoginPage: return true
+            default: return false
+            }
+        }()
+        if forcedWithoutLatch {
+            recordSilentRenewal(kind: Self.renewalOutcomeKind(outcome), context: context, at: Date(), forcedWithoutLatch: true)
+            #if DEBUG
+            DebugRenewalLog.record("forced duo trust renewal: \(Self.renewalOutcomeKind(outcome).rawValue), nothing latched")
+            #endif
+            Task { @MainActor [weak self] in
+                await self?.refreshDuoRememberSummary()
+            }
+            return
+        }
         if case .renewed = outcome {
             sessionProbeSaidDead = false
             // A success ends the 60-minute failed-submission wait (item 12):
@@ -4538,7 +4718,7 @@ final class AppState: ObservableObject {
     /// plumbing round-trips a value nothing production ever writes to it.
     /// Not a parameter on any production call site; production always goes
     /// through `performSilentCanvasRenewal()`'s own `renewIfNeeded()` call.
-    func noteRenewalOutcomeForTesting(_ outcome: CanvasSessionRenewer.Outcome) {
+    func noteRenewalOutcomeForTesting(_ outcome: CanvasSessionRenewer.Outcome, forced: Bool = false) {
         // Restores the PRIOR value, not `true`: a state that called
         // `disablePersistenceForTesting()` must stay unpersisted after this
         // seam returns, or the Duo stand-down, landing count and attempt
@@ -4547,7 +4727,7 @@ final class AppState: ObservableObject {
         let previous = persistsConfirmedDeadFlag
         persistsConfirmedDeadFlag = false
         defer { persistsConfirmedDeadFlag = previous }
-        applyRenewalOutcome(outcome)
+        applyRenewalOutcome(outcome, forced: forced)
     }
 
     #if DEBUG

@@ -281,6 +281,11 @@ final class NotificationResponseDelegate: NSObject, UNUserNotificationCenterDele
         let ambassadorTap = response.actionIdentifier == UNNotificationDefaultActionIdentifier
             && AmbassadorReminders.isAmbassadorIdentifier(response.notification.request.identifier)
 
+        // The missed-Duo-push notice: a tap opens the Canvas sign-in cover,
+        // as the dashboard's "duo needs you" row does.
+        let duoTap = response.actionIdentifier == UNNotificationDefaultActionIdentifier
+            && DuoWaitNotice.isDuoIdentifier(response.notification.request.identifier)
+
         // A tap on a loud buzz's body opens the app as it always has, and now
         // also raises the takeover. A tap on one of its buttons does not: the
         // student has already chosen, and the action below carries it out.
@@ -314,6 +319,9 @@ final class NotificationResponseDelegate: NSObject, UNUserNotificationCenterDele
             }
             if ambassadorTap {
                 AmbassadorModel.shared.noteReminderTapped()
+            }
+            if duoTap {
+                DuoWaitNoticeInbox.shared.noteTapped()
             }
             done()
         }

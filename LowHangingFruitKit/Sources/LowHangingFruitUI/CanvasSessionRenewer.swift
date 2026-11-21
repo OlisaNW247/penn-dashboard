@@ -581,7 +581,8 @@ final class CanvasSessionRenewer {
         now: Date = Date(),
         timeout: TimeInterval = CanvasSessionRenewer.timeout,
         cooldown: TimeInterval? = nil,
-        isBackground: Bool = false
+        isBackground: Bool = false,
+        forceReauthentication: Bool = false
     ) async -> Outcome {
         let cooldown = cooldown ?? (isBackground ? Self.cooldown : Self.foregroundSpacing)
         if let gated = Self.gate(
@@ -616,7 +617,8 @@ final class CanvasSessionRenewer {
         attemptSerial += 1
         defer { isInFlight = false }
 
-        let outcome = await performAttempt(timeout: timeout, isBackground: isBackground)
+        let outcome = await performAttempt(timeout: timeout, isBackground: isBackground,
+                                           forceReauthentication: forceReauthentication)
         // A foreground attempt that submitted the password and did not get a
         // session starts the 60-minute wait before the next submission. A
         // login-pane abort is the student taking over, not a failure.
@@ -627,6 +629,26 @@ final class CanvasSessionRenewer {
             onFailedCredentialSubmission?(failedAt)
         }
         return outcome
+    }
+
+    /// Where an attempt navigates. Unforced it is the installation's origin,
+    /// exactly as before. Forced (Duo trust renewal, `AppState
+    /// .renewDuoTrustIfDue`) it is the school's single sign-on start with
+    /// `force_login=1`, Canvas's switch to authenticate again even when a
+    /// live session exists. The wrong fix is loading the origin as usual: a
+    /// live Canvas session lands on the dashboard and the identity provider,
+    /// and so Duo, is never reached, which makes the renewal a no-op.
+    nonisolated static func startURL(for installation: CanvasInstallation, forceReauthentication: Bool) -> URL {
+        guard forceReauthentication else { return installation.baseURL }
+        let start = installation.id == CanvasInstallation.penn.id
+            ? URL(string: "https://canvas.upenn.edu/login/saml")!
+            : installation.loginURL
+        guard var components = URLComponents(url: start, resolvingAgainstBaseURL: false) else { return start }
+        var items = components.queryItems ?? []
+        items.removeAll { $0.name == "force_login" }
+        items.append(URLQueryItem(name: "force_login", value: "1"))
+        components.queryItems = items
+        return components.url ?? start
     }
 
     /// The cooldown clock an attempt in this context is measured against:
@@ -855,7 +877,7 @@ final class CanvasSessionRenewer {
     /// The actual WebKit-touching attempt. Never called directly — only
     /// through `renewIfNeeded()`, which has already recorded the cooldown
     /// timestamp and set the in-flight flag before this runs.
-    private func performAttempt(timeout: TimeInterval, isBackground: Bool) async -> Outcome {
+    private func performAttempt(timeout: TimeInterval, isBackground: Bool, forceReauthentication: Bool = false) async -> Outcome {
         // Fresh for every attempt — see this flag's own doc comment. Reset
         // here rather than only at declaration so a *reused* renewer
         // (`AppState.canvasSessionRenewer` is created once and kept across
@@ -942,7 +964,7 @@ final class CanvasSessionRenewer {
         // attempt — rule 1 above / docs/CANVAS_LOGIN_HARDENING.md group 3a's
         // "never re-post, never reload on failure." If this doesn't resolve
         // to a live Canvas session on its own, the attempt simply fails.
-        webView.load(URLRequest(url: installation.baseURL))
+        webView.load(URLRequest(url: Self.startURL(for: installation, forceReauthentication: forceReauthentication)))
 
         // Races the navigation settling against a hard 30s timeout. Both
         // paths call `waiter.signal(_:)`, which is idempotent (see
