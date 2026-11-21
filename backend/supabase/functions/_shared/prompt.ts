@@ -97,6 +97,12 @@ export const SYSTEM_INSTRUCTIONS: string = [
   + `none does, say that no post in the excerpts mentions a change, never `
   + `that nothing was announced.`,
 
+  `Read "today", "tonight", "tomorrow" and "this week" against the `
+  + `student's local date and time line (at the top of the retrieved `
+  + `excerpts) and the work list's due dates, which are written in the `
+  + `student's own time zone, never against the UTC instant; when you `
+  + `answer a when-question, name the calendar date you resolved it to.`,
+
   `The student's message may also carry a RETRIEVED EXCERPTS section: `
   + `short passages from their course materials (syllabus prose, `
   + `announcements, assignment descriptions, course pages) that the app `
@@ -246,9 +252,14 @@ export function buildMessages(input: BuildMessagesInput): ChatMessage[] {
     });
   }
 
+  // 2026-11-14, step 6 of the time-frame research: the profiles are
+  // Markdown (heading per course, one bullet per fact) instead of one line
+  // of JSON, and the user message's date line is labelled as the UTC
+  // instant it is. These are new bytes in the cached prefix, so the change
+  // re-bills every student's cache once; that is accepted.
   messages.push({
     role: "system",
-    content: `COURSE PROFILES (extracted from syllabi):\n${stableStringify(input.profiles)}`,
+    content: `COURSE PROFILES (extracted from syllabi):\n${renderProfilesMarkdown(input.profiles)}`,
   });
 
   for (const turn of capHistory(input.history)) {
@@ -256,7 +267,11 @@ export function buildMessages(input: BuildMessagesInput): ChatMessage[] {
   }
 
   const question = input.question.slice(0, MAX_QUESTION_CHARS);
-  const head = `Current date: ${input.askedAt}`;
+  // Labelled as what it is: the phone's own local-date line in the excerpts
+  // is the one the model should resolve "today" against. This line stays
+  // (rather than being dropped when excerpts exist) because an older phone
+  // sends no excerpts, and the server must not parse the phone's text.
+  const head = `Current instant (UTC): ${input.askedAt}`;
   const userContent = input.excerpts.length > 0
     ? `${head}\n\n${input.excerpts}\n\nQUESTION: ${question}`
     : `${head}\n\nQUESTION: ${question}`;
@@ -345,6 +360,69 @@ function capHistory(history: HistoryTurn[]): HistoryTurn[] {
     start += 1;
   }
   return recent.slice(start);
+}
+
+/**
+ * The COURSE PROFILES body as Markdown: a `### <course label>` heading per
+ * course and `- key: value` bullets under it. Keys are sorted at every
+ * level for the same reason `stableStringify` sorts them (jsonb does not
+ * promise key order, and the cached prefix must be byte-stable). Arrays of
+ * plain values join with "; "; an array of objects renders each element as
+ * one-line stable JSON; a nested object becomes indented bullets, except
+ * below two levels of nesting, where one-line stable JSON takes over so a
+ * deep structure cannot produce a ragged outline. Strings lose their line
+ * breaks so one bullet is always one line.
+ */
+export function renderProfilesMarkdown(profiles: Record<string, unknown>): string {
+  const labels = Object.keys(profiles ?? {}).sort();
+  if (labels.length === 0) return "(none)";
+  const blocks: string[] = [];
+  for (const label of labels) {
+    const lines = [`### ${label}`];
+    const value = profiles[label];
+    if (isPlainObject(value)) {
+      lines.push(...bulletLines(value, 0));
+    } else {
+      lines.push(`- ${scalarText(value)}`);
+    }
+    blocks.push(lines.join("\n"));
+  }
+  return blocks.join("\n\n");
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function scalarText(value: unknown): string {
+  if (typeof value === "string") return value.replace(/\s*\n\s*/g, " ");
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "none";
+    return value
+      .map((item) => (item !== null && typeof item === "object" ? stableStringify(item) : scalarText(item)))
+      .join("; ");
+  }
+  if (value !== null && typeof value === "object") return stableStringify(value);
+  return String(value);
+}
+
+function bulletLines(record: Record<string, unknown>, depth: number): string[] {
+  const pad = "  ".repeat(depth);
+  const lines: string[] = [];
+  for (const key of Object.keys(record).sort()) {
+    const value = record[key];
+    if (isPlainObject(value) && depth < 2) {
+      if (Object.keys(value).length === 0) {
+        lines.push(`${pad}- ${key}: none`);
+      } else {
+        lines.push(`${pad}- ${key}:`);
+        lines.push(...bulletLines(value, depth + 1));
+      }
+    } else {
+      lines.push(`${pad}- ${key}: ${scalarText(value)}`);
+    }
+  }
+  return lines;
 }
 
 /**

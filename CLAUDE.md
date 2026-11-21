@@ -2431,7 +2431,48 @@ the unsigned iOS build), after two fixture strings in
 `AmbassadorTests.swift` moved to the public `/r/{ref}` link shape. The
 count was not read off that run; no test was added or removed.
 
-Before it: **on `v10` (2026-11-07, evening, every post listed, the 3-day grace):
+
+**Current on `v10` (2026-11-16, Penn's real section names): 3711 tests /
+358 suites, all green, `swift test --no-parallel` alone on Olisa's Mac (34 s
+of tests).** +1 over 3710: `CanvasOwnSectionsTests.pennRealNames`. The first
+full run had one red, `LedgerSchemaRehearsalTests` "the widget's door refuses
+a store older than its schema…" (a store file's bytes compared before and
+after); it passed three times alone and in the full rerun, and nothing here
+touches the ledger, so it is a flake to watch, not a regression.
+
+**Before it, on `v10` (2026-11-15, the own-section read, Olisa's Mac, macOS
+27.0, Xcode 27.2): 3710 tests / 358 suites, all green, `swift test
+--no-parallel` alone on the machine, 35.8 s of tests, 87 s wall; the iOS
+Debug `xcodebuild` for `generic/platform=iOS` with `CODE_SIGNING_ALLOWED=NO`
+succeeded.** +10 tests and +2 suites over 3700 / 356: `CanvasOwnSectionsTests`
+(the decoder, the section-number rule, the paged read) and
+`CanvasOwnSectionsSummaryTests` (the name's number wins; the read fills a
+name with none). Not on a phone yet.
+
+**Before it, on `v10` at `e40e58f` (2026-11-15, Olisa's Mac, Mac18,1, macOS
+27.0, Xcode 27.2): 3700 tests / 356 suites, all green, `swift test
+--no-parallel` alone on the machine (`pgrep` empty first), 35.5 s of tests,
+92 s wall with the build.** The same count as the runner at `0aab3af`
+(the commits since touch only docs). The iOS Debug `xcodebuild` for
+`generic/platform=iOS` with `CODE_SIGNING_ALLOWED=NO` succeeded (373 compile
+steps, the widget included), so the iOS-only files and the widget compile
+too; the signed Debug device build of the same tree (3.4.1 (20)) succeeded
+and was installed on Olisa's iPhone 17 (iOS 26.6.2) at 17:59 UTC. Nothing
+needed fixing.
+
+**Before it, on `v10` at `0aab3af` (2026-11-15): 3700 tests / 356 suites, all
+green, `swift test --no-parallel` on the GitHub macOS runner (101 s, run
+43740178602); Deno 716; extension green.** The first compile of the
+2026-11-14 tree work: Marco's held course-material sync (`c5f8d2a`), the room
+on `ClassMeeting` (`9fdf8b4`), dated excerpt labels (`ec12121`), per-intent
+budgets, the weekly-schedule line and the due list (`0f093a6`). Two runner
+rounds were red on the way: the indexed situating line let old posts back
+into class-meeting blocks and broke the Ed/announcement and file/page
+scoring parity, so it was removed (`429df16`, `0aab3af`; -2 tests that
+pinned it), and a wrong "fix" of mine for `CourseSummary.section` was
+reverted (`7883f94`). No iOS `xcodebuild`, no phone.
+
+**Current on `v10` (2026-11-07, evening, every post listed, the 3-day grace):
 3674 tests / 351 suites, all green, `swift test --no-parallel` on Marco's Mac
 (85 s); the signed iOS Debug device build (3.4.1 (20)) is on his phone and
 launched.** -26 over 3700 / 351 on purpose: 31 tests that pinned the 7-day
@@ -3157,7 +3198,14 @@ end to end) or pass `-LHFForceUpdateWall`.
 
 ### ask: the model, the hedge, and the loop that tunes them
 
-`backend/supabase/functions/ask/index.ts` streams the answer. Primary
+`backend/supabase/functions/ask/index.ts` streams the answer. **Since
+2026-11-15 17:25 UTC the primary is `anthropic/claude-haiku-5.5`** (`ask`
+v24 from `v10`, then the secrets `LHF_MODEL=anthropic/claude-haiku-5.5` and
+`LHF_ASK_REASONING={"enabled":false}`, both at Olisa's tap). A tagged
+production probe right after (`prod-haiku-check`, 3 runs of `meeting`):
+3/3 answered from the Ed post, 0 reasoning tokens, 22,605 of 23,111 prompt
+tokens cached from the second request, first word 2.7 s cold and 1.3-1.6 s
+warm. To go back, delete `LHF_MODEL` (no redeploy). Before it: primary
 model `openai/gpt-4.1-mini` (`LHF_MODEL`), no reasoning field; if it has
 produced no content delta by 5 s, `z-ai/glm-5.3-flash` at
 `reasoning.effort: low` (`LHF_ASK_FALLBACK_MODEL`) starts alongside and
@@ -3248,6 +3296,30 @@ fixed hedge delay, because Haiku's first word takes 3 to 6 s and the owner's
 rule is ten seconds, not five; `probe.hedgeAfterMs` still wins. Nothing the
 phone sends changed. After deploying, read `usage.cachedTokens` on a canary
 run: it should be well above zero from the second request on.
+
+**2026-11-14/15: Haiku 5.5 measured with caching live, and the answer is
+reasoning off.** `ask-canary` v18 (deployed 2026-11-14 17:39 UTC from
+`ec12121` at Olisa's tap: the cache breakpoint, the reasoning default and
+the hedge env of 2026-11-05, plus that day's prompt pass) was probed from
+the runner with `probe.model = anthropic/claude-haiku-5.5` and
+`hedgeAfterMs 30000`, ten runs per set. With the default `{effort: low}`:
+`cachedTokens` 22,606 of ~23,100 on every request after the first (the
+breakpoint works), but first word still 4.0 s mean, about 400 hidden
+reasoning tokens per answer; the three citations answers that happened to
+reason little started in 1.0-1.3 s, which is what pointed at reasoning and
+away from the prompt read. With `--reasoning {"enabled":false}`: first word
+**1.1 s mean** (0.9-2.1 s), total about 2 s, 0 reasoning tokens, `meeting`
+10/10 from the post and 0/10 from the schedule, `citations` 10/10 with a
+known title in the sources. That is faster than `gpt-4.1-mini` live (2.9 s
+first word over the last 14 days of real traffic) and keeps Haiku's better
+answers. OpenRouter accepts `enabled: false` for Haiku (it refused it for
+`glm-5.3-flash`, an always-thinking model, on 2026-09-14). The production
+switch: deploy `ask` from `v10` with `--production`, **then** set
+`LHF_MODEL=anthropic/claude-haiku-5.5` and `LHF_ASK_REASONING={"enabled":false}`
+(in that order: the live `ask` v21 predates the env readers and the cache
+marker, so the secrets alone would run Haiku uncached and thinking). The
+5-second hedge can stay at its default; `LHF_HEDGE_AFTER_MS` is not needed.
+The fallback keeps `glm-5.3-flash` at low effort.
 
 **2026-11-02: the citation contract and the recording fixes went live,
 at Olisa's go.** `ask-canary` v8 (deployed with `--also ask` from `v8`
@@ -5318,6 +5390,46 @@ none is a ship line.
   (`docs/research/degree-progress/04-privacy-and-app-store.md`) and whether
   Penn ISC has a position; the privacy label and `REVIEW_NOTES.md` need a
   degree section before any upload.
+- **ask could not give the owner his accounting class time, because the
+  site's name carries no section number** (2026-11-15, Olisa's iPhone 17, a
+  screen recording of the tree; the recording itself could not be read from
+  the Mac, macOS blocks the Messages folder). His ACCT 1010 site is named
+  "ACCT 1010 (Hail) - Fall 2026"; `CourseCode.parse` found no section, so
+  `courses.section` stayed empty and ask's COURSE STRUCTURE block listed all
+  eight ACCT 1010 lectures (Penn Labs' 2026C entry, read from the Mac the
+  same day) at four time slots with none marked as his. Hail teaches 001
+  (Tue/Thu 8:30-9:59) and 002 (10:15-11:44), both JMHH 240, so the
+  instructor narrows it to two and no further. Fixed the same day, not on a
+  phone: `CanvasOwnSections` reads `GET /api/v1/courses?include[]=sections
+  &enrollment_state=active` with the student's session from
+  `refreshCourseIntel`, keeps a number only when the student's sections
+  name this site's own code and settle on exactly one number, and
+  `canvasCourseSummaries` uses it only when the name has none
+  (`canvasOwnSectionByCourseIDV1`, cleared on disconnect). Penn names the
+  sections "8:30amACCT1010-001-Fall2026" (read off the phone 2026-11-16 with
+  a one-off DEBUG record): the meeting time glued to the code, which the
+  first parser's leading word break missed, so the pattern is now built from
+  the site's own code (`sectionRegex(for:)`). On the `degree-progress` build
+  the phone then read ACCT 1010 → 001 and LGST 1010 → 002 (Hail's 001 is
+  Tue/Thu 8:30-9:59, JMHH 240). It reaches the server only through the
+  manifest; not yet seen there or in an answer.
+- **The course-material manifest failed on Olisa's phone, every Canvas
+  request cancelled** (2026-11-15; explained 2026-11-16: the phone was
+  running a `degree-progress` build, which lacked Marco's `c5f8d2a`; with it
+  cherry-picked there, the next sync read `manifest ok · uploaded 200`). The summary at 13:54 Eastern
+  read `ok · courses 8 · fetched 0 · partial 8 · docs 1319 · manifest
+  failed · uploaded 0 · errors 25 · error kinds: assignments 8 · modules 8 ·
+  pages 8 · announcements 1 · ed notes 1 · ed: matched 0 · read 0 ·
+  restored 8 · dropped 0 · first failure other · couldn't read ed account:
+  cancelled`, the same shape as 11:37 on the previous build. Every endpoint
+  of every course failing at once with `cancelled` reads as the whole run's
+  task being cancelled, not as eight servers failing; not investigated,
+  and no fix guessed. Caveat: at 13:12 another session switched the shared
+  checkout to `degree-progress`, so which build ran the 13:54 sync (the v10
+  Debug build installed at 12:59, or a later `degree-progress` one) is not
+  certain. A separate puzzle: the 12:51 run on the old build saved the
+  knowledge file but its summary line kept only an "already syncing" skip.
+
 - **A finished item whose completion is Canvas's alone has no swipe back
   in prev** (since 2026-11-06, `AppState.completionIsLockedByCanvas`,
   `DashItem.canMarkActive`). Before that the swipe was offered, did nothing

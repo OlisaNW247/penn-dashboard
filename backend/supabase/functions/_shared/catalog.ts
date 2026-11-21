@@ -38,9 +38,9 @@ export interface CatalogMeeting {
    *  room is listed"), never "this row predates the field" -- see
    *  `componentsLackSectionDetails` on `CatalogCourseRow` for how the
    *  second case is told apart (by the key being absent from the stored
-   *  json, not by the value being null). Deliberately not on
-   *  `CatalogEntryMeetingWire`: the app has no use for it, and the wire
-   *  shape the iOS client decodes does not change. */
+   *  json, not by the value being null). Rides on `CatalogEntryMeetingWire`
+   *  since 2026-11-14 (the phone's weekly-schedule line needs it);
+   *  instructors still do not. */
   room: string | null;
 }
 
@@ -855,6 +855,10 @@ export interface CatalogEntryMeetingWire {
   weekday: number;
   startMinutes: number;
   endMinutes: number;
+  /** The meeting's room, or null for an online or unlisted section. Sent
+   *  since 2026-11-14 so the phone can compute a weekly-schedule line for
+   *  ask; an older phone ignores the key. */
+  room: string | null;
 }
 
 /** One registrar component (lecture, lab, ...) as the *app* needs it for
@@ -926,6 +930,8 @@ export function catalogEntryWire(row: CatalogCourseRow, courseID: string): Catal
         weekday: meeting.weekday,
         startMinutes: meeting.startMinutes,
         endMinutes: meeting.endMinutes,
+        // `?? null`: a stored row written before rooms existed has no key.
+        room: meeting.room ?? null,
       });
     }
   }

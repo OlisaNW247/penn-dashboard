@@ -70,6 +70,9 @@ struct AskEdExcerptTests {
             courseCodes: ["CIS 2400"],
             contextDocument: contextDocument,
             askedAt: askedAt,
+            // The label is written in the student's zone (2026-11-14); the
+            // default `.gmt` would call a 10:30 PM Eastern post the next day.
+            timeZone: TimeZone(identifier: "America/New_York")!,
             knowledge: CourseKnowledgeBase(courses: [course], documents: documents)
         )
     }
@@ -96,12 +99,12 @@ struct AskEdExcerptTests {
         let excerpts = BackendAssistantResponder.retrievedExcerpts(question: "zeppelin", context: Self.context(documents))
 
         let edLine = try #require(Self.line(containing: "Midterm room change", in: excerpts))
-        #expect(edLine.contains("CIS 2400 · ed discussion · posted Oct 3 · \"Midterm room change\": "))
+        #expect(edLine.contains("CIS 2400 · ed discussion · posted 2026-10-03 (7 days ago) · \"Midterm room change\": "))
         let announcementLine = try #require(Self.line(containing: "Office hours moved", in: excerpts))
-        #expect(announcementLine.contains("CIS 2400 · announcement · posted Oct 5 · \"Office hours moved\": "))
+        #expect(announcementLine.contains("CIS 2400 · announcement · posted 2026-10-05 (5 days ago) · \"Office hours moved\": "))
     }
 
-    @Test("a syllabus carries no posted date, even when it has an updated date")
+    @Test("a syllabus is not \"posted\", but its updated date and age are shown (rewritten 2026-11-14)")
     func syllabusIsNotDated() throws {
         let documents = [
             Self.syllabus("Zeppelin policy: late work loses ten percent per day.", posted: Self.eastern(2026, 9, 1)),
@@ -110,7 +113,7 @@ struct AskEdExcerptTests {
         let excerpts = BackendAssistantResponder.retrievedExcerpts(question: "zeppelin", context: Self.context(documents))
         let syllabusLine = try #require(Self.line(containing: "CIS 2400 syllabus", in: excerpts))
         #expect(!syllabusLine.contains("posted"))
-        #expect(syllabusLine.hasPrefix("[") && syllabusLine.contains("CIS 2400 · syllabus · \"CIS 2400 syllabus\": "))
+        #expect(syllabusLine.hasPrefix("[") && syllabusLine.contains("CIS 2400 · syllabus · updated 2026-09-01 (39 days ago) · \"CIS 2400 syllabus\": "))
     }
 
     @Test("a post without a date gets no label rather than a made-up one")
@@ -121,7 +124,7 @@ struct AskEdExcerptTests {
         #expect(!edLine.contains("posted"))
     }
 
-    @Test("a post from another year than the question's shows the year")
+    @Test("the label always carries the full year, and the age counts across years (rewritten 2026-11-14)")
     func otherYearShowsYear() throws {
         let documents = [
             Self.ed(1, title: "Last year", body: "Zeppelin schedule.", posted: Self.eastern(2025, 10, 3)),
@@ -129,10 +132,9 @@ struct AskEdExcerptTests {
         ]
         let excerpts = BackendAssistantResponder.retrievedExcerpts(question: "zeppelin schedule", context: Self.context(documents))
         let lastYear = try #require(Self.line(containing: "Last year", in: excerpts))
-        #expect(lastYear.contains("posted Oct 3, 2025 · "))
+        #expect(lastYear.contains("posted 2025-10-03 (372 days ago) · "))
         let thisYear = try #require(Self.line(containing: "This year", in: excerpts))
-        #expect(thisYear.contains("posted Jan 15 · "))
-        #expect(!thisYear.contains("2026"))
+        #expect(thisYear.contains("posted 2026-01-15 (268 days ago) · "))
     }
 
     @Test("the label reads the question's moment, never the clock")
@@ -140,10 +142,10 @@ struct AskEdExcerptTests {
         let documents = [Self.ed(1, title: "Midterm", body: "Zeppelin midterm Friday.", posted: Self.eastern(2026, 10, 3))]
         let sameYear = BackendAssistantResponder.retrievedExcerpts(question: "zeppelin", context: Self.context(documents, askedAt: Self.eastern(2026, 10, 10)))
         let earlierYear = BackendAssistantResponder.retrievedExcerpts(question: "zeppelin", context: Self.context(documents, askedAt: Self.eastern(2025, 10, 10)))
-        #expect(sameYear.contains("posted Oct 3 · "))
-        // Asked "in 2025" about a post from 2026: the year is shown, which it
-        // could not be if the label compared against today's date.
-        #expect(earlierYear.contains("posted Oct 3, 2026 · "))
+        #expect(sameYear.contains("posted 2026-10-03 (7 days ago) · "))
+        // Asked "in 2025" about a post from 2026: the post is in the future,
+        // which it could not say if the label compared against today's date.
+        #expect(earlierYear.contains("posted 2026-10-03 (in 358 days) · "))
     }
 
     @Test("the same inputs give byte-identical output")
@@ -204,7 +206,7 @@ struct AskEdExcerptTests {
         #expect(request.question == "when is the zeppelin midterm?")
         #expect(request.history.isEmpty)
         #expect(request.askedAt == Self.asked)
-        #expect(request.excerpts.contains("posted Oct 3"))
+        #expect(request.excerpts.contains("posted 2026-10-03"))
         #expect(!request.contextDocument.contains("posted"))
         #expect(!request.question.contains("RETRIEVED EXCERPTS"))
     }

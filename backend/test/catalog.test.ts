@@ -467,6 +467,29 @@ Deno.test("catalogEntryWire: flattens every component's meetings, tagging each w
   }
 });
 
+Deno.test("catalogEntryWire: a meeting's room passes through, and a missing room is null", async () => {
+  const row = parsePennLabsCourse(await loadFixture());
+  assert.ok(row);
+  const wire = catalogEntryWire(row, "canvas-course-123");
+  const lab = wire.meetings.find((m) => m.sectionID === "PHYS-0151-151");
+  assert.ok(lab);
+  assert.equal(lab.room, "DRLB LAB");
+  const withNull = {
+    ...row,
+    components: [{
+      ...row.components[0],
+      meetings: [
+        { sectionID: "A", weekday: 2, startMinutes: 540, endMinutes: 590, room: null },
+        // A row stored before rooms existed has no key at all.
+        { sectionID: "B", weekday: 3, startMinutes: 540, endMinutes: 590 },
+      ],
+    }],
+  } as unknown as typeof row;
+  const out = catalogEntryWire(withNull, "x");
+  assert.equal(out.meetings[0].room, null);
+  assert.equal(out.meetings[1].room, null);
+});
+
 Deno.test("catalogEntryWire: courseID is the passed-in id, not the catalog code", () => {
   const wire = catalogEntryWire(PHYS_ROW, "some-canvas-id");
   assert.equal(wire.courseID, "some-canvas-id");
@@ -768,13 +791,13 @@ Deno.test("structureBlock: byte-stable whatever order sections, meetings and com
   assert.equal(b.slice(b.indexOf("Sections: ")), a.slice(a.indexOf("Sections: ")));
 });
 
-Deno.test("catalogEntryWire: output does not carry rooms or instructors (wire shape unchanged)", async () => {
+Deno.test("catalogEntryWire: output carries rooms (since 2026-11-14) but never instructors", async () => {
   const row = parsePennLabsCourse(await loadFixture());
   assert.ok(row);
   const wire = catalogEntryWire(row, "c1");
-  assert.ok(!JSON.stringify(wire).includes("DRLB"));
+  assert.ok(JSON.stringify(wire).includes("DRLB"));
   assert.ok(!JSON.stringify(wire).includes("Harnish"));
-  assert.deepEqual(Object.keys(wire.meetings[0]).sort(), ["activity", "endMinutes", "sectionID", "startMinutes", "weekday"]);
+  assert.deepEqual(Object.keys(wire.meetings[0]).sort(), ["activity", "endMinutes", "room", "sectionID", "startMinutes", "weekday"]);
 });
 
 // ---------------------------------------------------------------------

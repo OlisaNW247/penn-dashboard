@@ -896,6 +896,13 @@ final class AppState: ObservableObject {
     /// feed items is otherwise invisible to LHF at all (see `CourseProfile
     /// .unknownSilent` vs `.silent`).
     private var enrolledCanvasCourses: [CanvasCourseDiscoveryParser.Course]
+    /// The student's own registrar section number per Canvas site id, read
+    /// from the site's sections on Canvas (`CanvasOwnSections`) for a site
+    /// whose name carries none ("ACCT 1010 (Hail) - Fall 2026"). Used by
+    /// `canvasCourseSummaries` only when the name has no number of its own.
+    /// Persisted so a launch before the next read still knows it; cleared on
+    /// disconnect with the rest of the enrolled-course state.
+    private var canvasOwnSectionByCourseID: [String: String]
     /// Per-course probe results from this launch's `refreshCourseIntel`
     /// runs. In-memory only: a probe surviving relaunch could misreport a
     /// course as `.silent` (probed, found nothing) when it's really
@@ -1049,6 +1056,7 @@ final class AppState: ObservableObject {
     /// rather than going near the ledger.
     private static let rolloverDismissedTermKey = "rolloverDismissedTerm"
     private static let enrolledCanvasCoursesKey = "enrolledCanvasCoursesV1"
+    private static let canvasOwnSectionsKey = "canvasOwnSectionByCourseIDV1"
     /// docs/LAPTOP_INTEGRATION_PLAN.md Tier 2 — read directly by
     /// `CloudSyncToggleTests`'s own hardcoded copy of this string (the same
     /// convention `CourseContentDecisionStoreTests` uses for
@@ -1301,6 +1309,7 @@ final class AppState: ObservableObject {
         self.courseContentDecisions = CourseContentDecisionStore.load()
         self.enrolledCanvasCourses = Self.loadStringMap(Self.enrolledCanvasCoursesKey)
             .map { CanvasCourseDiscoveryParser.Course(id: $0.key, name: $0.value) }
+        self.canvasOwnSectionByCourseID = Self.loadStringMap(Self.canvasOwnSectionsKey)
         let tasksDefaults = ownTasksDefaults ?? UserDefaults.lhf
         precondition(
             ownTasksDefaults == nil || tasksDefaults !== UserDefaults.lhf,
@@ -5290,6 +5299,8 @@ final class AppState: ObservableObject {
         // the clear already above.
         enrolledCanvasCourses = []
         UserDefaults.lhf.removeObject(forKey: Self.enrolledCanvasCoursesKey)
+        canvasOwnSectionByCourseID = [:]
+        UserDefaults.lhf.removeObject(forKey: Self.canvasOwnSectionsKey)
         courseProbes = [:]
         courseProfileReports = []
         courseContentDecisions = [:]
@@ -6064,6 +6075,7 @@ final class AppState: ObservableObject {
         }
 
         mergeEnrolledCoursesIntoCourseIDCache()
+        await refreshCanvasOwnSections(cookies: cookies)
 
         // Probe only courses the feed hasn't already accounted for (a course
         // with feed items is never SILENT — see `CourseProfileEngine
@@ -7501,6 +7513,30 @@ final class AppState: ObservableObject {
         guard !staleKeys.isEmpty else { return }
 
         for key in staleKeys { coursePreferences.setCanvasCourseID(key, nil) }
+    }
+
+    /// Reads the student's own sections from Canvas and keeps, for each
+    /// enrolled site, the one section number they settle
+    /// (`CanvasOwnSections.sectionNumber`). A failed read changes nothing,
+    /// so a flaky request never forgets a number already known; a
+    /// successful one replaces the map, so a section change is followed.
+    /// Only sites in `enrolledCanvasCourses` are kept, keyed by the code
+    /// that site parses to, so the map never holds a site the app does not
+    /// list.
+    func refreshCanvasOwnSections(cookies: [HTTPCookie]) async {
+        guard !isUsingFixtureData, !cookies.isEmpty,
+              let courses = await CanvasOwnSections.fetch(baseURL: canvasBaseURL, cookies: cookies)
+        else { return }
+        var byID: [String: String] = [:]
+        for course in courses {
+            guard let enrolled = enrolledCanvasCourses.first(where: { $0.id == course.courseID }) else { continue }
+            let code = CourseCode.parse(enrolled.name).code
+            if let number = CanvasOwnSections.sectionNumber(courseCode: code, sectionNames: course.sectionNames) {
+                byID[course.courseID] = number
+            }
+        }
+        canvasOwnSectionByCourseID = byID
+        UserDefaults.lhf.set(byID, forKey: Self.canvasOwnSectionsKey)
     }
 
     private func persistEnrolledCanvasCourses() {
@@ -10115,7 +10151,7 @@ final class AppState: ObservableObject {
                     code: code,
                     name: name,
                     url: canvasBaseURL.appendingPathComponent("courses/\(id)"),
-                    section: CourseCode.parse(name).section
+                    section: CourseCode.parse(name).section ?? canvasOwnSectionByCourseID[id]
                 )
             }
             .sorted { lhs, rhs in

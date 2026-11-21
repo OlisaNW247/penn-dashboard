@@ -46,8 +46,11 @@ async function bodyFor(model: string): Promise<string> {
 
 // Built from the code as it stood before withCacheBreakpoint existed
 // (2026-11-05), with the instructions text swapped for a placeholder.
+// Regenerated 2026-11-14 (step 6 of the time-frame research) because that
+// change alters the body on purpose: the profiles are Markdown and the
+// date line reads "Current instant (UTC):".
 const GOLDEN_OPENAI =
-  '{"model":"openai/gpt-4.1-mini","messages":[{"role":"system","content":"__SYS__"},{"role":"system","content":"CTX"},{"role":"system","content":"COURSE PROFILES (extracted from syllabi):\\n{\\"a\\":1}"},{"role":"user","content":"hi"},{"role":"assistant","content":"hello"},{"role":"user","content":"Current date: 2026-09-07T12:00:00.000Z\\n\\nEXCERPTS\\n\\nQUESTION: Q?"}],"max_tokens":10,"stream":true,"provider":{"data_collection":"deny","allow_fallbacks":true},"temperature":0.2,"usage":{"include":true}}';
+  '{"model":"openai/gpt-4.1-mini","messages":[{"role":"system","content":"__SYS__"},{"role":"system","content":"CTX"},{"role":"system","content":"COURSE PROFILES (extracted from syllabi):\\n### a\\n- 1"},{"role":"user","content":"hi"},{"role":"assistant","content":"hello"},{"role":"user","content":"Current instant (UTC): 2026-09-07T12:00:00.000Z\\n\\nEXCERPTS\\n\\nQUESTION: Q?"}],"max_tokens":10,"stream":true,"provider":{"data_collection":"deny","allow_fallbacks":true},"temperature":0.2,"usage":{"include":true}}';
 
 Deno.test("cache: a non-Anthropic model's request body is byte-identical to the pre-change golden", async () => {
   const golden = GOLDEN_OPENAI.replace("__SYS__", () => JSON.stringify(SYSTEM_INSTRUCTIONS).slice(1, -1));
@@ -69,7 +72,7 @@ Deno.test("cache: an Anthropic model carries exactly one marker, on the last sta
   assert.equal(m.role, "system");
   assert.deepEqual(m.content, [{
     type: "text",
-    text: "COURSE PROFILES (extracted from syllabi):\n{\"a\":1}",
+    text: "COURSE PROFILES (extracted from syllabi):\n### a\n- 1",
     cache_control: { type: "ephemeral" },
   }]);
   // Everything before is the plain stable text...
@@ -79,11 +82,11 @@ Deno.test("cache: an Anthropic model carries exactly one marker, on the last sta
   assert.deepEqual(out.slice(3).map((x) => x.content), [
     "hi",
     "hello",
-    "Current date: 2026-09-07T12:00:00.000Z\n\nEXCERPTS\n\nQUESTION: Q?",
+    "Current instant (UTC): 2026-09-07T12:00:00.000Z\n\nEXCERPTS\n\nQUESTION: Q?",
   ]);
   // The stable prefix holds no clock, excerpts, history or question.
   const stable = JSON.stringify(out.slice(1, 3)); // the instructions legitimately name EXCERPTS and QUESTION
-  for (const volatile of ["Current date", "EXCERPTS", "QUESTION:", "hello", "2026-09-07"]) {
+  for (const volatile of ["Current instant", "EXCERPTS", "QUESTION:", "hello", "2026-09-07"]) {
     assert.ok(!stable.includes(volatile), volatile);
   }
 });
