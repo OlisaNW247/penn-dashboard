@@ -69,15 +69,24 @@ extension AppState {
         return reads
     }
 
-    /// The planner read itself, with the saved session. Nil when there is no
-    /// Canvas credential to ask with (the caller then records an unknown read
-    /// and does nothing), or under fixture data. A test seam replaces the
-    /// network.
+    /// The planner read itself, with the saved session. Nil only when there is
+    /// nothing at all to ask with (no live WebKit cookie, no persisted one, no
+    /// token), or under fixture data; the caller then records an unknown read.
+    /// The persisted store alone must not decide: `SessionCookieStore.load`
+    /// applies the 24-hour clock rule and the live-session gate, so a day after
+    /// the last save it reads empty while the WebKit login store still holds a
+    /// live session every other Canvas read uses (2026-11-21: nine unknown
+    /// reads in 46 minutes on Marco's phone with a live session, a real
+    /// submission never seen). So the live-merged cookies come first and the
+    /// guard is the grades fetch's rule. The wrong fixes: dropping the guard
+    /// (an empty jar sends a request Canvas answers 401, a noisy planner-level
+    /// unknown) or widening `hasCanvasCredentials`, which has other callers with
+    /// other meanings. A test seam replaces the network.
     func fetchPlannerWindowForPoll(start: Date, end: Date) async -> PlannerWindowResult? {
         guard FeatureFlags.structuredCanvasSources, !isUsingFixtureData else { return nil }
         if let seam = plannerWindowFetchForTesting { return await seam(start, end) }
-        guard hasCanvasCredentials else { return nil }
         let cookies = await AutoSyncCoordinator.canvasCookies(forHost: canvasInstallation.host)
+        guard !cookies.isEmpty || hasCanvasCredentials else { return nil }
         let client = CanvasStructuredSourcesClient(
             baseURL: canvasBaseURL, cookies: cookies, accessToken: canvasAccessTokenBearer)
         return await client.fetchPlannerWindow(start: start, end: end)
@@ -109,6 +118,10 @@ extension AppState {
         let window = LastHourPoll.window(now: now)
         guard let result = await fetchPlannerWindowForPoll(start: window.start, end: window.end) else {
             SweeperCounts.increment(SweeperCounts.readsUnknown, defaults: sweeperCountsDefaults)
+            #if DEBUG
+            DebugWakeLog.record(source: source, outcome: "planner no-session",
+                                duration: Date().timeIntervalSince(now), cancelledRequests: 0, cancelledAlarms: 0)
+            #endif
             return false
         }
         applyPlannerWindow(result, now: Date())

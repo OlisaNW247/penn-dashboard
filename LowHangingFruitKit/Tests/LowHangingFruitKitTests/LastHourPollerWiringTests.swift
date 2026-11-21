@@ -138,4 +138,19 @@ struct LastHourPollerWiringTests {
         let start = try #require(source.range(of: "func settleAfterFetch() async"))
         #expect(source[start.lowerBound...].prefix(6000).contains("pollInsideTheHour(source: .foreground)"))
     }
+
+    /// A source scan, because the WebKit cookie store cannot be driven on the
+    /// Mac. 2026-11-21: the persisted store alone (24-hour clock rule) read
+    /// empty at night with a live session, so every poll was an unknown read.
+    @Test("the poll's guard reads the live-merged cookies first, then the grades fetch's rule")
+    func pollGuardShape() throws {
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<3 { url.deleteLastPathComponent() }
+        let source = try String(contentsOf: url.appendingPathComponent("Sources/LowHangingFruitUI/AppState+LastHourPoll.swift"), encoding: .utf8)
+        let body = try #require(source.range(of: "func fetchPlannerWindowForPoll"))
+        let text = String(source[body.lowerBound...].prefix(900))
+        let cookies = try #require(text.range(of: "AutoSyncCoordinator.canvasCookies(forHost:"))
+        let guardRange = try #require(text.range(of: "guard !cookies.isEmpty || hasCanvasCredentials"))
+        #expect(cookies.lowerBound < guardRange.lowerBound)
+    }
 }

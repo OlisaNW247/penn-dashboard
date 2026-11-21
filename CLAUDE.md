@@ -5013,8 +5013,23 @@ none is a ship line.
   stops only on `.background`, every `settleAfterFetch` pass restarts it if
   it is not running (`start` is idempotent), and the trace words carry the
   reason ("poller start active | task | settle", "poller stop background").
-  Pinned by `LaunchRefreshStructureTests.pollerStopsOnlyInBackground`. Not
-  yet on a phone. The same read showed `wakesBG` 27 in a day and two
+  Pinned by `LaunchRefreshStructureTests.pollerStopsOnlyInBackground`;
+  installed on Marco's phone on 2026-11-21. **The second fault, read off
+  the phone on 2026-11-21 at 20:50 UTC:** on 2026-11-21 at 03:54 UTC the
+  loop logged "tick poll" and then nothing for 46 minutes while
+  `readsUnknown` rose to 9 and `polls` stayed absent, so every read ended
+  in `fetchPlannerWindowForPoll` returning nil: its guard was
+  `hasCanvasCredentials`, which reads the clock-gated persisted jar
+  (`SessionCookieStore.load`, empty a day after the last save), while the
+  grades fetch guards on the live WebKit cookies merged with the jar
+  (`AutoSyncCoordinator.canvasCookies(forHost:)`, `!cookies.isEmpty ||
+  hasCanvasCredentials`). At night the poll decided it had no login and
+  gave up, silently. Fixed the same day (the commit carrying this line):
+  the poll fetches the live cookies first and uses the grades fetch's rule,
+  and the nil branch writes "planner no-session" to the trace. Pinned by
+  `LastHourPollerWiringTests.pollGuardShape` (a source scan; the WebKit
+  store cannot be driven on the Mac). Not yet on a phone with an alarm
+  inside the hour. The same read showed `wakesBG` 27 in a day and two
   cancellations at observation (one `grades`, one `structured`), so the
   background wake and the cancel path both run on a real phone. To see on Marco's
   phone, in this order: a DEBUG build with an item due inside the hour and
