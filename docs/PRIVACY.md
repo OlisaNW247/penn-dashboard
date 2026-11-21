@@ -512,7 +512,19 @@ or both, and only when they tap "send". The picture is rebuilt from its
 pixels on the phone first, at no more than 1280 pixels and 600 KB, so
 nothing the camera attached to it (location, device, time) goes with it.
 Only the founders can see a poster idea; it is stored with the
-ambassador's roster row until a founder deletes it. Opening "all posters"
+ambassador's roster row until a founder deletes it. Since 2026-11-18 an
+ambassador can send two more things, each only when they tap "send". **A
+look at their school's feed:** they choose a screen recording of an
+anonymous campus app, and the phone pulls up to 16 still pictures out of
+it, shrinks each to at most 1200 pixels and 200 KB, and sends the stills.
+The video itself never leaves the phone. The stills show whatever was on
+screen in the recording, other students' anonymous posts included, which is
+why the sheet says to check that nothing private is on screen. **How a post
+did:** one screenshot they choose (shrunk to at most 300 KB), which app it
+was on, what kind of post it was, and the upvote and view counts they type.
+Only the founders can see either, and both are stored with the ambassador's
+roster row until a founder deletes them. The founders can also write a post
+for an ambassador to try; the page shows it. Opening "all posters"
 loads that school's poster pictures from the same server. It never sends
 anything about classes, Canvas, Gradescope, Ed, or the rest of the app, and
 no name or contact detail beyond what the founder already typed into the
@@ -520,8 +532,8 @@ ambassador roster. The daily reminder is a local notification scheduled on
 the phone, not a push from a server. "Sign out" removes the code from the
 Keychain, the cached page from the phone, and the reminders. The server
 keeps the ambassador's roster row, their link-open counts, their logged
-posts, their poster ideas and their feedback until the founders remove
-them. Students who are
+posts, their poster ideas, their feed stills, their post results and
+their feedback until the founders remove them. Students who are
 not ambassadors never trigger any of this; the row in Profile does
 nothing until a code is entered.
 

@@ -213,6 +213,176 @@ export async function deleteIdea(env, id) {
   await env.DB.prepare("DELETE FROM poster_ideas WHERE id = ?1").bind(id).run();
 }
 
+// ---- captures: stills of an ambassador's school feed, and screenshots of how
+// a post did. Private to the founders, like the ideas above. The limits are the
+// same kind of promise as the idea limits and are kept the same way: inside the
+// INSERT, never by reading a count first. A count and then an insert is two
+// statements, and requests sent at once all read the same count before any of
+// them writes; poster ideas were already overrun that way (17 stored against a
+// limit of 5). The wrong fix is a lock or a retry loop in the Worker, because
+// separate isolates share no memory to lock.
+export const FEED_FRAMES_PER_RECORDING = 16;
+export const FEED_DAILY_LIMIT = 32;
+export const FEED_TOTAL_LIMIT = 96;
+export const FEED_FRAME_BYTES = 200000;
+export const RESULT_DAILY_LIMIT = 8;
+export const RESULT_TOTAL_LIMIT = 60;
+export const RESULT_IMAGE_BYTES = 300000;
+export const SUGGESTION_LIMIT = 20;
+// A ceiling on `captures` across every ambassador, enforced inside the same
+// INSERTs as the per-ambassador limits. The arithmetic that makes it necessary:
+// one ambassador may hold 96 feed frames of 200,000 bytes and 60 results of
+// 300,000 bytes, about 26 MB decoded, or about 34 MB of base64 text, and each
+// ambassador's limits are independent, so a roster of thirty leaked or hostile
+// codes could store about a gigabyte in a database that holds the founders' real
+// numbers. A global number bounds the whole table whatever the roster size.
+// 1500 rows is 450 MB decoded at the very worst (every row a 300,000-byte
+// result), about 600 MB as base64 text, and far less in practice (a downscaled
+// screenshot is nearer 100 KB, so nearer 200 MB of text). Founders make room by deleting
+// recordings and results they have dealt with.
+export const CAPTURES_GLOBAL_LIMIT = 1500;
+
+const utcDayStart = () => new Date().toISOString().slice(0, 10) + "T00:00:00.000Z";
+
+export async function captureCounts(env, amb) {
+  const { results } = await env.DB.prepare(
+    "SELECT kind, COUNT(*) AS total, COALESCE(SUM(CASE WHEN ts >= ?2 THEN 1 ELSE 0 END), 0) AS today FROM captures WHERE ambassador_id = ?1 GROUP BY kind",
+  )
+    .bind(amb.id, utcDayStart())
+    .all();
+  const by = (k) => results.find((r) => r.kind === k) ?? { total: 0, today: 0 };
+  return { feed: { total: by("feed").total, today: by("feed").today }, result: { total: by("result").total, today: by("result").today } };
+}
+
+export async function capturesFull(env) {
+  const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM captures").first();
+  return (row?.n ?? 0) >= CAPTURES_GLOBAL_LIMIT;
+}
+
+// One still of a recording. Returns "stored", "duplicate" (this batch and seq
+// are already held, which is a client retry and not an error), "full" (the
+// global ceiling refused it) or "limit" (an ambassador's own limit).
+// NOT EXISTS makes the retry a no-write inside the same statement, so two
+// copies of one frame arriving together still store one.
+export async function addFeedFrame(env, amb, { batch, seq, mime, image }) {
+  const r = await env.DB.prepare(
+    `INSERT INTO captures (ambassador_id, kind, batch, seq, mime, image)
+     SELECT ?1, 'feed', ?2, ?3, ?4, ?5
+     WHERE NOT EXISTS (SELECT 1 FROM captures WHERE ambassador_id = ?1 AND kind = 'feed' AND batch = ?2 AND seq = ?3)
+       AND (SELECT COUNT(*) FROM captures WHERE ambassador_id = ?1 AND kind = 'feed' AND ts >= ?6) < ?7
+       AND (SELECT COUNT(*) FROM captures WHERE ambassador_id = ?1 AND kind = 'feed') < ?8
+       AND (SELECT COUNT(*) FROM captures WHERE ambassador_id = ?1 AND kind = 'feed' AND batch = ?2) < ?9
+       AND (SELECT COUNT(*) FROM captures) < ?10`,
+  )
+    .bind(amb.id, batch, seq, mime, image, utcDayStart(), FEED_DAILY_LIMIT, FEED_TOTAL_LIMIT, FEED_FRAMES_PER_RECORDING, CAPTURES_GLOBAL_LIMIT)
+    .run();
+  if ((r.meta?.changes ?? 0) > 0) return "stored";
+  const dup = await env.DB.prepare(
+    "SELECT 1 AS x FROM captures WHERE ambassador_id = ?1 AND kind = 'feed' AND batch = ?2 AND seq = ?3",
+  )
+    .bind(amb.id, batch, seq)
+    .first();
+  if (dup) return "duplicate";
+  return (await capturesFull(env)) ? "full" : "limit";
+}
+
+export async function addResult(env, amb, { platform, style, upvotes, views, note, mime, image }) {
+  const r = await env.DB.prepare(
+    `INSERT INTO captures (ambassador_id, kind, platform, style, upvotes, views, note, mime, image)
+     SELECT ?1, 'result', ?2, ?3, ?4, ?5, ?6, ?7, ?8
+     WHERE (SELECT COUNT(*) FROM captures WHERE ambassador_id = ?1 AND kind = 'result' AND ts >= ?9) < ?10
+       AND (SELECT COUNT(*) FROM captures WHERE ambassador_id = ?1 AND kind = 'result') < ?11
+       AND (SELECT COUNT(*) FROM captures) < ?12`,
+  )
+    .bind(amb.id, platform, style, upvotes, views, note, mime, image, utcDayStart(), RESULT_DAILY_LIMIT, RESULT_TOTAL_LIMIT, CAPTURES_GLOBAL_LIMIT)
+    .run();
+  if ((r.meta?.changes ?? 0) > 0) return "stored";
+  return (await capturesFull(env)) ? "full" : "limit";
+}
+
+// Founder only. Metadata, never the image: the bytes are fetched one at a time
+// through the capture route.
+export async function listCaptures(env) {
+  const { results } = await env.DB.prepare(
+    "SELECT c.id, c.ambassador_id, c.ts, c.kind, c.batch, c.seq, c.platform, c.style, c.upvotes, c.views, c.note, c.mime, c.seen_at, b.name, b.school FROM captures c JOIN ambassadors b ON b.id = c.ambassador_id ORDER BY c.ts DESC, c.id DESC LIMIT 1000",
+  ).all();
+  return results.map((r) => ({
+    id: r.id,
+    ambassadorId: r.ambassador_id,
+    ambassador: r.name,
+    school: r.school,
+    ts: r.ts,
+    kind: r.kind,
+    batch: r.batch,
+    seq: r.seq,
+    platform: r.platform,
+    style: r.style,
+    upvotes: r.upvotes,
+    views: r.views,
+    note: r.note,
+    mime: r.mime,
+    seenAt: r.seen_at,
+  }));
+}
+
+export async function captureImage(env, id) {
+  return env.DB.prepare("SELECT mime, image FROM captures WHERE id = ?1").bind(id).first();
+}
+
+// Acts on one row by id, or on a whole recording by (ambassador, batch).
+export async function markCaptureSeen(env, { id, amb, batch }) {
+  const set = "UPDATE captures SET seen_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE seen_at IS NULL AND ";
+  if (id) await env.DB.prepare(set + "id = ?1").bind(id).run();
+  else await env.DB.prepare(set + "ambassador_id = ?1 AND kind = 'feed' AND batch = ?2").bind(amb, batch).run();
+}
+
+export async function deleteCapture(env, { id, amb, batch }) {
+  if (id) await env.DB.prepare("DELETE FROM captures WHERE id = ?1").bind(id).run();
+  else await env.DB.prepare("DELETE FROM captures WHERE ambassador_id = ?1 AND kind = 'feed' AND batch = ?2").bind(amb, batch).run();
+}
+
+// ---- suggestions: a post a founder wants one ambassador to try.
+// A departed ambassador counts as not existing: their code is dead, so nothing
+// new is addressed to them.
+export async function ambassadorExists(env, id) {
+  return !!(await env.DB.prepare("SELECT 1 AS x FROM ambassadors WHERE id = ?1 AND status <> 'left'").bind(id).first());
+}
+
+// Returns false when nothing was written (unknown ambassador, or at the limit).
+export async function addSuggestion(env, ambassadorId, { text, reply }) {
+  const r = await env.DB.prepare(
+    `INSERT INTO suggestions (ambassador_id, text, reply)
+     SELECT ?1, ?2, ?3
+     WHERE EXISTS (SELECT 1 FROM ambassadors WHERE id = ?1 AND status <> 'left')
+       AND (SELECT COUNT(*) FROM suggestions WHERE ambassador_id = ?1) < ?4`,
+  )
+    .bind(ambassadorId, text, reply, SUGGESTION_LIMIT)
+    .run();
+  return (r.meta?.changes ?? 0) > 0;
+}
+
+export async function deleteSuggestion(env, id) {
+  await env.DB.prepare("DELETE FROM suggestions WHERE id = ?1").bind(id).run();
+}
+
+// One ambassador's own, newest first. The only suggestions query an ambassador
+// route calls, and it is keyed on their id.
+export async function suggestionsFor(env, ambassadorId) {
+  const { results } = await env.DB.prepare(
+    "SELECT id, text, reply, ts FROM suggestions WHERE ambassador_id = ?1 ORDER BY ts DESC, id DESC",
+  )
+    .bind(ambassadorId)
+    .all();
+  return results;
+}
+
+export async function listSuggestions(env) {
+  const { results } = await env.DB.prepare(
+    "SELECT s.id, s.ambassador_id, s.ts, s.text, s.reply, b.name FROM suggestions s JOIN ambassadors b ON b.id = s.ambassador_id ORDER BY s.ts DESC, s.id DESC",
+  ).all();
+  return results.map((r) => ({ id: r.id, ambassadorId: r.ambassador_id, ambassador: r.name, ts: r.ts, text: r.text, reply: r.reply }));
+}
+
 // scans.total per poster key for one school, so a page or the app can show
 // how often each design was scanned there.
 export async function schoolDesignScans(env, school) {
@@ -371,6 +541,8 @@ export async function founderStats(env, days = 14) {
     activity: acts.results,
     feedback: fb.results,
     ideas: await listIdeas(env),
+    captures: await listCaptures(env),
+    suggestions: await listSuggestions(env),
     designs,
     leaderboard: await schoolLeaderboard(env, days),
   };
@@ -403,7 +575,7 @@ export function dailyPost({ daily, dayIndex, anonApp = "fizz" }) {
   if (!daily?.length) return null;
   const entry = daily[((dayIndex % daily.length) + daily.length) % daily.length];
   const channel = entry.kind === "anon" ? (Object.hasOwn(CHANNELS, anonApp) ? anonApp : "fizz") : entry.kind === "rest" ? null : entry.kind;
-  return { kind: entry.kind, channel, platform: channel ? (Object.hasOwn(CHANNELS, channel) ? CHANNELS[channel] : channel) : "rest", text: entry.text };
+  return { kind: entry.kind, channel, platform: channel ? (Object.hasOwn(CHANNELS, channel) ? CHANNELS[channel] : channel) : "rest", text: entry.text, ...(entry.reply ? { reply: entry.reply } : {}) };
 }
 
 export function dayIndex(date = new Date(), tzOffsetMinutes = 300) {

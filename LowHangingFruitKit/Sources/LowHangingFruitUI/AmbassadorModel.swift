@@ -55,6 +55,12 @@ final class SystemAmbassadorNotificationCenter: AmbassadorNotificationCenter {
     }
 }
 
+/// How far a feed recording's upload has got, for "sent 3 of 12".
+struct FeedProgress: Equatable {
+    var sent: Int
+    var total: Int
+}
+
 /// Ambassador mode's state: signed in or not, the plan the server last gave
 /// (cached, so the page opens instantly and works offline), the reminder
 /// settings, and the one-shot "open the ambassador page" that a notification
@@ -93,6 +99,8 @@ final class AmbassadorModel: ObservableObject {
     /// Set by a reminder tap or an `smooth://ambassador` link; the dashboard
     /// pushes Profile → ambassador and calls `consumePendingOpen()`.
     @Published private(set) var pendingOpen = false
+    /// Non-nil only while a recording's stills are going up.
+    @Published private(set) var feedProgress: FeedProgress?
     /// When the plan was last fetched from the server, for `refreshIfStale`.
     private(set) var planFetchedAt: Date?
 
@@ -362,6 +370,82 @@ final class AmbassadorModel: ObservableObject {
             return false
         } catch {
             lastError = "couldn\u{2019}t reach smooth"
+            return false
+        }
+        await refresh()
+        lastError = nil
+        return true
+    }
+
+    /// The words for a failed upload, the same ones the idea path uses.
+    private static func uploadErrorLine(_ error: Error) -> String {
+        switch error as? AmbassadorClientError {
+        case .unknownCode?: return "this code no longer works"
+        case .tooLarge?: return "that picture is too big"
+        case .limitReached?: return "that\u{2019}s the limit for today"
+        default: return "couldn\u{2019}t reach smooth"
+        }
+    }
+
+    /// Uploads the stills of one screen recording, in order, under one new
+    /// batch id (the server groups by it) with `seq` 0...n-1, at most 16. Stops
+    /// at the first refusal: a daily limit or a dead code will not get better
+    /// by trying the next still, and the ones already sent stay sent. The
+    /// stills were already shrunk and re-encoded by `FeedRecordingFrames`, so
+    /// nothing is re-encoded here. On success the plan is fetched again so
+    /// "3 of 96" moves.
+    @discardableResult
+    func sendFeedFrames(_ frames: [Data]) async -> Bool {
+        guard let code else { return false }
+        let batch = Array(frames.prefix(16))
+        guard !batch.isEmpty else {
+            lastError = "couldn\u{2019}t read that recording"
+            return false
+        }
+        isWorking = true
+        defer { isWorking = false }
+        lastError = nil
+        let id = FeedRecordingFrames.newBatchID()
+        feedProgress = FeedProgress(sent: 0, total: batch.count)
+        for (index, jpeg) in batch.enumerated() {
+            do {
+                try await client.sendCapture(code: code, fields: AmbassadorClient.feedFrameBody(batch: id, seq: index, jpeg: jpeg))
+            } catch {
+                lastError = Self.uploadErrorLine(error)
+                feedProgress = nil
+                return false
+            }
+            feedProgress = FeedProgress(sent: index + 1, total: batch.count)
+        }
+        feedProgress = nil
+        await refresh()
+        lastError = nil
+        return true
+    }
+
+    /// Sends one screenshot of how a post did, with where it was posted, which
+    /// kind of post it was and the numbers if the student gave them. Shrunk off
+    /// the main actor exactly as `sendPosterIdea` does.
+    @discardableResult
+    func sendPostResult(imageData: Data, platform: String, style: String,
+                        upvotes: Int?, views: Int?, note: String) async -> Bool {
+        guard let code else { return false }
+        isWorking = true
+        defer { isWorking = false }
+        lastError = nil
+        let jpeg = await Task.detached(priority: .userInitiated) {
+            PosterIdeaImage.prepared(from: imageData, maxDimension: 1200, maxBytes: 300_000)
+        }.value
+        guard let jpeg else {
+            lastError = "couldn\u{2019}t read that picture"
+            return false
+        }
+        let text = String(note.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500))
+        do {
+            try await client.sendCapture(code: code, fields: AmbassadorClient.resultBody(
+                jpeg: jpeg, platform: platform, style: style, upvotes: upvotes, views: views, note: text))
+        } catch {
+            lastError = Self.uploadErrorLine(error)
             return false
         }
         await refresh()

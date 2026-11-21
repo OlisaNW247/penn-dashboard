@@ -4,18 +4,19 @@
 import { handleAmbassadors } from "../worker/ambassadors.js";
 import migration1 from "../migrations/0001_ambassadors.sql";
 import migration2 from "../migrations/0002_poster_ideas.sql";
+import migration3 from "../migrations/0003_captures.sql";
 
 // The platform has no migration step we can rely on, and the existing Worker
 // already creates its table lazily with CREATE TABLE IF NOT EXISTS, so the
-// ambassador tables are created the same way. Every statement in both migration
-// files (0001 the roster, 0002 poster ideas) is CREATE ... IF NOT EXISTS, so
+// ambassador tables are created the same way. Every statement in the migration
+// files (0001 the roster, 0002 poster ideas, 0003 captures and suggestions) is CREATE ... IF NOT EXISTS, so
 // running them on each cold isolate is idempotent, and an existing deployment gets
-// the 0002 table on its first request with no manual step.
+// the 0002 and 0003 tables on their first request with no manual step.
 let schemaReady = null;
 
 function ensureSchema(db) {
   if (!schemaReady) {
-    const statements = [migration1, migration2]
+    const statements = [migration1, migration2, migration3]
       .join("\n")
       .split("\n")
       .filter((line) => !line.trim().startsWith("--"))

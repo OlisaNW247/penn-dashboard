@@ -38,6 +38,13 @@ ideas, the posters section and the restyled pages. Checked afterwards the
 same read-only way, plus the font route, a prefixed code's `plan.json`
 and the page itself mirrored with its real posters.
 
+**Not deployed as of 2026-11-18:** the fourth zip (2026-11-12: the job box,
+no checklist, the rewritten posts) was handed over and never went up; the
+live site read that day still had none of it. The fifth zip (2026-11-18)
+contains the fourth plus the playbook, posts to try from the founders, and
+the feed and post-result uploads, so it is the only one to deploy. Its
+`CHANGES_FOR_DEPLOYMENT.md` has the checks to run afterwards.
+
 ## Step by step
 
 1. **Get the current Sites source** (the archive ChatGPT exports, with

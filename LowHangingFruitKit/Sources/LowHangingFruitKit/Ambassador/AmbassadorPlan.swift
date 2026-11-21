@@ -44,13 +44,19 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
         public var channel: String?
         public var platform: String
         public var text: String
+        /// The follow-up the ambassador posts under their own post, where the
+        /// pitch lives so the post itself can read like any other. Optional
+        /// because an older server sends none, and then nothing new shows.
+        public var reply: String?
 
-        public init(dayIndex: Int, kind: String, channel: String?, platform: String, text: String) {
+        public init(dayIndex: Int, kind: String, channel: String?, platform: String, text: String,
+                    reply: String? = nil) {
             self.dayIndex = dayIndex
             self.kind = kind
             self.channel = channel
             self.platform = platform
             self.text = text
+            self.reply = reply
         }
 
         /// A rest day carries words but nothing to post.
@@ -62,13 +68,17 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
         public var label: String
         public var channel: String
         public var text: String
+        /// The follow-up reply to post under this message; absent from an
+        /// older server, in which case the row shows only the message.
+        public var reply: String?
         public var id: String { key }
 
-        public init(key: String, label: String, channel: String, text: String) {
+        public init(key: String, label: String, channel: String, text: String, reply: String? = nil) {
             self.key = key
             self.label = label
             self.channel = channel
             self.text = text
+            self.reply = reply
         }
     }
 
@@ -110,6 +120,142 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
         public var imageURL: URL? { AmbassadorPlan.httpsURL(image) }
     }
 
+    /// What the founders have learned works on the anonymous apps: one line
+    /// of lead, a few steps and worked examples. Written by the server and
+    /// never by the app, so every field degrades: a missing `steps` is empty
+    /// and a malformed example is dropped, not the whole playbook.
+    public struct Playbook: Codable, Equatable, Sendable {
+        public struct Example: Codable, Equatable, Sendable, Identifiable {
+            public var key: String
+            public var title: String
+            public var post: String
+            public var reply: String?
+            public var score: String?
+            public var why: String?
+            public var id: String { key }
+
+            public init(key: String, title: String, post: String, reply: String? = nil,
+                        score: String? = nil, why: String? = nil) {
+                self.key = key
+                self.title = title
+                self.post = post
+                self.reply = reply
+                self.score = score
+                self.why = why
+            }
+        }
+
+        public var lead: String
+        public var steps: [String]
+        public var examples: [Example]
+
+        public init(lead: String, steps: [String] = [], examples: [Example] = []) {
+            self.lead = lead
+            self.steps = steps
+            self.examples = examples
+        }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            lead = (try? c.decodeIfPresent(String.self, forKey: .lead)) ?? ""
+            steps = (try? c.decodeIfPresent([String].self, forKey: .steps)) ?? []
+            if let boxes = try? c.decodeIfPresent([LossyElement<Example>].self, forKey: .examples) {
+                examples = boxes.compactMap(\.value)
+            } else {
+                examples = []
+            }
+        }
+    }
+
+    /// A post the founders wrote for this ambassador to copy.
+    public struct Suggestion: Codable, Equatable, Sendable, Identifiable {
+        public var id: Int
+        public var text: String
+        public var reply: String?
+        public var ts: String?
+
+        public init(id: Int, text: String, reply: String? = nil, ts: String? = nil) {
+            self.id = id
+            self.text = text
+            self.reply = reply
+            self.ts = ts
+        }
+    }
+
+    /// What the server will take as a screen recording's stills or a post's
+    /// result, and how much of each limit this ambassador has used.
+    public struct Captures: Codable, Equatable, Sendable {
+        public struct Feed: Codable, Equatable, Sendable {
+            public var framesPerRecording: Int?
+            public var frameBytes: Int?
+            public var sentToday: Int?
+            public var dailyLimit: Int?
+            public var stored: Int?
+            public var limit: Int?
+
+            public init(framesPerRecording: Int? = nil, frameBytes: Int? = nil, sentToday: Int? = nil,
+                        dailyLimit: Int? = nil, stored: Int? = nil, limit: Int? = nil) {
+                self.framesPerRecording = framesPerRecording
+                self.frameBytes = frameBytes
+                self.sentToday = sentToday
+                self.dailyLimit = dailyLimit
+                self.stored = stored
+                self.limit = limit
+            }
+        }
+
+        public struct Results: Codable, Equatable, Sendable {
+            public var imageBytes: Int?
+            public var sentToday: Int?
+            public var dailyLimit: Int?
+            public var stored: Int?
+            public var limit: Int?
+
+            public init(imageBytes: Int? = nil, sentToday: Int? = nil, dailyLimit: Int? = nil,
+                        stored: Int? = nil, limit: Int? = nil) {
+                self.imageBytes = imageBytes
+                self.sentToday = sentToday
+                self.dailyLimit = dailyLimit
+                self.stored = stored
+                self.limit = limit
+            }
+        }
+
+        public struct Style: Codable, Equatable, Sendable, Identifiable {
+            public var key: String
+            public var label: String
+            public var id: String { key }
+
+            public init(key: String, label: String) {
+                self.key = key
+                self.label = label
+            }
+        }
+
+        public var feed: Feed?
+        public var results: Results?
+        public var styles: [Style]?
+
+        public init(feed: Feed? = nil, results: Results? = nil, styles: [Style]? = nil) {
+            self.feed = feed
+            self.results = results
+            self.styles = styles
+        }
+
+        /// Each part is read with `try?`, so a wrongly shaped `feed` costs the
+        /// feed row its count and nothing else.
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            feed = (try? c.decodeIfPresent(Feed.self, forKey: .feed)) ?? nil
+            results = (try? c.decodeIfPresent(Results.self, forKey: .results)) ?? nil
+            if let boxes = try? c.decodeIfPresent([LossyElement<Style>].self, forKey: .styles) {
+                styles = boxes.compactMap(\.value)
+            } else {
+                styles = nil
+            }
+        }
+    }
+
     /// How many poster ideas this ambassador has sent, against the server's
     /// two limits (a daily one and a total one), when it reports them.
     public struct Ideas: Codable, Equatable, Sendable {
@@ -143,13 +289,22 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
     public var posters: [Poster]?
     public var dashboard: String?
     public var ideas: Ideas?
+    /// Arrived with the tracking work (2026-11-18); an older server omits all
+    /// three and the page shows none of the parts they feed.
+    public var playbook: Playbook?
+    public var suggested: [Suggestion]?
+    public var captures: Captures?
 
     public init(name: String, school: String, schoolName: String? = nil, title: String? = nil,
                 status: String? = nil, pausedUntil: String? = nil, page: String? = nil,
                 appStore: String? = nil, numbers: Numbers? = nil, today: Today? = nil,
                 messages: [Message]? = nil, checklist: [ChecklistStep]? = nil,
                 tips: [String]? = nil, generatedAt: String? = nil,
-                posters: [Poster]? = nil, dashboard: String? = nil, ideas: Ideas? = nil) {
+                posters: [Poster]? = nil, dashboard: String? = nil, ideas: Ideas? = nil,
+                playbook: Playbook? = nil, suggested: [Suggestion]? = nil, captures: Captures? = nil) {
+        self.playbook = playbook
+        self.suggested = suggested
+        self.captures = captures
         self.posters = posters
         self.dashboard = dashboard
         self.ideas = ideas
@@ -199,10 +354,17 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
         }
         dashboard = (try? c.decodeIfPresent(String.self, forKey: .dashboard)) ?? nil
         ideas = (try? c.decodeIfPresent(Ideas.self, forKey: .ideas)) ?? nil
+        playbook = (try? c.decodeIfPresent(Playbook.self, forKey: .playbook)) ?? nil
+        if let boxes = try? c.decodeIfPresent([LossyElement<Suggestion>].self, forKey: .suggested) {
+            suggested = boxes.compactMap(\.value)
+        } else {
+            suggested = nil
+        }
+        captures = (try? c.decodeIfPresent(Captures.self, forKey: .captures)) ?? nil
     }
 
     /// An element that decodes to nil instead of throwing.
-    private struct LossyElement<T: Decodable>: Decodable {
+    fileprivate struct LossyElement<T: Decodable>: Decodable {
         let value: T?
         init(from decoder: Decoder) throws {
             value = try? T(from: decoder)

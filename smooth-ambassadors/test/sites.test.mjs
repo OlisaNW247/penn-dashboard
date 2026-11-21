@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { Miniflare } from "miniflare";
 import { ideaTests } from "./ideas-suite.mjs";
+import { captureTests } from "./captures-suite.mjs";
 
 const { SITES_ORIGINAL, SITES_EDITED } = process.env;
 const skip = SITES_ORIGINAL && SITES_EDITED ? false : "set SITES_ORIGINAL and SITES_EDITED to run";
@@ -221,14 +222,15 @@ test("the token is nowhere in posts or stickers, and the old routes are gone", {
   const plan = await (await req(edited, `/a/${token}/plan.json?anon=fizz&tz=300`)).json();
   const texts = [plan.today.text, ...plan.messages.map((m) => m.text)];
   for (const t of texts) assert.ok(!t.includes(token), t);
-  for (const t of texts)
-    for (const m of t.match(/https?:\/\/\S*\/(?:a|r)\/\S+/g) || []) assert.match(m, new RegExp(`/r/${ref}/`), m);
-  assert.ok(plan.messages.some((m) => m.text.includes(`/r/${ref}/s/`)));
+  for (const t of texts) assert.doesNotMatch(t, /http/);
+  assert.deepEqual(plan.messages.map((m) => m.key), ["question", "list"]);
+  assert.equal(plan.today.reply, "Smooth for Students on the App Store");
   assert.match(plan.page, new RegExp(`/a/${token}$`));
   assert.ok(!(await (await req(edited, `/a/${token}/stickers`)).text()).includes(token));
   const page = await (await req(edited, `/a/${token}`)).text();
   assert.doesNotMatch(page, new RegExp(`/a/${token}/(s|p)/`));
-  assert.match(page, new RegExp(`/r/${ref}/s/`));
+  assert.match(page, /copy reply/);
+  assert.match(page, /\/r\/[a-z0-9]+\/s\/dm"/);
 
   const [scans, hits] = [await scansSnap(), await dbCount("amb_hits")];
   for (const p of [`/a/${token}/s/fizz`, `/a/${token}/p/ib`]) assert.equal((await req(edited, p)).status, 404, p);
@@ -301,6 +303,15 @@ test("a left ambassador's code stops working, their stickers still count the sch
 // The same idea, plan.json, page and font checks as test/routes.test.mjs, now
 // against the built single file next to the untouched host code.
 ideaTests({
+  test,
+  skip,
+  label: "built file: ",
+  founder: FOUNDER,
+  db: () => edited.getD1Database("DB"),
+  req: (path, init) => req(edited, path, init),
+});
+
+captureTests({
   test,
   skip,
   label: "built file: ",

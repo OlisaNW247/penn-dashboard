@@ -4,10 +4,105 @@ For the ChatGPT session that deploys project
 `appgprj_6aebbfcc56e48191a690c176014ceddf`. Base commit:
 `3770608515c285cc1e034f8be04e8d5e4c335640`.
 
-## Update, 2026-11-12 (small)
+## Update, 2026-11-19 (small)
 
-This archive is the fourth one. The third was deployed on 2026-11-12 and is
-live. Since it, text changes only:
+This archive is the sixth. **The live site is the fifth** (read on
+2026-11-19 after its deploy: `plan.json` has `playbook`, `suggested` and
+`captures`, the page has the job box, and no scan total is below the
+2026-11-10 backup). This one changes text and one optional key. No new
+table, no new route, no new runtime variable.
+
+Olisa, the same day: "remove all the AI generated texts we have and put only
+these 2".
+
+- **The post bank is two posts.** Every written post is gone from
+  `worker/templates/messages.json`. What is left is the two that already
+  were the playbook's examples: the question ("What do you guys use to stop
+  missing assignments?") and the ranking with Smooth slipped into it. Neither
+  has a link or a pitch. Today's post alternates between them and there is no
+  rest day any more.
+- **A reply beside each post.** `plan.json` `today` and each entry of
+  `messages` gain an optional string `reply` ("Smooth for Students on the App
+  Store"). The ambassador page shows it under the post with a "copy reply"
+  button. Every other key is as before; `messages` now has two entries
+  (`question`, `list`) where it had six.
+- **One "copy my link" button** under "your numbers" on the ambassador page
+  (their `/r/{ref}/s/dm` link). The posts used to be the only place a
+  tracked share link was shown; with link-free posts it would have been
+  nowhere. The "opens" line under a post is gone because the post has no
+  link to count.
+- One posting tip that referred to a removed post is deleted (six remain).
+
+Check after deploying (no `/scan/...` or `/r/...` link needs opening):
+
+1. `GET /` and `GET /api/stats` look as before.
+2. Any ambassador's `plan.json`: `messages` is two entries with keys
+   `question` and `list`, each with `reply`; `today.text` is one of the two
+   posts and holds no `http`; `today.reply` is set.
+3. The ambassador page shows two message cards, each with "then reply:" and
+   "copy reply", and "copy my link" under the numbers.
+
+## Update, 2026-11-18
+
+This archive is the fifth one. **The live site is still the third** (read on
+2026-11-18: no "the job" box, the older posts). The fourth archive
+(2026-11-12, described in the next section) was never deployed, and this one
+contains it, so deploy only this one.
+
+New since the fourth:
+
+- **"what works" on the ambassador page.** A short playbook (the posts that
+  work don't look like ads) with two worked examples, served in `plan.json`
+  as `playbook` from `worker/templates/playbook.json`.
+- **Posts to try, from the founders.** The founder page can write a post for
+  one ambassador (`POST /f/{FOUNDER_TOKEN}/suggest`); it shows on their page
+  and in `plan.json` as `suggested`. At most 20 stored per ambassador.
+- **Two new uploads**, one route, `POST /a/{code}/capture`:
+  - `kind: "feed"`: stills of the ambassador's school feed, up to 16 per
+    recording, each at most 200,000 bytes. From the web page they choose
+    screenshots; the app cuts stills out of a screen recording on the phone.
+  - `kind: "result"`: one screenshot of how a post did (at most 300,000
+    bytes) with the app it was on, the kind of post, and the upvote and view
+    counts they type.
+  The founder page lists both ("feed recordings", "post results" with
+  averages by kind of post), with seen and delete, and serves each picture at
+  `/f/{FOUNDER_TOKEN}/capture/{id}` with the same headers as a poster idea.
+- **New tables** `captures` and `suggestions` (`migrations/0003_captures.sql`,
+  a reference copy). Created lazily by the Worker like the others: no manual
+  migration and no new runtime variable.
+- **Limits**, all enforced inside the INSERT: feed 32 stills a day and 96
+  stored per ambassador, 16 per recording; results 8 a day and 60 stored;
+  1,500 capture rows across everyone, after which uploads answer 429
+  ("we're full right now. tell olisa or marco."). Deleting on the founder
+  page frees room.
+- **Stricter founder ids.** An id with a space or a leading zero now acts on
+  nothing, on every founder action.
+
+What that means for the deploy:
+
+- Only the generated section of `worker/index.js` changes, plus
+  `AMBASSADORS.md` and the new reference migration. Every existing route,
+  every existing `plan.json` key and the public dashboard are unchanged.
+- **Storage.** Pictures are base64 text in D1. The worst case is about
+  34 MB per ambassador and about 600 MB at the global ceiling (nearer
+  200 MB in practice, since a shrunk screenshot is about 100 KB). If the Sites
+  database has a size limit below that, say so and the ceiling
+  (`CAPTURES_GLOBAL_LIMIT` in the generated section) can be lowered.
+- Check after deploying (no `/scan/...` or `/r/...` link needs opening):
+  1. `GET /` and `GET /api/stats` look as before.
+  2. Any ambassador's `plan.json` has `playbook` (two examples), `suggested`
+     (an array) and `captures`; every key it had before is still there.
+  3. Open an ambassador page: the yellow "the job" box, then "what works",
+     then further down "show us your feed" and "how did a post do". Send one
+     screenshot through each.
+  4. On the founder page both appear under "feed recordings" and "post
+     results". Use "send a post to try" on the recording, reload the
+     ambassador page and see it under "posts to try". Then delete the test
+     recording, the test result and the test suggestion.
+
+## Update, 2026-11-12 (small; included here, never deployed on its own)
+
+The fourth archive. Text changes only:
 
 - **No more checklist.** The ambassador page no longer shows the
   "checklist" section (its first step told people who already use the app to

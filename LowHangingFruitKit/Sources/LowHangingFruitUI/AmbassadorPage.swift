@@ -42,6 +42,8 @@ struct AmbassadorPage: View {
     @State private var showTips = false
     @State private var showPosters = false
     @State private var showIdea = false
+    @State private var showFeedRecording = false
+    @State private var showPostResult = false
 
     var body: some View {
         Form {
@@ -54,8 +56,11 @@ struct AmbassadorPage: View {
 
             if model.isSignedIn {
                 jobSection
+                playbookSection
+                suggestedSection
                 todaySection
                 postersSection
+                trackingSection
                 feedbackSection
                 numbersSection
                 remindersSection
@@ -74,6 +79,12 @@ struct AmbassadorPage: View {
         .navigationBarTitleDisplayMode(.inline)
 #endif
         .task { await model.refreshIfStale() }
+        // The plan is kept for half an hour, and the posts in it are the
+        // server's. On 2026-11-19 Olisa had the written posts removed, the
+        // server changed within minutes, and his phone went on showing the
+        // old six with nothing he could do about it. A pull asks again;
+        // signed out it does nothing (`refresh` returns without a code).
+        .refreshable { await model.refresh() }
         .sheet(isPresented: $showPosters) {
             if let plan = model.plan {
                 AmbassadorPostersView(posters: plan.posters ?? [], schoolLabel: plan.schoolLabel)
@@ -81,6 +92,12 @@ struct AmbassadorPage: View {
         }
         .sheet(isPresented: $showIdea) {
             PosterIdeaSheet()
+        }
+        .sheet(isPresented: $showFeedRecording) {
+            FeedRecordingSheet()
+        }
+        .sheet(isPresented: $showPostResult) {
+            PostResultSheet()
         }
         .lhfSheetTheme()
         .frame(minWidth: 360, minHeight: 420)
@@ -210,6 +227,7 @@ struct AmbassadorPage: View {
                     .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.smoothSurface))
                     .listRowSeparator(.hidden)
                 if !today.isRest {
+                    replyBlock(today.reply)
                     HStack(spacing: 10) {
                         Button {
                             copy(today.text)
@@ -259,6 +277,152 @@ struct AmbassadorPage: View {
             try? await Task.sleep(for: .seconds(1.5))
             copied = false
         }
+    }
+
+    // MARK: What works, and what the founders wrote
+
+    /// The same rounded box today's post sits in, for any post text. Line
+    /// breaks are kept: a "list" post is its line breaks.
+    private func postBox(_ text: String) -> some View {
+        Text(text)
+            .font(.lhfSecondary(15))
+            .foregroundStyle(Color.smoothInk)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.smoothSurface))
+            .listRowSeparator(.hidden)
+    }
+
+    /// The follow-up reply under a post, with its own copy button. Nothing
+    /// when the server sent none (an older server) or an empty one.
+    @ViewBuilder
+    private func replyBlock(_ reply: String?) -> some View {
+        if let reply, !reply.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("then reply:")
+                    .font(.lhfSecondary(12))
+                    .foregroundStyle(Color.v2DateText)
+                Text(reply)
+                    .font(.lhfSecondary(13))
+                    .foregroundStyle(Color.v2DateText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                Button("copy reply") { copy(reply) }
+                    .buttonStyle(.bordered)
+                    .font(.lhfSecondary(14, weight: .semibold))
+            }
+        }
+    }
+
+    /// What has worked on the anonymous apps, from the server. Hidden when an
+    /// older server sends no playbook, or one with nothing in it.
+    @ViewBuilder
+    private var playbookSection: some View {
+        if let book = model.plan?.playbook, !(book.lead.isEmpty && book.steps.isEmpty && book.examples.isEmpty) {
+            Section {
+                if !book.lead.isEmpty {
+                    Text(book.lead)
+                        .font(.lhfSecondary(15, weight: .semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                ForEach(Array(book.steps.enumerated()), id: \.offset) { _, step in
+                    Text(step)
+                        .font(.lhfSecondary(14))
+                        .foregroundStyle(Color.v2DateText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                ForEach(book.examples) { example in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(example.title)
+                                .font(.lhfSecondary(13, weight: .semibold))
+                            Spacer()
+                            if let score = example.score {
+                                Text(score)
+                                    .font(.lhfMono(12, weight: .medium))
+                                    .foregroundStyle(Color.v2DateText)
+                            }
+                        }
+                        postBox(example.post)
+                        if let reply = example.reply, !reply.isEmpty {
+                            Text("reply: \(reply)")
+                                .font(.lhfSecondary(13))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        if let why = example.why, !why.isEmpty {
+                            Text(why)
+                                .font(.lhfSecondary(12))
+                                .foregroundStyle(Color.v2DateText)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            } header: {
+                SmoothSectionHeader("what works", accent: .smoothCobalt)
+            }
+            .smoothSectionBackground(.smoothLemon)
+        }
+    }
+
+    /// Posts the founders wrote for this ambassador. Only when there are any.
+    @ViewBuilder
+    private var suggestedSection: some View {
+        if let suggestions = model.plan?.suggested, !suggestions.isEmpty {
+            Section {
+                ForEach(suggestions) { suggestion in
+                    VStack(alignment: .leading, spacing: 8) {
+                        postBox(suggestion.text)
+                        HStack(spacing: 10) {
+                            Button("copy") { copy(suggestion.text) }
+                                .buttonStyle(.borderedProminent)
+                                .tint(Color.smoothGrape)
+                            if let reply = suggestion.reply, !reply.isEmpty {
+                                Button("copy reply") { copy(reply) }
+                                    .buttonStyle(.bordered)
+                            }
+                        }
+                        .font(.lhfSecondary(14, weight: .semibold))
+                    }
+                    .padding(.vertical, 2)
+                }
+            } header: {
+                SmoothSectionHeader("from the founders", accent: .smoothCobalt)
+            }
+            .smoothSectionBackground(.smoothGrape)
+        }
+    }
+
+    // MARK: Tracking
+
+    /// The two ways an ambassador shows the founders what is working: stills
+    /// of a feed recording and a screenshot of how a post did. Only when the
+    /// server says it takes them (`captures`).
+    @ViewBuilder
+    private var trackingSection: some View {
+        if let captures = model.plan?.captures {
+            Section {
+                posterRow("show us your feed", symbol: "video", trailing: Self.usage(stored: captures.feed?.stored, limit: captures.feed?.limit), leaves: false) {
+                    model.clearError()
+                    showFeedRecording = true
+                }
+                posterRow("how did a post do", symbol: "chart.line.uptrend.xyaxis", trailing: Self.usage(stored: captures.results?.stored, limit: captures.results?.limit), leaves: false) {
+                    model.clearError()
+                    showPostResult = true
+                }
+            } header: {
+                SmoothSectionHeader("help us help you", accent: .smoothCobalt)
+            }
+            .smoothSectionBackground(.smoothMarigold)
+        }
+    }
+
+    /// "3 of 96", or nil when the server gave no limit.
+    nonisolated static func usage(stored: Int?, limit: Int?) -> String? {
+        guard let stored, let limit else { return nil }
+        return "\(stored) of \(limit)"
     }
 
     // MARK: Posters
@@ -425,6 +589,7 @@ struct AmbassadorPage: View {
                                 .foregroundStyle(Color.v2DateText)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .textSelection(.enabled)
+                            replyBlock(message.reply)
                         }
                         .padding(.vertical, 2)
                     }

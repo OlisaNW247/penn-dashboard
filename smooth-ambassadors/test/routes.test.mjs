@@ -8,6 +8,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Miniflare } from "miniflare";
 import { ideaTests } from "./ideas-suite.mjs";
+import { captureTests } from "./captures-suite.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FOUNDER = "test-founder-token-0123456789";
@@ -38,7 +39,7 @@ before(async () => {
     },
   });
   const db = await mf.getD1Database("DB");
-  const sql = ["0001_ambassadors.sql", "0002_poster_ideas.sql"].map((f) => readFileSync(join(root, "migrations", f), "utf8")).join("\n");
+  const sql = ["0001_ambassadors.sql", "0002_poster_ideas.sql", "0003_captures.sql"].map((f) => readFileSync(join(root, "migrations", f), "utf8")).join("\n");
   const clean = sql.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n");
   for (const stmt of clean.split(";").map((s) => s.trim()).filter(Boolean)) {
     await db.prepare(stmt).run();
@@ -231,20 +232,19 @@ test("public leaderboard has schools only, no people", async () => {
   assert.ok(uva.recent >= 2);
 });
 
-test("plan.json: today's post carries the ambassador's link and their anon app", async () => {
+test("plan.json: today's post is a bare post with its reply, in their anon app", async () => {
   const r = await get(`/a/${token}/plan.json?anon=sidechat&tz=300`);
   assert.equal(r.status, 200);
   const p = await r.json();
   assert.equal(p.school, "uva");
   assert.equal(p.schoolName, "UVA");
   assert.ok(p.today && typeof p.today.text === "string");
-  if (p.today.kind === "anon") {
-    assert.equal(p.today.channel, "sidechat");
-    assert.match(p.today.text, new RegExp(`https://example.test/r/${ref}/s/sidechat`));
-  }
-  if (p.today.channel) assert.match(p.today.text, /example\.test\/r\//);
+  assert.equal(p.today.kind, "anon");
+  assert.equal(p.today.channel, "sidechat");
+  assert.doesNotMatch(p.today.text, /http/);
+  assert.equal(p.today.reply, "Smooth for Students on the App Store");
   assert.equal(p.checklist.find((c) => c.key === "download").done, true);
-  assert.equal(p.messages.length, 6);
+  assert.equal(p.messages.length, 2);
   assert.ok(p.numbers.linkOpens >= 1);
   assert.doesNotMatch(JSON.stringify(p), /555/);
   // The same day gives the same post; the next day moves on.
@@ -264,26 +264,48 @@ test("the app's posts get JSON instead of a redirect", async () => {
   assert.equal(me.posts, 2);
 });
 
-test("every daily entry has a kind the plan understands", async () => {
-  const m = JSON.parse(readFileSync(join(root, "worker/templates/messages.json"), "utf8"));
-  assert.ok(m.daily.length >= 10);
-  for (const d of m.daily) assert.ok(["anon", "gc", "ig", "dm", "rest"].includes(d.kind), d.kind);
-  assert.ok(m.daily.filter((d) => d.kind === "anon").length >= 7);
-  // Olisa, 2026-11-12: the anonymous posts say more than "canvas and gradescope
-  // deadlines". Across the bank they cover the three things the app does, and the
-  // sweeper is an alarm, never a phone call, in every message an ambassador can copy.
-  const anon = m.daily.filter((d) => d.kind === "anon").map((d) => d.text);
-  for (const theme of [/everywhere your professor posts/, /\btree\b/, /sweeper/]) {
-    assert.ok(anon.filter((t) => theme.test(t)).length >= 3, String(theme));
+const REPLY = "Smooth for Students on the App Store";
+const bank = () => JSON.parse(readFileSync(join(root, "worker/templates/messages.json"), "utf8"));
+const playbookExamples = () => JSON.parse(readFileSync(join(root, "worker/templates/playbook.json"), "utf8")).examples;
+
+test("plan.json messages are exactly the playbook's two examples (drift guard)", async () => {
+  const [q, l] = playbookExamples();
+  const p = await (await get(`/a/${token}/plan.json?anon=fizz&tz=300`)).json();
+  assert.deepEqual(p.messages.map((m) => m.key), ["question", "list"]);
+  assert.equal(p.messages[0].text, q.post);
+  assert.equal(p.messages[1].text, l.post);
+  for (const m of p.messages) assert.equal(m.reply, REPLY);
+  assert.equal(q.reply, REPLY);
+  assert.equal(l.reply, REPLY);
+});
+
+test("today alternates the two posts, never rests, and carries the reply", async () => {
+  const { dailyPost } = await import("../worker/data.js");
+  const [q, l] = playbookExamples();
+  const seen = [];
+  for (let d = 100; d < 104; d++) {
+    const t = dailyPost({ daily: bank().daily, dayIndex: d, anonApp: "sidechat" });
+    assert.notEqual(t.kind, "rest");
+    assert.equal(t.reply, REPLY);
+    seen.push(t.text);
   }
-  // Some posts are in a hype voice, and a tip says to post the story ones when true.
-  assert.ok(anon.some((t) => t.startsWith("smooth just saved my life")));
-  assert.ok(anon.some((t) => t.startsWith("this new smooth app is crazy")));
-  assert.ok(m.posting_tips.some((t) => /when they're true/.test(t)));
-  for (const t of [...m.daily, ...m.messages].map((x) => x.text)) {
-    assert.doesNotMatch(t, /\bcalls? you\b|phone call|ed discussion|\bedstem\b/i, t.slice(0, 40));
-    if (/sweeper/.test(t)) assert.match(t, /rings|alarm/, t.slice(0, 40));
+  assert.ok(seen.every((t) => t === q.post || t === l.post));
+  for (let i = 1; i < seen.length; i++) assert.notEqual(seen[i], seen[i - 1]);
+  assert.equal(new Set(seen).size, 2);
+});
+
+test("the bank holds only the two posts, with no links or placeholders", () => {
+  const m = bank();
+  const [q, l] = playbookExamples();
+  assert.equal(m.messages.length, 2);
+  assert.equal(m.daily.length, 2);
+  assert.deepEqual(m.daily.map((d) => d.text), [q.post, l.post]);
+  for (const d of m.daily) {
+    assert.equal(d.kind, "anon");
+    assert.equal(d.reply, REPLY);
   }
+  for (const t of [...m.daily, ...m.messages].map((x) => x.text)) assert.doesNotMatch(t, /http|\{|\}/);
+  assert.ok(!m.posting_tips.some((t) => /saved my life/.test(t)));
 });
 
 // ---- the private code never appears in anything posted or printed
@@ -298,15 +320,18 @@ test("the token is nowhere in posts, messages or stickers; only the ref is", asy
   const plan = await (await get(`/a/${token}/plan.json?anon=fizz&tz=300`)).json();
   const texts = [plan.today.text, ...plan.messages.map((m) => m.text)];
   for (const t of texts) assert.ok(!t.includes(token), t);
-  for (const t of texts)
-    for (const m of t.match(/https?:\/\/\S*\/(?:a|r)\/\S+/g) || []) assert.match(m, new RegExp(`/r/${ref}/`), m);
-  assert.ok(plan.messages.some((m) => m.text.includes(`/r/${ref}/s/`)));
   assert.match(plan.page, new RegExp(`/a/${token}$`));
   const stickers = await (await get(`/a/${token}/stickers`)).text();
   assert.ok(!stickers.includes(token), "stickers page");
   const page = await (await get(`/a/${token}`)).text();
   assert.doesNotMatch(page, new RegExp(`/a/${token}/(s|p)/`));
-  assert.match(page, new RegExp(`/r/${ref}/s/`));
+  assert.match(page, /copy reply/);
+  assert.ok(page.includes(playbookExamples()[0].post));
+  // The two posts carry no link, so the page keeps one "copy my link" button
+  // on the public ref: without it the tracked share links would be nowhere.
+  assert.match(page, new RegExp(`/r/${ref}/s/dm"`));
+  assert.match(page, /copy my link/);
+  assert.doesNotMatch(page, /opens: \d+ total/);
 });
 
 test("the old token share and poster routes are gone and count nothing", async () => {
@@ -456,6 +481,14 @@ test("a code starts with its school, at every school, and old bare codes still s
 
 // Poster ideas, the extended plan.json, the restyled pages and the font route.
 ideaTests({
+  test,
+  skip: false,
+  founder: FOUNDER,
+  db: () => mf.getD1Database("DB"),
+  req: (path, init) => mf.dispatchFetch("https://example.test" + path, { redirect: "manual", ...init }),
+});
+
+captureTests({
   test,
   skip: false,
   founder: FOUNDER,

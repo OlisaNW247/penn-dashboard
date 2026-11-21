@@ -72,12 +72,54 @@ does → Profile → 8 is the full description. In short:
 poster-scan tracker's own site. It is **not** Supabase and nothing in
 `backend/` knows about it. It is deployed by a ChatGPT session that owns the
 Sites project, from a zip this repo builds; `smooth-ambassadors/docs/deploy.md`
-says how. Two deploys are live (2026-11-11 and 2026-11-12). A third zip was
-handed to Olisa on 2026-11-12 and **whether it is deployed is not recorded
-here**: it removes the checklist from the web page, puts the job line on
-top, and carries the rewritten anonymous posts. Until it is live, the app's
-"today" post and "more messages" still show the older, shorter texts,
-because the server writes them.
+says how. Everything built so far is live: 2026-11-11, 2026-11-12, and on
+2026-11-19 both the zip of 2026-11-18 (section 2a below) and the two-posts
+change (section 2b). The app keeps a fetched plan for 30 minutes; pull the
+ambassador page down to ask the server again.
+
+### 2a. Added on 2026-11-18, after this page was first written
+
+Olisa posted twice on Sidechat without a pitch (a question, and Smooth
+slipped into a ranking) and both did well, so he asked for the ambassador
+page to teach that, and for two ways to learn from each campus:
+
+- **"what works"**, second on the page: one line ("the posts that work
+  don't look like ads."), five short steps and the two examples. The text
+  comes from the server (`plan.playbook`), so it can change without a build.
+- **"from the founders"**, when there is anything: posts Olisa or you wrote
+  for that ambassador on the founder page, each with a copy button.
+- **"help us help you"**, after the posters: "show us your feed" (the
+  ambassador picks a screen recording of their school's anonymous app; the
+  phone cuts up to 16 stills out of it and sends the stills, never the
+  video) and "how did a post do" (a screenshot, the app, the kind of post,
+  upvotes and views).
+- New files: `FeedRecordingSheet.swift`, `PostResultSheet.swift`,
+  `FeedRecordingFrames.swift` in the Kit. `docs/PRIVACY.md` says what the
+  two uploads send.
+
+It compiled and passed on the runner (CLAUDE.md → Test baseline) and has
+never run on a phone. The parts only a phone can settle: picking a video in
+the photo picker and getting it as a file, cutting stills from a real
+screen recording, and how long that takes on a two-minute clip. This is
+five sections of copy on a page you have not designed, so it is squarely in
+"your pass on the page" below.
+
+### 2b. Added on 2026-11-19: only two posts
+
+With the build on his phone, Olisa: "remove all the AI generated texts we
+have and put only these 2". So every written post is gone. The bank is his
+two Sidechat posts, the question and the ranking, each with the reply
+"Smooth for Students on the App Store". The server sends the reply beside
+today's post and each message, and the page draws it under the post with a
+"copy reply" button. Today's post alternates between the two and there is no
+rest day. Do not add written posts back to
+`smooth-ambassadors/worker/templates/messages.json`; a post for one campus
+is written by a founder on the founder page.
+
+Compiled on the runner, never on a phone. For your pass: the two posts now
+show twice on the page ("what works" explains them, "more messages" is where
+they are copied), and a reply is its own list row with a bordered button,
+which nobody has looked at on a device.
 
 Rules that are easy to break by accident:
 
@@ -154,7 +196,7 @@ In rough order.
    number it has seen, so check TestFlight → Builds there before choosing
    the next one. Whether 3.4.1 is live was not readable from the cloud
    session (Apple's lookup did not answer).
-6. **The third server zip**, if it is not deployed yet (section 2).
+6. Nothing is waiting on the server side as of 2026-11-19 (section 2).
 
 Known and left alone: Yik Yak is reported to cap a post at 200 characters,
 and every anonymous post is longer than that once its link is counted. If an
