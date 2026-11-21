@@ -506,6 +506,21 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
 
 ## Next: features
 
+- **Wrong rings after a force-quit: the check in a notification extension**
+  (research only, 2026-11-21, `research/sweeper-force-quit`,
+  `docs/SWEEPER_FORCE_QUIT_RESEARCH_2026-11-21.md`). The wake built on
+  2026-11-18 is a background push, which iOS discards for a force-quit app.
+  An alert push with `mutable-content` reaches a Notification Service
+  Extension even then. That extension can read the planner with the phone's
+  own cookies and cancel, while the server keeps holding only a token and
+  minutes. The open question is whether an extension may call
+  `AlarmManager.cancel`. The SDK doesn't forbid it, and the daemon's core
+  has the extension-to-app lookup, but nothing is proven. A two-hour
+  device test (the doc's §6) decides between building that and the
+  narrower fallbacks in its §5. Two small fixes stand alone: Canvas's
+  planner `excused` is not decoded, so the last-hour poll can't cancel
+  excused work; and `points_possible == 0` / `omit_from_final_grade` could
+  go buzz-only ahead of the word list.
 - **The Sweeper as a server-held alarm clock** (Marco, 2026-11-17: "help me
   understand how we can do a smooth sweeper and have it belong to a server
   … research submission status before we send out the smooth sweeper").
