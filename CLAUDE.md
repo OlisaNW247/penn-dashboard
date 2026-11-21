@@ -269,7 +269,16 @@ mode, the S app mark, and bundled type registered at runtime by
   draws the class code (Space Mono Bold, 9.5pt, +1.1) and five shippable
   alternatives with renders; no font changed.
 
-**Release state.** The next release, **3.5.0 (21)**, is the release line `claude/ambassador-header` (`v11` merged with Olisa's `v12`) **without the agent connection**: Marco decided on 2026-11-17 that it stays on `v11` for later (`FeatureFlags.agentConnection = false` on `claude/v12-isolate-ab8b22`, `docs/V12_ISOLATION_2026-11-17.md`; the backend stays deployed). Everything else on the line ships ("keep all but agent", the same day). **Since 2026-11-18 the line also carries the Sweeper accuracy work**: `claude/v12-isolate-ab8b22` and then `claude/sweeper-build-0a4dd0` were fast-forwarded into it at Marco's "yes", so its tip is `b1a6aa8` (4254/421 green on that tree, unsigned iOS build green, Deno 942). The Debug build of `b1a6aa8` was installed on Marco's iPhone 17 Pro at about 23:30 UTC on 2026-11-18 by `scripts/build-to-phone.sh` (build and install succeeded; the launch was refused because the phone was locked), over the `v11` build `dec3c47`: the first build on a phone with the agent connection off and the first with any Sweeper accuracy code. Not pushed, not merged into `v11`, nothing deployed. Live on the App Store: **3.4.1 (build 20) since 2026-11-08
+**Release state.** The next release, **3.5.0 (21)**, is the release line `claude/ambassador-header` (`v11` merged with Olisa's `v12`) **without the agent connection**: Marco decided on 2026-11-17 that it stays on `v11` for later (`FeatureFlags.agentConnection = false` on `claude/v12-isolate-ab8b22`, `docs/V12_ISOLATION_2026-11-17.md`; the backend stays deployed). Everything else on the line ships ("keep all but agent", the same day). **Since 2026-11-18 the line also carries the Sweeper accuracy work**: `claude/v12-isolate-ab8b22` and then `claude/sweeper-build-0a4dd0` were fast-forwarded into it at Marco's "yes", so its tip is `b1a6aa8` (4254/421 green on that tree, unsigned iOS build green, Deno 942). **Since 2026-11-21 the line also carries `origin/v10` `d22ec49` (Olisa's
+tree work of 2026-11-14 to 16: per-intent excerpt budgets, the weekly schedule
+line, the student's own section, dated excerpt labels, the room on the wire,
+the phone half of the Haiku switch) and `origin/v12` `8fc16c8` (his ambassador
+playbook, uploads, feed stills, post results and pull to refresh of 2026-11-18
+to 19), merged at Marco's "merge all of that into one" after the release
+line was found to lack both (`f99e5f6`, `f9712b9`); the merged tree is 4325/434
+green (Test baseline) and its unsigned iOS Debug build succeeded the same hour.** Between the 18th and the merges the line gained the
+Sweeper's poller trace and the two poller fixes (`e22c3ef`, `93533d0`,
+`890bd11`) and the buzz-only rule for unconfirmable work (`3b9d2c8`). The Debug build of `b1a6aa8` was installed on Marco's iPhone 17 Pro at about 23:30 UTC on 2026-11-18 by `scripts/build-to-phone.sh` (build and install succeeded; the launch was refused because the phone was locked), over the `v11` build `dec3c47`: the first build on a phone with the agent connection off and the first with any Sweeper accuracy code. Not pushed, not merged into `v11`, nothing deployed. Live on the App Store: **3.4.1 (build 20) since 2026-11-08
 at 22:29 UTC** (public iTunes
 lookup, read 2026-11-10), and the `update-manifest` floor is 3.4.1 (read the
 same day; `sync` refused a 3.4.0 install with 426 at 03:49 UTC on 2026-11-10,
@@ -2059,6 +2068,22 @@ account signed into Xcode. Submitting for review is a separate, manual
 step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
+
+**Current on `claude/ambassador-header` (2026-11-21, the release line with
+`origin/v10` `d22ec49` and `origin/v12` `8fc16c8` merged in): 4325 tests /
+434 suites, all green, `swift test --no-parallel` alone on Marco's Mac
+(107 s of tests, helper domain cleared first, no other run on the machine).**
+The merges' Swift merged itself except `AmbassadorTests.swift`, where git's
+"keep both" put `v12`'s new suites inside the release line's
+`AmbassadorHeaderTests` body (one closing brace short; the first full run
+did not compile) and the file was rebuilt as `v12`'s file plus the header
+suite appended. The count is the sum of the three lines' own additions
+over 4254 / 421: `v10`'s tree work (`AskExcerptBudgetTests`,
+`CanvasOwnSectionsTests`, `PassageSituatingTests`, `CourseKnowledgeHeldSyncTests`
+additions), `v12`'s ambassador playbook and captures suites, and this
+line's `LastHourPollerWiringTests` (+3 since the 18th) and
+`BuzzOnlyDeliveryTests` (+5). The unsigned iOS build result is in the
+Release state paragraph. Nothing on a phone yet from the merges.
 
 **Current on `claude/sweeper-build-0a4dd0` (2026-11-18, the server wake,
 phase 2): 4254 tests / 421 suites, all green, `swift test --no-parallel`
