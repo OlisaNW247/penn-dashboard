@@ -1351,6 +1351,7 @@ struct AmbassadorHeaderTests {
         // takes its place, and it ends "so far".
         #expect(!source.contains("AmbassadorDateLine.text("))
         #expect(try uiSource("AmbassadorStatsCard.swift").contains("users at \\(schoolLabel) so far"))
+        #expect(try uiSource("AmbassadorStatsCard.swift").contains(".lineLimit(1)"))
         #expect(source.contains("struct WordmarkBadge: View"))
         #expect(source.contains("ambassadorBadgeSymbol = \"medal.fill\""))
     }
