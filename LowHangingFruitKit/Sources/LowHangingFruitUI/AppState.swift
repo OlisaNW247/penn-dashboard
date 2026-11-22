@@ -3413,13 +3413,63 @@ final class AppState: ObservableObject {
     /// silent renewal otherwise: same credential closure, budget and
     /// outcome handling.
     func renewDuoTrustIfDue(now: Date = Date()) {
+        #if DEBUG
+        DebugRenewalLog.record("duo trust check: entered ctx=\(renewalContext.rawValue) fixture=\(isUsingFixtureData) jar=\(hasRefreshedDuoSummary)")
+        #endif
         guard renewalContext == .foreground, !isUsingFixtureData else { return }
+        // The first pass of a launch runs before the Duo jar has been read,
+        // so `duoTrustExpiry` is nil and the rule would wait for the next
+        // five-minute pass, which a student who opens the app for two
+        // minutes never reaches (seen 2026-11-21: the test launch went to
+        // the background after one minute with nothing attempted). Read the
+        // jar first, then ask again; `refreshDuoRememberSummary` always sets
+        // the flag, so this recurses exactly once.
+        guard hasRefreshedDuoSummary else {
+            #if DEBUG
+            DebugRenewalLog.record("duo trust check: reading jar")
+            #endif
+            Task { @MainActor [weak self] in
+                await self?.refreshDuoRememberSummary()
+                #if DEBUG
+                DebugRenewalLog.record("duo trust check: jar read")
+                #endif
+                self?.renewDuoTrustIfDue(now: Date())
+            }
+            return
+        }
         var horizon = 5.0 * 24 * 3600
         #if DEBUG
         if debugRenewDuoTrustNow { horizon = .infinity }
         #endif
         let lastAttempt = (UserDefaults.lhf.object(forKey: Self.duoTrustRenewalAttemptAtKey) as? Double)
             .map { Date(timeIntervalSince1970: $0) }
+        let lastSubmission = Self.persistedCredentialSubmissionAt()
+        let isPenn = canvasInstallation.id == CanvasInstallation.penn.id
+        let silently = canAutoLoginSilently
+        #if DEBUG
+        // Which guard said no, in words (2026-11-21: the first phone test
+        // refused silently and nothing on the device said why). Counts and
+        // fixed words only.
+        let refusal: String? = {
+            guard isPenn else { return "not-penn" }
+            guard let expiry = duoTrustExpiry else { return "no-trust-cookie" }
+            let days = Int(expiry.timeIntervalSince(now) / 86_400)
+            if expiry.timeIntervalSince(now) > horizon { return "far \(days)d" }
+            if canvasSessionExpired { return "session-expired" }
+            if autoLoginAwaitingDuo { return "awaiting-duo" }
+            if autoLoginDisabledReason != nil { return "password-disabled" }
+            if !silently { return "cannot-auto-login" }
+            if isSilentRenewalInFlight { return "in-flight" }
+            if isCanvasLoginPaneActive { return "login-pane" }
+            if let lastAttempt, now.timeIntervalSince(lastAttempt) < 7 * 24 * 3600 { return "attempt-spacing" }
+            if let lastSubmission, now.timeIntervalSince(lastSubmission) < CanvasSessionRenewer.foregroundCredentialSpacing { return "credential-spacing" }
+            if let failed = failedCredentialSubmissionAt, now.timeIntervalSince(failed) < CanvasSessionRenewer.failedSubmissionSpacing { return "failed-spacing" }
+            if pendingSilentRenewal != nil { return "pending" }
+            if silentRenewalCannotProceed { return "cannot-proceed" }
+            return nil
+        }()
+        DebugRenewalLog.record("duo trust check: \(refusal ?? "start") (trust \(duoTrustExpiry.map { "\(Int($0.timeIntervalSince(now) / 86_400))d" } ?? "none"))")
+        #endif
         guard Self.shouldRenewDuoTrust(
             trustExpiry: duoTrustExpiry,
             now: now,
@@ -3427,12 +3477,12 @@ final class AppState: ObservableObject {
             awaitingDuo: autoLoginAwaitingDuo,
             disabledReason: autoLoginDisabledReason,
             lastTrustRenewalAttemptAt: lastAttempt,
-            lastCredentialSubmissionAt: Self.persistedCredentialSubmissionAt(),
+            lastCredentialSubmissionAt: lastSubmission,
             lastFailedCredentialSubmissionAt: failedCredentialSubmissionAt,
             renewalInFlight: isSilentRenewalInFlight,
             loginPaneActive: isCanvasLoginPaneActive,
-            isPenn: canvasInstallation.id == CanvasInstallation.penn.id,
-            canAutoLoginSilently: canAutoLoginSilently,
+            isPenn: isPenn,
+            canAutoLoginSilently: silently,
             horizon: horizon
         ) else { return }
         guard pendingSilentRenewal == nil, !silentRenewalCannotProceed else { return }
@@ -3763,11 +3813,19 @@ final class AppState: ObservableObject {
     /// never stale by even one fire-and-forget `Task`'s worth of a race),
     /// and on app foreground (`ContentView.refresh()`).
     func refreshDuoRememberSummary() async {
+        // Attach a web view to the store first, or a cold process reads an
+        // empty jar (see `LoginDataStores.warmCanvasStore`).
+        LoginDataStores.warmCanvasStore()
         let cookies: [HTTPCookie] = await withCheckedContinuation { continuation in
             LoginDataStores.canvas.httpCookieStore.getAllCookies { continuation.resume(returning: $0) }
         }
         let duoCookies = cookies.filter { $0.domain.localizedCaseInsensitiveContains("duosecurity") }
         let now = Date()
+        #if DEBUG
+        // Counts only: how many cookies the store answered with, and how many
+        // of them are Duo's, so an empty read is visible on a phone.
+        DebugRenewalLog.record("duo jar: \(cookies.count) cookies, \(duoCookies.count) duo")
+        #endif
         duoRememberSummary = Self.duoRememberSummary(cookies: duoCookies, now: now)
         duoTrustExpiry = Self.duoTrustExpiry(cookies: duoCookies, now: now)
         hasRefreshedDuoSummary = true

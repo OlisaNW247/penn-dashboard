@@ -1977,6 +1977,15 @@ one of `text`, `textFileOnly`, `file`, `link`, `locked`, `offline`, `signIn`,
 nothing is persisted, so no call reaches the server. The screenshots of
 2026-11-11 (`docs/v11-ui/`) were taken with it.
 
+Since 2026-11-22 the renewal log also carries the Duo trust check's words:
+"duo trust check: entered …", then one of "reading jar", "jar read", and the
+decision ("start", or the refusing guard: "no-trust-cookie", "far Nd",
+"session-expired", "awaiting-duo", "password-disabled", "cannot-auto-login",
+"in-flight", "login-pane", "attempt-spacing", "credential-spacing",
+"failed-spacing", "pending", "cannot-proceed"), "duo jar: N cookies, M duo"
+(counts) on every jar read, and "duo trust renewal: extended | unchanged"
+after a forced attempt.
+
 `-LHFRenewDuoTrustNow` (DEBUG only, 2026-11-21) treats Duo's remembered-device
 trust as about to lapse for that launch and forgets the last forced
 attempt, so the forced re-authentication (`force_login=1`, Stay signed in)
@@ -3916,6 +3925,22 @@ itself.
 
 ## Traps that have already bitten
 
+- **A non-default `WKWebsiteDataStore` answers an empty cookie jar in a cold
+  process until a web view is attached to it** (2026-11-22, Marco's phone).
+  `refreshDuoRememberSummary` asked `LoginDataStores.canvas.httpCookieStore`
+  for all cookies at launch and got none, while the jar on disk (read off
+  the phone with `devicectl`) held Duo's remembered-device cookie an hour
+  old. WebKit loads an identifier store's jar into its network process
+  lazily, when a web view first uses the store; the hidden renewer creates
+  one only during an attempt, so every read made before an attempt was
+  empty: the Duo trust renewal refused with "no-trust-cookie" three builds
+  running, and Profile's "duo remembers this phone" line (DEBUG) has been
+  reading "no remembered-device cookie" in every cold process since
+  2026-09. `LoginDataStores.warmCanvasStore()` now attaches a hidden,
+  never-loaded web view once per process before the read. The tells: a
+  count of zero where the on-disk jar is not empty, and a value that is
+  right only after a sign-in ran in the same process. The wrong fix is
+  reading the binary jar file directly: WebKit owns it.
 - **An unknown read is not an unsubmitted one, and neither arms or disarms
   anything** (2026-11-18, named when the Sweeper's reads got faster). The
   planner answers a page or less for a two-hour window, so an item missing
@@ -5848,17 +5873,23 @@ none is a ship line.
   `debugRenewalLogV1` for "finished: <host> <path>", "login form check",
   "credential fill result", "duo push sent" and "duo push approved"; the
   per-navigation lines are DEBUG-only and were added for this check.
-- **The Duo trust renewal and the missed-push notice (2026-11-21) are
-  compiled and tested, never on a phone.** The one real unknown is
-  `force_login=1`: whether Penn's identity provider re-asks the password
-  and Duo re-issues the 30-day trust without a push. The test is a DEBUG
-  build with `-LHFRenewDuoTrustNow` on Marco's phone (its trust runs to
-  2026-12-21), then `debugRenewalLogV1`: "duo trust renewal: extended" is
-  a pass; "unchanged" with a "finished: … duosecurity …" line before it
-  means Duo was reached and did not extend; "unchanged" with no Duo line
-  means Canvas ignored the flag and the renewal is a no-op. The notice has
-  not been seen either (post it by letting a latch age an hour, or read the
-  pending requests). Not built: a trust-renewal for a student whose trust
+- **The Duo trust renewal ran once on Marco's phone and worked (2026-11-22
+  00:57 UTC, `-LHFRenewDuoTrustNow`); the missed-push notice has not been
+  seen.** The forced sign-in typed the saved PennKey at +1 s, reached Duo at
+  +4 s, was handed back to Penn at +6 s with no push, and the trust cookie's
+  expiry moved forward ("duo trust renewal: extended"): Penn honours
+  `force_login=1` and Duo re-issues the 30-day trust silently. Two things
+  to look at next time: the attempt ended `landedOnLoginPage` through a
+  `WebKitErrorDomain/102` (frame load interrupted) on the hop back to
+  Canvas, harmless under the forced rule (nothing latched) but the Canvas
+  cookies were not re-saved by it, and the app left the foreground in the
+  same second, which is what a universal-link hand-off to the Canvas
+  Student app looks like (Traps); Marco's answer to "did the Canvas app
+  open" decides whether the hidden renewer needs the visible pane's
+  app-link guard. It took three builds to see any of this, because the
+  cookie read came back empty in a cold process (the next Trap). The notice
+  has not been seen (post it by letting a latch age an hour, or read the
+  pending requests). Not built: a trust renewal for a student whose trust
   is already gone (by design: that is the ordinary sign-in and a push).
 - **Duo passcode autofill is unverified.** `DuoPasscodeAutofill`
   (2026-10-30) is tested only as a string; whether Duo's Universal Prompt
