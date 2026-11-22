@@ -23,13 +23,21 @@ Three things, and nothing else:
    `initialize` and `appStore` through `SMOOTH_HOST`, so there is one list
    of schools and designs.
 
-The embedded poster images (`imageData`) are byte-identical.
+The embedded poster images (`imageData`) were byte-identical until
+2026-11-22; since then `build-sites.mjs` may add designs to the `posters`
+Map and their pictures to `imageData` (every original picture kept as data,
+the line re-serialised). Designs are never removed there: a retired design
+(`RETIRED` in the generated section) still scans and still counts, it is
+only no longer offered to ambassadors.
 
 Do not edit the generated section by hand. Its source is the
 `smooth-ambassadors` project (`worker/`, `sites/`, `scripts/build-sites.mjs`
 in the `penn-dashboard` repository). `node scripts/build-sites.mjs
 <this repository>` rewrites the section and is safe to run twice. Adding a
-school or poster to the Maps at the top of the file needs no rebuild. A new
+school to the Maps at the top of the file needs no rebuild. A poster is
+added by putting its key, name and preview in the `smooth-ambassadors`
+project (`worker/catalog.js`, `posters/previews/{key}.jpg`) and rebuilding,
+which writes the Map entry and the pictures here. A new
 UPenn-only poster also needs adding to `SMOOTH_HOST.upennOnly`.
 
 ## Sign-in: there are no accounts

@@ -23,6 +23,7 @@ import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, sta
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { imagesKept } from "./lib/add-posters.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const [original, edited, zipPath] = process.argv.slice(2).map((p) => p && resolve(p));
@@ -40,8 +41,12 @@ const imageLine = (text) => text.split("\n").find((line) => line.startsWith(IMAG
 
 const originalWorker = readFileSync(join(original, "repository/worker/index.js"), "utf8");
 const editedWorker = readFileSync(join(edited, "repository/worker/index.js"), "utf8");
-if (sha256(imageLine(originalWorker)) !== sha256(imageLine(editedWorker))) {
-  console.error("package-sites: the embedded image line differs from the original (nothing written)");
+// The image line may gain designs (scripts/lib/add-posters.mjs) but never lose
+// or change one: every picture the original had must still be there as data.
+// Byte identity was the rule until 2026-11-22; a re-serialised dictionary
+// with the same entries is the same site.
+if (sha256(imageLine(originalWorker)) !== sha256(imageLine(editedWorker)) && !imagesKept(originalWorker, editedWorker)) {
+  console.error("package-sites: the embedded image line lost or changed an original picture (nothing written)");
   process.exit(1);
 }
 
