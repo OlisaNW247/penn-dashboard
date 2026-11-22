@@ -9,6 +9,8 @@ import { fileURLToPath } from "node:url";
 import { Miniflare } from "miniflare";
 import { ideaTests } from "./ideas-suite.mjs";
 import { captureTests } from "./captures-suite.mjs";
+import { existsSync, readFileSync as readFile } from "node:fs";
+import { extractCanvasHosts, findCatalogFiles, OUT as HOSTS_JSON, SWIFT_SOURCES } from "../scripts/gen-canvas-hosts.mjs";
 import { installTests } from "./installs-suite.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -503,4 +505,11 @@ installTests({
   founder: FOUNDER,
   db: () => mf.getD1Database("DB"),
   req: (path, init) => mf.dispatchFetch("https://example.test" + path, { redirect: "manual", ...init }),
+});
+
+test("canvas-hosts.json matches the Swift school catalog it is generated from", (t) => {
+  const files = existsSync(SWIFT_SOURCES) ? findCatalogFiles() : [];
+  if (!files.length) return t.skip("LowHangingFruitKit's CanvasSchoolCatalogData.swift is not present; run from the full repository");
+  const fresh = extractCanvasHosts(files.map((f) => readFile(f, "utf8")));
+  assert.deepEqual(JSON.parse(readFile(HOSTS_JSON, "utf8")), fresh, "run: npm run gen:hosts");
 });

@@ -10,6 +10,21 @@
 > Profile > ambassador is for a handful of student volunteers who help spread the word about Smooth at their schools. It asks for a code we text them (no account, no password) and then shows a suggested post for the day, a copy button, a daily local reminder they can turn off, and their own link-open counts. It never asks for or rewards App Store ratings or reviews. To see it, enter this test code: <code>. Any other student sees only the row.
 > ```
 
+> **For the first build that carries the install count (2026-11-22, `v12`):**
+> every "No analytics, tracking, ads or third-party SDKs" line below was
+> true when it was pasted and is not true of this build as worded. In the
+> block pasted for it, that line becomes:
+>
+> ```text
+> - No tracking, ads or third-party SDKs. One anonymous count per install: after Canvas is connected the app sends the school's Canvas web address once, with no identifier, and our server keeps only a per-school daily tally.
+> ```
+>
+> The App Store privacy label has to be re-read for the same build
+> (`LISTING.md` → App Privacy). The count carries no identifier and is not
+> linked to a user, but it is data the app sends and we keep as a tally, so
+> whether the label gains a "Usage Data, not linked to you, Analytics"
+> entry is Olisa's and Marco's decision, not an assumption.
+
 ## To paste for 3.2.0 (14), 2026-10-23 (the same block served 3.1.0 (13) on 2026-10-20)
 
 This is the block to paste for 3.2.0; nothing a reviewer meets changed

@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 
 // Written out on purpose: the built-file run must not import the source module.
-const PER_NETWORK = 30;
+const PER_NETWORK = 300;
 const HOST_CAP = 2000;
 const TEST_IP = "203.0.113.77";
 const TEST_UA = "installs-suite-agent/9.9";
@@ -78,11 +78,13 @@ export function installTests({ test, skip, req, founder, db, label = "" }) {
     assert.equal((await post({ host: "x.edu", kind: "new" }, { ct: "text/plain" })).status, 400);
     assert.equal((await req("/api/install", { method: "POST", body: JSON.stringify({ host: "x.edu", kind: "new" }) })).status, 400);
     assert.equal(await rowsIn(), before);
-    // a 100-character host is fine
+    // a well-formed 100-character host is accepted (200) but unknown, so not stored
     assert.equal((await post({ host: long, kind: "new" }, { ip: "198.51.100.200" })).status, 200);
-    assert.equal(await tally(long, "new"), 1);
+    assert.equal(await tally(long, "new"), 0);
     // charset header is tolerated
-    assert.equal((await post({ host: "ok.example.edu", kind: "new" }, { ip: "198.51.100.201", ct: "application/json; charset=utf-8" })).status, 200);
+    assert.equal((await post({ host: "american.instructure.com", kind: "new" }, { ip: "198.51.100.201", ct: "application/json; charset=utf-8" })).status, 200);
+    assert.equal(await tally("american.instructure.com", "new"), 1);
+    await (await db()).prepare("DELETE FROM installs WHERE host = 'american.instructure.com'").run();
   });
 
   t("installs: other methods are 405", async () => {
@@ -94,23 +96,50 @@ export function installTests({ test, skip, req, founder, db, label = "" }) {
     assert.equal((await req("/api/install/")).status, 404);
   });
 
-  t("installs: 40 concurrent posts from one network for one host store exactly 30", async () => {
-    const host = "burst.example.edu";
+  t("installs: an unknown but well-formed host answers 200 and touches no table", async () => {
+    const d = await db();
+    const count = async () => [await rowsIn(), (await d.prepare("SELECT COUNT(*) n FROM install_seen").first()).n, (await d.prepare("SELECT COUNT(*) n FROM install_salts").first()).n];
+    const before = await count();
+    for (const host of ["junk.example.edu", "x1.example.com", "not-a-school.instructure.com"]) {
+      const r = await post({ host, kind: "new" }, { ip: "192.0.2.99" });
+      assert.equal(r.status, 200);
+      assert.deepEqual(await r.json(), { ok: true });
+    }
+    assert.deepEqual(await count(), before);
+  });
+
+  t("installs: every host a school maps to is accepted", async () => {
+    for (const host of ["canvas.upenn.edu", "miami.instructure.com", "canvas.its.virginia.edu", "case.instructure.com", "canvas.clarku.edu"]) {
+      assert.equal((await post({ host, kind: "existing" }, { ip: "192.0.2.98" })).status, 200);
+      assert.ok((await tally(host, "existing")) >= 1, host);
+    }
+  });
+
+  t("installs: concurrent posts stop at the real limit (bucket seeded at 290, 40 posts add exactly 10)", async () => {
+    const d = await db();
+    await d.prepare("DELETE FROM install_seen").run();
+    const host = "american.instructure.com";
     const ip = "192.0.2.10";
+    assert.equal((await post({ host, kind: "new" }, { ip })).status, 200);
+    const rows = (await d.prepare("SELECT bucket FROM install_seen").all()).results;
+    assert.equal(rows.length, 1);
+    await d.prepare("UPDATE install_seen SET n = 290").run();
     const rs = await Promise.all(Array.from({ length: 40 }, () => post({ host, kind: "new" }, { ip })));
     assert.ok(rs.every((r) => r.status === 200), "a swallowed count still answers 200");
-    assert.equal(await tally(host, "new"), PER_NETWORK);
+    assert.equal(await tally(host, "new"), 1 + (PER_NETWORK - 290));
+    assert.equal((await d.prepare("SELECT n FROM install_seen").first()).n, PER_NETWORK);
     // a second network still counts, and so does the same one for another host
     assert.equal((await post({ host, kind: "new" }, { ip: "192.0.2.11" })).status, 200);
-    assert.equal(await tally(host, "new"), PER_NETWORK + 1);
-    assert.equal((await post({ host: "other-burst.example.edu", kind: "new" }, { ip })).status, 200);
-    assert.equal(await tally("other-burst.example.edu", "new"), 1);
+    assert.equal(await tally(host, "new"), 12);
+    assert.equal((await post({ host: "asu.instructure.com", kind: "new" }, { ip })).status, 200);
+    assert.equal(await tally("asu.instructure.com", "new"), 1);
     // a missing address is one shared bucket, not unlimited
+    await d.prepare("UPDATE install_seen SET n = 298 WHERE n = 300").run();
     const noip = await Promise.all(
-      Array.from({ length: 35 }, () => req("/api/install", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ host: "noip.example.edu", kind: "new" }) })),
+      Array.from({ length: 5 }, () => req("/api/install", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ host: "appstate.instructure.com", kind: "new" }) })),
     );
     assert.ok(noip.every((r) => r.status === 200));
-    assert.equal(await tally("noip.example.edu", "new"), PER_NETWORK);
+    assert.equal(await tally("appstate.instructure.com", "new"), 5);
   });
 
   t("installs: no table keeps the address or the user agent", async () => {
@@ -153,17 +182,21 @@ export function installTests({ test, skip, req, founder, db, label = "" }) {
     // an old 'new' counts toward the total but not the recent window
     await (await db()).prepare("INSERT INTO installs (host, day, kind, n) VALUES ('canvas.its.virginia.edu', '2020-01-01', 'new', 5)").run();
     const plan = await (await req(`/a/${amb.uva}/plan.json`)).json();
-    assert.equal(plan.numbers.schoolInstalls, 9);
+    assert.equal(plan.numbers.schoolInstalls, 10);
     assert.equal(plan.numbers.schoolInstallsRecent, 3);
     assert.equal(typeof plan.numbers.linkOpens, "number", "existing keys are still there");
     const page = await (await req(`/a/${amb.uva}`)).text();
-    assert.match(page, /<b>9<\/b><span>uva downloads<\/span><small>3 new in 14d<\/small>/);
+    assert.match(page, /<b>10<\/b><span>uva downloads<\/span><small>3 new in 14d<\/small>/);
     assert.match(page, /downloads are students who connected canvas, counted since the app update that added the count\./);
-    await (await db()).prepare("INSERT INTO installs (host, day, kind, n) VALUES ('unmapped.school.edu', ?1, 'new', 2)").bind(today()).run();
+    await (await db()).prepare("INSERT INTO installs (host, day, kind, n) VALUES ('bsu.instructure.com', ?1, 'new', 2)").bind(today()).run();
     const fp = await (await req(F)).text();
-    assert.match(fp, /<th class="num">downloads<\/th>/);
+    // Its own small card, not a seventh column: at phone width the school
+    // table had no room and clipped it (seen in a screenshot, 2026-11-22).
+    assert.match(fp, /<h3>downloads /);
+    assert.match(fp, /<td>UVA<\/td><td class="num">10<\/td><td class="num">3<\/td>/);
+    assert.doesNotMatch(fp, /<th class="num">downloads<\/th>/);
     assert.match(fp, /other schools/);
-    assert.match(fp, /<td>unmapped\.school\.edu<\/td><td class="num">2<\/td><td class="num">2<\/td>/);
+    assert.match(fp, /<td>bsu\.instructure\.com<\/td><td class="num">2<\/td><td class="num">2<\/td>/);
     assert.doesNotMatch(fp.split("other schools")[1].split("</table>")[0], /canvas\.its\.virginia\.edu/);
   });
 
@@ -174,7 +207,7 @@ export function installTests({ test, skip, req, founder, db, label = "" }) {
     // out of the per-school column and in "other schools" only.
     assert.ok("schoolInstalls" in plan.numbers);
     const fp = await (await req(F)).text();
-    assert.ok(!fp.split("by school")[1].split("other schools")[0].includes("unmapped.school.edu"));
+    assert.ok(!fp.split("by school")[1].split("other schools")[0].includes("bsu.instructure.com"));
   });
 
   t("installs: the public dashboard and /api/stats are byte-identical after posts", async () => {
@@ -193,14 +226,14 @@ export function installTests({ test, skip, req, founder, db, label = "" }) {
     for (let i = 0; i < HOST_CAP - 1; i++) fill.push(d.prepare("INSERT INTO installs (host, day, kind, n) VALUES (?1, '2020-01-01', 'new', 1)").bind(`fill${i}.cap.edu`));
     for (let i = 0; i < fill.length; i += 200) await d.batch(fill.slice(i, i + 200));
     // 1,999 hosts: one more is allowed (the 2,000th), the next is not
-    assert.equal((await post({ host: "last.cap.edu", kind: "new" }, { ip: "192.0.2.50" })).status, 200);
-    assert.equal(await tally("last.cap.edu", "new"), 1);
-    const r = await post({ host: "beyond.cap.edu", kind: "new" }, { ip: "192.0.2.51" });
+    assert.equal((await post({ host: "baylor.instructure.com", kind: "new" }, { ip: "192.0.2.50" })).status, 200);
+    assert.equal(await tally("baylor.instructure.com", "new"), 1);
+    const r = await post({ host: "belmont.instructure.com", kind: "new" }, { ip: "192.0.2.51" });
     assert.equal(r.status, 200);
     assert.deepEqual(await r.json(), { ok: true });
-    assert.equal(await tally("beyond.cap.edu", "new"), 0);
-    assert.equal((await post({ host: "last.cap.edu", kind: "existing" }, { ip: "192.0.2.52" })).status, 200);
-    assert.equal(await tally("last.cap.edu", "existing"), 1, "a host already present keeps counting");
+    assert.equal(await tally("belmont.instructure.com", "new"), 0);
+    assert.equal((await post({ host: "baylor.instructure.com", kind: "existing" }, { ip: "192.0.2.52" })).status, 200);
+    assert.equal(await tally("baylor.instructure.com", "existing"), 1, "a host already present keeps counting");
     assert.equal((await d.prepare("SELECT COUNT(DISTINCT host) n FROM installs").first()).n, HOST_CAP);
     await d.prepare("DELETE FROM installs").run();
     await d.prepare("DELETE FROM install_seen").run();

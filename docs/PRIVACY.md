@@ -409,8 +409,8 @@ preview mode never sends it.
 - **Your network address:** like any web server, ours sees the address a
   message comes from. It does not store it. To stop one person from
   inflating a school's number, it keeps a scrambled form of the address,
-  mixed with a random value that changes every day, for at most two days,
-  and then deletes both.
+  mixed with a random value that changes every day, for that day only. Both
+  are deleted the next time the server is used after the day ends.
 - **Why:** we show each school's total to the students who volunteer as
   campus ambassadors there, and we use it to see where Smooth is being
   used.

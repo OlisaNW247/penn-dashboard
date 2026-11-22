@@ -649,9 +649,13 @@ export function founderPage({ stats, origin, secret, flash, created }) {
 
     <section class="sec t-teal"><h2 id="perf">by school <span class="muted">last ${stats.days} days</span></h2>
     <table>
-      <tr><th>#</th><th>school</th><th class="num">poster scans</th><th class="num">link opens</th><th class="num">all-time</th><th class="num">downloads</th><th class="num">ambs</th></tr>
-      ${lb.schools.map((s) => { const d = stats.installsBySchool?.[s.school]; return `<tr><td>${s.rank}</td><td>${esc(s.name)}</td><td class="num">${s.recent}</td><td class="num">${s.linkOpensRecent}</td><td class="num">${s.total}</td><td class="num">${d ? `${d.total} <span class="muted">(${d.recent} new)</span>` : "&ndash;"}</td><td class="num">${s.ambassadors}</td></tr>`; }).join("")}
+      <tr><th>#</th><th>school</th><th class="num">poster scans</th><th class="num">link opens</th><th class="num">all-time</th><th class="num">ambs</th></tr>
+      ${lb.schools.map((s) => `<tr><td>${s.rank}</td><td>${esc(s.name)}</td><td class="num">${s.recent}</td><td class="num">${s.linkOpensRecent}</td><td class="num">${s.total}</td><td class="num">${s.ambassadors}</td></tr>`).join("")}
     </table>
+    <div class="card"><h3>downloads <span class="muted">students who connected canvas, since the app update that counts them</span></h3>
+      <table class="small"><tr><th>school</th><th class="num">total</th><th class="num">new ${stats.days}d</th></tr>
+      ${lb.schools.map((s) => { const d = stats.installsBySchool?.[s.school]; return `<tr><td>${esc(s.name)}</td><td class="num">${d ? d.total : "&ndash;"}</td><td class="num">${d ? d.recent : "&ndash;"}</td></tr>`; }).join("")}</table>
+    </div>
     <div class="card"><h3>other schools <span class="muted">downloads from hosts no school maps to</span></h3>
       ${(stats.installsUnmapped ?? []).length ? `<table class="small"><tr><th>host</th><th class="num">total</th><th class="num">new ${stats.days}d</th></tr>
       ${stats.installsUnmapped.map((h) => `<tr><td>${esc(h.host)}</td><td class="num">${h.total}</td><td class="num">${h.recent}</td></tr>`).join("")}</table>` : `<p class="small muted">none yet.</p>`}

@@ -403,14 +403,24 @@ export async function schoolDesignScans(env, school) {
 // 17 stored against a limit of 5). The wrong fix is a lock or a retry loop in the
 // Worker: separate isolates share no memory to lock.
 //
-// At most 30 counted per network per host per day. The "network" is a bucket,
+// At most 300 counted per network per host per day. The "network" is a bucket,
 // the SHA-256 of a salt that is random per UTC day and deleted when the day is
-// over, so after that nobody can hash an address and find its bucket.
-export const INSTALL_PER_NETWORK_DAILY_LIMIT = 30;
-// At most 2,000 distinct hosts in `installs`. The host is the one thing the
-// caller chooses freely, so without a ceiling one script could write a new row
-// per request forever. A new host beyond it is silently not counted; a host
-// already present keeps counting.
+// over, so after that nobody can hash an address and find its bucket. The number
+// is high on purpose: a campus Wi-Fi network puts hundreds of students behind a
+// few addresses, and on the day an update ships every existing student at a
+// school reports within hours, so 30 would undercount exactly the schools that
+// matter. It trades some inflation risk for not undercounting a campus NAT; the
+// count is for motivation and is never used to pay anyone.
+export const INSTALL_PER_NETWORK_DAILY_LIMIT = 300;
+// A backstop of 2,000 distinct hosts in `installs`. The real guard is the
+// allowlist in the route (worker/canvas-hosts.json, generated from the app's own
+// school catalog): only a known Canvas host is ever written. The wrong version
+// was letting the caller pick any well-formed host and relying on this number:
+// every new host is a fresh bucket, so one network could create thousands of
+// junk hosts in a minute, fill all 2,000 slots, and from then on no real new
+// school could ever be counted. This ceiling now only bounds the damage if the
+// list ever grows far past what the catalog holds. A new host beyond it is
+// silently not counted; a host already present keeps counting.
 export const INSTALL_DISTINCT_HOST_LIMIT = 2000;
 
 const utcDay = (date) => date.toISOString().slice(0, 10);

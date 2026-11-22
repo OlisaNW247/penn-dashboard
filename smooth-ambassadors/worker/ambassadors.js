@@ -27,6 +27,7 @@ import { fontResponse } from "./fonts.js";
 import messages from "./templates/messages.json";
 import checklist from "./templates/checklist.json";
 import playbook from "./templates/playbook.json";
+import canvasHosts from "./canvas-hosts.json";
 import { ambassadorLinks } from "./digest.js";
 import { html } from "./html.js";
 import {
@@ -482,6 +483,11 @@ function qrSvg(text) {
 // POST /api/install: public and unauthenticated by design, no CORS (the app is
 // not a browser). 200 whenever the body was well formed, even when a limit
 // swallowed the count, so a caller can never learn it hit one.
+let knownHosts = null;
+function knownCanvasHost(host) {
+  knownHosts ??= new Set([...canvasHosts, ...Object.values(SCHOOLS).flatMap((s) => s.canvasHosts ?? [])]);
+  return knownHosts.has(host);
+}
 const INSTALL_BODY_MAX = 512;
 const INSTALL_HOST = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/;
 async function installRoute(request, env) {
@@ -503,6 +509,9 @@ async function installRoute(request, env) {
   const host = typeof body.host === "string" ? body.host.toLowerCase() : "";
   if (host.length < 4 || host.length > 100 || !INSTALL_HOST.test(host)) return reply(400, { ok: false });
   if (body.kind !== "new" && body.kind !== "existing") return reply(400, { ok: false });
+  // Unknown host: answer as if counted and write nothing at all (no salt, no
+  // bucket), so junk cannot fill the table or spend a network's slots.
+  if (!knownCanvasHost(host)) return reply(200, { ok: true });
   await recordInstall(env, { host, kind: body.kind, ip: request.headers.get("cf-connecting-ip") || "noip" });
   return reply(200, { ok: true });
 }
