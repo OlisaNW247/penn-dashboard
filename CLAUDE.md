@@ -916,8 +916,9 @@ Keep this current. It is the fastest way for a new session to know what exists.
     button opens **ask**.
   - **Overdue swipe lesson** (2026-11-22, `claude/onboarding-work-f6b7f1`,
     Marco's ask for 3.5.0; compiled and tested, not yet on a phone). A
-    student who updates with an unfinished item 5 or more whole days past
-    its (override-aware) due date is shown, once per install, a full-screen
+    student who updates with an unfinished item 5 to 60 whole days past
+    its (override-aware) due date (not a calendar event, a nothing-to-submit
+    item or one a fact cancelled; since the test pass of 2026-11-22) is shown, once per install, a full-screen
     cover over the dashboard (`OverdueSwipeLessonView`): "not now" top
     right, "swipe right to clear it", "N days late. pull it right once it's
     done.", then their most overdue card with the practice lesson's nudge;
@@ -926,7 +927,7 @@ Keep this current. It is the fastest way for a new session to know what exists.
     timeline's own `vm.commitCompletion` and `vm.complete` +
     `rescheduleNotifications()`, so nothing is written that a dashboard
     swipe does not write. Rules in `OverdueSwipeLesson` (pure; the 5-day
-    boundary, most overdue first, `shouldShow`), shown-state in
+    boundary, the 60-day cap, most overdue first, `shouldShow`), shown-state in
     `OverdueSwipeLessonStore` (`overdueSwipeLessonShownV1` in
     `UserDefaults.lhf`, written at presentation so a kill mid-screen never
     shows it twice). Never in preview or demo (`isUsingFixtureData`), never
@@ -5678,6 +5679,21 @@ it holds work that exists nowhere else.
 none is a ship line.
 
 ## Known gaps
+
+- **Two 3.5.0 test-pass findings left for a phone** (2026-11-22,
+  `docs/TEST_RELEASE_3.5.0_2026-11-22.md` → Decisions). R-I1: a card drag
+  that SwiftUI cancels never runs `onEnded`, so `swipeAxis` can stay
+  `.horizontal` until the next drag on that card ends normally; not
+  reproducible under `swift test`, and the swipe is proven on a phone, so it
+  waits for a device check (fix: `@GestureState`). R-I3: with the agent flag
+  off in 3.5.0, a phone that ran a `v11` build keeps its server work-list
+  snapshot and its claude.ai connection live, and 3.5.0 has no control to
+  turn them off short of a Canvas disconnect; Marco should disconnect the
+  agent in claude.ai or have the row deleted. The same night's fixes (the
+  anonymous post's retry, the overdue lesson's filters and 60-day cap, the
+  practice cards, the install-count host and clock rules, the update list's
+  bare-domain filter, contact ids and extensions, "1 user") are compiled and
+  tested on the Mac only.
 
 - **The install count (2026-11-22) has never run on a phone and is not in
   any released build; its server half is live.** Compiled and tested on the

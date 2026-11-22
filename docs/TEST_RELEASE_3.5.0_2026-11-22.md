@@ -77,3 +77,43 @@ and the overdue swipe lesson.
 `swift test --no-parallel --filter ReleasePass`: 30 tests / 8 suites, green, with 13 known issues (each one a finding above; R-L5's run named `smooth.app` and `smooth.dev` as the bare domains that pass). The existing suites the findings touch (`OverdueSwipeLessonTests`, `InstallCount*`, `UpdateChangesTests`, `CompletionSwipeTests`, the practice and plan suites; filter matched 64 tests / 10 suites) re-ran green on the merged tree. No iOS-only file changed, so no `xcodebuild`.
 
 Nothing was pushed, merged into the release line, deployed or installed.
+
+## Decisions (2026-11-22, evening, before the 3.5.0 archive)
+
+Evaluated by a separate session on `claude/confident-davinci-73aa68` (this
+file's commit `5550fb9` merged onto the release line `4657640`). Each finding
+was checked against the code. "This commit" is the one that adds this table;
+every fix there drops its finding's `withKnownIssue`, so the tests now assert
+the fix. Nothing touches sign-in, the sync, the Sweeper's arming or the ledger.
+
+| # | Decision | Reason | Commit |
+|---|---|---|---|
+| R-M1 | defer | Real, but the fix changes what "today" means for every ambassador tick, and `AmbassadorModelTests` pin the plan's index (20766) throughout; a late rewrite of the day model is the bigger risk. Only a tick inside 30 minutes after midnight under a cached plan is affected. `ROADMAP.md` → Next. The test keeps its `withKnownIssue`. | none |
+| R-M2 | fix (anonymous post) / defer (group chat) | The anonymous post now ticks only once `markPostedToday` succeeds, so the done button stays and can be tapped again; with no plan or a rest day it ticks as before. The group-chat drop's pending-and-resend flag is new state; deferred to `ROADMAP.md` → Next (`offlineGroupChat` still pins today's behaviour). | this commit |
+| R-M3 | fix | One filter: `!isFactCancelled` in `OverdueSwipeLesson.candidate`. | this commit |
+| R-M4 | reject (code) | Not a code defect. 3.4.1's wall cannot read `changes`, and on 3.5.0 the list shows only on the next wall. Note for Marco: setting the four lines in `lhf-update.json` is harmless, but nobody sees them until the 3.6 wall, so replace them then. | none |
+| R-L1 | fix | "1 user", and a negative count reads 0 (`AmbassadorStatsLine`). | this commit |
+| R-L2 | fix | A future `lastAttempt` is ignored (`lastAttempt <= now`). | this commit |
+| R-L3 | fix | `normalizedHost` drops one trailing dot, then requires non-empty `a-z0-9-` labels and at least two of them, the Worker's rule. | this commit |
+| R-L4 | fix | The practice cards skip submitted work and `.event` rows; the fallback is unchanged. | this commit |
+| R-L5 | fix | `containsLink` also drops a dot between letters (`[a-z0-9-]+\.[a-z]{2,}`); Marco's four lines still pass (`allFourKept`). | this commit |
+| R-L6 | fix | The lesson skips `.event` and nothing-to-submit items and anything more than 60 days late (`maximumOverdueDays`), then still picks the most overdue: the lesson's intent kept, and a recycled site's last-year row is no longer the card. New test `sixtyDayCap`. | this commit |
+| R-L7 | fix | Each contact gets an `ordinal` at decode (not encoded), which is part of `id`; a trailing "ext 22" / "x22" is dropped and any other letter makes `smsURL` nil; the page hides a row with no number to text. | this commit |
+| R-I1 | defer | Device-only and in the card swipe, which is proven on a phone; `CLAUDE.md` → Known gaps. | none |
+| R-I2 | defer | Rare, and costs only a lesson; `ROADMAP.md` → Next. | none |
+| R-I3 | defer | Needs a server-side action or a new foreground pass; told to Marco here, and in `CLAUDE.md` → Known gaps. | none |
+| R-I4 | folded into R-M2 | A rest day or no plan still ticks with nothing sent, unchanged on purpose. | this commit |
+
+Gates (this session): the filtered suites below; the full suite and the iOS
+build are the master session's, after merging.
+
+`swift test --no-parallel --filter ReleasePass --filter Ambassador --filter
+InstallCount --filter OverdueSwipeLessonTests --filter UpdateChangesTests
+--filter DashboardPracticeTests --filter FeedRecordingFramesTests --filter
+PosterIdeaImageTests --filter UpdatePolicy`: 165 tests / 34 suites, green,
+with 1 known issue (R-M1, deferred). The first run had one red,
+`AmbassadorHeaderTests`, a source scan that pins the string
+`users at \(schoolLabel) so far`; the "1 user" fix was rewritten to keep that
+literal rather than loosening the scan. No iOS-only file changed, so no
+`xcodebuild` here. 32 tests in `ReleaseTestPass350Tests.swift` now (30 + 2:
+`sixtyDayCap`, `onlinePostTicks`).

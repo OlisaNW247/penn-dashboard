@@ -8,14 +8,26 @@ import LowHangingFruitKit
 enum OverdueSwipeLesson {
     nonisolated static let minimumOverdueDays = 5
 
+    /// A row more than this many days late is not offered: a recycled Canvas
+    /// site keeps last year's rows (CLAUDE.md, the term trap), and "387 days
+    /// late" over work the student has never seen teaches nothing.
+    nonisolated static let maximumOverdueDays = 60
+
     /// The most overdue unfinished item that is at least five whole days late
-    /// (exactly five counts; four days and 23 hours does not). `due` is the
-    /// override-aware date, because a date the student moved is the date the
-    /// card shows and the one that decides whether it is late.
+    /// (exactly five counts; four days and 23 hours does not) and at most 60.
+    /// `due` is the override-aware date, because a date the student moved is
+    /// the date the card shows and the one that decides whether it is late.
+    /// Only work that is really owed: not an item an instructor cancelled (an
+    /// applied fact; the dashboard files it under "cancelled"), not a calendar
+    /// event and not a nothing-to-submit item, since "pull it right once it's
+    /// done" over a lecture says something false (3.5.0 test pass, R-M3, R-L6).
     nonisolated static func candidate(in items: [DashItem], now: Date) -> DashItem? {
         let cutoff = now.addingTimeInterval(-Double(minimumOverdueDays) * 86_400)
+        let oldest = now.addingTimeInterval(-Double(maximumOverdueDays + 1) * 86_400)
         return items
-            .filter { !$0.isCompleted && ($0.due.map { $0 <= cutoff } ?? false) }
+            .filter { !$0.isCompleted && !$0.isFactCancelled && !$0.requiresNoSubmission
+                && $0.assignment.kind != .event
+                && ($0.due.map { $0 <= cutoff && $0 > oldest } ?? false) }
             .sorted(by: DashItem.isOrderedByDueDate)
             .first
     }

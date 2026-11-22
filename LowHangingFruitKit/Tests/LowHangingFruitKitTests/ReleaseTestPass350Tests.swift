@@ -62,9 +62,7 @@ struct ReleasePassUpdateChangesTests {
     func bareDomains() {
         let candidates = ["see smooth.app now", "get it at smooth.dev", "visit smoothapp.com", "update at bit.ly/x"]
         let shown = candidates.filter { !UpdatePolicy.sanitizedChanges([$0]).isEmpty }
-        withKnownIssue("R-L5: \(shown) pass the link filter") {
-            #expect(shown.isEmpty)
-        }
+        #expect(shown.isEmpty)
     }
 }
 
@@ -134,14 +132,23 @@ struct ReleasePassAmbassadorTaskTests {
             await model.markDone(.anonChats)
             #expect(model.lastError != nil)
             #expect(!model.postedToday)
-            withKnownIssue("R-M2: the local tick hides the done button, so a failed post log has no retry") {
-                // The row is drawn as a done check exactly when isDone is true.
-                #expect(!model.isDone(.anonChats))
-            }
+            // The row is drawn as a done check exactly when isDone is true.
+            #expect(!model.isDone(.anonChats))
             service.offline = false
             // Nothing in the model retries on its own: a refresh does not.
             await model.refresh()
             #expect(!service.sent.contains { $0.action == "post" })
+        }
+    }
+
+    @Test("a post that logged ticks; with no plan to log against it ticks anyway")
+    func onlinePostTicks() async {
+        await withModel(planDay: Self.localToday()) { model, service in
+            #expect(await model.signIn(AmbassadorModelTests.code))
+            await model.markDone(.anonChats)
+            #expect(model.isDone(.anonChats))
+            #expect(model.postedToday)
+            #expect(service.sent.contains { $0.action == "post" })
         }
     }
 
@@ -228,9 +235,7 @@ struct ReleasePassInstallCountTests {
     @Test("a last-attempt stamp in the future does not block the count for good")
     func futureStamp() {
         #expect(attempt(lastAttempt: Self.now.addingTimeInterval(-7 * 3600)))
-        withKnownIssue("R-L2: a future lastAttempt is read as 'just tried'") {
-            #expect(attempt(lastAttempt: Self.now.addingTimeInterval(365 * 86_400)))
-        }
+        #expect(attempt(lastAttempt: Self.now.addingTimeInterval(365 * 86_400)))
     }
 
     /// R-L3. The phone's host rule is looser than the Worker's
@@ -244,9 +249,7 @@ struct ReleasePassInstallCountTests {
             guard let sent = InstallCountRule.normalizedHost(host) else { return false }
             return (try? worker.wholeMatch(in: sent)) == nil
         }
-        withKnownIssue("R-L3: \(sentButRefused) pass normalizedHost and are refused (400 → done) by the Worker") {
-            #expect(sentButRefused.isEmpty)
-        }
+        #expect(sentButRefused.isEmpty)
         // The real catalog hosts all pass both.
         for host in ["canvas.upenn.edu", "canvas.virginia.edu", "bcourses.berkeley.edu"] {
             let sent = try #require(InstallCountRule.normalizedHost(host))
@@ -308,10 +311,8 @@ struct ReleasePassPracticeCardsTests {
             Self.item("real", "MATH 1400", days: 2),
         ]
         let ids = PracticeCards.items(from: rows, now: Self.now).map(\.assignment.sourceID)
-        withKnownIssue("R-L4: submitted work and events are offered for the practice swipe") {
-            #expect(!ids.contains("done"))
-            #expect(!ids.contains("lecture"))
-        }
+        #expect(!ids.contains("done"))
+        #expect(!ids.contains("lecture"))
     }
 
     @Test("ten thousand items pick in well under a second")
@@ -405,9 +406,7 @@ struct ReleasePassOverdueLessonTests {
         fact.cancelled = true
         cancelled.fact = fact
         let picked = OverdueSwipeLesson.candidate(in: [cancelled, Self.item("real", daysLate: 6)], now: Self.now)
-        withKnownIssue("R-M3: candidate ignores isFactCancelled") {
-            #expect(picked?.assignment.sourceID == "real")
-        }
+        #expect(picked?.assignment.sourceID == "real")
     }
 
     /// R-L6. "Most overdue" is the oldest date, and a recycled Canvas site
@@ -419,14 +418,19 @@ struct ReleasePassOverdueLessonTests {
         let items = [Self.item("last-year", daysLate: 387), Self.item("lecture", daysLate: 30, kind: .event),
                      Self.item("ps3", daysLate: 6)]
         let picked = OverdueSwipeLesson.candidate(in: items, now: Self.now)
-        withKnownIssue("R-L6: the oldest row wins, whatever it is") {
-            #expect(picked?.assignment.sourceID == "ps3")
-        }
+        #expect(picked?.assignment.sourceID == "ps3")
         var inClass = Self.item("in-class", daysLate: 40)
         inClass.requiresNoSubmission = true
-        withKnownIssue("R-L6: a nothing-to-submit item is offered too") {
-            #expect(OverdueSwipeLesson.candidate(in: [inClass], now: Self.now) == nil)
-        }
+        #expect(OverdueSwipeLesson.candidate(in: [inClass], now: Self.now) == nil)
+    }
+
+    @Test("sixty days late is offered, sixty-one is not")
+    func sixtyDayCap() {
+        #expect(OverdueSwipeLesson.candidate(in: [Self.item("x", daysLate: 60)], now: Self.now) != nil)
+        #expect(OverdueSwipeLesson.candidate(in: [Self.item("x", daysLate: 61)], now: Self.now) == nil)
+        let picked = OverdueSwipeLesson.candidate(in: [Self.item("old", daysLate: 59), Self.item("new", daysLate: 7)],
+                                                  now: Self.now)
+        #expect(picked?.assignment.sourceID == "old") // within the cap, still the most overdue
     }
 
     @Test("no due at all, a far-future clock and an empty list never crash and pick nothing")
@@ -462,10 +466,8 @@ struct ReleasePassContactsTests {
     func lettersAndExtensions() {
         let vanity = Contact.smsURL(for: Contact(name: "a", phone: "1-800-SMOOTH1"))
         let ext = Contact.smsURL(for: Contact(name: "a", phone: "215-555-0100 ext 22"))
-        withKnownIssue("R-L7: digits are concatenated whatever surrounds them") {
-            #expect(vanity == nil)
-            #expect(ext?.absoluteString == "sms:2155550100")
-        }
+        #expect(vanity == nil)
+        #expect(ext?.absoluteString == "sms:2155550100")
     }
 
     /// R-L7. `id` is name + phone, so two rows the deploy variable repeats, or
@@ -476,9 +478,7 @@ struct ReleasePassContactsTests {
         let plan = try AmbassadorPlan.decode(Data(json.utf8))
         let contacts = try #require(plan.contacts)
         #expect(contacts.count == 4) // the two malformed rows dropped, the rest kept
-        withKnownIssue("R-L7: ids collide, ForEach gets duplicate identities") {
-            #expect(Set(contacts.map(\.id)).count == contacts.count)
-        }
+        #expect(Set(contacts.map(\.id)).count == contacts.count)
     }
 
     @Test("contacts as a string, an object or null cost the contacts and never the plan")

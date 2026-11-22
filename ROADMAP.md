@@ -517,6 +517,17 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
 
 ## Next: features
 
+- **3.5.0 test pass leftovers** (`docs/TEST_RELEASE_3.5.0_2026-11-22.md` →
+  Decisions, 2026-11-22). Deferred from the release night, none blocking:
+  R-M1, the ambassador's day index (a tick inside the 30-minute plan cache
+  after midnight is filed under yesterday; compute it locally with the
+  server's formula, and rewrite `AmbassadorModelTests`, which pin the plan's
+  index; `staleCachedDayIndex` is the test, still `withKnownIssue`); R-M2's
+  second half, a group-chat drop that failed to log (a pending flag resent
+  on the next `refresh()`); R-I2, the overdue lesson's key written before
+  its cover is known to have presented (write it in the cover's `onAppear`).
+  Fixed the same night: R-M2's anonymous post, R-M3, R-L1 to R-L7.
+
 - **Wrong rings after a force-quit: the check in a notification extension**
   (**built 2026-11-21 on `sweeper/force-quit-check` at Marco's "build it",
   compiled, never on a phone**; CLAUDE.md → What the app does, "The
@@ -1165,6 +1176,16 @@ Kept so nobody rebuilds them blind.
   later and was reverted (`CLAUDE.md` → the 24-hour trap).
 
 ## Done recently
+
+- **3.5.0 test-pass fixes** (2026-11-22, `claude/confident-davinci-73aa68`,
+  filtered suites green, Mac only; `docs/TEST_RELEASE_3.5.0_2026-11-22.md` →
+  Decisions): the ambassador's anonymous post ticks only once logged, so a
+  failed log can be retried; the overdue lesson skips cancelled, event and
+  nothing-to-submit items and anything over 60 days late; the practice cards
+  skip submitted work and events; the install count follows the Worker's host
+  rule and ignores a future attempt stamp; the update list drops bare
+  domains; contacts get unique ids, drop a trailing extension and refuse
+  vanity letters; "1 user at …".
 
 - **2026-11-22.** Downloads by school. Apple reports none, so the app
   sends one anonymous count per install after Canvas is connected (the

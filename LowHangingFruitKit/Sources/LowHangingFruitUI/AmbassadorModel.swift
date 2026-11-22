@@ -357,12 +357,25 @@ final class AmbassadorModel: ObservableObject {
     /// something to count: the anonymous post (the existing daily log) and a
     /// group-chat drop (a `post` in the `gc` channel). Posters and feedback
     /// send nothing from here (a poster idea and feedback have their own
-    /// calls). A server failure leaves the tick: the ambassador did the job.
+    /// calls). The anonymous post ticks only once the server has logged it:
+    /// a tick on a failed log turned the done button into a check, so the
+    /// post could never be logged again and the founders' count missed it
+    /// (3.5.0 test pass, R-M2). With nothing to log (no plan yet, a rest
+    /// day) it ticks as before. A group-chat drop still ticks first and
+    /// sends quietly; its retry is deferred (ROADMAP → Next).
     func markDone(_ task: AmbassadorTask) async {
+        if task == .anonChats {
+            if plan?.today?.channel == nil {
+                tick(task)
+            } else if await markPostedToday() {
+                tick(task)
+            }
+            return
+        }
         tick(task)
         switch task {
         case .anonChats:
-            await markPostedToday()
+            break
         case .groupChats:
             guard let code else { return }
             try? await client.send(code: code, action: "post", body: ["channel": "gc", "place": "group chats"])

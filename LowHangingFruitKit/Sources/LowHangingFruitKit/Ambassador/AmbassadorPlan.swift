@@ -379,12 +379,26 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
     public struct Contact: Codable, Equatable, Sendable, Identifiable {
         public var name: String
         public var phone: String
-        public var id: String { name + phone }
+        /// The row's place in the list, set at decode and never sent. Part of
+        /// `id`, so two identical rows, or ("Ol", "isa1") against ("Olisa",
+        /// "1"), are distinct identities inside `ForEach` (R-L7).
+        public var ordinal: Int = 0
+        public var id: String { "\(ordinal)\u{1F}\(name)\u{1F}\(phone)" }
         public init(name: String, phone: String) { self.name = name; self.phone = phone }
 
-        /// `sms:` plus the digits and a leading plus; nil with no digits.
+        private enum CodingKeys: String, CodingKey { case name, phone }
+
+        /// `sms:` plus the digits and a leading plus; nil with no digits. A
+        /// trailing extension ("ext 22", "x22") is dropped; any other letter
+        /// makes it nil, because a vanity number's letters dropped would text
+        /// a different number (3.5.0 test pass, R-L7).
         public static func smsURL(for contact: Contact) -> URL? {
-            let trimmed = contact.phone.trimmingCharacters(in: .whitespacesAndNewlines)
+            var trimmed = contact.phone.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let ext = trimmed.range(of: #"\s*(ext\.?|x)\s*\d+\s*$"#,
+                                       options: [.regularExpression, .caseInsensitive]) {
+                trimmed = String(trimmed[..<ext.lowerBound])
+            }
+            guard !trimmed.contains(where: { $0.isASCII && $0.isLetter }) else { return nil }
             let digits = trimmed.filter(\.isASCII).filter(\.isNumber)
             guard !digits.isEmpty else { return nil }
             return URL(string: "sms:" + (trimmed.hasPrefix("+") ? "+" : "") + digits)
@@ -465,7 +479,11 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
         links = (try? c.decodeIfPresent([String: String].self, forKey: .links)) ?? nil
         guidance = (try? c.decodeIfPresent(Guidance.self, forKey: .guidance)) ?? nil
         if let boxes = try? c.decodeIfPresent([LossyElement<Contact>].self, forKey: .contacts) {
-            contacts = boxes.compactMap(\.value)
+            contacts = boxes.compactMap(\.value).enumerated().map { index, contact in
+                var numbered = contact
+                numbered.ordinal = index
+                return numbered
+            }
         } else {
             contacts = nil
         }

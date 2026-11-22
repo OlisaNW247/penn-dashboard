@@ -31,14 +31,22 @@ public enum InstallCountRule {
     }
 
     /// A plain DNS hostname, lowercased and trimmed, or nil. 4 to 100
-    /// characters, at least one dot, only `a-z 0-9 . -`: no scheme, port,
-    /// path or userinfo can survive, so nothing but a host is ever sent.
+    /// characters, only `a-z 0-9 . -`: no scheme, port, path or userinfo can
+    /// survive, so nothing but a host is ever sent. One trailing dot (the
+    /// fully-qualified spelling) is dropped; after that the host must match
+    /// the Worker's own rule, `^[a-z0-9-]+(\.[a-z0-9-]+)+$`, label by label.
+    /// A looser rule here sent hosts the Worker answers 400, and a 400 is
+    /// `.done`, so that install was never counted (3.5.0 test pass, R-L3).
     public static func normalizedHost(_ host: String?) -> String? {
         guard let host else { return nil }
-        let value = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard (4...100).contains(value.count), value.contains(".") else { return nil }
-        let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789.-")
-        guard value.allSatisfy({ allowed.contains($0) }) else { return nil }
+        var value = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if value.hasSuffix(".") { value.removeLast() }
+        guard (4...100).contains(value.count) else { return nil }
+        let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789-")
+        let labels = value.split(separator: ".", omittingEmptySubsequences: false)
+        guard labels.count >= 2,
+              labels.allSatisfy({ !$0.isEmpty && $0.allSatisfy { allowed.contains($0) } })
+        else { return nil }
         return value
     }
 
@@ -57,7 +65,11 @@ public enum InstallCountRule {
         guard featureEnabled, onboardingComplete, canvasConnected,
               !usingFixtureData, !isTestRunner, !alreadyReported,
               host != nil else { return false }
-        if let lastAttempt, now.timeIntervalSince(lastAttempt) < retryInterval { return false }
+        // A stamp in the future (a clock that was once set ahead) is no
+        // evidence of a recent try; honouring it would block the count until
+        // real time passed it, which for a year-2100 clock is never (R-L2).
+        if let lastAttempt, lastAttempt <= now,
+           now.timeIntervalSince(lastAttempt) < retryInterval { return false }
         return true
     }
 

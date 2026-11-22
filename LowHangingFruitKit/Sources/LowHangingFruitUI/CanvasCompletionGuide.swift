@@ -71,8 +71,11 @@ struct DashboardPracticeProgress {
 /// the cards are plain values and swiping one only moves the lesson's own state.
 enum PracticeCards {
     nonisolated static func items(from assignments: [Assignment], now: Date) -> [DashItem] {
+        // Not work Canvas already shows as handed in, and not a calendar event:
+        // "swipe right to finish" is the first thing a student does to their own
+        // list, and it should land on something they still owe (R-L4).
         let upcoming = assignments
-            .filter { ($0.dueAt ?? .distantPast) >= now }
+            .filter { ($0.dueAt ?? .distantPast) >= now && !$0.submitted && $0.kind != .event }
             .sorted { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) }
         var picked: [Assignment] = []
         var seen = Set<String>()

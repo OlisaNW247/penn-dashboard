@@ -15,7 +15,9 @@ struct AmbassadorStatsLine: View {
             Image(systemName: "medal.fill")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color.smoothMarigold)
-            Text("\(users) users at \(schoolLabel) so far")
+            // "1 user", and a negative count from the server reads 0 (R-L1).
+            Text(users == 1 ? "1 user at \(schoolLabel) so far"
+                            : "\(max(0, users)) users at \(schoolLabel) so far")
                 .font(.lhfMono(14, weight: .medium))
                 .foregroundStyle(Color.smoothMuted)
                 // One line, always (Marco, 2026-11-22: "make sure that 0 users

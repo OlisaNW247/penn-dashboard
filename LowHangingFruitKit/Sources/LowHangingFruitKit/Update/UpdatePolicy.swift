@@ -161,6 +161,10 @@ public struct UpdatePolicy: Codable, Sendable, Equatable {
 
     private static func containsLink(_ text: String) -> Bool {
         if text.contains("://") || text.contains("www.") { return true }
+        // A bare domain ("smooth.app"): NSDataDetector misses newer TLDs
+        // without a scheme, and no change line needs a dot between letters
+        // (3.5.0 test pass, R-L5). The text is already lowercased.
+        if text.range(of: #"[a-z0-9-]+\.[a-z]{2,}"#, options: .regularExpression) != nil { return true }
         guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
             return false
         }

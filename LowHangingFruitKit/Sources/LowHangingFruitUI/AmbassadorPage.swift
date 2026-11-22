@@ -274,7 +274,10 @@ extension AmbassadorPage {
 
     @ViewBuilder
     private var contactsSection: some View {
-        if let contacts = model.plan?.contacts, !contacts.isEmpty {
+        // A row with no number to text draws nothing rather than a button
+        // that does nothing (R-L7).
+        if let contacts = model.plan?.contacts?.filter({ AmbassadorPlan.Contact.smsURL(for: $0) != nil }),
+           !contacts.isEmpty {
             Section {
                 ForEach(contacts) { contact in
                     Button {
