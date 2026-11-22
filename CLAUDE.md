@@ -2139,10 +2139,14 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
-**Merged on `claude/ambassador-header` (2026-11-22, `sweeper/force-quit-check`
-`43d95f3` merged in at Marco's "merge this when you get the chance"): the
-gate on the merged tree is recorded in the line that carries this commit's
-successor; predicted 4375 / 441 (4348 + 27, 436 + 5).**
+**Current on `claude/ambassador-header` (2026-11-22, `sweeper/force-quit-check`
+`43d95f3` merged in at Marco's "merge this when you get the chance"): 4375
+tests / 441 suites, all green, `swift test --no-parallel` alone on Marco's
+Mac (99 s), exactly the predicted sum (4348 + 27, 436 + 5); the unsigned
+iOS Debug build of the merged tree succeeded, the first build with the
+`LHFSweeperCheck` extension target beside the Duo work. One conflict, in
+this file's Test baseline, kept both sides. Nothing on a phone from the
+merge; the extension is dormant until Olisa's push steps (Known gaps).**
 
 **Current on `claude/ambassador-header` (2026-11-21, later: the Duo trust
 renewal and the missed-push notice): 4348 tests / 436 suites, `swift test
