@@ -2202,6 +2202,20 @@ iOS Debug build of the tree succeeded. Predicted full count after the merge:
 Other sessions were running filtered suites on the Mac at the time (the
 shared-defaults trap), so nothing here is a baseline.**
 
+**Current on `claude/ambassador-header` (2026-11-22, `d77018b`: the four side
+branches merged, `claude/test-sweeper-signin-1cb733` (the Sweeper and sign-in
+test pass, `docs/TEST_SWEEPER_SIGNIN_2026-11-22.md`), `claude/release-review-3766d5`
+(`docs/RELEASE_REVIEW_3.5.0_2026-11-22.md`), `claude/onboarding-work-f6b7f1`
+(the onboarding pass) and `claude/ambassador-work-c14201` (ambassador mode cut
+to four tasks), plus the hidden renewer's app-link guard and the reviews'
+fixes): 4421 tests / 452 suites, all green, `swift test --no-parallel` alone
+on Marco's Mac (96 s, helper domain cleared first, load under 20); the
+unsigned iOS Debug build succeeded. The fuzz suite's time budgets failed at
+`3eb02ef` under a load average of 109 with four sessions compiling, and
+passed here on an idle Mac; read a fuzz timing red as load first. Nothing
+from these merges is on a phone. Left out: `claude/ambassador-posters-f068d6`,
+uncommitted and waiting on Marco.**
+
 **Current on `claude/ambassador-header` (2026-11-22, `sweeper/force-quit-check`
 `43d95f3` merged in at Marco's "merge this when you get the chance"): 4375
 tests / 441 suites, all green, `swift test --no-parallel` alone on Marco's
