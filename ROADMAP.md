@@ -7,7 +7,7 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-11-22 on `claude/ambassador-header` (the side sessions merged: the Sweeper and sign-in test pass, the release review, the onboarding pass, ambassador mode cut to four tasks). Before that, 2026-11-21 on `claude/onboarding-work-f6b7f1` and `claude/ambassador-work-c14201`. Before that, 2026-11-17 on `claude/v12-isolate-ab8b22` (the agent connection switched off for 3.5.0; it stays on `v11`). Before that, 2026-11-12 on `v11` (`origin/v12` merged in: ambassador mode ships in 3.5.0 (21), degree progress stays off). Before that, 2026-11-12 on `v12` (degree: weekly reads, the full view, Wharton concentrations; the Now entry). Before that, 2026-11-10 on `v12` (degree progress rewritten against the real Path@Penn). Before that, 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
+Last updated 2026-11-22 on `claude/ambassador-header` (`origin/v12` merged in: the anonymous per-school install count, `FeatureFlags.installCount`). Before that, 2026-11-22 on `claude/ambassador-header` (the side sessions merged: the Sweeper and sign-in test pass, the release review, the onboarding pass, ambassador mode cut to four tasks). Before that, 2026-11-21 on `claude/onboarding-work-f6b7f1` and `claude/ambassador-work-c14201`. Before that, 2026-11-17 on `claude/v12-isolate-ab8b22` (the agent connection switched off for 3.5.0; it stays on `v11`). Before that, 2026-11-12 on `v11` (`origin/v12` merged in: ambassador mode ships in 3.5.0 (21), degree progress stays off). Before that, 2026-11-12 on `v12` (degree: weekly reads, the full view, Wharton concentrations; the Now entry). Before that, 2026-11-10 on `v12` (degree progress rewritten against the real Path@Penn). Before that, 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
 backend half went live 2026-11-05 01:20-01:45 UTC, the evening of 2026-11-04
 US Eastern). Before that, 2026-10-28 on `release/3.4.0` (the 3.4.0 release,
 renamed from 3.3.1 that afternoon when PR #16 was folded in). Before
@@ -69,8 +69,10 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   phone, the daily reminder and its tap, dark mode), the merge with `v11`
   (five files conflict, six Swift files merge without a marker and need
   reading), a test code and paragraph for App Review, a new build number,
-  and nothing on the server side: both the zip of 2026-11-18 and the
-  two-posts zip of 2026-11-19 went live on 2026-11-19. Also unseen on any phone: the
+  and nothing on the server side: the per-school download count's zip went
+  live on 2026-11-22. That count needs the App Store privacy label re-read
+  before the build is submitted, and shows zero until a build with it is
+  released. Also unseen on any phone: the
   2026-11-18 sections (what works, from the founders, the feed recording
   and post-result sheets).
 - **Degree progress is switched off** (2026-11-12, Olisa: not ready;
@@ -1155,6 +1157,14 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-22.** Downloads by school. Apple reports none, so the app
+  sends one anonymous count per install after Canvas is connected (the
+  school's Canvas host, new or existing, no id), the ambassador site keeps
+  a per-school daily tally, and each ambassador sees "{school} downloads"
+  in the app and on their web page; the founder page lists every school.
+  The privacy policy says so. On `v12`, compiled on the runner, not on a
+  phone; the server half went live the same day, and no number moves until
+  an app build with it is released.
 - **2026-11-21.** Onboarding pass on `claude/onboarding-work-f6b7f1`, from
   Marco's list: the intro's relaxed figure redrawn (seated, leaning back on
   one arm), the tour cut from three pages to two, the walk's progress dots

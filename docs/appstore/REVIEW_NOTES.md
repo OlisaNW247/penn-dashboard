@@ -49,7 +49,7 @@ Profile > ambassador mode is for a few student volunteers who promote Smooth at 
 PRIVACY AND NETWORKING
 - Grades, completions, the work list, the name and login cookies stay on the device (cookies in the Keychain, this device only).
 - At Penn, our backend (Supabase) pools non-personal course material (syllabi, pages, assignment descriptions, announcements, Ed staff posts) per Canvas course and answers "ask" through an AI model via OpenRouter; questions and answers are not stored. The announcement "ai assist" is on by default; Profile > notifications turns it off. Each install has an anonymous account (no email or name); disconnecting Canvas deletes it.
-- No analytics, tracking, ads or third-party SDKs.
+- No tracking, ads or third-party SDKs. One anonymous count per install: after Canvas is connected the app sends the school's Canvas web address once, with no identifier, and our server keeps only a per-school daily tally.
 
 STAY SIGNED IN (PENN ONLY)
 A one-line notice above Penn's login page says signing in saves the PennKey on this device. After a verified sign-in in the app's own login web view, the PennKey is kept in the device Keychain (this device only, never synced, sent only to Penn's login page) to sign the student back in. Duo is never bypassed; one rejected password turns it off; disconnecting Canvas deletes it; preview mode never uses it.
@@ -58,13 +58,23 @@ THIRD-PARTY SERVICES (5.2.2)
 Smooth is an independent client for services the student already uses, with their own credentials, showing only their own data; not affiliated with Instructure (Canvas), Turnitin (Gradescope), Ed Discussion or any university.
 ```
 
-_Character count of the block above: 3174 (limit 4,000), measured on the text between the fences._
+_Character count of the block above: 3609 (limit 4,000), measured on the text between the fences._
 
 **Before submitting:** the App Store privacy label needs no agent-connection
 answers for 3.5.0 (the feature is off); the label in `LISTING.md` still lists
 the 2026-09 answers, which hold.
 
 What's New: paste the 3.5.0 text from `LISTING.md`.
+
+**Install count (2026-11-22, merged from `v12`).** The block above already
+carries the replacement for the old "No analytics, tracking, ads or
+third-party SDKs" line, because this build sends one anonymous per-install
+count (`FeatureFlags.installCount`, `docs/PRIVACY.md`). The App Store privacy
+label has to be re-read for the same build (`LISTING.md` -> App Privacy): the
+count carries no identifier and is not linked to a user, but it is data the
+app sends and we keep as a tally, so whether the label gains a "Usage Data,
+not linked to you, Analytics" entry is Olisa's and Marco's decision, not an
+assumption.
 
 ## History: as pasted for 3.2.0 (14), 2026-10-23 (the same block served 3.1.0 (13) on 2026-10-20)
 

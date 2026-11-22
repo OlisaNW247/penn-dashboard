@@ -91,6 +91,19 @@ struct AmbassadorPlanTests {
         #expect(again == plan)
     }
 
+    @Test("the school's download counts decode when present and are nil from an older server")
+    func installNumbers() throws {
+        let withInstalls = Self.json.replacingOccurrences(
+            of: #""posts":1,"days":14}"#,
+            with: #""posts":1,"days":14,"schoolInstalls":42,"schoolInstallsRecent":5}"#)
+        let plan = try AmbassadorPlan.decode(Data(withInstalls.utf8))
+        #expect(plan.numbers?.schoolInstalls == 42)
+        #expect(plan.numbers?.schoolInstallsRecent == 5)
+        let old = try AmbassadorPlan.decode(Data(Self.json.utf8))
+        #expect(old.numbers?.schoolInstalls == nil)
+        #expect(old.numbers?.schoolInstallsRecent == nil)
+    }
+
     @Test("the bare minimum is a name and a school")
     func minimal() throws {
         let plan = try AmbassadorPlan.decode(Data(#"{"name":"J","school":"clark"}"#.utf8))
@@ -958,6 +971,13 @@ struct AmbassadorWiringTests {
         #expect(page.contains("AmbassadorReminderCadence.offered"))
         #expect(!page.contains("my anonymous app"))
         #expect(try uiSource("AmbassadorTaskSheets.swift").contains("my anonymous app"))
+    }
+
+    @Test("the numbers section shows the school's downloads only when the server sent them")
+    func downloadsRow() throws {
+        let page = try uiSource("AmbassadorPage.swift")
+        #expect(page.contains(#"\(plan.schoolLabel) downloads"#))
+        #expect(page.contains("if let installs = n.schoolInstalls"))
     }
 
     @Test("ambassador mode never mentions ratings or reviews")

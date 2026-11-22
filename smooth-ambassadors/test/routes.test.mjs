@@ -9,6 +9,9 @@ import { fileURLToPath } from "node:url";
 import { Miniflare } from "miniflare";
 import { ideaTests } from "./ideas-suite.mjs";
 import { captureTests } from "./captures-suite.mjs";
+import { existsSync, readFileSync as readFile } from "node:fs";
+import { extractCanvasHosts, findCatalogFiles, OUT as HOSTS_JSON, SWIFT_SOURCES } from "../scripts/gen-canvas-hosts.mjs";
+import { installTests } from "./installs-suite.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FOUNDER = "test-founder-token-0123456789";
@@ -39,7 +42,7 @@ before(async () => {
     },
   });
   const db = await mf.getD1Database("DB");
-  const sql = ["0001_ambassadors.sql", "0002_poster_ideas.sql", "0003_captures.sql"].map((f) => readFileSync(join(root, "migrations", f), "utf8")).join("\n");
+  const sql = ["0001_ambassadors.sql", "0002_poster_ideas.sql", "0003_captures.sql", "0004_installs.sql"].map((f) => readFileSync(join(root, "migrations", f), "utf8")).join("\n");
   const clean = sql.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n");
   for (const stmt of clean.split(";").map((s) => s.trim()).filter(Boolean)) {
     await db.prepare(stmt).run();
@@ -501,4 +504,19 @@ captureTests({
   founder: FOUNDER,
   db: () => mf.getD1Database("DB"),
   req: (path, init) => mf.dispatchFetch("https://example.test" + path, { redirect: "manual", ...init }),
+});
+
+installTests({
+  test,
+  skip: false,
+  founder: FOUNDER,
+  db: () => mf.getD1Database("DB"),
+  req: (path, init) => mf.dispatchFetch("https://example.test" + path, { redirect: "manual", ...init }),
+});
+
+test("canvas-hosts.json matches the Swift school catalog it is generated from", (t) => {
+  const files = existsSync(SWIFT_SOURCES) ? findCatalogFiles() : [];
+  if (!files.length) return t.skip("LowHangingFruitKit's CanvasSchoolCatalogData.swift is not present; run from the full repository");
+  const fresh = extractCanvasHosts(files.map((f) => readFile(f, "utf8")));
+  assert.deepEqual(JSON.parse(readFile(HOSTS_JSON, "utf8")), fresh, "run: npm run gen:hosts");
 });

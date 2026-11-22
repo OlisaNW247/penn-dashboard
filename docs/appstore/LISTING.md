@@ -366,6 +366,15 @@ When prompted in App Store Connect → App Privacy, this app now collects data:
   announcements — uploaded from the student's own Canvas session; not used for
   tracking).
 
+**Open for the first build with the install count (2026-11-22):** after
+Canvas is connected the app sends the school's Canvas web address once, with
+no identifier, to the poster-scan site, which keeps a per-school daily tally
+(`docs/PRIVACY.md` → "One anonymous count: which school"). It is not linked
+to a user and not used for tracking. The cautious answer is one more entry,
+**Usage Data → Other Usage Data, not linked to the user, Analytics**; the
+"there is no ... analytics SDK" sentence below stays true (it is our own
+request, no SDK). Olisa or Marco decides before that build is submitted.
+
 The feedback form (3.3.0) does not change these answers: it is a Google
 Form opened in Safari, outside the app, and the app sends it nothing.
 

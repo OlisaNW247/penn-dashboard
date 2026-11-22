@@ -1,6 +1,6 @@
 # Privacy Policy — Low Hanging Fruit (LHF)
 
-_Last updated: 2026-11-12_
+_Last updated: 2026-11-22_
 
 Low Hanging Fruit ("LHF", "the app") is a personal academic dashboard that shows
 your Canvas assignments and deadlines in one place. This policy explains what
@@ -506,6 +506,32 @@ nothing until you pair it with your phone.
 - **Academic integrity.** What you submit is your responsibility under your
   school's rules, and Smooth marks every draft with the assistant's name so
   that is never hidden.
+## One anonymous count: which school
+
+Once, after you connect Canvas, the app tells our poster-scan server
+(smooth-poster-scans.jazzysmile20.chatgpt.site, the small service described
+under "Ambassador mode" below) which school you connected. The message is
+two things: the web address of that school's Canvas site (for example
+`canvas.upenn.edu`), and whether Smooth was already set up on this phone
+before the update that added the count. That is the whole message. It
+carries no id, no name, no account, and nothing about your classes or your
+work. It is sent one time per install, not each time you open the app, and
+preview mode never sends it.
+
+- **What the server keeps:** a tally, one number per school per day. There
+  is no row per phone, so we can't tell who is in a count, and there is
+  nothing of yours to look up or delete.
+- **Your network address:** like any web server, ours sees the address a
+  message comes from. It does not store it. To stop one person from
+  inflating a school's number, it keeps a scrambled form of the address,
+  mixed with a random value that changes every day, for that day only. Both
+  are deleted the next time the server is used after the day ends.
+- **Why:** we show each school's total to the students who volunteer as
+  campus ambassadors there, and we use it to see where Smooth is being
+  used.
+
+If your school is not Penn, this (plus ambassador mode, if you sign in to it) is the only thing the app sends us on its own.
+
 ## Ambassador mode (optional, for campus ambassadors only)
 
 A few students help spread the word about Smooth at their schools. If one
@@ -660,8 +686,10 @@ worth stating plainly rather than implying a guarantee we haven't built.
 
 ## What we don't do
 
-- **No analytics, tracking, or advertising**, and no data broker or ad network
-  ever receives anything from this app.
+- **No tracking or advertising**, and no data broker or ad network ever
+  receives anything from this app. The only usage number we collect is the
+  one anonymous count per install described under "One anonymous count:
+  which school"; nothing follows you across launches, screens or apps.
 - **No third-party SDKs.** The app is built directly against Apple's and
   Supabase's plain HTTP APIs — no analytics kit, ad kit, or crash reporter
   bundled in.

@@ -6,11 +6,14 @@ export const APP_STORE_URL =
   "https://apps.apple.com/us/app/smooth-for-students/id6783911002";
 
 export const SCHOOLS = {
-  upenn: { name: "UPenn", legacy: true },
-  umiami: { name: "UMiami" },
-  uva: { name: "UVA" },
-  "case-western": { name: "Case Western" },
-  clark: { name: "Clark University" },
+  // canvasHosts: the Canvas hosts the app's own school catalog lists for the
+  // school (CanvasSchoolCatalogData.swift), used to turn an install count's host
+  // into a school. Left out when unsure rather than guessed.
+  upenn: { name: "UPenn", legacy: true, canvasHosts: ["canvas.upenn.edu"] },
+  umiami: { name: "UMiami", canvasHosts: ["miami.instructure.com"] },
+  uva: { name: "UVA", canvasHosts: ["canvas.its.virginia.edu"] },
+  "case-western": { name: "Case Western", canvasHosts: ["case.instructure.com"] },
+  clark: { name: "Clark University", canvasHosts: ["canvas.clarku.edu"] },
 };
 
 // Designs available at every school, in the order the live /api/stats lists

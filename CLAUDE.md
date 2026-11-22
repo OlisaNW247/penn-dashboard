@@ -48,7 +48,8 @@ address can be entered manually. Catalog sources and limitations live in
 `docs/canvas-directory/`; authenticated support is not proven for all sites. Everything
 server-side is Penn-only for now: pooled course materials, the server path
 of ask, the announcement AI assist, and "stay signed in" (PennKey).
-Non-Penn installs run fully on-device, because the backend keys course
+Non-Penn installs run fully on-device (apart from the one anonymous
+per-school count below, since 2026-11-22), because the backend keys course
 material by numeric Canvas course id, and two schools' ids would collide.
 
 **Privacy posture; say it this way.** "The student's own data stays
@@ -94,8 +95,15 @@ stored in the Keychain for it. The page's sign-in token, Penn's id for the
 student, the name, the pronoun, the rendered audit and any sentence about a
 GPA or grades never cross from the page into the app, and nothing about the
 degree goes to the server, the laptop or the tree (`docs/PRIVACY.md` →
-"Degree progress"). There is no analytics, tracking,
-or third-party SDK. Don't say "everything is on-device" (untrue since
+"Degree progress"). Since 2026-11-22 (`v12`, compiled on the runner, never
+on a phone, not released) every install, at any school, sends **one
+anonymous count**: after Canvas is connected, the school's Canvas host and
+`new` or `existing`, once, with no id, to the poster-scan site, which keeps a
+per-school daily tally (`docs/PRIVACY.md` → "One anonymous count: which
+school"). It is the first thing a non-Penn install has ever sent, so "non-Penn
+installs run fully on-device" now has that one exception. There is no
+tracking and no third-party SDK; say "no tracking", not "no analytics", from
+that build on. Don't say "everything is on-device" (untrue since
 `assistant-ui`) or "no server" (untrue since the backend). `docs/PRIVACY.md`
 is the student-facing version and must change in the same commit as any
 behaviour it describes.
@@ -278,7 +286,7 @@ to 19), merged at Marco's "merge all of that into one" after the release
 line was found to lack both (`f99e5f6`, `f9712b9`); the merged tree is 4325/434
 green (Test baseline) and its unsigned iOS Debug build succeeded the same hour.** Between the 18th and the merges the line gained the
 Sweeper's poller trace and the two poller fixes (`e22c3ef`, `93533d0`,
-`890bd11`) and the buzz-only rule for unconfirmable work (`3b9d2c8`). The Debug build of `b1a6aa8` was installed on Marco's iPhone 17 Pro at about 23:30 UTC on 2026-11-18 by `scripts/build-to-phone.sh` (build and install succeeded; the launch was refused because the phone was locked), over the `v11` build `dec3c47`: the first build on a phone with the agent connection off and the first with any Sweeper accuracy code. Not pushed, not merged into `v11`, nothing deployed. Live on the App Store: **3.4.1 (build 20) since 2026-11-08
+`890bd11`) and the buzz-only rule for unconfirmable work (`3b9d2c8`). The Debug build of `b1a6aa8` was installed on Marco's iPhone 17 Pro at about 23:30 UTC on 2026-11-18 by `scripts/build-to-phone.sh` (build and install succeeded; the launch was refused because the phone was locked), over the `v11` build `dec3c47`: the first build on a phone with the agent connection off and the first with any Sweeper accuracy code. Not pushed, not merged into `v11`, nothing deployed. **Since 2026-11-22 the line also carries `origin/v12`'s anonymous per-school install count** (`FeatureFlags.installCount = true`: one request per install after Canvas connects, the school's Canvas host and `new` or `existing`, no id; the Worker half is live; `docs/PRIVACY.md` → "One anonymous count: which school"; the App Store privacy label and the pasted review-notes line are Olisa's and Marco's to decide). Live on the App Store: **3.4.1 (build 20) since 2026-11-08
 at 22:29 UTC** (public iTunes
 lookup, read 2026-11-10), and the `update-manifest` floor is 3.4.1 (read the
 same day; `sync` refused a 3.4.0 install with 426 at 03:49 UTC on 2026-11-10,
@@ -1541,7 +1549,33 @@ Keep this current. It is the fastest way for a new session to know what exists.
      also pulls to refresh since the same evening (`.refreshable`, a
      plain `model.refresh()`), because the plan is cached for half an
      hour and the posts in it are the server's. Compiled on the runner,
-     not on a phone; the server half went live the same day. **Since 2026-11-18 the page
+     not on a phone; the server half went live the same day. **Since
+     2026-11-22 the numbers include "{school} downloads"** (Olisa: "measure
+     the amount of downloads at each school and display that on the
+     ambassador dashboard"). Apple reports nothing by school, and his two
+     posts carry no link, so a campaign tag would miss most of it; he chose
+     the app reporting its school. `InstallCountReporter` (UI) with
+     `InstallCountRule` (Kit, pure) sends `POST /api/install`
+     `{"host","kind"}` once per install from `RootCore` (cold launch and
+     each return to the foreground, after the update check, never behind
+     the wall, never from the background wake, never in preview or demo),
+     behind `FeatureFlags.installCount`. `kind` is `existing` when
+     onboarding was already complete at the first launch of a build with
+     the code (`installCountOnboardedBeforeV1`, the `signupBacklogSeenV1`
+     pattern) and `new` otherwise; a 2xx or a 400 ends it for good
+     (`installCountReportedV1`), anything else retries after six hours. One
+     count per install for the school first connected: a school switch does
+     not report again. The Worker keeps `installs(host, day, kind, n)` and
+     nothing per phone; it counts only hosts in `worker/canvas-hosts.json`
+     (generated from the app's catalog by `scripts/gen-canvas-hosts.mjs`, a
+     test fails when they drift) and caps one network at 300 a day per
+     host with a daily-salted hash kept for that day only. `plan.json`
+     gains `numbers.schoolInstalls` and `schoolInstallsRecent`; the web
+     page has the same tile and the founder page a downloads card and
+     "other schools". What the number is: students who connected Canvas on
+     a build that has the count, so it starts at zero when that build
+     ships and jumps as existing students update. Not a download count in
+     Apple's sense; a typed-in school outside the catalog is not counted. **Since 2026-11-18 the page
      also teaches what works and collects what each campus looks like**
      (Olisa, after two of his own Sidechat posts did well with no pitch in
      them, a question at 22 upvotes and Smooth slipped into a frat ranking
@@ -2482,6 +2516,24 @@ Chromium, not by `npm test`.
 Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
+
+**Current on `v12` (2026-11-22, the per-school install count): 3915 tests /
+385 suites, all green, `swift test --no-parallel` on the GitHub macOS runner
+in 89 s, with the unsigned iOS `xcodebuild`, Deno and the extension suite
+green in the same run (manual run 44978237573 at `5ad2470`; the commits
+after it change only `smooth-ambassadors/`, `docs/` and notes).** +15 tests
+and +3 suites over 3900 / 382: `InstallCountTests.swift` (the rule's truth
+table, host shapes, the exact body, outcomes; the reporter against a
+`URLProtocol` stub; a scan that `BackgroundRefresh.swift` never names it)
+and two in `AmbassadorTests.swift` (`installNumbers`, `downloadsRow`). It
+compiled at the first attempt. The ambassador Worker's own suite (separate,
+never added to these counts): 85 pass with `npm test`, 68 of 68 with the
+built single-file artifact beside the original site, the rehearsal on the
+real scan backup 22 checks with none failing; 412 posts from 412 IPv6
+addresses in four /64s left four buckets, and the founder page has no
+sideways overflow at 390 points. A security review found no blocker and
+two things that were fixed before the zip (Traps, "a cap per key").
+
 
 **Current on `agent/connection-v11` (2026-11-08, evening): 3714 tests / 358
 suites, all green, `swift test --no-parallel` alone on Marco's Mac (85 s), +40
@@ -4294,6 +4346,23 @@ itself.
   drifting scroll never moves the card. The wrong fix is a bigger
   `minimumDistance`: it only delays the theft and makes the swipe late.
 
+- **A cap per key is not a cap when the caller chooses the key.** The
+  install count (2026-11-22) limited one network to a number of counts per
+  host per day, and separately capped the distinct hosts it would store at
+  2,000. Each new host was a fresh bucket, so one phone could have filled
+  all 2,000 slots with invented names in a minute, after which no real new
+  school could ever be counted. Found in my own review of the builder's
+  diff before any test or deploy. The same shape came back from the
+  security reviewer an hour later through a different key: the bucket
+  hashed the whole IPv6 address, and one /64 is 2^64 keys. The fixes close
+  the key space instead of counting inside it: only hosts from the app's
+  own school catalog are stored, and an IPv6 address is reduced to its /64
+  before hashing. The wrong fix is a bigger or smaller number. When a
+  limit is keyed on something the request supplies, ask how many distinct
+  keys one caller can make. Pair of it: the salted marks were pruned only
+  on a counted write, so a quiet week kept old salts beside their hashes,
+  which is enough to recover addresses by trying all of IPv4; deletion
+  that depends on traffic of one kind has to run on the other kinds too.
 - **A strict check on a value that was trimmed first is not strict.** The
   founder routes refuse any id that is not plain digits
   (`/^[1-9][0-9]{0,9}$/`), a rule added on 2026-11-11 after `-1` and `1e3`
@@ -5382,7 +5451,7 @@ per-class lead time and sound) and the scroll fix for cards
 been merged into it.
 `v12` (2026-11-09 to 2026-11-12) was Olisa's line, `v10` plus the degree-progress
 feature (below), **which is switched off since 2026-11-12**, plus ambassador mode;
-on 2026-11-12 he handed it to Marco (`docs/HANDOFF_V12_MARCO_2026-11-12.md`)
+on 2026-11-12 he handed it to Marco (`docs/HANDOFF_V12_MARCO_2026-11-12.md`, rewritten whole on 2026-11-22: the playbook, the two posts and the download count)
 and it was merged into `v11` the same day (see the `v12` row). Before both, `v10`
 (2026-11-03): `v9` plus `origin/v8` `7e004c5` plus
 `phase0/extract-facts-bench`. Start at `docs/HANDOFF_V10_2026-11-04.md`
@@ -5414,7 +5483,7 @@ it holds work that exists nowhere else.
 | `v11` | **The line since 2026-11-10 (about 07:30 UTC, at Marco's "Yes, push to v11").** `origin/v11` was fast-forwarded from Marco's two commits (the Sweeper page, `CompletionSwipe.Axis`) to the merged tree `f8330ab`: all of `agent/connection-v11` (below) plus the night's three session branches. Marco's other thread pushes to it too; fetch before merging and never force-push. New work branches from here. |
 | `agent/connection-v11` | **2026-11-08, off `research/agent-connection-v11` (so off `v10` `4c136b2`); pushed to origin under its own name on 2026-11-10 and merged into `v11` the same morning (equal to it at `f8330ab`).** The build session's branch: the Canvas submit spike (`f5da516`), the Phase 1 backend (`7ca84a5`: `agent-auth`, `mcp`, `agent-snapshot`, migration `20261108090000_agent_connection.sql`, the `AgentStore` contract with PostgREST and memory implementations, `scripts/serve-agent.ts`), the docs. A Claude Code sign-in completed end to end against the dev tunnel the same day (research §8). Never push to or merge into `v10` without Marco's approval. |
 | `research/agent-connection-v11` | 2026-11-07/08, docs only, off `v10` `4c136b2`: the v11 agent-connection plan (`docs/AGENT_CONNECTION_PLAN_V11_2026-11-07.md`, revised to cloud-first and phone-submits on Marco's word), the research write-up (`docs/AGENT_CONNECTION_RESEARCH_2026-11-08.md`) and the brief for the build session (`docs/AGENT_CONNECTION_SESSION_PROMPT.md`). Supersedes `research/agent-canvas-via-smooth` (2026-10-30, also docs only). Nothing built. |
-| `v12` | **Olisa's line, 2026-11-09 to 2026-11-12; merged into `v11` on 2026-11-12 at `4aadc3c` (the merge commit carries this line), `v11` the base.** `v10` at `4c136b2` plus the degree-progress research (`docs/DEGREE_PROGRESS_RESEARCH_2026-11-09.md`) and the degree feature. Built on 2026-11-09 against a guessed Degree Works host; rewritten on 2026-11-10 against what Olisa captured from his own Path@Penn session: `Degree/` in the Kit (`PathAuditDecoder`, `PathBridge`, `PathDegree`, `PathWhatIf`), `PathPortal`, `AppState+Degree`, `DegreeProgressView`, `DegreeWhatIfSheet`, `FeatureFlags.degreeProgress`. Green on the `tests` workflow, which runs on pushes to it, and built for iOS with `xcodebuild` on Olisa's Mac (Xcode 27.2) on 2026-11-10 (Test baseline); the Debug build of `d2f37a0` read a real audit on Olisa's iPhone 17 the same day (Known gaps). It did not contain `v11`, which branched from the same `v10` commit; the merge of 2026-11-12 (five documented conflicts, keep both; six Swift files read around every hunk, nothing out of place) brought it into `v11`, and 3.5.0 (21) ships with it. **Since 2026-11-11 it also carries ambassador mode and `smooth-ambassadors/`** (the `claude/new-session-b3ylkg` row below; What the app does → Profile → 8). |
+| `v12` | **Olisa's line, 2026-11-09 to 2026-11-12; merged into `v11` on 2026-11-12 at `4aadc3c` (the merge commit carries this line), `v11` the base.** `v10` at `4c136b2` plus the degree-progress research (`docs/DEGREE_PROGRESS_RESEARCH_2026-11-09.md`) and the degree feature. Built on 2026-11-09 against a guessed Degree Works host; rewritten on 2026-11-10 against what Olisa captured from his own Path@Penn session: `Degree/` in the Kit (`PathAuditDecoder`, `PathBridge`, `PathDegree`, `PathWhatIf`), `PathPortal`, `AppState+Degree`, `DegreeProgressView`, `DegreeWhatIfSheet`, `FeatureFlags.degreeProgress`. Green on the `tests` workflow, which runs on pushes to it, and built for iOS with `xcodebuild` on Olisa's Mac (Xcode 27.2) on 2026-11-10 (Test baseline); the Debug build of `d2f37a0` read a real audit on Olisa's iPhone 17 the same day (Known gaps). It did not contain `v11`, which branched from the same `v10` commit; the merge of 2026-11-12 (five documented conflicts, keep both; six Swift files read around every hunk, nothing out of place) brought it into `v11`, and 3.5.0 (21) ships with it. **Since 2026-11-11 it also carries ambassador mode and `smooth-ambassadors/`** (the `claude/new-session-b3ylkg` row below; What the app does → Profile → 8). **2026-11-22: `origin/v12` `8fc16c8`+ (the anonymous per-school install count) was merged into the release line `claude/ambassador-header`; `v12` itself is Olisa's and stays his.** |
 | `claude/new-session-b3ylkg` | **2026-11-09, `v10` `4c136b2` plus two commits, meant to become `v11`.** (1) `smooth-ambassadors/`: the poster-scan tracker plus the campus ambassador system as a Cloudflare Worker + D1 (private pages per ambassador, tracked links, a founder view with a digest generator, 17 Miniflare tests), drafted here to move to a private repo. (2) **Ambassador mode in the app** (What the app does → Profile → 8): a code-based sign-in in Profile, today's post, a daily local reminder, the planner carve-out. 3697/357 green on the GitHub runner at `85d4234` and the unsigned iOS `xcodebuild` green at `674b89b` (2026-11-10, Test baseline); never on a phone, server not deployed. The Worker's legacy routes were matched to the live site the same day (dashboard byte-identical, `/api/stats` rows identical). Olisa or Marco creates `v11` from it. **2026-11-10, later:** the Sites source arrived as an archive; `scripts/build-sites.mjs` folds the ambassador system into the real single-file Worker (two edits to its `fetch`, a generated section, images byte-identical), `test/sites.test.mjs` runs the original and the edited artifact side by side (14 of 14; `npm test` 28 pass), and the public `/r/{ref}` links replaced the token-bearing ones (Traps). A zip went to Olisa for the ChatGPT session that deploys Sites. **2026-11-11:** deployed to the live Sites project by that session; existing routes and totals checked from here (Known gaps). **Merged into `v12` on 2026-11-11** ("do this in v12", Olisa): `v12` was merged into this branch first (two conflicts, both "each side added a line here": the `DashRoute` cases and these notes), the merged tree was run on the runner, and only then was `v12` moved to it. The "meant to become `v11`" above is history: `v11` is Marco's line and none of this is in it. **Later on 2026-11-11:** school-prefixed codes, then posters, the dashboard link, poster-idea uploads and the Smooth restyle of the ambassador website, all landed on `v12` once compiled (Test baseline). `scripts/build-to-phone.sh` came from the same day. **2026-11-12:** that update is live on the Sites project and was checked read-only from here (Known gaps). |
 | `v10` | **Current line (2026-11-03 onward).** `v9` (the no-banner sign-in, the onboarding polish, the composed-day research) plus `origin/v8` `7e004c5` (the tree's recency and follow-up work) plus `phase0/extract-facts-bench`. The merge's Swift run is recorded under Test baseline. |
 | `phase0/extract-facts-bench` | 2026-11-03, off `v9`: the extract-facts bench, prompt, schema and parser; the model decision (Haiku 5.5, `docs/EXTRACT_FACTS_BENCH_2026-11-03.md`). In `v10`. |
@@ -5455,6 +5524,34 @@ none is a ship line.
 
 ## Known gaps
 
+- **The install count (2026-11-22) has never run on a phone and is not in
+  any released build; its server half is live.** Compiled and tested on the
+  runner; the Worker half tested under Miniflare, beside the original site
+  and against the scan backup, and reviewed for security. **Deployed the
+  same day by the ChatGPT session**, which reported that live GET and POST
+  requests to `/api/install` reached the Worker with `cf-connecting-ip`
+  set by the platform (so the shared `noip` bucket is not in use and the
+  300-a-day limit is per network as designed), scan totals unchanged and
+  no test install recorded. Read from here afterwards, GETs only: `GET
+  /api/install` is 405; a UVA ambassador's `plan.json` carries
+  `numbers.schoolInstalls` 0 and `schoolInstallsRecent` 0; the page has
+  the "uva downloads" tile; `/` and `/api/stats` answer with the same two
+  totals above the 2026-11-10 backup as before and none below. A counted
+  POST was deliberately not sent from here: there is no route that removes
+  one. What is still unsettled: that `URLSession`'s request reaches the
+  route from a phone; and the first real numbers, which should jump at Penn in the days after release
+  as existing students update (`existing`) and then grow by `new`. Known
+  limits: the number can be inflated by anyone who can script requests
+  (300 a day per network per school; acceptable while it only motivates,
+  not if anything is ever paid on it, where App Attest is the answer); a
+  reinstall counts again; a student who typed a Canvas address outside the
+  220-school catalog is not counted; a new catalog host needs
+  `npm run gen:hosts` and a redeploy before it counts. Open decisions for
+  Olisa and Marco before the build is submitted: the App Store privacy
+  label (`docs/appstore/LISTING.md` → App Privacy) and the pasted review
+  notes line (`REVIEW_NOTES.md`, top). `docs/site/privacy.html` carries
+  the new section; whether the published policy page updates on a push or
+  by hand was not checked.
 - **Release 1 of the Sweeper accuracy work is on Marco's phone since
   2026-11-18, and its first live test failed: the alarm rang on work he had
   submitted with Smooth on screen, and no planner read ran.** At 21:48 UTC

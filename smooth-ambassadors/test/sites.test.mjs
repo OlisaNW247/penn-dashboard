@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import { Miniflare } from "miniflare";
 import { ideaTests } from "./ideas-suite.mjs";
 import { captureTests } from "./captures-suite.mjs";
+import { installTests } from "./installs-suite.mjs";
 
 const { SITES_ORIGINAL, SITES_EDITED } = process.env;
 const skip = SITES_ORIGINAL && SITES_EDITED ? false : "set SITES_ORIGINAL and SITES_EDITED to run";
@@ -312,6 +313,15 @@ ideaTests({
 });
 
 captureTests({
+  test,
+  skip,
+  label: "built file: ",
+  founder: FOUNDER,
+  db: () => edited.getD1Database("DB"),
+  req: (path, init) => req(edited, path, init),
+});
+
+installTests({
   test,
   skip,
   label: "built file: ",

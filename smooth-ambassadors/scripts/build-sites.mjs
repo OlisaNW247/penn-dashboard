@@ -121,7 +121,7 @@ text += START + "\n" + host + bundle + (bundle.endsWith("\n") ? "" : "\n") + END
 
 writeFileSync(target, text);
 mkdirSync(join(repo, "migrations"), { recursive: true });
-for (const file of ["0001_ambassadors.sql", "0002_poster_ideas.sql", "0003_captures.sql"]) {
+for (const file of ["0001_ambassadors.sql", "0002_poster_ideas.sql", "0003_captures.sql", "0004_installs.sql"]) {
   copyFileSync(join(root, "migrations", file), join(repo, "migrations", file));
 }
 
