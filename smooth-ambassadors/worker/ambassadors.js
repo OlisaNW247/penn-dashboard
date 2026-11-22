@@ -148,6 +148,9 @@ async function planPayload(env, amb, url, pub) {
     checklist: checklist.steps.map((s) => ({ key: s.key, label: s.label, hint: s.hint, done: stats.checked.has(s.key) })),
     tips: messages.posting_tips,
     channels: CHANNELS,
+    // The ambassador's own public share link per channel (added 2026-11-21 for
+    // the app's group-chat task). /r/{ref}/s/..., never the private token.
+    links: Object.fromEntries(Object.keys(CHANNELS).map((ch) => [ch, links.share(ch)])),
     generatedAt: new Date().toISOString(),
     // Added 2026-11-11, additive: the app ignores keys it does not know.
     posters: designsFor(amb.school).map((key) => ({

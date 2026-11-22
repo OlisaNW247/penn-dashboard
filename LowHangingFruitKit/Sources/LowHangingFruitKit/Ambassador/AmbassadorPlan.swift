@@ -294,6 +294,10 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
     public var playbook: Playbook?
     public var suggested: [Suggestion]?
     public var captures: Captures?
+    /// The ambassador's own tracked share link per channel (`gc` is the group
+    /// chats'), added 2026-11-21 for the group-chat task. Decoded with `try?`
+    /// so a wrongly shaped one reads as absent and the plan still decodes.
+    public var links: [String: String]?
 
     public init(name: String, school: String, schoolName: String? = nil, title: String? = nil,
                 status: String? = nil, pausedUntil: String? = nil, page: String? = nil,
@@ -301,7 +305,9 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
                 messages: [Message]? = nil, checklist: [ChecklistStep]? = nil,
                 tips: [String]? = nil, generatedAt: String? = nil,
                 posters: [Poster]? = nil, dashboard: String? = nil, ideas: Ideas? = nil,
-                playbook: Playbook? = nil, suggested: [Suggestion]? = nil, captures: Captures? = nil) {
+                playbook: Playbook? = nil, suggested: [Suggestion]? = nil, captures: Captures? = nil,
+                links: [String: String]? = nil) {
+        self.links = links
         self.playbook = playbook
         self.suggested = suggested
         self.captures = captures
@@ -361,6 +367,7 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
             suggested = nil
         }
         captures = (try? c.decodeIfPresent(Captures.self, forKey: .captures)) ?? nil
+        links = (try? c.decodeIfPresent([String: String].self, forKey: .links)) ?? nil
     }
 
     /// An element that decodes to nil instead of throwing.

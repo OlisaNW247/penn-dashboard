@@ -66,6 +66,17 @@ struct AmbassadorPlanTests {
      "tips":["post once"],"unknownFutureField":{"a":1},"generatedAt":"2026-11-09T20:00:00.000Z"}
     """
 
+    @Test("links decode as a map, and a wrong shape reads as none without costing the plan")
+    func links() throws {
+        let good = Self.json.replacingOccurrences(of: "\"tips\"", with: "\"links\":{\"gc\":\"https://example.test/r/k3m9x2p7qa/s/gc\"},\"tips\"")
+        #expect(try AmbassadorPlan.decode(Data(good.utf8)).links?["gc"] == "https://example.test/r/k3m9x2p7qa/s/gc")
+        let bad = Self.json.replacingOccurrences(of: "\"tips\"", with: "\"links\":[1,2],\"tips\"")
+        let plan = try AmbassadorPlan.decode(Data(bad.utf8))
+        #expect(plan.links == nil)
+        #expect(plan.firstName == "Maya")
+        #expect(try AmbassadorPlan.decode(Data(Self.json.utf8)).links == nil)
+    }
+
     @Test("decodes leniently and round-trips through the cache")
     func decodes() throws {
         let plan = try AmbassadorPlan.decode(Data(Self.json.utf8))
@@ -155,6 +166,20 @@ struct AmbassadorRemindersTests {
         #expect(Set(requests.map(\.identifier)).count == 5)
         #expect(requests.allSatisfy { AmbassadorReminders.isAmbassadorIdentifier($0.identifier) })
         #expect(AmbassadorReminders.requests(cadence: .off).isEmpty)
+    }
+
+    @Test("twice a week is two weekly requests, Monday and Thursday; the picker offers three")
+    func twiceWeekly() throws {
+        let requests = AmbassadorReminders.requests(cadence: .twiceWeekly, hour: 19, minute: 0)
+        let weekdays = try requests.map { try #require(($0.trigger as? UNCalendarNotificationTrigger)?.dateComponents.weekday) }
+        #expect(weekdays == [2, 5])
+        #expect(requests.map(\.identifier) == ["ambassador:weekday:2", "ambassador:weekday:5"])
+        #expect(requests.allSatisfy { ($0.trigger as? UNCalendarNotificationTrigger)?.repeats == true })
+        #expect(AmbassadorReminders.reservedSlots(for: .twiceWeekly) == 2)
+        #expect(AmbassadorReminderCadence.offered == [.twiceWeekly, .daily, .off])
+        #expect(AmbassadorReminderCadence.twiceWeekly.label == "2 a week")
+        // A phone that stored the retired choice still decodes it.
+        #expect(AmbassadorReminderCadence(rawValue: "weekdays") == .weekdays)
     }
 
     @Test("the slots each cadence reserves match the requests it schedules")
@@ -356,8 +381,8 @@ struct AmbassadorModelTests {
             #expect(service.planRequests.last?.tz == 300)
             #expect(service.planRequests.last?.anon == .fizz)
             #expect(center.authorizationRequests == 1)
-            #expect(center.pending.map(\.identifier) == ["ambassador:daily"])
-            #expect(NotificationScheduler.reservedForeignSlots == 1)
+            #expect(center.pending.map(\.identifier).sorted() == ["ambassador:weekday:2", "ambassador:weekday:5"])
+            #expect(NotificationScheduler.reservedForeignSlots == 2)
             // The cache is what a fresh model starts from, offline.
             let cached = try #require(defaults.data(forKey: AmbassadorModel.planCacheKey))
             #expect(try AmbassadorPlan.decode(cached).name == "Maya Example")
@@ -464,6 +489,76 @@ struct AmbassadorModelTests {
         #expect(model.plan?.schoolLabel == "uva")
         #expect(model.cadence == .weekdays)
         #expect(NotificationScheduler.reservedForeignSlots == 5)
+    }
+
+    @Test("a first sign-in raises the intro once; finishing it clears it; sign out keeps it seen")
+    func intro() async {
+        await withModel { model, _, _, defaults in
+            #expect(!model.introPending)
+            await model.signIn(Self.code)
+            #expect(model.introPending)
+            model.finishIntro()
+            #expect(!model.introPending)
+            #expect(defaults.bool(forKey: AmbassadorModel.introSeenKey))
+            model.signOut()
+            await model.signIn(Self.code)
+            #expect(!model.introPending)
+        }
+    }
+
+    @Test("a group-chat drop posts in the gc channel and ticks for the week")
+    func groupChatsDone() async {
+        await withModel { model, service, _, _ in
+            await model.signIn(Self.code)
+            #expect(!model.isDone(.groupChats))
+            await model.markDone(.groupChats)
+            #expect(model.isDone(.groupChats))
+            let sent = service.sent.last
+            #expect(sent?.action == "post")
+            #expect(sent?.body["channel"] == "gc")
+            #expect(!model.isDone(.posters))
+            await model.markDone(.posters)
+            #expect(model.isDone(.posters))
+        }
+    }
+
+    @Test("the anonymous task ticks with the daily post, and a tick comes back after a relaunch")
+    func anonDoneAndRestored() async {
+        await withModel { model, service, _, defaults in
+            await model.signIn(Self.code)
+            await model.markDone(.anonChats)
+            #expect(model.isDone(.anonChats))
+            #expect(model.postedToday)
+            #expect(service.sent.contains { $0.action == "post" && $0.body["channel"] == "fizz" })
+            let data = defaults.data(forKey: AmbassadorModel.taskLogKey)
+            #expect(data != nil)
+            let log = try? JSONDecoder().decode(AmbassadorTaskLog.self, from: data ?? Data())
+            #expect(log?.isDone(.anonChats, todayIndex: 20766) == true)
+        }
+    }
+
+    @Test("sending feedback ticks the feedback task; a failed send does not; sign out clears the log")
+    func feedbackDone() async {
+        await withModel { model, service, _, defaults in
+            await model.signIn(Self.code)
+            service.offline = true
+            #expect(await model.sendFeedback("hello") == false)
+            #expect(!model.isDone(.feedback))
+            service.offline = false
+            #expect(await model.sendFeedback("hello"))
+            #expect(model.isDone(.feedback))
+            model.signOut()
+            #expect(!model.isDone(.feedback))
+            #expect(model.taskLog == AmbassadorTaskLog())
+            #expect(defaults.data(forKey: AmbassadorModel.taskLogKey) == nil)
+        }
+    }
+
+    @Test("with nothing stored the reminder defaults to twice a week")
+    func defaultCadence() async {
+        await withModel { model, _, _, _ in
+            #expect(model.cadence == .twiceWeekly)
+        }
     }
 
     @Test("an idea with nothing in it is refused in words and sends no request")
@@ -747,6 +842,47 @@ struct AmbassadorIdeaClientTests {
 
 /// The wiring that `swift test` cannot exercise as behaviour, pinned as
 /// source scans the way the Berserk tests pin `LHFApp.swift`.
+@Suite("Ambassador tasks")
+struct AmbassadorTaskTests {
+    @Test("four tasks in order, the anonymous one daily and the rest weekly")
+    func cases() {
+        #expect(AmbassadorTask.allCases == [.anonChats, .groupChats, .posters, .feedback])
+        #expect(AmbassadorTask.allCases.map(\.label) == ["anonymous chats", "group chats", "posters", "feedback"])
+        #expect(AmbassadorTask.anonChats.period == .day)
+        for task in [AmbassadorTask.groupChats, .posters, .feedback] { #expect(task.period == .week) }
+    }
+
+    @Test("a day task is done on its own day only")
+    func dayRule() {
+        var log = AmbassadorTaskLog()
+        #expect(!log.isDone(.anonChats, todayIndex: 100))
+        log.markDone(.anonChats, todayIndex: 100)
+        #expect(log.isDone(.anonChats, todayIndex: 100))
+        #expect(!log.isDone(.anonChats, todayIndex: 101))
+        #expect(!log.isDone(.anonChats, todayIndex: 99))
+    }
+
+    @Test("a week task holds for the day and six more, never from the future")
+    func weekRule() {
+        var log = AmbassadorTaskLog()
+        log.markDone(.posters, todayIndex: 100)
+        #expect(log.isDone(.posters, todayIndex: 100))
+        #expect(log.isDone(.posters, todayIndex: 106))
+        #expect(!log.isDone(.posters, todayIndex: 107))
+        #expect(!log.isDone(.posters, todayIndex: 99))
+        #expect(!log.isDone(.feedback, todayIndex: 100))
+    }
+
+    @Test("the log round-trips")
+    func codable() throws {
+        var log = AmbassadorTaskLog()
+        log.markDone(.groupChats, todayIndex: 7)
+        let back = try JSONDecoder().decode(AmbassadorTaskLog.self, from: JSONEncoder().encode(log))
+        #expect(back == log)
+        #expect(back.isDone(.groupChats, todayIndex: 7))
+    }
+}
+
 @Suite("Ambassador wiring")
 struct AmbassadorWiringTests {
     private func uiSource(_ filename: String) throws -> String {
@@ -776,7 +912,7 @@ struct AmbassadorWiringTests {
     /// without its reply on the page is half of what he asked for.
     @Test("the page draws a post's reply with its own copy button")
     func replyShown() throws {
-        let page = try uiSource("AmbassadorPage.swift")
+        let page = try uiSource("AmbassadorTaskSheets.swift")
         #expect(page.contains("copy reply"))
         #expect(page.contains("then reply:"))
     }
@@ -789,39 +925,46 @@ struct AmbassadorWiringTests {
         #expect(page.contains(".refreshable { await model.refresh() }"))
     }
 
-    /// Olisa, from his phone on 2026-11-12: the checklist told a signed-in
-    /// ambassador to download the app, so it went, and the page now opens on
-    /// what the job is and on the web page, which had been the last row.
-    @Test("the page opens on the job and the web page, and has no getting-started list")
-    func jobFirst() throws {
+    /// Marco, 2026-11-21: the page is four tasks, then the numbers, the
+    /// reminder and the account rows. The job, the playbook, the founders'
+    /// posts, the feed recording and the results sheets are gone from it; the
+    /// job's one line lives in the first-sign-in intro.
+    @Test("the page opens on the four tasks, then numbers, reminder, account")
+    func tasksFirst() throws {
         let page = try uiSource("AmbassadorPage.swift")
-        #expect(!page.contains("SmoothSectionHeader(\"getting started\""))
-        #expect(!page.contains("checklistSection"))
-        #expect(!page.contains("setChecklist"))
         let body = try #require(page.range(of: "if model.isSignedIn {"))
-        let job = try #require(page.range(of: "jobSection", range: body.upperBound..<page.endIndex))
-        let today = try #require(page.range(of: "todaySection", range: body.upperBound..<page.endIndex))
-        #expect(job.lowerBound < today.lowerBound)
-        #expect(page.contains("get smooth in front of as many eyes as you can."))
-        // Gathering feedback and ideas is part of the job: said in the job
-        // section, and the box for it comes before the numbers.
-        #expect(page.contains("bring back what people say and ideas for smooth."))
-        let feedback = try #require(page.range(of: "feedbackSection", range: body.upperBound..<page.endIndex))
-        let numbers = try #require(page.range(of: "numbersSection", range: body.upperBound..<page.endIndex))
-        #expect(today.lowerBound < feedback.lowerBound && feedback.lowerBound < numbers.lowerBound)
-        // One way to the web page, and it is in the job section, not the footer.
+        func at(_ name: String) throws -> String.Index {
+            try #require(page.range(of: name, range: body.upperBound..<page.endIndex)).lowerBound
+        }
+        let tasks = try at("tasksSection")
+        let numbers = try at("numbersSection")
+        let reminders = try at("remindersSection")
+        let account = try at("accountSection")
+        #expect(tasks < numbers && numbers < reminders && reminders < account)
+        for gone in ["jobSection", "playbookSection", "suggestedSection", "todaySection", "trackingSection",
+                     "messagesSection", "feedbackSection", "postersSection", "FeedRecordingSheet", "PostResultSheet",
+                     "get smooth in front of as many eyes", "checklistSection", "setChecklist"] {
+            #expect(!page.contains(gone), "\(gone)")
+        }
+        let intro = try uiSource("AmbassadorIntroView.swift")
+        #expect(intro.contains("get smooth in front of as many eyes as you can."))
+        #expect(intro.contains("let\\u{2019}s go"))
+        // The web page is one plain row in the account section.
         #expect(page.components(separatedBy: "web page \\u{2197}").count == 2)
-        let jobStart = try #require(page.range(of: "private var jobSection"))
-        let todayStart = try #require(page.range(of: "private var todaySection"))
-        let link = try #require(page.range(of: "open my web page"))
-        #expect(jobStart.lowerBound < link.lowerBound && link.lowerBound < todayStart.lowerBound)
+        let acct = try #require(page.range(of: "private var accountSection"))
+        let link = try #require(page.range(of: "my web page"))
+        #expect(acct.lowerBound < link.lowerBound)
+        // The picker offers the cadences in `offered`, never every case.
+        #expect(page.contains("AmbassadorReminderCadence.offered"))
+        #expect(!page.contains("my anonymous app"))
+        #expect(try uiSource("AmbassadorTaskSheets.swift").contains("my anonymous app"))
     }
 
     @Test("ambassador mode never mentions ratings or reviews")
     func noReviews() throws {
         for file in ["AmbassadorPage.swift", "AmbassadorModel.swift", "AmbassadorReminders.swift",
                      "AmbassadorPostersView.swift", "PosterIdeaSheet.swift",
-                     "FeedRecordingSheet.swift", "PostResultSheet.swift"] {
+                     "AmbassadorIntroView.swift", "AmbassadorTaskSheets.swift"] {
             let source = try uiSource(file).lowercased()
             #expect(!source.contains("5 star") && !source.contains("five star") && !source.contains("rate the app"), "\(file)")
         }
@@ -1048,22 +1191,22 @@ struct AmbassadorCaptureWiringTests {
         return try String(contentsOf: url, encoding: .utf8)
     }
 
-    @Test("the page lists job, playbook, suggested, today in order and tracking before feedback")
+    @Test("the four tasks are listed in order and the page presents the intro")
     func order() throws {
-        let page = try page()
-        let body = try #require(page.range(of: "if model.isSignedIn {"))
-        func at(_ name: String) throws -> String.Index {
-            try #require(page.range(of: name, range: body.upperBound..<page.endIndex)).lowerBound
+        let kit = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/LowHangingFruitKit/Ambassador/AmbassadorTask.swift")
+        let task = try String(contentsOf: kit, encoding: .utf8)
+        var from = task.startIndex
+        for label in ["anonymous chats", "group chats", "posters", "feedback"] {
+            let hit = try #require(task.range(of: "return \"\(label)\"", range: from..<task.endIndex), Comment(rawValue: label))
+            from = hit.upperBound
         }
-        let job = try at("jobSection")
-        let playbook = try at("playbookSection")
-        let suggested = try at("suggestedSection")
-        let today = try at("todaySection")
-        let tracking = try at("trackingSection")
-        let feedback = try at("feedbackSection")
-        #expect(job < playbook && playbook < suggested && suggested < today)
-        #expect(tracking < feedback)
-        #expect(page.contains("FeedRecordingSheet()") && page.contains("PostResultSheet()"))
+        let page = try page()
+        #expect(page.contains("ForEach(AmbassadorTask.allCases)"))
+        #expect(page.contains("AmbassadorIntroView()"))
+        #expect(page.contains("AmbassadorTaskSheet(task: task)"))
+        #expect(!page.contains("FeedRecordingSheet()") && !page.contains("PostResultSheet()"))
     }
 }
 
@@ -1092,5 +1235,6 @@ struct AmbassadorHeaderTests {
         #expect(source.contains("path = [.profile, .ambassador]"))
         #expect(source.contains("struct WordmarkBadge: View"))
         #expect(source.contains("ambassadorBadgeSymbol = \"medal.fill\""))
+        #expect(source.contains("badgeTrailing: true"))
     }
 }

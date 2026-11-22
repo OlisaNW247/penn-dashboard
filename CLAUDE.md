@@ -1610,6 +1610,48 @@ Keep this current. It is the fastest way for a new session to know what exists.
      model against fakes, the wiring). Never on a phone; the first thing
      to see is that the reminder survives a reschedule and that a cold
      launch from its tap lands on the page.
+     **Since 2026-11-21 (`claude/ambassador-work-c14201`, compiled and
+     tested, not on a phone) the page is four tasks** (Marco, from the build
+     on his phone: "it should be like kind of just the main tasks that they
+     have, which are very limited ... right at the top", "remove as much
+     text as possible"). Everything above in this item that describes the
+     job line, "what works", "from the founders", "help us help you", the
+     messages and tips section and the web-page button as sections of the
+     page is history. Signed in, the page is: **your job** (four rows,
+     `AmbassadorTask` in the Kit: anonymous chats, group chats, posters,
+     feedback; a teal tick when done, today for the anonymous post and
+     within 7 server days for the other three, `AmbassadorTaskLog`,
+     `ambassador.taskLogV1`), then **numbers**, then **reminder** (cadence
+     and time only; the anonymous-app picker moved into the first task),
+     then the account rows (**"my web page ↗"** first, then pause and sign
+     out). Each row opens a sheet (`AmbassadorTaskSheets.swift`): anonymous
+     chats holds today's post, its reply, copy buttons, the anonymous-app
+     picker, the founders' suggested posts, the other messages and the tips,
+     and its "done" is the old "i posted it"; group chats shows the `gc`
+     share link (`plan.links`, additive in `planPayload`, falling back to the
+     App Store link on an older server) with "copy link", and "done" logs a
+     `post` in channel `gc`; posters holds the gallery, the scan dashboard
+     and the poster idea, and "done" is local; feedback is the box and sends
+     tick it. Feed stills and post results (`FeedRecordingSheet`,
+     `PostResultSheet`) are deleted from the app at his word ("what the
+     fuck ... remove that"); the model and Kit halves stay with their tests
+     because the server routes and the founder page still exist. **First
+     sign-in intro** (`AmbassadorIntroView`, once per install,
+     `ambassador.introSeenV1`, not cleared by sign-out): "thanks for being
+     one.", the job in one line, the four tasks, "you're smooth at your
+     school. bring back what people say.", "let's go". **The reminder is
+     twice a week by default** (`AmbassadorReminderCadence.twiceWeekly`:
+     Monday and Thursday at the chosen time, two reserved slots; the picker
+     offers 2 a week / every day / off; a stored `weekdays` still decodes
+     and schedules but shows no selection). **The dashboard header** puts
+     "Ambassador" first and the medal to its right
+     (`SmoothWordmark.badgeTrailing`); the squiggle, shine and backflip are
+     unchanged. The posters themselves (retiring the Penn-specific designs,
+     adding Marco's two serious ones and new generic ones) are a separate
+     session's branch, `claude/ambassador-posters-f068d6`, and reach the app
+     only through the server's plan once Olisa deploys. Unseen on a phone:
+     the intro, the four sheets, the ticks surviving a relaunch, the
+     twice-weekly reminder firing.
   9. feedback (since 3.3.0, 2026-10-27): one "send feedback ↗" row that
      opens the Google feedback form in Safari (`FeedbackForm.defaultURL`,
      or the live notice's link when the manifest carries one)

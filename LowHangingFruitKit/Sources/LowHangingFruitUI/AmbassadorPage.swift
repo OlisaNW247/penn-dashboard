@@ -7,25 +7,16 @@ import AppKit
 #endif
 
 /// Profile → ambassador. Signed out it asks for the code; signed in it is the
-/// closed loop the founders asked for on 2026-11-09: a daily local reminder,
-/// the post for today already written with the ambassador's own tracked link,
-/// one tap to copy it, one to say it went out, and their numbers moving
-/// underneath. The rest (the other messages, pause, sign out) is below the
-/// fold. Feedback sits right after the posters since 2026-11-12, because
-/// gathering what students say and their ideas for Smooth is part of the job.
-///
-/// The page opens on the job itself and the ambassador's web page (Olisa,
-/// from his phone, 2026-11-12: the job is spamming chats, putting up posters
-/// and getting Smooth in front of as many eyes as possible, and the web page
-/// is the centre piece). There was a "getting started" checklist here until
-/// that day; its first step was "download smooth and connect canvas", shown
-/// to someone already signed in to the app, and he had the whole list removed.
-/// The server still sends `checklist` in the plan, and nothing here reads it.
+/// ambassador's four tasks (Marco, 2026-11-21: the page had grown into a wall
+/// of sections, so it is now the few things an ambassador actually does):
+/// anonymous chats, group chats, posters and feedback, each a row that opens
+/// its own view (`AmbassadorTaskSheets.swift`) where it is done and ticked.
+/// Under them the numbers, the reminder and the account rows. A first sign-in
+/// opens a short intro sheet (`AmbassadorIntroView`).
 ///
 /// Same chrome as the rest of Profile: a `Form`, `SmoothSectionHeader`s,
 /// tinted section backgrounds, `lhfSecondary` type, lowercase, and the copy
-/// rule (the least text that works). The one paragraph of real text on the
-/// page is the post itself, which is content, not chrome.
+/// rule (the least text that works).
 ///
 /// Pushed from Profile onto the dashboard's stack (`DashRoute.ambassador`),
 /// so it has a back button and no stack of its own, like Profile.
@@ -35,15 +26,7 @@ struct AmbassadorPage: View {
     @Environment(\.openURL) private var openURL
 
     @State private var codeField = ""
-    @State private var feedbackText = ""
-    @State private var copied = false
-    @State private var feedbackSent = false
-    @State private var showMessages = false
-    @State private var showTips = false
-    @State private var showPosters = false
-    @State private var showIdea = false
-    @State private var showFeedRecording = false
-    @State private var showPostResult = false
+    @State private var openTask: AmbassadorTask?
 
     var body: some View {
         Form {
@@ -55,16 +38,9 @@ struct AmbassadorPage: View {
             .listRowSeparator(.hidden)
 
             if model.isSignedIn {
-                jobSection
-                playbookSection
-                suggestedSection
-                todaySection
-                postersSection
-                trackingSection
-                feedbackSection
+                tasksSection
                 numbersSection
                 remindersSection
-                messagesSection
                 accountSection
             } else {
                 signInSection
@@ -85,19 +61,14 @@ struct AmbassadorPage: View {
         // old six with nothing he could do about it. A pull asks again;
         // signed out it does nothing (`refresh` returns without a code).
         .refreshable { await model.refresh() }
-        .sheet(isPresented: $showPosters) {
-            if let plan = model.plan {
-                AmbassadorPostersView(posters: plan.posters ?? [], schoolLabel: plan.schoolLabel)
-            }
+        .sheet(item: $openTask) { task in
+            AmbassadorTaskSheet(task: task)
         }
-        .sheet(isPresented: $showIdea) {
-            PosterIdeaSheet()
-        }
-        .sheet(isPresented: $showFeedRecording) {
-            FeedRecordingSheet()
-        }
-        .sheet(isPresented: $showPostResult) {
-            PostResultSheet()
+        .sheet(isPresented: Binding(
+            get: { model.introPending },
+            set: { if !$0 { model.finishIntro() } }
+        )) {
+            AmbassadorIntroView()
         }
         .lhfSheetTheme()
         .frame(minWidth: 360, minHeight: 420)
@@ -149,339 +120,25 @@ struct AmbassadorPage: View {
         #endif
     }
 
-    // MARK: The job
+    // MARK: The tasks
 
-    /// What an ambassador is for, in one line, and the way to their web page,
-    /// which holds everything (links, posters, stickers, numbers). First on
-    /// the page so nobody has to scroll to learn either.
-    private var jobSection: some View {
+    private var tasksSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("get smooth in front of as many eyes as you can.")
-                    .font(.lhfSecondary(17, weight: .semibold))
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("spam the chats. put up posters. post every day.")
-                    .font(.lhfSecondary(14))
-                    .foregroundStyle(Color.v2DateText)
-                    .fixedSize(horizontal: false, vertical: true)
-                // The other half of the job (Olisa, 2026-11-12): what students
-                // say about Smooth and what they wish it did, sent to the
-                // founders through the feedback box two sections down.
-                Text("bring back what people say and ideas for smooth.")
-                    .font(.lhfSecondary(14))
-                    .foregroundStyle(Color.v2DateText)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.vertical, 2)
-            .accessibilityElement(children: .combine)
-            if let page = model.plan?.page, let url = URL(string: page) {
-                // A filled button, not a row: it is the one control on the page
-                // the founders want nobody to miss, so it looks like the
-                // page's main action and sits above today's post.
-                VStack(alignment: .leading, spacing: 6) {
-                    Button {
-                        openURL(url)
-                    } label: {
-                        Text("open my web page \u{2197}")
-                            .font(.lhfSecondary(15, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 4)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color.smoothGrape)
-                    Text("your links, posters and stickers are there")
-                        .font(.lhfSecondary(12))
-                        .foregroundStyle(Color.v2DateText)
-                }
-                .listRowSeparator(.hidden)
+            ForEach(AmbassadorTask.allCases) { task in
+                taskRow(task)
             }
         } header: {
-            SmoothSectionHeader("the job", accent: .smoothCobalt)
-        }
-        .smoothSectionBackground(.smoothLemon)
-    }
-
-    // MARK: Today
-
-    @ViewBuilder
-    private var todaySection: some View {
-        Section {
-            if let today = model.plan?.today {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(today.isRest ? "rest day" : today.platform)
-                        .font(.lhfSecondary(15, weight: .semibold))
-                    Spacer()
-                    if model.postedToday {
-                        Label("posted", systemImage: "checkmark")
-                            .font(.lhfSecondary(12, weight: .medium))
-                            .foregroundStyle(Color.smoothTealInk)
-                    }
-                }
-                Text(today.text)
-                    .font(.lhfSecondary(15))
-                    .foregroundStyle(Color.smoothInk)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.smoothSurface))
-                    .listRowSeparator(.hidden)
-                if !today.isRest {
-                    replyBlock(today.reply)
-                    HStack(spacing: 10) {
-                        Button {
-                            copy(today.text)
-                        } label: {
-                            Label(copied ? "copied" : "copy", systemImage: copied ? "checkmark" : "doc.on.doc")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Color.smoothGrape)
-                        Button {
-                            Task { await model.markPostedToday() }
-                        } label: {
-                            Label(model.postedToday ? "posted" : "i posted it", systemImage: "paperplane")
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(model.postedToday || model.isWorking)
-                    }
-                    .font(.lhfSecondary(14, weight: .semibold))
-                }
-            } else if model.isWorking {
-                ProgressView().controlSize(.small)
-            } else {
-                Text(model.lastError ?? "couldn\u{2019}t load today\u{2019}s post")
-                    .font(.lhfSecondary(12))
-                    .foregroundStyle(Color.v2DateText)
-            }
-            if let error = model.lastError, model.plan?.today != nil {
-                Text(error)
-                    .font(.lhfSecondary(12))
-                    .foregroundStyle(Color.smoothTomatoInk)
-            }
-        } header: {
-            SmoothSectionHeader("today", accent: .smoothCobalt)
+            SmoothSectionHeader("your job", accent: .smoothCobalt)
         }
         .smoothSectionBackground(.smoothGrape)
     }
 
-    private func copy(_ text: String) {
-        #if canImport(UIKit)
-        UIPasteboard.general.string = text
-        #elseif canImport(AppKit)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        #endif
-        lhfHapticLight()
-        copied = true
-        Task {
-            try? await Task.sleep(for: .seconds(1.5))
-            copied = false
+    private func taskRow(_ task: AmbassadorTask) -> some View {
+        AmbassadorRow(label: task.label, symbol: task.symbol, trailing: nil, leaves: false,
+                      done: model.isDone(task)) {
+            model.clearError()
+            openTask = task
         }
-    }
-
-    // MARK: What works, and what the founders wrote
-
-    /// The same rounded box today's post sits in, for any post text. Line
-    /// breaks are kept: a "list" post is its line breaks.
-    private func postBox(_ text: String) -> some View {
-        Text(text)
-            .font(.lhfSecondary(15))
-            .foregroundStyle(Color.smoothInk)
-            .fixedSize(horizontal: false, vertical: true)
-            .textSelection(.enabled)
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.smoothSurface))
-            .listRowSeparator(.hidden)
-    }
-
-    /// The follow-up reply under a post, with its own copy button. Nothing
-    /// when the server sent none (an older server) or an empty one.
-    @ViewBuilder
-    private func replyBlock(_ reply: String?) -> some View {
-        if let reply, !reply.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("then reply:")
-                    .font(.lhfSecondary(12))
-                    .foregroundStyle(Color.v2DateText)
-                Text(reply)
-                    .font(.lhfSecondary(13))
-                    .foregroundStyle(Color.v2DateText)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-                Button("copy reply") { copy(reply) }
-                    .buttonStyle(.bordered)
-                    .font(.lhfSecondary(14, weight: .semibold))
-            }
-        }
-    }
-
-    /// What has worked on the anonymous apps, from the server. Hidden when an
-    /// older server sends no playbook, or one with nothing in it.
-    @ViewBuilder
-    private var playbookSection: some View {
-        if let book = model.plan?.playbook, !(book.lead.isEmpty && book.steps.isEmpty && book.examples.isEmpty) {
-            Section {
-                if !book.lead.isEmpty {
-                    Text(book.lead)
-                        .font(.lhfSecondary(15, weight: .semibold))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                ForEach(Array(book.steps.enumerated()), id: \.offset) { _, step in
-                    Text(step)
-                        .font(.lhfSecondary(14))
-                        .foregroundStyle(Color.v2DateText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                ForEach(book.examples) { example in
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(alignment: .firstTextBaseline) {
-                            Text(example.title)
-                                .font(.lhfSecondary(13, weight: .semibold))
-                            Spacer()
-                            if let score = example.score {
-                                Text(score)
-                                    .font(.lhfMono(12, weight: .medium))
-                                    .foregroundStyle(Color.v2DateText)
-                            }
-                        }
-                        postBox(example.post)
-                        if let reply = example.reply, !reply.isEmpty {
-                            Text("reply: \(reply)")
-                                .font(.lhfSecondary(13))
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        if let why = example.why, !why.isEmpty {
-                            Text(why)
-                                .font(.lhfSecondary(12))
-                                .foregroundStyle(Color.v2DateText)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    .padding(.vertical, 2)
-                }
-            } header: {
-                SmoothSectionHeader("what works", accent: .smoothCobalt)
-            }
-            .smoothSectionBackground(.smoothLemon)
-        }
-    }
-
-    /// Posts the founders wrote for this ambassador. Only when there are any.
-    @ViewBuilder
-    private var suggestedSection: some View {
-        if let suggestions = model.plan?.suggested, !suggestions.isEmpty {
-            Section {
-                ForEach(suggestions) { suggestion in
-                    VStack(alignment: .leading, spacing: 8) {
-                        postBox(suggestion.text)
-                        HStack(spacing: 10) {
-                            Button("copy") { copy(suggestion.text) }
-                                .buttonStyle(.borderedProminent)
-                                .tint(Color.smoothGrape)
-                            if let reply = suggestion.reply, !reply.isEmpty {
-                                Button("copy reply") { copy(reply) }
-                                    .buttonStyle(.bordered)
-                            }
-                        }
-                        .font(.lhfSecondary(14, weight: .semibold))
-                    }
-                    .padding(.vertical, 2)
-                }
-            } header: {
-                SmoothSectionHeader("from the founders", accent: .smoothCobalt)
-            }
-            .smoothSectionBackground(.smoothGrape)
-        }
-    }
-
-    // MARK: Tracking
-
-    /// The two ways an ambassador shows the founders what is working: stills
-    /// of a feed recording and a screenshot of how a post did. Only when the
-    /// server says it takes them (`captures`).
-    @ViewBuilder
-    private var trackingSection: some View {
-        if let captures = model.plan?.captures {
-            Section {
-                posterRow("show us your feed", symbol: "video", trailing: Self.usage(stored: captures.feed?.stored, limit: captures.feed?.limit), leaves: false) {
-                    model.clearError()
-                    showFeedRecording = true
-                }
-                posterRow("how did a post do", symbol: "chart.line.uptrend.xyaxis", trailing: Self.usage(stored: captures.results?.stored, limit: captures.results?.limit), leaves: false) {
-                    model.clearError()
-                    showPostResult = true
-                }
-            } header: {
-                SmoothSectionHeader("help us help you", accent: .smoothCobalt)
-            }
-            .smoothSectionBackground(.smoothMarigold)
-        }
-    }
-
-    /// "3 of 96", or nil when the server gave no limit.
-    nonisolated static func usage(stored: Int?, limit: Int?) -> String? {
-        guard let stored, let limit else { return nil }
-        return "\(stored) of \(limit)"
-    }
-
-    // MARK: Posters
-
-    /// Where the posters, the live dashboard and the idea box are. Each row
-    /// says by its trailing mark whether it stays in the app (a chevron, or a
-    /// count) or leaves it (the arrow, and the label says so too).
-    private var postersSection: some View {
-        Section {
-            if let posters = model.plan?.posters, !posters.isEmpty {
-                posterRow("all posters", symbol: "photo.on.rectangle.angled", trailing: "\(posters.count)", leaves: false) {
-                    showPosters = true
-                }
-            }
-            if let dashboard = model.plan?.dashboardURL {
-                posterRow("scan dashboard \u{2197}", symbol: "chart.bar", trailing: nil, leaves: true) {
-                    openURL(dashboard)
-                }
-            }
-            posterRow("send a poster idea", symbol: "lightbulb", trailing: ideasCount, leaves: false) {
-                model.clearError()
-                showIdea = true
-            }
-        } header: {
-            SmoothSectionHeader("posters", accent: .smoothCobalt)
-        }
-        .smoothSectionBackground(.smoothMarigold)
-    }
-
-    /// "3 of 30", or just the count when the server gives no limit, or nil.
-    private var ideasCount: String? {
-        guard let ideas = model.plan?.ideas else { return nil }
-        if let limit = ideas.limit { return "\(ideas.sent) of \(limit)" }
-        return "\(ideas.sent)"
-    }
-
-    private func posterRow(_ label: String, symbol: String, trailing: String?, leaves: Bool,
-                           action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: symbol)
-                    .frame(width: 22)
-                    .foregroundStyle(Color.smoothInk)
-                Text(label)
-                Spacer()
-                if let trailing {
-                    Text(trailing)
-                        .font(.lhfMono(13, weight: .medium))
-                        .foregroundStyle(Color.v2DateText)
-                }
-                if !leaves {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.v2DateText)
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: Numbers
@@ -523,7 +180,7 @@ struct AmbassadorPage: View {
                 get: { model.cadence },
                 set: { newValue in Task { await model.setCadence(newValue) } }
             )) {
-                ForEach(AmbassadorReminderCadence.allCases) { cadence in
+                ForEach(AmbassadorReminderCadence.offered) { cadence in
                     Text(cadence.label).tag(cadence)
                 }
             }
@@ -538,17 +195,8 @@ struct AmbassadorPage: View {
                         .foregroundStyle(Color.v2DateText)
                 }
             }
-
-            Picker("my anonymous app", selection: Binding(
-                get: { model.anonApp },
-                set: { newValue in Task { await model.setAnonApp(newValue) } }
-            )) {
-                ForEach(AmbassadorAnonApp.allCases) { app in
-                    Text(app.label).tag(app)
-                }
-            }
         } header: {
-            SmoothSectionHeader("daily reminder", accent: .smoothCobalt)
+            SmoothSectionHeader("reminder", accent: .smoothCobalt)
         }
         .smoothSectionBackground(.smoothTomato)
     }
@@ -567,85 +215,22 @@ struct AmbassadorPage: View {
         )
     }
 
-    // MARK: The other messages
-
-    @ViewBuilder
-    private var messagesSection: some View {
-        if let messages = model.plan?.messages, !messages.isEmpty {
-            Section {
-                DisclosureGroup(isExpanded: $showMessages) {
-                    ForEach(messages) { message in
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Text(message.label)
-                                    .font(.lhfSecondary(13, weight: .semibold))
-                                Spacer()
-                                Button("copy") { copy(message.text) }
-                                    .buttonStyle(.borderless)
-                                    .font(.lhfSecondary(13, weight: .semibold))
-                            }
-                            Text(message.text)
-                                .font(.lhfSecondary(13))
-                                .foregroundStyle(Color.v2DateText)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .textSelection(.enabled)
-                            replyBlock(message.reply)
-                        }
-                        .padding(.vertical, 2)
-                    }
-                } label: {
-                    Text("more messages")
-                }
-                if let tips = model.plan?.tips, !tips.isEmpty {
-                    DisclosureGroup(isExpanded: $showTips) {
-                        ForEach(tips, id: \.self) { tip in
-                            Text(tip)
-                                .font(.lhfSecondary(13))
-                                .foregroundStyle(Color.v2DateText)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    } label: {
-                        Text("posting tips")
-                    }
-                }
-            } header: {
-                SmoothSectionHeader("messages", accent: .smoothCobalt)
-            }
-            .smoothSectionBackground(.smoothCobalt)
-        }
-    }
-
-    // MARK: Feedback
-
-    private var feedbackSection: some View {
-        Section {
-            TextField("what people said, what broke, ideas for smooth", text: $feedbackText, axis: .vertical)
-                .lineLimit(2...6)
-            HStack {
-                Button(feedbackSent ? "sent" : "send") {
-                    let text = feedbackText
-                    Task {
-                        if await model.sendFeedback(text) {
-                            feedbackText = ""
-                            feedbackSent = true
-                            try? await Task.sleep(for: .seconds(2))
-                            feedbackSent = false
-                        }
-                    }
-                }
-                .disabled(feedbackText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isWorking)
-                Spacer()
-            }
-        } header: {
-            SmoothSectionHeader("feedback and ideas", accent: .smoothCobalt)
-        }
-        .smoothSectionBackground(.smoothCobalt)
-    }
-
     // MARK: Account
 
     private var accountSection: some View {
         Section {
+            if let page = model.plan?.page, let url = URL(string: page) {
+                Button {
+                    openURL(url)
+                } label: {
+                    HStack {
+                        Text("my web page \u{2197}")
+                        Spacer()
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
             if model.plan?.isPaused() == true {
                 Button("resume reminders") { Task { await model.pause(weeks: 0) } }
             } else {

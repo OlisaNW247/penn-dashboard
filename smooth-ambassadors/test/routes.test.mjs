@@ -334,6 +334,13 @@ test("the token is nowhere in posts, messages or stickers; only the ref is", asy
   assert.doesNotMatch(page, /opens: \d+ total/);
 });
 
+test("plan.json carries a public share link per channel, never the token", async () => {
+  const plan = await (await get(`/a/${token}/plan.json?anon=fizz&tz=300`)).json();
+  assert.ok(plan.links && typeof plan.links.gc === "string", "links.gc");
+  assert.match(plan.links.gc, new RegExp(`/r/${ref}/s/gc$`));
+  for (const link of Object.values(plan.links)) assert.ok(!link.includes(token), link);
+});
+
 test("the old token share and poster routes are gone and count nothing", async () => {
   const [scansBefore, hitsBefore] = [await scanTotals(), await hits()];
   for (const p of [`/a/${token}/s/fizz`, `/a/${token}/p/ib`]) {
