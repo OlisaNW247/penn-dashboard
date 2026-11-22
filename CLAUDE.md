@@ -2328,6 +2328,14 @@ iOS Debug build of the tree succeeded. Predicted full count after the merge:
 Other sessions were running filtered suites on the Mac at the time (the
 shared-defaults trap), so nothing here is a baseline.**
 
+**Current on `claude/ambassador-header` (2026-11-22, `10b8d5b`: ambassador
+round four merged; then `48afea1` adds only the one-line users count,
+`4bb1282`): 4449 tests / 459 suites, all green, `swift test --no-parallel`
+alone on Marco's Mac (100 s, helper domain cleared first) on `10b8d5b`, and
+the unsigned iOS Debug build of it succeeded; on `48afea1` the 88 ambassador
+tests in 20 suites are green. The 3.5.0 (21) archive is to be cut from
+`48afea1` or later.**
+
 **Current on `claude/ambassador-header` (2026-11-22, `1c044bb`: ambassador
 rounds three and four, two plainly named kinds of post and the one-line users
 count under "Ambassador", fast-forwarded in): 4447 tests / 458 suites, all
