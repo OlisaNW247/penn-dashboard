@@ -7,7 +7,7 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-11-17 on `claude/v12-isolate-ab8b22` (the agent connection switched off for 3.5.0; it stays on `v11`). Before that, 2026-11-12 on `v11` (`origin/v12` merged in: ambassador mode ships in 3.5.0 (21), degree progress stays off). Before that, 2026-11-12 on `v12` (degree: weekly reads, the full view, Wharton concentrations; the Now entry). Before that, 2026-11-10 on `v12` (degree progress rewritten against the real Path@Penn). Before that, 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
+Last updated 2026-11-21 on `claude/ambassador-work-c14201` (ambassador mode cut to four tasks). Before that, 2026-11-17 on `claude/v12-isolate-ab8b22` (the agent connection switched off for 3.5.0; it stays on `v11`). Before that, 2026-11-12 on `v11` (`origin/v12` merged in: ambassador mode ships in 3.5.0 (21), degree progress stays off). Before that, 2026-11-12 on `v12` (degree: weekly reads, the full view, Wharton concentrations; the Now entry). Before that, 2026-11-10 on `v12` (degree progress rewritten against the real Path@Penn). Before that, 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
 backend half went live 2026-11-05 01:20-01:45 UTC, the evening of 2026-11-04
 US Eastern). Before that, 2026-10-28 on `release/3.4.0` (the 3.4.0 release,
 renamed from 3.3.1 that afternoon when PR #16 was folded in). Before
@@ -1176,6 +1176,17 @@ Kept so nobody rebuilds them blind.
   zero-points and optional-title rules.
 - **2026-11-17.** The agent connection switched off for 3.5.0 (`FeatureFlags.agentConnection = false`, `claude/v12-isolate-ab8b22`, `docs/V12_ISOLATION_2026-11-17.md`): the flag already hid Profile, `smooth://link` and both passes; the cached-draft chip and prev's "submitted by you" line, which read the phone's cache and attempt store and not the flag, now guard on `agentSurfacesAllowed`. Nothing deleted; `v11` keeps the feature.
 
+- **2026-11-21.** Ambassador mode cut to the job (Marco, from the build on
+  his phone): the page is four task rows (anonymous chats, group chats,
+  posters, feedback) that each open a sheet with a "done", then numbers, the
+  reminder (twice a week by default) and the account rows; the job line,
+  "what works", "help us help you" and the messages section are gone, the
+  feed-still and post-result sheets deleted; a once-per-install intro after
+  the first sign-in; "Ambassador" before the medal in the header. On
+  `claude/ambassador-work-c14201`, compiled and tested, not on a phone. The
+  posters themselves are being redone on `claude/ambassador-posters-f068d6`
+  (retire the Penn-specific designs, add Marco's two serious ones, new
+  generic ones for his approval); nothing deployed.
 - **2026-11-19.** The ambassador post bank is two posts. Olisa had every
   written post removed and kept only his two real Sidechat posts (the
   question, the ranking), each with the reply "Smooth for Students on the

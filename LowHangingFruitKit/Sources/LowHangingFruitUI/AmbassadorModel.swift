@@ -101,6 +101,10 @@ final class AmbassadorModel: ObservableObject {
     @Published private(set) var pendingOpen = false
     /// Non-nil only while a recording's stills are going up.
     @Published private(set) var feedProgress: FeedProgress?
+    /// True from a first sign-in until the intro sheet is dismissed.
+    @Published private(set) var introPending = false
+    /// Which of the four tasks is ticked, and for how long (`AmbassadorTaskLog`).
+    @Published private(set) var taskLog = AmbassadorTaskLog()
     /// When the plan was last fetched from the server, for `refreshIfStale`.
     private(set) var planFetchedAt: Date?
 
@@ -119,6 +123,10 @@ final class AmbassadorModel: ObservableObject {
     static let anonAppKey = "ambassador.anonApp"
     static let postedDayKey = "ambassador.postedDayIndex"
     static let fetchedAtKey = "ambassador.planFetchedAt"
+    /// Written once the intro has been shown. Sign-out leaves it alone: the
+    /// intro is for a first sign-in on this install, not for every code.
+    static let introSeenKey = "ambassador.introSeenV1"
+    static let taskLogKey = "ambassador.taskLogV1"
     /// A plan older than this is fetched again when the app becomes active
     /// or the page opens. Half an hour: the numbers move slowly, and the post
     /// changes once a day.
@@ -153,13 +161,17 @@ final class AmbassadorModel: ObservableObject {
         self.removeCode = removeCode
         self.timeZone = timeZone
         self.code = loadCode()
-        self.cadence = AmbassadorReminderCadence(rawValue: defaults.string(forKey: Self.cadenceKey) ?? "") ?? .daily
+        self.cadence = AmbassadorReminderCadence(rawValue: defaults.string(forKey: Self.cadenceKey) ?? "") ?? .twiceWeekly
         let hour = defaults.object(forKey: Self.hourKey) as? Int
         let minute = defaults.object(forKey: Self.minuteKey) as? Int
         self.reminderHour = hour.map { max(0, min(23, $0)) } ?? AmbassadorReminders.defaultHour
         self.reminderMinute = minute.map { max(0, min(59, $0)) } ?? AmbassadorReminders.defaultMinute
         self.anonApp = AmbassadorAnonApp(rawValue: defaults.string(forKey: Self.anonAppKey) ?? "") ?? .fizz
         self.postedDayIndex = defaults.object(forKey: Self.postedDayKey) as? Int
+        if let data = defaults.data(forKey: Self.taskLogKey),
+           let log = try? JSONDecoder().decode(AmbassadorTaskLog.self, from: data) {
+            self.taskLog = log
+        }
         if let data = defaults.data(forKey: Self.planCacheKey), let cached = try? AmbassadorPlan.decode(data) {
             self.plan = cached
         }
@@ -206,6 +218,7 @@ final class AmbassadorModel: ObservableObject {
             code = candidate
             saveCode(candidate)
             store(plan: fetched)
+            if !defaults.bool(forKey: Self.introSeenKey) { introPending = true }
             await ensureReminders()
             return true
         } catch AmbassadorClientError.unknownCode {
@@ -216,6 +229,12 @@ final class AmbassadorModel: ObservableObject {
         return false
     }
 
+    /// The intro sheet was dismissed; it is not shown again on this install.
+    func finishIntro() {
+        defaults.set(true, forKey: Self.introSeenKey)
+        introPending = false
+    }
+
     /// Forgets the code, the cached plan and the local settings, and takes
     /// the reminders back. Nothing is sent to the server: the founder's
     /// roster row is theirs, and "left" is a word for the founders to set.
@@ -224,9 +243,11 @@ final class AmbassadorModel: ObservableObject {
         plan = nil
         planFetchedAt = nil
         postedDayIndex = nil
+        taskLog = AmbassadorTaskLog()
+        introPending = false
         lastError = nil
         removeCode()
-        for key in [Self.planCacheKey, Self.postedDayKey, Self.fetchedAtKey] { defaults.removeObject(forKey: key) }
+        for key in [Self.planCacheKey, Self.postedDayKey, Self.fetchedAtKey, Self.taskLogKey] { defaults.removeObject(forKey: key) }
         NotificationScheduler.reservedForeignSlots = 0
         Task { await removeAllReminders() }
     }
@@ -293,6 +314,45 @@ final class AmbassadorModel: ObservableObject {
         }
     }
 
+    // MARK: The four tasks
+
+    /// The server's day index when the plan has one, else the phone's own
+    /// (days since the epoch in the phone's zone), so a task can be ticked
+    /// before the first plan arrives.
+    private var todayIndex: Int {
+        if let index = plan?.today?.dayIndex { return index }
+        let local = Date().timeIntervalSince1970 + Double(timeZone.secondsFromGMT())
+        return Int((local / 86_400).rounded(.down))
+    }
+
+    func isDone(_ task: AmbassadorTask) -> Bool {
+        if task == .anonChats, postedToday { return true }
+        return taskLog.isDone(task, todayIndex: todayIndex)
+    }
+
+    private func tick(_ task: AmbassadorTask) {
+        taskLog.markDone(task, todayIndex: todayIndex)
+        if let data = try? JSONEncoder().encode(taskLog) { defaults.set(data, forKey: Self.taskLogKey) }
+    }
+
+    /// Ticks `task` at once, on the phone, then tells the server where it has
+    /// something to count: the anonymous post (the existing daily log) and a
+    /// group-chat drop (a `post` in the `gc` channel). Posters and feedback
+    /// send nothing from here (a poster idea and feedback have their own
+    /// calls). A server failure leaves the tick: the ambassador did the job.
+    func markDone(_ task: AmbassadorTask) async {
+        tick(task)
+        switch task {
+        case .anonChats:
+            await markPostedToday()
+        case .groupChats:
+            guard let code else { return }
+            try? await client.send(code: code, action: "post", body: ["channel": "gc", "place": "group chats"])
+        case .posters, .feedback:
+            break
+        }
+    }
+
     func setChecklist(_ key: String, done: Bool) async {
         guard let code else { return }
         // Optimistic: the tick shows at once and is corrected by the next
@@ -321,6 +381,7 @@ final class AmbassadorModel: ObservableObject {
         do {
             try await client.send(code: code, action: "feedback", body: ["body": body])
             lastError = nil
+            tick(.feedback)
             return true
         } catch {
             lastError = "couldn\u{2019}t reach smooth"
@@ -387,6 +448,12 @@ final class AmbassadorModel: ObservableObject {
         }
     }
 
+    /// The feed recording and post result sheets went on 2026-11-21 at Marco's
+    /// word (the page is four tasks now), but the server still has both routes
+    /// and the founder page reads what they stored, so these two methods, the
+    /// client's `sendCapture` and `FeedRecordingFrames` stay, tested, for the
+    /// day a sheet comes back.
+    ///
     /// Uploads the stills of one screen recording, in order, under one new
     /// batch id (the server groups by it) with `seq` 0...n-1, at most 16. Stops
     /// at the first refusal: a daily limit or a dead code will not get better
@@ -465,7 +532,7 @@ final class AmbassadorModel: ObservableObject {
         guard let code else { return }
         do {
             try await client.send(code: code, action: "pause", body: ["weeks": String(weeks)])
-            await setCadence(weeks > 0 ? .off : .daily)
+            await setCadence(weeks > 0 ? .off : .twiceWeekly)
             await refresh()
         } catch {
             lastError = "couldn\u{2019}t reach smooth"

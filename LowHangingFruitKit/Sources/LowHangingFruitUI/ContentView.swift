@@ -947,8 +947,8 @@ struct ContentView: View {
     /// The title once the student has signed in as an ambassador (Marco,
     /// 2026-11-12: "Replace the Smooth ___ {day} with Ambassador with an
     /// underline, and a special icon for them. This is only when they become
-    /// an ambassador"). The badge, then "Ambassador" in the weekday's face at
-    /// the same lockstep size, with the wordmark's own gradient squiggle under
+    /// an ambassador"). "Ambassador" in the weekday's face at the same lockstep
+    /// size, then the badge to its right (Marco, 2026-11-21; it led until then), with the wordmark's own gradient squiggle under
     /// the word so it reads as Smooth's. Nothing else in the header moves;
     /// signing out brings "Smooth {weekday}" back on the next draw, because
     /// `ambassador` is observed.
@@ -964,7 +964,8 @@ struct ContentView: View {
             text: "Ambassador",
             font: .lhfHeaderTitle(pointSize),
             badge: Self.ambassadorBadgeSymbol,
-            badgeColor: .smoothMarigold
+            badgeColor: .smoothMarigold,
+            badgeTrailing: true
         ) {
             path = [.profile, .ambassador]
         }
@@ -1637,6 +1638,11 @@ struct SmoothWordmark: View {
     /// squircle (`WordmarkBadge`), under the same squiggle and shine.
     var badge: String? = nil
     var badgeColor: Color = .smoothMarigold
+    /// The badge after the word instead of before it (the ambassador header
+    /// since 2026-11-21, Marco: "move the ambassador to the left and then
+    /// have the ambassador icon to the right of it"). The squiggle and the
+    /// shine cover the whole row either way.
+    var badgeTrailing: Bool = false
     /// Runs on every tap after the ripple or flip has been started.
     var onTap: (() -> Void)? = nil
 
@@ -1654,13 +1660,16 @@ struct SmoothWordmark: View {
     /// drawn, and as the mask the shine sweeps through.
     private var letters: some View {
         HStack(alignment: .center, spacing: 6) {
-            if let badge {
+            if let badge, !badgeTrailing {
                 WordmarkBadge(symbol: badge, color: badgeColor, size: pointSize * 1.25)
             }
             if let font {
                 Text(text).font(font)
             } else {
                 Text(text).font(.lhfWordmark(pointSize))
+            }
+            if let badge, badgeTrailing {
+                WordmarkBadge(symbol: badge, color: badgeColor, size: pointSize * 1.25)
             }
         }
     }
