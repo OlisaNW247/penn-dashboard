@@ -5,18 +5,19 @@ import { handleAmbassadors } from "../worker/ambassadors.js";
 import migration1 from "../migrations/0001_ambassadors.sql";
 import migration2 from "../migrations/0002_poster_ideas.sql";
 import migration3 from "../migrations/0003_captures.sql";
+import migration4 from "../migrations/0004_installs.sql";
 
 // The platform has no migration step we can rely on, and the existing Worker
 // already creates its table lazily with CREATE TABLE IF NOT EXISTS, so the
 // ambassador tables are created the same way. Every statement in the migration
-// files (0001 the roster, 0002 poster ideas, 0003 captures and suggestions) is CREATE ... IF NOT EXISTS, so
+// files (0001 the roster, 0002 poster ideas, 0003 captures and suggestions, 0004 install counts) is CREATE ... IF NOT EXISTS, so
 // running them on each cold isolate is idempotent, and an existing deployment gets
-// the 0002 and 0003 tables on their first request with no manual step.
+// the 0002 to 0004 tables on their first request with no manual step.
 let schemaReady = null;
 
 function ensureSchema(db) {
   if (!schemaReady) {
-    const statements = [migration1, migration2, migration3]
+    const statements = [migration1, migration2, migration3, migration4]
       .join("\n")
       .split("\n")
       .filter((line) => !line.trim().startsWith("--"))
@@ -37,8 +38,9 @@ export async function handle(request, env, ctx) {
   const parts = pathname.split("/").filter(Boolean);
   // /a (private), /f (founders) and /r (public share and sticker links) are
   // ours; the leaderboard only at exactly /api/leaderboard, so near-misses
-  // such as /api/leaderboard/ stay the host's 404.
-  const mine = parts[0] === "a" || parts[0] === "f" || parts[0] === "r" || pathname === "/api/leaderboard";
+  // such as /api/leaderboard/ stay the host's 404. /api/install is the app's
+  // anonymous install count, likewise only at exactly that path.
+  const mine = parts[0] === "a" || parts[0] === "f" || parts[0] === "r" || pathname === "/api/leaderboard" || pathname === "/api/install";
   if (!mine) return null; // before touching env.DB: every other route is the host's
   await ensureSchema(env.DB);
   return handleAmbassadors(request, env, ctx);

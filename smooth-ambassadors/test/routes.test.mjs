@@ -39,7 +39,7 @@ before(async () => {
     },
   });
   const db = await mf.getD1Database("DB");
-  const sql = ["0001_ambassadors.sql", "0002_poster_ideas.sql", "0003_captures.sql"].map((f) => readFileSync(join(root, "migrations", f), "utf8")).join("\n");
+  const sql = ["0001_ambassadors.sql", "0002_poster_ideas.sql", "0003_captures.sql", "0004_installs.sql"].map((f) => readFileSync(join(root, "migrations", f), "utf8")).join("\n");
   const clean = sql.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n");
   for (const stmt of clean.split(";").map((s) => s.trim()).filter(Boolean)) {
     await db.prepare(stmt).run();
