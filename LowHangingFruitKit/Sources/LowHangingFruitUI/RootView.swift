@@ -82,11 +82,19 @@ struct RootCore: View {
             }
         }
         .task {
+            // Recorded before anything waits on the network: the first launch
+            // of this build is the only moment "onboarding already complete"
+            // proves an install pre-dates it.
+            InstallCountReporter.shared.recordFirstLaunch(onboardingComplete: state.hasCompletedOnboarding)
             await updateGate.refresh()
+            await reportInstallCountIfDue()
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
-                Task { await updateGate.refresh() }
+                Task {
+                    await updateGate.refresh()
+                    await reportInstallCountIfDue()
+                }
                 // Ambassador mode: put its daily reminder back if something
                 // cleared the pending queue, and fetch a fresh plan if the
                 // cached one is old. A no-op when nobody is signed in.
@@ -125,6 +133,22 @@ struct RootCore: View {
 #if os(macOS)
         .frame(minWidth: 480, minHeight: 600)
 #endif
+    }
+
+    /// The anonymous install count (`InstallCountReporter`). It sits here
+    /// because this view is foreground-only (the background refresh never
+    /// builds it), runs at a cold launch (`.task`) and on every return to the
+    /// foreground, and is asked only after the update check has settled, so a
+    /// build behind the wall (`isWalled`) sends nothing. Preview and demo data
+    /// are refused by the rule through `isUsingFixtureData`.
+    private func reportInstallCountIfDue() async {
+        guard !isWalled else { return }
+        await InstallCountReporter.shared.reportIfDue(
+            onboardingComplete: state.hasCompletedOnboarding,
+            canvasConnected: state.isCanvasConnected,
+            usingFixtureData: state.isUsingFixtureData,
+            host: state.canvasInstallation.host
+        )
     }
 
     /// The feedback card's notice and its two actions, or nil when there is

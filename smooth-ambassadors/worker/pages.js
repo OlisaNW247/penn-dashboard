@@ -167,6 +167,7 @@ rbtn.disabled=false})}
 export function ambassadorPage({
   amb,
   stats,
+  installs = null,
   ideas = { total: 0, today: 0 },
   designScans = {},
   playbook = null,
@@ -309,10 +310,11 @@ export function ambassadorPage({
       <div class="stats">
         <div class="stat t-tomato"><b>${stats.linkOpens + stats.posterOpens}</b><span>your link opens</span><small>${stats.linkOpensRecent + stats.posterOpensRecent} in ${stats.days}d</small></div>
         <div class="stat t-teal"><b>${stats.schoolScansTotal}</b><span>${esc(schoolLower)} poster scans</span><small>${stats.schoolScansRecent} in ${stats.days}d</small></div>
+        ${installs ? `<div class="stat t-cobalt"><b>${installs.total}</b><span>${esc(schoolLower)} downloads</span><small>${installs.recent} new in ${stats.days}d</small></div>` : ""}
         <div class="stat t-marigold"><b>${stats.drops}</b><span>posters you've put up</span></div>
         <div class="stat t-grape"><b>${stats.posts}</b><span>posts you've logged</span></div>
       </div>
-      <p class="small muted">opens are taps, repeats included, not people. <a href="${attr(dashboardHref)}" target="_blank" rel="noopener">${esc(schoolLower)} scan dashboard (new tab)</a></p>
+      <p class="small muted">opens are taps, repeats included, not people. downloads are students who connected canvas, counted since the app update that added the count. <a href="${attr(dashboardHref)}" target="_blank" rel="noopener">${esc(schoolLower)} scan dashboard (new tab)</a></p>
       <p class="small muted">for dms and group chats: <button class="small" data-copy="${attr(links.share("dm"))}">copy my link</button></p>
     </section>
 
@@ -647,9 +649,13 @@ export function founderPage({ stats, origin, secret, flash, created }) {
 
     <section class="sec t-teal"><h2 id="perf">by school <span class="muted">last ${stats.days} days</span></h2>
     <table>
-      <tr><th>#</th><th>school</th><th class="num">poster scans</th><th class="num">link opens</th><th class="num">all-time</th><th class="num">ambs</th></tr>
-      ${lb.schools.map((s) => `<tr><td>${s.rank}</td><td>${esc(s.name)}</td><td class="num">${s.recent}</td><td class="num">${s.linkOpensRecent}</td><td class="num">${s.total}</td><td class="num">${s.ambassadors}</td></tr>`).join("")}
+      <tr><th>#</th><th>school</th><th class="num">poster scans</th><th class="num">link opens</th><th class="num">all-time</th><th class="num">downloads</th><th class="num">ambs</th></tr>
+      ${lb.schools.map((s) => { const d = stats.installsBySchool?.[s.school]; return `<tr><td>${s.rank}</td><td>${esc(s.name)}</td><td class="num">${s.recent}</td><td class="num">${s.linkOpensRecent}</td><td class="num">${s.total}</td><td class="num">${d ? `${d.total} <span class="muted">(${d.recent} new)</span>` : "&ndash;"}</td><td class="num">${s.ambassadors}</td></tr>`; }).join("")}
     </table>
+    <div class="card"><h3>other schools <span class="muted">downloads from hosts no school maps to</span></h3>
+      ${(stats.installsUnmapped ?? []).length ? `<table class="small"><tr><th>host</th><th class="num">total</th><th class="num">new ${stats.days}d</th></tr>
+      ${stats.installsUnmapped.map((h) => `<tr><td>${esc(h.host)}</td><td class="num">${h.total}</td><td class="num">${h.recent}</td></tr>`).join("")}</table>` : `<p class="small muted">none yet.</p>`}
+    </div>
     <details><summary>by design</summary>
       <table class="small"><tr><th>school</th><th>design</th><th class="num">${stats.days}d</th><th class="num">total</th></tr>
       ${stats.designs.filter((d) => d.total || d.recent).map((d) => `<tr><td>${esc(SCHOOLS[d.school].name)}</td><td>${esc(d.design)}</td><td class="num">${d.recent}</td><td class="num">${d.total}</td></tr>`).join("")}

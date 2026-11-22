@@ -21,9 +21,14 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
         public var posts: Int
         /// The window "recent" counts over, in days.
         public var days: Int
+        /// Students who have set Smooth up at the ambassador's school, and
+        /// how many of them in the last `days`. Absent from an older server.
+        public var schoolInstalls: Int?
+        public var schoolInstallsRecent: Int?
 
         public init(linkOpens: Int = 0, linkOpensRecent: Int = 0, schoolScans: Int = 0,
-                    schoolScansRecent: Int = 0, drops: Int = 0, posts: Int = 0, days: Int = 14) {
+                    schoolScansRecent: Int = 0, drops: Int = 0, posts: Int = 0, days: Int = 14,
+                    schoolInstalls: Int? = nil, schoolInstallsRecent: Int? = nil) {
             self.linkOpens = linkOpens
             self.linkOpensRecent = linkOpensRecent
             self.schoolScans = schoolScans
@@ -31,6 +36,8 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
             self.drops = drops
             self.posts = posts
             self.days = days
+            self.schoolInstalls = schoolInstalls
+            self.schoolInstallsRecent = schoolInstallsRecent
         }
     }
 

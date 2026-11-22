@@ -495,6 +495,9 @@ struct AmbassadorPage: View {
             Section {
                 numberRow("your link opens", n.linkOpens, recent: n.linkOpensRecent, days: n.days)
                 numberRow("\(plan.schoolLabel) poster scans", n.schoolScans, recent: n.schoolScansRecent, days: n.days)
+                if let installs = n.schoolInstalls {
+                    numberRow("\(plan.schoolLabel) downloads", installs, recent: n.schoolInstallsRecent, days: n.days)
+                }
                 numberRow("posts logged", n.posts, recent: nil, days: n.days)
             } header: {
                 SmoothSectionHeader("numbers", accent: .smoothCobalt)

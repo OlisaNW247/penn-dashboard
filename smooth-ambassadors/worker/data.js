@@ -394,6 +394,112 @@ export async function schoolDesignScans(env, school) {
   return Object.fromEntries(results.map((r) => [r.poster, r.total]));
 }
 
+// ---- install counts: one anonymous tally per school host, sent by the app after
+// a student connects Canvas. Two limits keep a public, unauthenticated endpoint
+// from being used to flood the table or to inflate a school's number, and both
+// are enforced inside the write statement, never by reading a count first. A
+// count and then an insert is two statements, and requests sent at once all read
+// the same count before any of them writes (poster ideas were overrun that way,
+// 17 stored against a limit of 5). The wrong fix is a lock or a retry loop in the
+// Worker: separate isolates share no memory to lock.
+//
+// At most 30 counted per network per host per day. The "network" is a bucket,
+// the SHA-256 of a salt that is random per UTC day and deleted when the day is
+// over, so after that nobody can hash an address and find its bucket.
+export const INSTALL_PER_NETWORK_DAILY_LIMIT = 30;
+// At most 2,000 distinct hosts in `installs`. The host is the one thing the
+// caller chooses freely, so without a ceiling one script could write a new row
+// per request forever. A new host beyond it is silently not counted; a host
+// already present keeps counting.
+export const INSTALL_DISTINCT_HOST_LIMIT = 2000;
+
+const utcDay = (date) => date.toISOString().slice(0, 10);
+
+async function installBucket(env, day, ip, host) {
+  const salt = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+  await env.DB.prepare("INSERT OR IGNORE INTO install_salts (day, salt) VALUES (?1, ?2)").bind(day, salt).run();
+  const row = await env.DB.prepare("SELECT salt FROM install_salts WHERE day = ?1").bind(day).first();
+  const bytes = new TextEncoder().encode(`${row.salt}|${ip}|${host}`);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Returns true when the install was counted. A limit swallowing it is a normal
+// false, and the caller still answers 200.
+export async function recordInstall(env, { host, kind, ip, now = new Date() }) {
+  const day = utcDay(now);
+  const yesterday = utcDay(new Date(now.getTime() - 86400000));
+  // Opportunistic: whoever writes next removes what is over. The tally in
+  // `installs` is the only thing that outlives the day.
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM install_seen WHERE day < ?1").bind(yesterday),
+    env.DB.prepare("DELETE FROM install_salts WHERE day < ?1").bind(yesterday),
+  ]);
+  const bucket = await installBucket(env, day, ip || "noip", host);
+  // The DO UPDATE only fires while n is under the limit, so the statement
+  // itself decides; RETURNING gives a row only when it wrote.
+  const seen = await env.DB.prepare(
+    `INSERT INTO install_seen (day, bucket, n) VALUES (?1, ?2, 1)
+     ON CONFLICT(day, bucket) DO UPDATE SET n = n + 1 WHERE n < ?3
+     RETURNING n`,
+  )
+    .bind(day, bucket, INSTALL_PER_NETWORK_DAILY_LIMIT)
+    .all();
+  if (!seen.results?.length) return false;
+  const r = await env.DB.prepare(
+    `INSERT INTO installs (host, day, kind, n)
+     SELECT ?1, ?2, ?3, 1
+     WHERE EXISTS (SELECT 1 FROM installs WHERE host = ?1)
+        OR (SELECT COUNT(DISTINCT host) FROM installs) < ?4
+     ON CONFLICT(host, day, kind) DO UPDATE SET n = n + 1`,
+  )
+    .bind(host, day, kind, INSTALL_DISTINCT_HOST_LIMIT)
+    .run();
+  return (r.meta?.changes ?? 0) > 0;
+}
+
+const placeholders = (n, from = 1) => Array.from({ length: n }, (_, i) => `?${i + from}`).join(",");
+
+// { total, recent } for one school: total is every kind and every day, recent
+// is kind 'new' within the last `days` UTC days. null when the school has no
+// mapped host, so a page can hide the number instead of showing a false zero.
+export async function installTotals(env, school, days = 14, now = new Date()) {
+  const hosts = SCHOOLS[school]?.canvasHosts;
+  if (!hosts?.length) return null;
+  const since = utcDay(new Date(now.getTime() - days * 86400000));
+  const row = await env.DB.prepare(
+    `SELECT COALESCE(SUM(n), 0) AS total,
+            COALESCE(SUM(CASE WHEN kind = 'new' AND day >= ?1 THEN n ELSE 0 END), 0) AS recent
+     FROM installs WHERE host IN (${placeholders(hosts.length, 2)})`,
+  )
+    .bind(since, ...hosts)
+    .first();
+  return { total: row?.total ?? 0, recent: row?.recent ?? 0 };
+}
+
+export async function installsBySchool(env, days = 14, now = new Date()) {
+  const out = {};
+  for (const school of Object.keys(SCHOOLS)) out[school] = await installTotals(env, school, days, now);
+  return out;
+}
+
+const mappedHosts = () => Object.values(SCHOOLS).flatMap((s) => s.canvasHosts ?? []);
+
+// Hosts no school maps to, most installs first: what a founder reads to decide
+// which school to add next.
+export async function installsUnmapped(env, limit = 30, days = 14, now = new Date()) {
+  const mapped = mappedHosts();
+  const since = utcDay(new Date(now.getTime() - days * 86400000));
+  const { results } = await env.DB.prepare(
+    `SELECT host, SUM(n) AS total, SUM(CASE WHEN kind = 'new' AND day >= ?1 THEN n ELSE 0 END) AS recent
+     FROM installs ${mapped.length ? `WHERE host NOT IN (${placeholders(mapped.length, 3)})` : ""}
+     GROUP BY host ORDER BY total DESC, host LIMIT ?2`,
+  )
+    .bind(since, limit, ...mapped)
+    .all();
+  return results.map((r) => ({ host: r.host, total: r.total, recent: r.recent }));
+}
+
 // Everything one ambassador is allowed to see: their own numbers only.
 export async function ambassadorStats(env, amb, days = 14) {
   const since = sinceIso(days);
@@ -545,6 +651,8 @@ export async function founderStats(env, days = 14) {
     suggestions: await listSuggestions(env),
     designs,
     leaderboard: await schoolLeaderboard(env, days),
+    installsBySchool: await installsBySchool(env, days),
+    installsUnmapped: await installsUnmapped(env, 30, days),
   };
 }
 

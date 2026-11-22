@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { Miniflare } from "miniflare";
 import { ideaTests } from "./ideas-suite.mjs";
 import { captureTests } from "./captures-suite.mjs";
+import { installTests } from "./installs-suite.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FOUNDER = "test-founder-token-0123456789";
@@ -489,6 +490,14 @@ ideaTests({
 });
 
 captureTests({
+  test,
+  skip: false,
+  founder: FOUNDER,
+  db: () => mf.getD1Database("DB"),
+  req: (path, init) => mf.dispatchFetch("https://example.test" + path, { redirect: "manual", ...init }),
+});
+
+installTests({
   test,
   skip: false,
   founder: FOUNDER,
