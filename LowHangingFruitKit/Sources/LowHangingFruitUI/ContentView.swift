@@ -921,6 +921,18 @@ struct ContentView: View {
                 // The broom first (owner's sketch, 2026-11-09): three buttons
                 // now share the row with "Smooth Wednesday", so all three are
                 // 42pt and 8pt apart instead of 48 and 10 (`headerButtonSize`).
+                // The medal is a button of its own, first in the row, so all four
+                // squircles are identical and 8pt apart (Marco, 2026-11-22:
+                // "space all the icons evenly"). `SmoothWordmark`'s badge
+                // parameters are unused now.
+                if ambassador.isSignedIn {
+                    Button { path = [.ambassador] } label: {
+                        headerButton(icon: Self.ambassadorBadgeSymbol, color: .smoothMarigold)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("ambassador")
+                    .help("ambassador")
+                }
                 sweeperButton
                 // Where the grades button used to be (Grade Watcher was removed
                 // 2026-10-18, `FeatureFlags.gradeWatcher`). Always here, even
@@ -973,11 +985,7 @@ struct ContentView: View {
         SmoothWordmark(
             pointSize: pointSize,
             text: "Ambassador",
-            font: .lhfHeaderTitle(pointSize),
-            badge: Self.ambassadorBadgeSymbol,
-            badgeColor: .smoothMarigold,
-            badgeTrailing: true,
-            badgeSize: Self.headerButtonSize
+            font: .lhfHeaderTitle(pointSize)
         ) {
             path = [.ambassador]
         }

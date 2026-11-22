@@ -504,7 +504,7 @@ struct AmbassadorModelTests {
         #expect(NotificationScheduler.reservedForeignSlots == 5)
     }
 
-    @Test("a first sign-in raises the intro once; finishing it clears it; sign out keeps it seen")
+    @Test("every sign-in raises the intro; finishing it clears it")
     func intro() async {
         await withModel { model, _, _, defaults in
             #expect(!model.introPending)
@@ -512,10 +512,9 @@ struct AmbassadorModelTests {
             #expect(model.introPending)
             model.finishIntro()
             #expect(!model.introPending)
-            #expect(defaults.bool(forKey: AmbassadorModel.introSeenKey))
             model.signOut()
             await model.signIn(Self.code)
-            #expect(!model.introPending)
+            #expect(model.introPending)
         }
     }
 
@@ -1049,7 +1048,11 @@ struct AmbassadorWiringTests {
         #expect(body.contains("Slider("))
         #expect(body.contains("posters put up"))
         #expect(!body.contains("AmbassadorDoneRow(task: .posters"))
-        #expect(sheets.contains("1 a day"))
+        #expect(sheets.contains("goal: 1 post a day"))
+        #expect(sheets.contains("streak: "))
+        #expect(!sheets.contains("more messages"))
+        #expect(!sheets.contains("at least 1"))
+        #expect(try uiSource("AmbassadorIntroView.swift").contains("downloads at"))
         #expect(sheets.contains("posted today"))
         #expect(sheets.contains("AmbassadorGuidance.bundled"))
         #expect(sheets.contains("example post"))
@@ -1335,10 +1338,12 @@ struct AmbassadorHeaderTests {
         // The same view as the wordmark, so a tap squiggles and shines, with
         // the medal as a header-style squircle, and the tap opens the page.
         #expect(source.contains("text: \"Ambassador\""))
-        #expect(source.contains("badge: Self.ambassadorBadgeSymbol"))
+        #expect(source.contains("headerButton(icon: Self.ambassadorBadgeSymbol"))
+        let titleStart = try #require(source.range(of: "private func ambassadorTitle"))
+        let titleBody = String(source[titleStart.lowerBound...].prefix(1400))
+        #expect(!titleBody.contains("badge: Self.ambassadorBadgeSymbol"))
         #expect(source.contains("path = [.ambassador]"))
         #expect(!source.contains("path = [.profile, .ambassador]"))
-        #expect(source.contains("badgeSize: Self.headerButtonSize"))
         #expect(source.contains("var badgeSize: CGFloat? = nil"))
         #expect(source.contains("AmbassadorStatsLine("))
         #expect(!source.contains("AmbassadorStatsCard("))
@@ -1348,7 +1353,6 @@ struct AmbassadorHeaderTests {
         #expect(try uiSource("AmbassadorStatsCard.swift").contains("users at \\(schoolLabel) so far"))
         #expect(source.contains("struct WordmarkBadge: View"))
         #expect(source.contains("ambassadorBadgeSymbol = \"medal.fill\""))
-        #expect(source.contains("badgeTrailing: true"))
     }
 }
 
@@ -1392,6 +1396,37 @@ struct AmbassadorGoalsTests {
     }
 }
 
+@Suite("Ambassador streak and link fill")
+struct AmbassadorStreakTests {
+    @Test("the streak counts back from today, or yesterday while today is open")
+    func streak() {
+        var log = AmbassadorTaskLog()
+        #expect(log.anonStreak(todayIndex: 100) == 0)
+        log.markDone(.anonChats, todayIndex: 100)
+        #expect(log.anonStreak(todayIndex: 100) == 1)
+        log.markDone(.anonChats, todayIndex: 99)
+        log.markDone(.anonChats, todayIndex: 98)
+        #expect(log.anonStreak(todayIndex: 100) == 3)
+        #expect(log.anonStreak(todayIndex: 101) == 3)
+        #expect(log.anonStreak(todayIndex: 102) == 0)
+        var gap = AmbassadorTaskLog()
+        gap.markDone(.anonChats, todayIndex: 99)
+        gap.markDone(.anonChats, todayIndex: 98)
+        #expect(gap.anonStreak(todayIndex: 100) == 2)
+        gap.markDone(.anonChats, todayIndex: 95)
+        #expect(gap.anonStreak(todayIndex: 100) == 2)
+        var future = AmbassadorTaskLog()
+        future.markDone(.anonChats, todayIndex: 105)
+        #expect(future.anonStreak(todayIndex: 100) == 0)
+    }
+
+    @Test("filled replaces every {link}")
+    func fill() {
+        #expect(AmbassadorGuidance.filled("a {link} b {link}", link: "L") == "a L b L")
+        #expect(AmbassadorGuidance.filled("none", link: "L") == "none")
+    }
+}
+
 @Suite("Ambassador guidance in the plan")
 struct AmbassadorGuidancePlanTests {
     static let base = #"{"name":"Maya","school":"uva""#
@@ -1399,7 +1434,7 @@ struct AmbassadorGuidancePlanTests {
     @Test("guidance decodes; a malformed kind or example is dropped, not the plan")
     func decodes() throws {
         let json = Self.base + #"""
-        ,"guidance":{"test":"if it reads like an ad, it's an ad.","kinds":[
+        ,"guidance":{"footer":"f","kinds":[
           {"key":"a","label":"plug","example":{"text":"t","reply":"x"},"how":"h"},
           {"key":"b","label":"sneak","example":{"text":"t2"}},
           {"key":"bad","label":"no example"},
@@ -1407,7 +1442,7 @@ struct AmbassadorGuidancePlanTests {
         """#
         let plan = try AmbassadorPlan.decode(Data(json.utf8))
         let guidance = try #require(plan.guidance)
-        #expect(guidance.test == "if it reads like an ad, it's an ad.")
+        #expect(guidance.footer == "f")
         #expect(guidance.kinds.map(\.key) == ["a", "b"])
         #expect(guidance.kinds[0].how == "h")
         #expect(guidance.kinds[0].example.text == "t")

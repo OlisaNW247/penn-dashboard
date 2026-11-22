@@ -82,6 +82,20 @@ public struct AmbassadorTaskLog: Codable, Equatable, Sendable {
         if task == .anonChats { anonDays.insert(todayIndex) }
     }
 
+    /// Consecutive days with a post, counting back from today, or from
+    /// yesterday while today is not posted yet (a streak is not broken until
+    /// the day is over). A future index is ignored.
+    public func anonStreak(todayIndex: Int) -> Int {
+        var day = anonDays.contains(todayIndex) ? todayIndex : todayIndex - 1
+        var n = 0
+        while anonDays.contains(day) { n += 1; day -= 1 }
+        return n
+    }
+
+    // `anonPostsInLastWeek`, `anonWeeklyMinimumMet` and `anonPostedDays` are
+    // read by nothing in the UI since 2026-11-22 (the sheet shows the streak);
+    // kept, with their tests, in case the week view returns.
+
     /// Posts logged on today and the six days before it. A future index never
     /// counts, like `isDone`.
     public func anonPostsInLastWeek(todayIndex: Int) -> Int {
