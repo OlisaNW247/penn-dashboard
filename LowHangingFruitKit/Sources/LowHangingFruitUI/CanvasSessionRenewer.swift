@@ -21,7 +21,8 @@ import WebKit
 /// (docs/CANVAS_LOGIN_DIAGNOSIS.md, docs/CANVAS_LOGIN_HARDENING.md group 3a)
 /// — rule 1 amended below for the "stay signed in" feature, rules 2–6 kept
 /// verbatim:
-/// 1. **One `webView.load(URLRequest)` per attempt, PLUS — as of "stay
+/// 1. **One `webView.load(URLRequest)` per attempt (an app-link reissue of
+///    that same navigation, see `RenewalNavigationDelegate`, is part of it), PLUS — as of "stay
 ///    signed in" (CLAUDE.md) — at most one JavaScript submission per
 ///    attempt, of the IdP's *credential* form (`j_username`/`j_password`),
 ///    guarded both by an instance flag (`hasSubmittedCredentialsThisAttempt`)
@@ -927,6 +928,7 @@ final class CanvasSessionRenewer {
         let delegate = RenewalNavigationDelegate(
             waiter: waiter,
             canvasHost: installation.host,
+            appLinkGuardHost: installation.host,
             // Called for every `didFinish` that did NOT land on Canvas.
             // Returning `true` tells the delegate to settle the wait now
             // (classified below, once `waiter.wait()` returns); `false`
@@ -1425,13 +1427,24 @@ final class SettleWaiter {
 ///    calls `webView.load(...)` a SECOND time on a specific failure pattern
 ///    (the duplicate-POST dead end it self-heals from) — exactly the kind of
 ///    extra navigation rule 1 (GET-only, one `load` call per attempt) forbids
-///    for this class. A local delegate that only ever observes and never
-///    re-navigates is the only way to guarantee that.
+///    for this class. A local delegate that never steers the chain is the
+///    only way to guarantee that.
 ///
-/// This delegate still unconditionally `.allow`s every navigation decision
-/// (same posture as `LoginNavigationObserver`) — it never cancels, redirects,
-/// or otherwise steers the SAML chain; it only watches for the navigation to
-/// settle.
+/// This delegate `.allow`s every navigation decision, with ONE named
+/// exception (2026-11-22): the app-link reissue. On a phone with the Canvas
+/// Student app installed, iOS hands the SAML return hop (IdP back to the
+/// Canvas host) to that app as a universal link; the renewer then sees
+/// `WebKitErrorDomain/102`, the attempt ends `landedOnLoginPage`, and the
+/// app opens in front of the student (Marco's phone, 2026-11-22 00:57 UTC).
+/// So a main-frame arrival that `AppLinkGuard.needsAppLinkGuard` flags is
+/// cancelled and replayed as a programmatic `load` (a GET as is, a POST
+/// rebuilt from the IdP's own form, because `navigationAction.request`
+/// carries no body). The reissue replays the very navigation WebKit was
+/// about to hand away and adds no new destination, so it is part of the
+/// same navigation and not a second one for rule 1; it is capped per
+/// attempt (`AppLinkGuard.maxAppLinkReissues`; this delegate lives for one
+/// attempt, so the count starts at zero each time). Everything else is
+/// observed only.
 @MainActor
 private final class RenewalNavigationDelegate: NSObject, WKNavigationDelegate {
     private let waiter: SettleWaiter
@@ -1446,14 +1459,20 @@ private final class RenewalNavigationDelegate: NSObject, WKNavigationDelegate {
     /// (`detectFormScript`) before this delegate can tell a real credential
     /// form apart from a same-host, same-path Duo hand-off/return page.
     private let onNonCanvasFinish: (WKWebView) async -> Bool
+    /// The host an installed app may claim (the installation's own host).
+    private let appLinkGuardHost: String
+    /// Reissues made by this delegate, i.e. during this one attempt.
+    private var appLinkReissueCount = 0
 
     init(
         waiter: SettleWaiter,
         canvasHost: String,
+        appLinkGuardHost: String? = nil,
         onNonCanvasFinish: @escaping (WKWebView) async -> Bool
     ) {
         self.waiter = waiter
         self.canvasHost = canvasHost
+        self.appLinkGuardHost = appLinkGuardHost ?? canvasHost
         self.onNonCanvasFinish = onNonCanvasFinish
     }
 
@@ -1549,7 +1568,53 @@ private final class RenewalNavigationDelegate: NSObject, WKNavigationDelegate {
         decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
     ) {
-        decisionHandler(.allow)
+        guard navigationAction.targetFrame?.isMainFrame == true,
+              let url = navigationAction.request.url,
+              AppLinkGuard.needsAppLinkGuard(
+                destinationHost: url.host,
+                currentHost: webView.url?.host,
+                guardHost: appLinkGuardHost,
+                navigationType: navigationAction.navigationType,
+                hasReissueMarker: navigationAction.request.value(forHTTPHeaderField: AppLinkGuard.reissueMarkerHeader) != nil
+              ) else {
+            decisionHandler(.allow)
+            return
+        }
+        guard AppLinkGuard.reissueAllowed(count: appLinkReissueCount) else {
+            Self.logGuard("app-link guard: cap reached, allowed")
+            decisionHandler(.allow)
+            return
+        }
+        appLinkReissueCount += 1
+
+        guard (navigationAction.request.httpMethod ?? "GET") == "POST" else {
+            Self.logGuard("app-link guard: reissued GET")
+            decisionHandler(.cancel)
+            webView.load(AppLinkGuard.reissuedRequest(url: url, method: "GET", body: nil))
+            return
+        }
+        // A POST's body is only in the on-screen form; ask the source frame.
+        let script = AppLinkGuard.formSerializerScript(targetURL: url)
+        webView.evaluateJavaScript(script, in: navigationAction.sourceFrame, in: .page) { result in
+            if case .success(let value) = result,
+               let dict = value as? [String: Any],
+               let action = dict["action"] as? String,
+               let body = dict["body"] as? String {
+                Self.logGuard("app-link guard: reissued POST")
+                decisionHandler(.cancel)
+                webView.load(AppLinkGuard.reissuedRequest(url: URL(string: action) ?? url, method: "POST", body: body))
+            } else {
+                Self.logGuard("app-link guard: form not found, allowed")
+                decisionHandler(.allow)
+            }
+        }
+    }
+
+    /// Fixed words only; never a URL, cookie or form value.
+    private static func logGuard(_ line: String) {
+        #if DEBUG
+        DebugRenewalLog.record(line)
+        #endif
     }
 
     func webView(

@@ -4739,6 +4739,13 @@ itself.
   a POST body on that request, so the SAML POST would arrive empty. The
   guard rebuilds the POST from the identity provider's form in the page
   before re-issuing it, and allows the navigation unchanged when it cannot.
+  **The hidden renewer needed the same guard** (2026-11-22): on Marco's
+  phone a forced hidden sign-in reached Duo, passed, and its return hop to
+  Canvas opened the Canvas Student app in front of him; the renewer's
+  delegate had allowed every navigation on purpose. The pure guard is now
+  `AppLinkGuard`, shared by both (Stay signed in, Known gaps). The 2026-10-08
+  observation that the Canvas app "did not take the hidden renewer's return
+  hop" was one phone on one day, not a rule.
 - **`NLEmbedding.sentenceEmbedding(for:)` blocks the calling thread while
   iOS downloads the asset.** On a fresh install (2026-09-12, the first
   Smooth build, the app deleted and reinstalled for the icon) the first
@@ -5975,9 +5982,18 @@ none is a ship line.
   Canvas, harmless under the forced rule (nothing latched) but the Canvas
   cookies were not re-saved by it, and the app left the foreground in the
   same second, which is what a universal-link hand-off to the Canvas
-  Student app looks like (Traps); Marco's answer to "did the Canvas app
-  open" decides whether the hidden renewer needs the visible pane's
-  app-link guard. It took three builds to see any of this, because the
+  Student app looks like (Traps). **Marco confirmed it: the Canvas Student
+  app opened.** So since 2026-11-22 (blind) the hidden renewer carries the
+  visible pane's app-link guard (`AppLinkGuard`, the pure parts moved out of
+  `LoginNavigationObserver` with its tests unchanged; `RenewalNavigationDelegate`
+  cancels a cross-host main-frame arrival at the Canvas host and re-issues
+  it itself, the POST rebuilt from the IdP's form, capped per attempt,
+  DEBUG lines "app-link guard: reissued POST | reissued GET | form not
+  found, allowed | cap reached, allowed"; `RenewalAppLinkGuardTests`). The
+  renewer's "never re-navigate" rule now names this one exception. Not yet
+  run on a phone: the next forced attempt should log "reissued POST" and
+  the Canvas app should stay closed; if the attempt then ends `.renewed`,
+  the Canvas cookies are re-saved too, which the 00:57 run did not do. It took three builds to see any of this, because the
   cookie read came back empty in a cold process (the next Trap). The notice
   has not been seen (post it by letting a latch age an hour, or read the
   pending requests). Not built: a trust renewal for a student whose trust
