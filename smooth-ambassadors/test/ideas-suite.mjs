@@ -165,8 +165,11 @@ export function ideaTests({ test, skip, req, founder, db, label = "" }) {
     for (const k of ["name", "school", "schoolName", "title", "status", "pausedUntil", "page", "appStore", "numbers", "today", "messages", "checklist", "tips", "channels", "generatedAt"]) {
       assert.ok(k in pa, k);
     }
-    assert.equal(pa.posters.length, 12);
-    assert.equal((await plan("b")).posters.length, 14);
+    // The offered list: every design for the school minus the retired ones
+    // (catalog.js RETIRED), 10 at UVA and 12 at UPenn on 2026-11-21.
+    const { offeredDesignsFor } = await import("../worker/catalog.js");
+    assert.equal(pa.posters.length, offeredDesignsFor("uva").length);
+    assert.equal((await plan("b")).posters.length, offeredDesignsFor("upenn").length);
     const stats = (await (await req("/api/stats")).json()).rows;
     for (const p of pa.posters) {
       assert.deepEqual(Object.keys(p), ["key", "name", "image", "scans"]);
@@ -227,12 +230,14 @@ export function ideaTests({ test, skip, req, founder, db, label = "" }) {
     assert.match(a, /id="idea"/);
     const nA = (await ideasOf()).filter((i) => i.ambassadorId === amb.a.id).length;
     assert.ok(a.includes(`${nA} of 30 sent`), "idea count on the page");
-    assert.equal((a.match(/class="pcard"/g) || []).length, 12);
-    assert.equal((a.match(/loading="lazy" src="\/posters\/uva\//g) || []).length, 12);
+    const { offeredDesignsFor } = await import("../worker/catalog.js");
+    const offered = offeredDesignsFor("uva").length;
+    assert.equal((a.match(/class="pcard"/g) || []).length, offered);
+    assert.equal((a.match(/loading="lazy" src="\/posters\/uva\//g) || []).length, offered);
     assert.match(a, /open full size/);
     assert.ok(a.includes(`data-copy="https://example.test/r/${amb.a.ref}/p/ib"`), "tracked poster link");
     assert.ok(!pages.stickers.includes(amb.a.token), "stickers carry no private code");
-    assert.equal((pages.stickers.match(/<svg class="qr"/g) || []).length, 12);
+    assert.equal((pages.stickers.match(/<svg class="qr"/g) || []).length, offered);
     assert.match(pages.stickers, /@media print/);
   });
 

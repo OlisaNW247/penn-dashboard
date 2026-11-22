@@ -1,5 +1,5 @@
 // Page rendering for ambassadors (/a/{token}) and founders (/f/{secret}).
-import { SCHOOLS, CHANNELS, designsFor, posterImagePath, posterName, scanKey } from "./catalog.js";
+import { SCHOOLS, CHANNELS, offeredDesignsFor, posterImagePath, posterName, scanKey } from "./catalog.js";
 import { layout, esc, attr } from "./html.js";
 import { isPhone, phoneForSms, IDEA_TOTAL_LIMIT } from "./data.js";
 import { ambassadorLinks, digestText, welcomeText, momentTexts, moments, firstName } from "./digest.js";
@@ -181,7 +181,7 @@ export function ambassadorPage({
   const links = ambassadorLinks(origin, amb);
   const base = `/a/${amb.token}`;
   const vars = { school: schoolLower, name: firstName(amb.name) };
-  const designs = designsFor(amb.school);
+  const designs = offeredDesignsFor(amb.school);
   const recentByKey = Object.fromEntries(stats.byKeyRecent.map((r) => [`${r.kind}:${r.key}`, r.n]));
   const allByKey = Object.fromEntries(stats.byKeyAll.map((r) => [`${r.kind}:${r.key}`, r.n]));
   const dashboardHref = `/?school=${encodeURIComponent(amb.school)}`;
@@ -416,7 +416,7 @@ export function ambassadorPage({
 
 export function stickersPage({ amb, origin, qrSvg }) {
   const links = ambassadorLinks(origin, amb);
-  const designs = designsFor(amb.school);
+  const designs = offeredDesignsFor(amb.school);
   const cards = designs
     .map(
       (d) => `<div class="card" style="text-align:center;padding:8px;margin:0">

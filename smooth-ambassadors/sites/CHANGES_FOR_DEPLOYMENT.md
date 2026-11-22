@@ -61,6 +61,44 @@ What that means for the deploy:
      card shows it for UVA. This test count cannot be removed through the
      site; if you want it gone, delete that one row from `installs` (host
      `canvas.its.virginia.edu`, today's date), and say that you did.
+## Update, 2026-11-22 (posters)
+
+The same seventh archive also carries the posters change (merged with the
+downloads update above on 2026-11-22). This one changes the designs on offer and,
+for the first time, the embedded images. No new table, no new route, no new
+runtime variable.
+
+Marco, 2026-11-21, looking at the poster gallery on his phone: "make more
+generic ones. right now they're not very good. there are some specific ones
+to Penn we need to get rid of."
+
+- **Two designs retired: `tabard` and `these-two`.** Their printed codes are
+  on walls, so `/scan/...`, `/r/{ref}/p/{design}` and `/api/stats` keep
+  them exactly as before. They only leave what an ambassador is handed:
+  `plan.json` `posters`, the page's gallery and drop chips, the stickers
+  sheet. The list is `RETIRED` in the generated section.
+- **Five generic designs added** (`missed`, `moved`, `one-list`, `sweeper`,
+  `ask`), the first change to the Maps at the top of `worker/index.js` and
+  to `imageData` since the handover. `build-sites.mjs` now adds any catalog
+  design the host does not have yet: an entry at the end of the `posters`
+  Map and one picture per school in `imageData` (the same JPEG for every
+  school: these posters carry a dashed slot for the QR sticker instead of a
+  printed code). Every original picture is kept as data; the line is
+  re-serialised, so it is no longer byte-identical, and `package-sites.mjs`
+  checks that nothing original was lost or changed instead.
+- `/api/stats` therefore lists 87 rows (62 + 5 designs × 5 schools); the
+  first 62 are unchanged and in their order, the new rows follow within
+  each school. The public dashboard shows them at 0 until someone scans.
+
+Check after deploying (no `/scan/...` or `/r/...` link needs opening):
+
+1. `GET /api/stats`: 87 rows; every row of the 2026-11-10 backup still
+   there with a total no lower than before.
+2. `GET /posters/uva/missed.jpg` (and `moved`, `one-list`, `sweeper`,
+   `ask`) answer `image/jpeg`; `GET /posters/upenn/ib.jpg` as before.
+3. Any ambassador's `plan.json`: `posters` has no `tabard` and no
+   `these-two`, and has the five new keys; the page's gallery and
+   stickers sheet agree.
 
 ## Update, 2026-11-19 (small)
 

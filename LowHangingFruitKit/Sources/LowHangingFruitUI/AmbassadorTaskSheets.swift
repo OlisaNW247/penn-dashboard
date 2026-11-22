@@ -121,11 +121,12 @@ private struct AmbassadorTaskForm<Content: View>: View {
 private struct AmbassadorDoneRow: View {
     let task: AmbassadorTask
     @ObservedObject var model: AmbassadorModel
+    var label = "done"
 
     var body: some View {
         Section {
             if model.isDone(task) {
-                Label("done", systemImage: "checkmark")
+                Label(label, systemImage: "checkmark")
                     .font(.lhfSecondary(15, weight: .semibold))
                     .foregroundStyle(Color.smoothTealInk)
                     .frame(maxWidth: .infinity)
@@ -133,7 +134,7 @@ private struct AmbassadorDoneRow: View {
                 Button {
                     Task { await model.markDone(task) }
                 } label: {
-                    Text("done")
+                    Text(label)
                         .font(.lhfSecondary(15, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 4)
@@ -171,6 +172,32 @@ struct AmbassadorAnonChatsSheet: View {
     var body: some View {
         AmbassadorTaskForm(task: .anonChats) {
             Section {
+                Text("1 a day")
+                    .font(.lhfSecondary(17, weight: .semibold))
+                HStack(spacing: 8) {
+                    ForEach(Array(model.anonWeekDots.enumerated()), id: \.offset) { _, posted in
+                        Circle()
+                            .fill(posted ? Color.smoothTealInk : Color.clear)
+                            .overlay(Circle().stroke(posted ? Color.smoothTealInk : Color.smoothSurface, lineWidth: 2))
+                            .frame(width: 10, height: 10)
+                    }
+                }
+                .accessibilityHidden(true)
+                HStack(spacing: 4) {
+                    Text("\(model.anonPostsThisWeek) this week \u{00B7}")
+                    if model.anonWeeklyMinimumMet {
+                        Label("at least 1", systemImage: "checkmark")
+                            .foregroundStyle(Color.smoothTealInk)
+                    } else {
+                        Text("at least 1")
+                    }
+                }
+                .font(.lhfSecondary(13))
+                .foregroundStyle(model.anonWeeklyMinimumMet ? Color.smoothTealInk : Color.v2DateText)
+            }
+            .smoothSectionBackground(.smoothTeal)
+
+            Section {
                 if let today = model.plan?.today {
                     Text(today.isRest ? "rest day" : today.platform)
                         .font(.lhfSecondary(15, weight: .semibold))
@@ -192,6 +219,12 @@ struct AmbassadorAnonChatsSheet: View {
                         .font(.lhfSecondary(12))
                         .foregroundStyle(Color.smoothTomatoInk)
                 }
+            }
+            .smoothSectionBackground(.smoothGrape)
+
+            AmbassadorDoneRow(task: .anonChats, model: model, label: "posted today")
+
+            Section {
                 Picker("my anonymous app", selection: Binding(
                     get: { model.anonApp },
                     set: { newValue in Task { await model.setAnonApp(newValue) } }
@@ -202,6 +235,8 @@ struct AmbassadorAnonChatsSheet: View {
                 }
             }
             .smoothSectionBackground(.smoothGrape)
+
+            guidanceSections
 
             if let suggestions = model.plan?.suggested, !suggestions.isEmpty {
                 Section {
@@ -265,7 +300,49 @@ struct AmbassadorAnonChatsSheet: View {
                 .smoothSectionBackground(.smoothCobalt)
             }
 
-            AmbassadorDoneRow(task: .anonChats, model: model)
+        }
+    }
+
+    // MARK: Guidance
+
+    /// The server's guidance, else the copy bundled with the app.
+    private var guidance: AmbassadorPlan.Guidance {
+        model.plan?.guidance ?? AmbassadorGuidance.bundled
+    }
+
+    @ViewBuilder
+    private var guidanceSections: some View {
+        if let test = guidance.test, !test.isEmpty {
+            Section {
+                Text(test)
+                    .font(.lhfSecondary(13, weight: .semibold))
+            }
+            .smoothSectionBackground(.smoothCobalt)
+        }
+        ForEach(guidance.kinds) { kind in
+            Section {
+                Text(kind.rule)
+                    .font(.lhfSecondary(14))
+                    .fixedSize(horizontal: false, vertical: true)
+                ForEach(kind.prompts, id: \.self) { prompt in
+                    Text("\u{00B7} \(prompt)")
+                        .font(.lhfSecondary(13))
+                        .foregroundStyle(Color.v2DateText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                ForEach(kind.examples) { example in
+                    VStack(alignment: .leading, spacing: 8) {
+                        AmbassadorPostBox(text: example.text)
+                        AmbassadorCopyButton(label: "copy", text: example.text)
+                            .font(.lhfSecondary(14, weight: .semibold))
+                        AmbassadorReplyBlock(reply: example.reply)
+                    }
+                    .padding(.vertical, 2)
+                }
+            } header: {
+                SmoothSectionHeader(kind.label, accent: .smoothCobalt)
+            }
+            .smoothSectionBackground(.smoothGrape)
         }
     }
 }
@@ -311,6 +388,22 @@ struct AmbassadorPostersTaskSheet: View {
     var body: some View {
         AmbassadorTaskForm(task: .posters) {
             Section {
+                AmbassadorGoalLine(label: "posters up", count: model.postersPutUp,
+                                   target: AmbassadorGoals.postersTarget)
+                Slider(
+                    value: Binding(
+                        get: { Double(model.postersPutUp) },
+                        set: { model.setPostersPutUp(Int($0.rounded())) }
+                    ),
+                    in: 0...Double(AmbassadorGoals.postersTarget),
+                    step: 1
+                )
+                .tint(Color.smoothTeal)
+                .accessibilityLabel("posters put up")
+            }
+            .smoothSectionBackground(.smoothTeal)
+
+            Section {
                 if let posters = model.plan?.posters, !posters.isEmpty {
                     row("all posters", symbol: "photo.on.rectangle.angled", trailing: "\(posters.count)", leaves: false) {
                         showPosters = true
@@ -327,7 +420,6 @@ struct AmbassadorPostersTaskSheet: View {
                 }
             }
             .smoothSectionBackground(.smoothMarigold)
-            AmbassadorDoneRow(task: .posters, model: model)
         }
         .sheet(isPresented: $showPosters) {
             if let plan = model.plan {

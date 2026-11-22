@@ -22,11 +22,12 @@
 //   POST /api/install           the app's anonymous install count (host + new/existing)
 
 import qrcode from "qrcode-generator";
-import { CHANNELS, SCHOOLS, designsFor, isValidCombo, posterName, scanKey } from "./catalog.js";
+import { CHANNELS, SCHOOLS, isValidCombo, offeredDesignsFor, posterName, scanKey } from "./catalog.js";
 import { fontResponse } from "./fonts.js";
 import messages from "./templates/messages.json";
 import checklist from "./templates/checklist.json";
 import playbook from "./templates/playbook.json";
+import guidance from "./templates/guidance.json";
 import canvasHosts from "./canvas-hosts.json";
 import { ambassadorLinks } from "./digest.js";
 import { html } from "./html.js";
@@ -161,7 +162,9 @@ async function planPayload(env, amb, url, pub) {
     links: Object.fromEntries(Object.keys(CHANNELS).map((ch) => [ch, links.share(ch)])),
     generatedAt: new Date().toISOString(),
     // Added 2026-11-11, additive: the app ignores keys it does not know.
-    posters: designsFor(amb.school).map((key) => ({
+    // Retired designs (catalog.js RETIRED) are left out here, as everywhere an
+    // ambassador is handed a design; a printed one still scans.
+    posters: offeredDesignsFor(amb.school).map((key) => ({
       key,
       name: posterName(key),
       image: `${pub}/posters/${amb.school}/${key}.jpg`,
@@ -172,6 +175,7 @@ async function planPayload(env, amb, url, pub) {
     // Added 2026-11-18, additive: what works, posts a founder wants this
     // ambassador to try (only theirs), and the capture uploads' limits.
     playbook: { lead: playbook.lead, steps: playbook.steps, examples: playbook.examples },
+    guidance: { test: guidance.test, kinds: guidance.kinds },
     suggested: suggested.map((x) => ({ id: x.id, text: x.text, reply: x.reply, ts: x.ts })),
     captures: capturesPlan(caps),
   };

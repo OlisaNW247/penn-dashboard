@@ -57,7 +57,6 @@ async function snapshot(mf, path, init) {
 const cases = [
   ["GET", "/"],
   ["GET", "/?school=uva"],
-  ["GET", "/api/stats"],
   ["GET", "/scan/ib"],
   ["GET", "/scan/uva/ib"],
   ["GET", "/scan/uva/jester"],
@@ -93,7 +92,37 @@ test("parity: counters and stats after the scans", { skip }, async () => {
     assert.equal(await total(mf, "ib"), 41);
     assert.equal(await total(mf, "uva/ib"), 1);
   }
-  assert.deepEqual(await snapshot(edited, "/api/stats"), await snapshot(orig, "/api/stats"));
+  await statsParity();
+});
+
+// /api/stats is the one route that may differ: the edited Worker lists the
+// designs scripts/build-sites.mjs added (one row per school, after the
+// original ones), with every original row unchanged and in its place.
+async function statsParity() {
+  const a = await req(orig, "/api/stats");
+  const b = await req(edited, "/api/stats");
+  for (const h of HEADERS) assert.equal(b.headers.get(h), a.headers.get(h), h);
+  const A = (await a.json()).rows;
+  const B = (await b.json()).rows;
+  const origKeys = new Set(A.map((r) => r.poster));
+  assert.deepEqual(B.filter((r) => origKeys.has(r.poster)), A);
+  const { DESIGNS } = await import("../worker/catalog.js");
+  const added = DESIGNS.filter((d) => !origKeys.has(d));
+  assert.equal(B.length, A.length + added.length * 5);
+  for (const school of new Set(A.map((r) => r.school))) {
+    const tail = B.filter((r) => r.school === school).slice(-added.length).map((r) => r.poster);
+    assert.deepEqual(tail, added, school);
+  }
+  return { A, B, added };
+}
+
+test("parity: /api/stats keeps every original row and adds the new designs after them", { skip }, async () => {
+  const { added } = await statsParity();
+  assert.ok(added.includes("missed"));
+  const img = await req(edited, "/posters/uva/missed.jpg");
+  assert.equal(img.status, 200);
+  assert.equal(img.headers.get("content-type"), "image/jpeg");
+  assert.equal((await req(orig, "/posters/uva/missed.jpg")).status, 404);
 });
 
 test("parity: near-miss paths stay the host's plain 404", { skip }, async () => {
@@ -210,7 +239,7 @@ test("a plain scan is also logged with a timestamp", { skip }, async () => {
 test("an empty database: tables are created lazily", { skip }, async () => {
   const stats = await req(fresh, "/api/stats");
   assert.equal(stats.status, 200);
-  assert.equal((await stats.json()).rows.length, 62);
+  assert.ok((await stats.json()).rows.length >= 62);
   assert.equal((await req(fresh, "/a/aaaaaaaaaaaaaa/plan.json")).status, 404);
 });
 

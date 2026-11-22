@@ -165,7 +165,7 @@ struct AmbassadorRemindersTests {
         #expect(trigger.dateComponents.hour == 19)
         #expect(trigger.dateComponents.minute == 30)
         #expect(trigger.dateComponents.weekday == nil)
-        #expect(request.content.body == "today's post is written, maya. tap to copy it.")
+        #expect(request.content.body == "today's anonymous post, maya. 1 a day.")
         #expect(request.content.title == "smooth")
         #expect(request.content.userInfo["ambassador"] as? String == "daily")
     }
@@ -189,7 +189,7 @@ struct AmbassadorRemindersTests {
         #expect(requests.map(\.identifier) == ["ambassador:weekday:2", "ambassador:weekday:5"])
         #expect(requests.allSatisfy { ($0.trigger as? UNCalendarNotificationTrigger)?.repeats == true })
         #expect(AmbassadorReminders.reservedSlots(for: .twiceWeekly) == 2)
-        #expect(AmbassadorReminderCadence.offered == [.twiceWeekly, .daily, .off])
+        #expect(AmbassadorReminderCadence.offered == [.daily, .twiceWeekly, .off])
         #expect(AmbassadorReminderCadence.twiceWeekly.label == "2 a week")
         // A phone that stored the retired choice still decodes it.
         #expect(AmbassadorReminderCadence(rawValue: "weekdays") == .weekdays)
@@ -394,8 +394,8 @@ struct AmbassadorModelTests {
             #expect(service.planRequests.last?.tz == 300)
             #expect(service.planRequests.last?.anon == .fizz)
             #expect(center.authorizationRequests == 1)
-            #expect(center.pending.map(\.identifier).sorted() == ["ambassador:weekday:2", "ambassador:weekday:5"])
-            #expect(NotificationScheduler.reservedForeignSlots == 2)
+            #expect(center.pending.map(\.identifier).sorted() == ["ambassador:daily"])
+            #expect(NotificationScheduler.reservedForeignSlots == 1)
             // The cache is what a fresh model starts from, offline.
             let cached = try #require(defaults.data(forKey: AmbassadorModel.planCacheKey))
             #expect(try AmbassadorPlan.decode(cached).name == "Maya Example")
@@ -530,8 +530,9 @@ struct AmbassadorModelTests {
             #expect(sent?.action == "post")
             #expect(sent?.body["channel"] == "gc")
             #expect(!model.isDone(.posters))
+            // Posters are the slider's, not the log's: a tick changes nothing.
             await model.markDone(.posters)
-            #expect(model.isDone(.posters))
+            #expect(!model.isDone(.posters))
         }
     }
 
@@ -567,10 +568,49 @@ struct AmbassadorModelTests {
         }
     }
 
-    @Test("with nothing stored the reminder defaults to twice a week")
+    @Test("with nothing stored the reminder defaults to every day")
     func defaultCadence() async {
         await withModel { model, _, _, _ in
-            #expect(model.cadence == .twiceWeekly)
+            #expect(model.cadence == .daily)
+        }
+    }
+
+    @Test("an anonymous tick logs today's day; the week count follows")
+    func anonWeek() async {
+        await withModel { model, _, _, _ in
+            await model.signIn(Self.code)
+            #expect(model.anonPostsThisWeek == 0)
+            #expect(!model.anonWeeklyMinimumMet)
+            await model.markDone(.anonChats)
+            #expect(model.taskLog.anonDays == [20766])
+            #expect(model.anonPostsThisWeek == 1)
+            #expect(model.anonWeeklyMinimumMet)
+            #expect(model.anonWeekDots == [false, false, false, false, false, false, true])
+        }
+    }
+
+    @Test("posters are done at 30 and not before; sign out clears the count")
+    func postersGoal() async {
+        await withModel { model, _, _, defaults in
+            await model.signIn(Self.code)
+            model.setPostersPutUp(29)
+            #expect(!model.isDone(.posters))
+            model.setPostersPutUp(30)
+            #expect(model.isDone(.posters))
+            model.setPostersPutUp(99)
+            #expect(model.postersPutUp == 30)
+            model.signOut()
+            #expect(model.postersPutUp == 0)
+            #expect(defaults.object(forKey: AmbassadorModel.postersPutUpKey) == nil)
+        }
+    }
+
+    @Test("requestOpen raises the open signal")
+    func requestOpen() async {
+        await withModel { model, _, _, _ in
+            #expect(!model.pendingOpen)
+            model.requestOpen()
+            #expect(model.pendingOpen)
         }
     }
 
@@ -886,6 +926,28 @@ struct AmbassadorTaskTests {
         #expect(!log.isDone(.feedback, todayIndex: 100))
     }
 
+    @Test("a log saved before anonDays existed decodes with an empty set")
+    func oldLog() throws {
+        let log = try JSONDecoder().decode(AmbassadorTaskLog.self, from: Data(#"{"doneDayIndex":{"posters":5}}"#.utf8))
+        #expect(log.anonDays.isEmpty)
+        #expect(log.isDone(.posters, todayIndex: 5))
+    }
+
+    @Test("the week is today and the six days before; the future is ignored")
+    func anonWeek() {
+        var log = AmbassadorTaskLog()
+        #expect(!log.anonWeeklyMinimumMet(todayIndex: 100))
+        log.markDone(.anonChats, todayIndex: 94)
+        #expect(log.anonPostsInLastWeek(todayIndex: 100) == 1)
+        #expect(log.anonWeeklyMinimumMet(todayIndex: 100))
+        #expect(log.anonPostsInLastWeek(todayIndex: 101) == 0)
+        #expect(!log.anonWeeklyMinimumMet(todayIndex: 101))
+        log.markDone(.anonChats, todayIndex: 100)
+        log.markDone(.anonChats, todayIndex: 103)
+        #expect(log.anonPostsInLastWeek(todayIndex: 100) == 2)
+        #expect(log.anonPostedDays(todayIndex: 100) == [true, false, false, false, false, false, true])
+    }
+
     @Test("the log round-trips")
     func codable() throws {
         var log = AmbassadorTaskLog()
@@ -915,9 +977,12 @@ struct AmbassadorWiringTests {
         #expect(try uiSource("NotificationScheduler.swift").contains("Self.maxPending - buzzes.count - Self.reservedForeignSlots"))
         let content = try uiSource("ContentView.swift")
         #expect(content.contains("case .ambassador:"))
-        #expect(content.contains("path = [.profile, .ambassador]"))
+        // Its own destination since 2026-11-22: back goes to the dashboard.
+        #expect(content.contains("path = [.ambassador]"))
+        #expect(!content.contains("path = [.profile, .ambassador]"))
         let settings = try uiSource("SettingsPage.swift")
-        #expect(settings.contains("NavigationLink(value: ContentView.DashRoute.ambassador)"))
+        #expect(settings.contains("AmbassadorModel.shared.requestOpen()"))
+        #expect(!settings.contains("NavigationLink(value: ContentView.DashRoute.ambassador)"))
     }
 
     /// Olisa, 2026-11-19: the bank is his two Sidechat posts and nothing
@@ -949,7 +1014,9 @@ struct AmbassadorWiringTests {
         func at(_ name: String) throws -> String.Index {
             try #require(page.range(of: name, range: body.upperBound..<page.endIndex)).lowerBound
         }
+        let goal = try at("goalSection")
         let tasks = try at("tasksSection")
+        #expect(goal < tasks)
         let numbers = try at("numbersSection")
         let reminders = try at("remindersSection")
         let account = try at("accountSection")
@@ -971,6 +1038,21 @@ struct AmbassadorWiringTests {
         #expect(page.contains("AmbassadorReminderCadence.offered"))
         #expect(!page.contains("my anonymous app"))
         #expect(try uiSource("AmbassadorTaskSheets.swift").contains("my anonymous app"))
+    }
+
+    @Test("the posters sheet is a goal and a slider with no done row; the chats sheet leads with 1 a day")
+    func sheets() throws {
+        let sheets = try uiSource("AmbassadorTaskSheets.swift")
+        let posters = try #require(sheets.range(of: "struct AmbassadorPostersTaskSheet"))
+        let feedback = try #require(sheets.range(of: "// MARK: Feedback"))
+        let body = String(sheets[posters.lowerBound..<feedback.lowerBound])
+        #expect(body.contains("Slider("))
+        #expect(body.contains("posters put up"))
+        #expect(!body.contains("AmbassadorDoneRow(task: .posters"))
+        #expect(sheets.contains("1 a day"))
+        #expect(sheets.contains("posted today"))
+        #expect(sheets.contains("AmbassadorGuidance.bundled"))
+        #expect(try uiSource("AmbassadorPage.swift").contains("AmbassadorGoals.caption"))
     }
 
     @Test("the numbers section shows the school's downloads only when the server sent them")
@@ -1252,9 +1334,97 @@ struct AmbassadorHeaderTests {
         // the medal as a header-style squircle, and the tap opens the page.
         #expect(source.contains("text: \"Ambassador\""))
         #expect(source.contains("badge: Self.ambassadorBadgeSymbol"))
-        #expect(source.contains("path = [.profile, .ambassador]"))
+        #expect(source.contains("path = [.ambassador]"))
+        #expect(!source.contains("path = [.profile, .ambassador]"))
+        #expect(source.contains("badgeSize: Self.headerButtonSize"))
+        #expect(source.contains("var badgeSize: CGFloat? = nil"))
+        #expect(source.contains("AmbassadorStatsCard("))
+        #expect(source.contains("AmbassadorDateLine.text("))
         #expect(source.contains("struct WordmarkBadge: View"))
         #expect(source.contains("ambassadorBadgeSymbol = \"medal.fill\""))
         #expect(source.contains("badgeTrailing: true"))
+    }
+}
+
+@Suite("Ambassador date line")
+struct AmbassadorDateLineTests {
+    private func text(_ month: Int, _ day: Int) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let date = calendar.date(from: DateComponents(year: 2026, month: month, day: day, hour: 12))!
+        return AmbassadorDateLine.text(for: date, calendar: calendar)
+    }
+
+    @Test("the month in full and an ordinal day")
+    func ordinals() {
+        #expect(text(11, 1) == "November 1st")
+        #expect(text(11, 2) == "November 2nd")
+        #expect(text(11, 3) == "November 3rd")
+        #expect(text(11, 4) == "November 4th")
+        #expect(text(11, 11) == "November 11th")
+        #expect(text(11, 12) == "November 12th")
+        #expect(text(11, 13) == "November 13th")
+        #expect(text(11, 21) == "November 21st")
+        #expect(text(11, 22) == "November 22nd")
+        #expect(text(11, 23) == "November 23rd")
+        #expect(text(12, 31) == "December 31st")
+    }
+}
+
+@Suite("Ambassador goals")
+struct AmbassadorGoalsTests {
+    @Test("progress clamps to 0...1 and the caption reads n of target")
+    func progress() {
+        #expect(AmbassadorGoals.downloadsTarget == 100)
+        #expect(AmbassadorGoals.postersTarget == 30)
+        #expect(AmbassadorGoals.progress(count: 0, target: 100) == 0)
+        #expect(AmbassadorGoals.progress(count: 25, target: 100) == 0.25)
+        #expect(AmbassadorGoals.progress(count: 250, target: 100) == 1)
+        #expect(AmbassadorGoals.progress(count: -3, target: 100) == 0)
+        #expect(AmbassadorGoals.progress(count: 5, target: 0) == 0)
+        #expect(AmbassadorGoals.caption(count: 12, target: 30) == "12 of 30")
+    }
+}
+
+@Suite("Ambassador guidance in the plan")
+struct AmbassadorGuidancePlanTests {
+    static let base = #"{"name":"Maya","school":"uva""#
+
+    @Test("guidance decodes; a malformed kind or example is dropped, not the plan")
+    func decodes() throws {
+        let json = Self.base + #"""
+        ,"guidance":{"test":"if it reads like an ad, it's an ad.","kinds":[
+          {"key":"a","label":"straight","rule":"r","prompts":["p1","p2"],"examples":[{"key":"e1","text":"t","reply":"x"},{"key":"bad"}]},
+          {"key":"b","label":"misc","rule":"r2","prompts":[],"examples":[]},
+          {"label":"no key"}]}}
+        """#
+        let plan = try AmbassadorPlan.decode(Data(json.utf8))
+        let guidance = try #require(plan.guidance)
+        #expect(guidance.test == "if it reads like an ad, it's an ad.")
+        #expect(guidance.kinds.map(\.key) == ["a", "b"])
+        #expect(guidance.kinds[0].prompts == ["p1", "p2"])
+        #expect(guidance.kinds[0].examples.map(\.key) == ["e1"])
+        #expect(guidance.kinds[0].examples[0].reply == "x")
+    }
+
+    @Test("absent or wrongly shaped guidance reads nil and the plan survives")
+    func absent() throws {
+        #expect(try AmbassadorPlan.decode(Data((Self.base + "}").utf8)).guidance == nil)
+        let plan = try AmbassadorPlan.decode(Data((Self.base + #","guidance":"lots"}"#).utf8))
+        #expect(plan.guidance == nil)
+        #expect(plan.name == "Maya")
+    }
+
+    @Test("the bundled copy equals the Worker's guidance.json")
+    func bundledParity() throws {
+        var url = URL(fileURLWithPath: #filePath)
+        while url.path != "/", !FileManager.default.fileExists(atPath: url.appendingPathComponent("smooth-ambassadors/worker/templates/guidance.json").path) {
+            url.deleteLastPathComponent()
+        }
+        let file = url.appendingPathComponent("smooth-ambassadors/worker/templates/guidance.json")
+        let data = try Data(contentsOf: file)
+        let decoded = try JSONDecoder().decode(AmbassadorPlan.Guidance.self, from: data)
+        #expect(decoded == AmbassadorGuidance.bundled)
+        #expect(!decoded.kinds.isEmpty)
     }
 }

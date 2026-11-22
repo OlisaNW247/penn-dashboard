@@ -1611,7 +1611,25 @@ Keep this current. It is the fastest way for a new session to know what exists.
      poster ideas") a "posters" section sits right after today's post**:
      "all posters" opens an in-app gallery of the school's designs as a
      sheet (`AmbassadorPostersView`: two columns, scan counts, tap for
-     full size with "share or save"); "scan dashboard ↗" opens the public
+     full size with "share or save"; **since 2026-11-22 the list is the
+     catalog's offered designs**, `offeredDesignsFor` in
+     `smooth-ambassadors/worker/catalog.js`: `tabard` and `these-two` are
+     `RETIRED` at Marco's word (2026-11-21, "what does that even mean for a
+     non-Penn student?"; a printed code of either still scans and still
+     counts, it is only no longer handed out), and five generic designs he
+     approved from renders the next day are appended (`missed`, `moved`,
+     `one-list`, `sweeper`, `ask`; sources in `smooth-ambassadors/posters/src`,
+     previews in `posters/previews`, rendered by `scripts/render-posters.mjs`
+     with the Mac's Chrome; each carries a dashed slot for the QR sticker
+     from the stickers page instead of a printed code, so one print serves
+     every school). The app changes nothing: it shows what `plan.json`
+     lists. Server side the new designs reach the live Worker only through
+     `scripts/build-sites.mjs`, which since the same day adds them to the
+     host's own `posters` Map and `imageData` (`scripts/lib/add-posters.mjs`;
+     the seventh zip, not built: the Sites archive was not on the Mac, see
+     `docs/deploy.md`). Marco's two "more serious" posters are still to be
+     added: neither of the two unpublished masters in `posters-print/` is
+     one of them, by his word, and he has not yet named them; "scan dashboard ↗" opens the public
      live counts for their school in Safari; "send a poster idea" opens
      `PosterIdeaSheet` (a `PhotosPicker`, a note, send). A row that leaves
      the app carries the arrow, and "my page" became "my web page ↗" for
@@ -1673,11 +1691,11 @@ Keep this current. It is the fastest way for a new session to know what exists.
      sign-in intro** (`AmbassadorIntroView`, once per install,
      `ambassador.introSeenV1`, not cleared by sign-out): "thanks for being
      one.", the job in one line, the four tasks, "you're smooth at your
-     school. bring back what people say.", "let's go". **The reminder is
-     twice a week by default** (`AmbassadorReminderCadence.twiceWeekly`:
-     Monday and Thursday at the chosen time, two reserved slots; the picker
-     offers 2 a week / every day / off; a stored `weekdays` still decodes
-     and schedules but shows no selection). **The dashboard header** puts
+     school. bring back what people say.", "let's go". **The reminder** gained a
+     `twiceWeekly` cadence (Monday and Thursday, two reserved slots) and
+     was twice a week by default for a day; since the second round below
+     it is daily again, the picker offers every day / 2 a week / off, and a
+     stored `weekdays` still decodes and schedules but shows no selection. **The dashboard header** puts
      "Ambassador" first and the medal to its right
      (`SmoothWordmark.badgeTrailing`); the squiggle, shine and backflip are
      unchanged. The posters themselves (retiring the Penn-specific designs,
@@ -1686,6 +1704,55 @@ Keep this current. It is the fastest way for a new session to know what exists.
      only through the server's plan once Olisa deploys. Unseen on a phone:
      the intro, the four sheets, the ticks surviving a relaunch, the
      twice-weekly reminder firing.
+     **The Worker teaches the anonymous posts since 2026-11-22**
+     (`worker/templates/guidance.json`, sent as `plan.guidance`, additive;
+     Marco's framing relayed by the master session): two kinds of post,
+     `straight` (smooth helps with assignments, told as a student would, a
+     tip or a question) and `misc` (any post about anything at your school
+     with smooth sideways, the link in a comment or the bio, never the
+     post), each with one rule, three prompts and three or four example
+     texts; one test line, "if it reads like an ad, it's an ad". His own
+     example is the Odyssey reply. The two real posts in `messages.json`
+     are untouched. Not deployed (Olisa's zip); the app's half of this is
+     the next commit.
+     **Round two, 2026-11-22 (same branch, compiled and tested, the iOS
+     build green, not yet on a phone; Marco's asks relayed by the master
+     session).** (1) **The page is its own destination**: the header medal,
+     the Profile row (a `Button` calling `AmbassadorModel.requestOpen()`,
+     no longer a `NavigationLink`), a reminder tap and the
+     `smooth://ambassador` link all set `path = [.ambassador]`, so back goes
+     to the dashboard, never to Profile. (2) **The dashboard, ambassadors
+     only**: the date line under "Ambassador" reads the full month and an
+     ordinal day, "November 22nd" (`AmbassadorDateLine`, Kit; Marco's
+     example "ambassador November 12th"), the medal is the header buttons'
+     42pt (`SmoothWordmark.badgeSize`), and a **stats card** sits between
+     the banners and the control row (`AmbassadorStatsCard`): a "stats"
+     label and one row, "users at <school>" with
+     `plan.numbers.schoolInstalls`, Olisa's per-school install count
+     ("we'll just start with that"); nothing is drawn when the server sends
+     no count. (3) **The downloads goal** opens the page
+     (`goalSection`, `AmbassadorGoalLine`): "downloads at <school>", "n of
+     100" and a progress track (`AmbassadorGoals.downloadsTarget = 100`,
+     "100 is super chill"), hidden when the count is unknown. The word is
+     Marco's; what it counts is installs that connected a school
+     (`docs/PRIVACY.md`). (4) **Posters is ongoing**, so it has no done and
+     no tick short of the goal: a `Slider` 0...30 for posters put up
+     (`ambassador.postersPutUpV1`, `AmbassadorGoals.postersTarget = 30`),
+     the row reads "12 of 30" and ticks only at 30. (5) **Anonymous
+     chats**: the sheet opens on the goal, "1 a day", seven dots for the
+     week and "n this week · at least 1" (the minimum turns teal when met;
+     `AmbassadorTaskLog.anonDays`, decoded leniently), then today's post,
+     "posted today" as the done, the app picker, then the **guidance**
+     (`plan.guidance` from the Worker, else the bundled copy
+     `AmbassadorGuidance.bundled`, which a test keeps byte-equal to
+     `guidance.json`): the test line, then per kind its rule, prompts and
+     example posts with copy buttons, then the founders' posts, the message
+     bank and the tips as before. The reminder is daily by default again
+     with the body "today's anonymous post. 1 a day.". Group chats and
+     feedback are unchanged at Marco's word ("gas how it is"). The posters
+     themselves came in with `claude/ambassador-posters-f068d6` (retired
+     `tabard` and `these-two`, five generic designs) and reach phones only
+     through Olisa's deploy. Unseen on a phone: everything in this round.
   9. feedback (since 3.3.0, 2026-10-27): one "send feedback ↗" row that
      opens the Google feedback form in Safari (`FeedbackForm.defaultURL`,
      or the live notice's link when the manifest carries one)
