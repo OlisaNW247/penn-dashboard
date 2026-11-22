@@ -1234,6 +1234,18 @@ Kept so nobody rebuilds them blind.
   zero-points and optional-title rules.
 - **2026-11-17.** The agent connection switched off for 3.5.0 (`FeatureFlags.agentConnection = false`, `claude/v12-isolate-ab8b22`, `docs/V12_ISOLATION_2026-11-17.md`): the flag already hid Profile, `smooth://link` and both passes; the cached-draft chip and prev's "submitted by you" line, which read the phone's cache and attempt store and not the flag, now guard on `agentSurfacesAllowed`. Nothing deleted; `v11` keeps the feature.
 
+- **2026-11-22.** Ambassador mode, round two (`claude/ambassador-work-c14201`,
+  compiled and tested, not on a phone): the page is its own destination
+  from the header medal, Profile and the reminder; for ambassadors the
+  dashboard's date line reads "November 22nd", the medal is 42pt and a
+  stats card shows "users at <school>" from the install count; the page
+  opens on a downloads goal of 100; posters has a 0...30 slider instead of
+  a tick; anonymous chats has a "1 a day" goal with a week of dots and the
+  weekly minimum, a daily reminder, and the Worker's two-kind posting
+  guidance (straight and misc, Marco's Odyssey rule) with a bundled
+  fallback. The release line and the posters branch were merged in first.
+  Nothing deployed: the Worker's `guidance` and the posters wait for
+  Olisa's zip.
 - **2026-11-21.** Ambassador mode cut to the job (Marco, from the build on
   his phone): the page is four task rows (anonymous chats, group chats,
   posters, feedback) that each open a sheet with a "done", then numbers, the

@@ -565,7 +565,8 @@ for an ambassador to try; the page shows it. Opening "all posters"
 loads that school's poster pictures from the same server. It never sends
 anything about classes, Canvas, Gradescope, Ed, or the rest of the app, and
 no name or contact detail beyond what the founder already typed into the
-ambassador roster. The daily reminder is a local notification scheduled on
+ambassador roster. How many posters the ambassador says they have put up, and which
+days they posted, stay on the phone and are never sent. The daily reminder is a local notification scheduled on
 the phone, not a push from a server. "Sign out" removes the code from the
 Keychain, the cached page from the phone, and the reminders. The server
 keeps the ambassador's roster row, their link-open counts, their logged

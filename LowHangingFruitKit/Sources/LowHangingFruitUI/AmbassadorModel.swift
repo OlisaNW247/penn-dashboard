@@ -105,6 +105,9 @@ final class AmbassadorModel: ObservableObject {
     @Published private(set) var introPending = false
     /// Which of the four tasks is ticked, and for how long (`AmbassadorTaskLog`).
     @Published private(set) var taskLog = AmbassadorTaskLog()
+    /// How many posters the ambassador says they have put up, of 30. Theirs
+    /// to set with the slider; never sent anywhere.
+    @Published private(set) var postersPutUp: Int = 0
     /// When the plan was last fetched from the server, for `refreshIfStale`.
     private(set) var planFetchedAt: Date?
 
@@ -127,6 +130,7 @@ final class AmbassadorModel: ObservableObject {
     /// intro is for a first sign-in on this install, not for every code.
     static let introSeenKey = "ambassador.introSeenV1"
     static let taskLogKey = "ambassador.taskLogV1"
+    static let postersPutUpKey = "ambassador.postersPutUpV1"
     /// A plan older than this is fetched again when the app becomes active
     /// or the page opens. Half an hour: the numbers move slowly, and the post
     /// changes once a day.
@@ -161,13 +165,14 @@ final class AmbassadorModel: ObservableObject {
         self.removeCode = removeCode
         self.timeZone = timeZone
         self.code = loadCode()
-        self.cadence = AmbassadorReminderCadence(rawValue: defaults.string(forKey: Self.cadenceKey) ?? "") ?? .twiceWeekly
+        self.cadence = AmbassadorReminderCadence(rawValue: defaults.string(forKey: Self.cadenceKey) ?? "") ?? .daily
         let hour = defaults.object(forKey: Self.hourKey) as? Int
         let minute = defaults.object(forKey: Self.minuteKey) as? Int
         self.reminderHour = hour.map { max(0, min(23, $0)) } ?? AmbassadorReminders.defaultHour
         self.reminderMinute = minute.map { max(0, min(59, $0)) } ?? AmbassadorReminders.defaultMinute
         self.anonApp = AmbassadorAnonApp(rawValue: defaults.string(forKey: Self.anonAppKey) ?? "") ?? .fizz
         self.postedDayIndex = defaults.object(forKey: Self.postedDayKey) as? Int
+        self.postersPutUp = max(0, min(AmbassadorGoals.postersTarget, defaults.integer(forKey: Self.postersPutUpKey)))
         if let data = defaults.data(forKey: Self.taskLogKey),
            let log = try? JSONDecoder().decode(AmbassadorTaskLog.self, from: data) {
             self.taskLog = log
@@ -244,10 +249,11 @@ final class AmbassadorModel: ObservableObject {
         planFetchedAt = nil
         postedDayIndex = nil
         taskLog = AmbassadorTaskLog()
+        postersPutUp = 0
         introPending = false
         lastError = nil
         removeCode()
-        for key in [Self.planCacheKey, Self.postedDayKey, Self.fetchedAtKey, Self.taskLogKey] { defaults.removeObject(forKey: key) }
+        for key in [Self.planCacheKey, Self.postedDayKey, Self.fetchedAtKey, Self.taskLogKey, Self.postersPutUpKey] { defaults.removeObject(forKey: key) }
         NotificationScheduler.reservedForeignSlots = 0
         Task { await removeAllReminders() }
     }
@@ -326,9 +332,21 @@ final class AmbassadorModel: ObservableObject {
     }
 
     func isDone(_ task: AmbassadorTask) -> Bool {
+        // Posters are ongoing: ticked only at the goal, never by the log.
+        if task == .posters { return postersPutUp >= AmbassadorGoals.postersTarget }
         if task == .anonChats, postedToday { return true }
         return taskLog.isDone(task, todayIndex: todayIndex)
     }
+
+    func setPostersPutUp(_ value: Int) {
+        postersPutUp = max(0, min(AmbassadorGoals.postersTarget, value))
+        defaults.set(postersPutUp, forKey: Self.postersPutUpKey)
+    }
+
+    /// Posts logged in the last seven days (today included).
+    var anonPostsThisWeek: Int { taskLog.anonPostsInLastWeek(todayIndex: todayIndex) }
+    var anonWeeklyMinimumMet: Bool { taskLog.anonWeeklyMinimumMet(todayIndex: todayIndex) }
+    var anonWeekDots: [Bool] { taskLog.anonPostedDays(todayIndex: todayIndex) }
 
     private func tick(_ task: AmbassadorTask) {
         taskLog.markDone(task, todayIndex: todayIndex)
@@ -622,6 +640,12 @@ final class AmbassadorModel: ObservableObject {
 
     /// The student tapped the daily reminder.
     func noteReminderTapped() {
+        requestOpen()
+    }
+
+    /// Asks the dashboard to open the page as its own destination (the
+    /// Profile row, the reminder tap and the link all come through here).
+    func requestOpen() {
         pendingOpen = true
     }
 

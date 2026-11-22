@@ -2,9 +2,9 @@ import Foundation
 import UserNotifications
 import LowHangingFruitKit
 
-/// How often the ambassador wants the nudge. Since 2026-11-21 the one on
-/// offer is twice a week (Marco: twice a week is the right cadence for the
-/// anonymous chats), with "every day" and "off" beside it. `.weekdays` stays
+/// How often the ambassador wants the nudge. Every day by default since
+/// 2026-11-22 (Marco: a daily notification about the anonymous chats, one a
+/// day), with "2 a week" and "off" beside it. `.weekdays` stays
 /// in the enum only so a phone that stored it still decodes and keeps its
 /// five reminders; the picker no longer lists it (`offered`).
 enum AmbassadorReminderCadence: String, CaseIterable, Codable, Sendable, Identifiable {
@@ -16,7 +16,7 @@ enum AmbassadorReminderCadence: String, CaseIterable, Codable, Sendable, Identif
     var id: String { rawValue }
 
     /// What the picker shows, in order.
-    static var offered: [AmbassadorReminderCadence] { [.twiceWeekly, .daily, .off] }
+    static var offered: [AmbassadorReminderCadence] { [.daily, .twiceWeekly, .off] }
 
     var label: String {
         switch self {
@@ -124,8 +124,8 @@ enum AmbassadorReminders {
     /// true every day.
     nonisolated static func body(firstName: String?) -> String {
         if let firstName, !firstName.isEmpty {
-            return "today's post is written, \(firstName.lowercased()). tap to copy it."
+            return "today's anonymous post, \(firstName.lowercased()). 1 a day."
         }
-        return "today's post is written. tap to copy it."
+        return "today's anonymous post. 1 a day."
     }
 }

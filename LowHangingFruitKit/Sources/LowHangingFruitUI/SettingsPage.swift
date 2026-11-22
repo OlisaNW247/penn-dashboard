@@ -390,15 +390,25 @@ struct SettingsPage: View {
     @ViewBuilder
     private var ambassadorSection: some View {
         Section {
-            NavigationLink(value: ContentView.DashRoute.ambassador) {
+            // A button and not a NavigationLink: the page is its own
+            // destination (`path = [.ambassador]`, Marco 2026-11-22), so back
+            // goes to the dashboard and not through Profile.
+            Button {
+                AmbassadorModel.shared.requestOpen()
+            } label: {
                 HStack {
                     Text("ambassador mode")
                     Spacer()
                     Text(ambassador.statusLine)
                         .font(.lhfSecondary(12, weight: .medium))
                         .foregroundStyle(Color.smoothMuted)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.v2DateText)
                 }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
         } header: {
             SmoothSectionHeader("ambassador", accent: .smoothCobalt)
         }

@@ -90,7 +90,7 @@ struct ContentView: View {
         case assistant
         case degree
         /// Profile → ambassador mode (2026-11-09). A route of its own so a
-        /// reminder tap can land on it (`path = [.profile, .ambassador]`)
+        /// reminder tap can land on it (`path = [.ambassador]`)
         /// with Profile underneath for the back button.
         case ambassador
     }
@@ -182,6 +182,14 @@ struct ContentView: View {
                         gradescopeReconnectBanner
                             .padding(.horizontal, 20)
                             .padding(.top, 10)
+                    }
+
+                    // Ambassadors only: how many people at their school have
+                    // the app (Marco, 2026-11-22). Nothing until the server
+                    // sends the count.
+                    if ambassador.isSignedIn, let plan = ambassador.plan,
+                       let users = plan.numbers?.schoolInstalls {
+                        AmbassadorStatsCard(schoolLabel: plan.schoolLabel, users: users)
                     }
 
                     HStack(alignment: .center, spacing: 8) {
@@ -558,7 +566,7 @@ struct ContentView: View {
     private func openAmbassadorIfAsked() {
         guard ambassador.pendingOpen else { return }
         ambassador.consumePendingOpen()
-        path = [.profile, .ambassador]
+        path = [.ambassador]
     }
 
     /// Reads `AppState.isReconnecting`; the only write it makes is closing the
@@ -896,7 +904,7 @@ struct ContentView: View {
                 .layoutPriority(1)
                 .frame(height: 48, alignment: .center)
 
-                Text(Self.dateText(now))
+                Text(ambassador.isSignedIn ? AmbassadorDateLine.text(for: now) : Self.dateText(now))
                     .font(.lhfMono(14, weight: .medium))
                     .foregroundStyle(Color.smoothMuted)
             }
@@ -965,9 +973,10 @@ struct ContentView: View {
             font: .lhfHeaderTitle(pointSize),
             badge: Self.ambassadorBadgeSymbol,
             badgeColor: .smoothMarigold,
-            badgeTrailing: true
+            badgeTrailing: true,
+            badgeSize: Self.headerButtonSize
         ) {
-            path = [.profile, .ambassador]
+            path = [.ambassador]
         }
         .foregroundStyle(Color.smoothInk)
         .lineLimit(1)
@@ -1643,6 +1652,10 @@ struct SmoothWordmark: View {
     /// have the ambassador icon to the right of it"). The squiggle and the
     /// shine cover the whole row either way.
     var badgeTrailing: Bool = false
+    /// The badge's side. Defaults to a size that follows the title; the
+    /// ambassador header passes the header buttons' own size (Marco,
+    /// 2026-11-22) so the medal is the same size as they are.
+    var badgeSize: CGFloat? = nil
     /// Runs on every tap after the ripple or flip has been started.
     var onTap: (() -> Void)? = nil
 
@@ -1661,7 +1674,7 @@ struct SmoothWordmark: View {
     private var letters: some View {
         HStack(alignment: .center, spacing: 6) {
             if let badge, !badgeTrailing {
-                WordmarkBadge(symbol: badge, color: badgeColor, size: pointSize * 1.25)
+                WordmarkBadge(symbol: badge, color: badgeColor, size: badgeSize ?? pointSize * 1.25)
             }
             if let font {
                 Text(text).font(font)
@@ -1669,7 +1682,7 @@ struct SmoothWordmark: View {
                 Text(text).font(.lhfWordmark(pointSize))
             }
             if let badge, badgeTrailing {
-                WordmarkBadge(symbol: badge, color: badgeColor, size: pointSize * 1.25)
+                WordmarkBadge(symbol: badge, color: badgeColor, size: badgeSize ?? pointSize * 1.25)
             }
         }
     }

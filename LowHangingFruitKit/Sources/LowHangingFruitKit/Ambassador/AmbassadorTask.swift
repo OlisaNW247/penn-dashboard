@@ -46,9 +46,24 @@ public enum AmbassadorTask: String, CaseIterable, Identifiable, Codable, Sendabl
 /// the server's agree, as `postedToday` does).
 public struct AmbassadorTaskLog: Codable, Equatable, Sendable {
     public var doneDayIndex: [String: Int]
+    /// Every day an anonymous post was logged, so the week's dots and the
+    /// weekly minimum can be read back (the single `doneDayIndex` entry only
+    /// remembers the last one). Never sent anywhere.
+    public var anonDays: Set<Int>
 
-    public init(doneDayIndex: [String: Int] = [:]) {
+    public init(doneDayIndex: [String: Int] = [:], anonDays: Set<Int> = []) {
         self.doneDayIndex = doneDayIndex
+        self.anonDays = anonDays
+    }
+
+    private enum CodingKeys: String, CodingKey { case doneDayIndex, anonDays }
+
+    /// A log saved before `anonDays` existed has no such key: it decodes with
+    /// an empty set instead of failing, which would reset every tick.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        doneDayIndex = try c.decodeIfPresent([String: Int].self, forKey: .doneDayIndex) ?? [:]
+        anonDays = (try? c.decodeIfPresent(Set<Int>.self, forKey: .anonDays)) ?? []
     }
 
     /// A day task is done on the day it was ticked; a week task for the seven
@@ -64,5 +79,22 @@ public struct AmbassadorTaskLog: Codable, Equatable, Sendable {
 
     public mutating func markDone(_ task: AmbassadorTask, todayIndex: Int) {
         doneDayIndex[task.rawValue] = todayIndex
+        if task == .anonChats { anonDays.insert(todayIndex) }
+    }
+
+    /// Posts logged on today and the six days before it. A future index never
+    /// counts, like `isDone`.
+    public func anonPostsInLastWeek(todayIndex: Int) -> Int {
+        anonDays.filter { $0 <= todayIndex && todayIndex - $0 < 7 }.count
+    }
+
+    /// The weekly floor is one post; the goal is one a day.
+    public func anonWeeklyMinimumMet(todayIndex: Int) -> Bool {
+        anonPostsInLastWeek(todayIndex: todayIndex) >= 1
+    }
+
+    /// Seven flags for the week's dots, oldest first, today last.
+    public func anonPostedDays(todayIndex: Int) -> [Bool] {
+        (0..<7).map { anonDays.contains(todayIndex - 6 + $0) }
     }
 }

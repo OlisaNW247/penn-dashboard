@@ -38,6 +38,7 @@ struct AmbassadorPage: View {
             .listRowSeparator(.hidden)
 
             if model.isSignedIn {
+                goalSection
                 tasksSection
                 numbersSection
                 remindersSection
@@ -120,6 +121,21 @@ struct AmbassadorPage: View {
         #endif
     }
 
+    // MARK: The goal
+
+    /// Downloads at the ambassador's school toward 100, first on the page
+    /// (Marco, 2026-11-22). No section at all until the server sends the count.
+    @ViewBuilder
+    private var goalSection: some View {
+        if let plan = model.plan, let installs = plan.numbers?.schoolInstalls {
+            Section {
+                AmbassadorGoalLine(label: "downloads at \(plan.schoolLabel)", count: installs,
+                                   target: AmbassadorGoals.downloadsTarget)
+            }
+            .smoothSectionBackground(.smoothTeal)
+        }
+    }
+
     // MARK: The tasks
 
     private var tasksSection: some View {
@@ -134,7 +150,12 @@ struct AmbassadorPage: View {
     }
 
     private func taskRow(_ task: AmbassadorTask) -> some View {
-        AmbassadorRow(label: task.label, symbol: task.symbol, trailing: nil, leaves: false,
+        // Posters never finish short of the goal, so the row says how far
+        // along it is instead of ticking.
+        let trailing = task == .posters
+            ? AmbassadorGoals.caption(count: model.postersPutUp, target: AmbassadorGoals.postersTarget)
+            : nil
+        return AmbassadorRow(label: task.label, symbol: task.symbol, trailing: trailing, leaves: false,
                       done: model.isDone(task)) {
             model.clearError()
             openTask = task

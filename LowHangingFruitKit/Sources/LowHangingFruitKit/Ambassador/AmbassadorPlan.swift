@@ -174,6 +174,78 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
         }
     }
 
+    /// How to post on the anonymous apps, taught in the anonymous-chats sheet
+    /// (2026-11-22). Every field degrades: a malformed kind or example is
+    /// dropped, never the plan. `AmbassadorGuidance.bundled` is the copy used
+    /// when the server sends none.
+    public struct Guidance: Codable, Equatable, Sendable {
+        public struct Example: Codable, Equatable, Sendable, Identifiable {
+            public var key: String
+            public var text: String
+            public var reply: String?
+            public var id: String { key }
+
+            public init(key: String, text: String, reply: String? = nil) {
+                self.key = key
+                self.text = text
+                self.reply = reply
+            }
+        }
+
+        public struct Kind: Codable, Equatable, Sendable, Identifiable {
+            public var key: String
+            public var label: String
+            public var rule: String
+            public var prompts: [String]
+            public var examples: [Example]
+            public var id: String { key }
+
+            public init(key: String, label: String, rule: String,
+                        prompts: [String] = [], examples: [Example] = []) {
+                self.key = key
+                self.label = label
+                self.rule = rule
+                self.prompts = prompts
+                self.examples = examples
+            }
+
+            private enum CodingKeys: String, CodingKey { case key, label, rule, prompts, examples }
+
+            public init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                key = try c.decode(String.self, forKey: .key)
+                label = try c.decode(String.self, forKey: .label)
+                rule = (try? c.decodeIfPresent(String.self, forKey: .rule)) ?? ""
+                prompts = (try? c.decodeIfPresent([String].self, forKey: .prompts)) ?? []
+                if let boxes = try? c.decodeIfPresent([LossyElement<Example>].self, forKey: .examples) {
+                    examples = boxes.compactMap(\.value)
+                } else {
+                    examples = []
+                }
+            }
+        }
+
+        public var test: String?
+        public var kinds: [Kind]
+
+        public init(test: String? = nil, kinds: [Kind] = []) {
+            self.test = test
+            self.kinds = kinds
+        }
+
+        private enum CodingKeys: String, CodingKey { case test, kinds }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            test = (try? c.decodeIfPresent(String.self, forKey: .test)) ?? nil
+            if let boxes = try? c.decodeIfPresent([LossyElement<Kind>].self, forKey: .kinds) {
+                kinds = boxes.compactMap(\.value)
+            } else {
+                kinds = []
+            }
+        }
+    }
+
     /// A post the founders wrote for this ambassador to copy.
     public struct Suggestion: Codable, Equatable, Sendable, Identifiable {
         public var id: Int
@@ -305,6 +377,8 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
     /// chats'), added 2026-11-21 for the group-chat task. Decoded with `try?`
     /// so a wrongly shaped one reads as absent and the plan still decodes.
     public var links: [String: String]?
+    /// How to post (2026-11-22); nil from an older server.
+    public var guidance: Guidance?
 
     public init(name: String, school: String, schoolName: String? = nil, title: String? = nil,
                 status: String? = nil, pausedUntil: String? = nil, page: String? = nil,
@@ -313,7 +387,8 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
                 tips: [String]? = nil, generatedAt: String? = nil,
                 posters: [Poster]? = nil, dashboard: String? = nil, ideas: Ideas? = nil,
                 playbook: Playbook? = nil, suggested: [Suggestion]? = nil, captures: Captures? = nil,
-                links: [String: String]? = nil) {
+                links: [String: String]? = nil, guidance: Guidance? = nil) {
+        self.guidance = guidance
         self.links = links
         self.playbook = playbook
         self.suggested = suggested
@@ -375,6 +450,7 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
         }
         captures = (try? c.decodeIfPresent(Captures.self, forKey: .captures)) ?? nil
         links = (try? c.decodeIfPresent([String: String].self, forKey: .links)) ?? nil
+        guidance = (try? c.decodeIfPresent(Guidance.self, forKey: .guidance)) ?? nil
     }
 
     /// An element that decodes to nil instead of throwing.
