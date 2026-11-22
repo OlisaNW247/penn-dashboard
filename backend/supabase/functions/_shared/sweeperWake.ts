@@ -1,6 +1,6 @@
 // The Sweeper wake's rules (docs/SERVER_SWEEPER_DESIGN_2026-11-17.md §1.1,
 // §3): what a phone may upload, the store behind it, and the once-a-minute
-// tick that turns a due minute into a silent push. Pure of Deno and of the
+// tick that turns a due minute into a content-free alert push. Pure of Deno and of the
 // network except through its parameters, so every rule runs under test.
 //
 // What the server may know about a student here is a device token and a list

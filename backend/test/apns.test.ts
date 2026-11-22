@@ -10,7 +10,7 @@ import {
   iatFor,
   providerToken,
   readAPNsAnswer,
-  sendBackgroundPush,
+  sendSweepPush,
   signProviderToken,
 } from "../supabase/functions/_shared/apns.ts";
 
@@ -61,21 +61,21 @@ Deno.test("apns: the request is Apple's, header for header", async () => {
     return Promise.resolve(new Response(null, { status: 200 }));
   }) as unknown as typeof fetch;
 
-  const prod = await sendBackgroundPush({ token: TOKEN, environment: "production", topic: credentials.topic, now: NOW, fetch: fakeFetch, credentials });
+  const prod = await sendSweepPush({ token: TOKEN, environment: "production", topic: credentials.topic, now: NOW, fetch: fakeFetch, credentials });
   assert.deepStrictEqual(prod, { status: 200, outcome: "ok" });
   assert.strictEqual(seen[0].url, `https://api.push.apple.com/3/device/${TOKEN}`);
   const headers = seen[0].init.headers as Record<string, string>;
   assert.deepStrictEqual(Object.keys(headers).sort(), ["apns-expiration", "apns-priority", "apns-push-type", "apns-topic", "authorization", "content-type"]);
   assert.match(headers.authorization, /^bearer [\w-]+\.[\w-]+\.[\w-]+$/);
-  assert.strictEqual(headers["apns-push-type"], "background");
-  assert.strictEqual(headers["apns-priority"], "5");
+  assert.strictEqual(headers["apns-push-type"], "alert");
+  assert.strictEqual(headers["apns-priority"], "10");
   assert.strictEqual(headers["apns-topic"], "com.lhf.lowhangingfruit");
   assert.strictEqual(headers["apns-expiration"], String(Math.floor(NOW / 1000) + 120));
   assert.strictEqual(headers["content-type"], "application/json");
   assert.strictEqual(seen[0].init.method, "POST");
-  assert.strictEqual(seen[0].init.body, '{"aps":{"content-available":1}}');
+  assert.strictEqual(seen[0].init.body, '{"aps":{"alert":{"title":"smooth","body":"checking your next deadline"},"mutable-content":1,"content-available":1,"interruption-level":"passive","thread-id":"sweeper"},"lhf":"sweep"}');
 
-  await sendBackgroundPush({ token: TOKEN, environment: "development", topic: credentials.topic, now: NOW, fetch: fakeFetch, credentials });
+  await sendSweepPush({ token: TOKEN, environment: "development", topic: credentials.topic, now: NOW, fetch: fakeFetch, credentials });
   assert.strictEqual(seen[1].url, `https://api.sandbox.push.apple.com/3/device/${TOKEN}`);
   assert.strictEqual(hostFor("production"), "https://api.push.apple.com");
 });
@@ -105,7 +105,7 @@ Deno.test("apns: a transport failure is status 0 and never carries the url", asy
   const { pem } = await makeKey();
   const credentials = { keyPEM: pem, keyID: "KEYID00002", teamID: "T", topic: "t" };
   const boom = (() => Promise.reject(new TypeError(`connect failed ${TOKEN}`))) as unknown as typeof fetch;
-  const r = await sendBackgroundPush({ token: TOKEN, environment: "production", topic: "t", now: NOW, fetch: boom, credentials });
+  const r = await sendSweepPush({ token: TOKEN, environment: "production", topic: "t", now: NOW, fetch: boom, credentials });
   assert.deepStrictEqual(r, { status: 0, reason: "TypeError", outcome: "failed" });
   assert.ok(!JSON.stringify(r).includes(TOKEN));
 });

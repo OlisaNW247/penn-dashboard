@@ -35,11 +35,16 @@ public struct SubmissionRead: Sendable, Equatable {
     /// a Planner tick means submitted; an explicit `false` means unsubmitted;
     /// a missing flag is unknown (Canvas sends nothing for work with no
     /// submission, which says nothing about whether it was handed in).
+    /// Excused work counts as submitted: it is never handed in, so Canvas
+    /// sends `submitted` false or nothing for it, and without this the
+    /// last-hour poll could never cancel its alarm. `graded` is deliberately
+    /// not treated the same way, because a zero can be graded with no
+    /// submission at all.
     public static func verdicts(fromPlanner items: [CanvasPlannerItem], readAt: Date) -> [SubmissionRead] {
         items.compactMap { item in
             guard let id = item.assignmentID else { return nil }
             let verdict: Verdict
-            if item.submitted == true || item.markedComplete {
+            if item.submitted == true || item.markedComplete || item.excused == true {
                 verdict = .submitted
             } else if item.submitted == false {
                 verdict = .unsubmitted

@@ -507,8 +507,11 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
 ## Next: features
 
 - **Wrong rings after a force-quit: the check in a notification extension**
-  (research only, 2026-11-21, `research/sweeper-force-quit`,
-  `docs/SWEEPER_FORCE_QUIT_RESEARCH_2026-11-21.md`). The wake built on
+  (**built 2026-11-21 on `sweeper/force-quit-check` at Marco's "build it",
+  compiled, never on a phone**; CLAUDE.md → What the app does, "The
+  force-quit check", and Known gaps for what the device test needs;
+  `excused` is fixed there, the zero-point buzz-only idea is not; the
+  research was `docs/SWEEPER_FORCE_QUIT_RESEARCH_2026-11-21.md`). The wake built on
   2026-11-18 is a background push, which iOS discards for a force-quit app.
   An alert push with `mutable-content` reaches a Notification Service
   Extension even then. That extension can read the planner with the phone's

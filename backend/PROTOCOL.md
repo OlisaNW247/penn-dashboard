@@ -1956,13 +1956,13 @@ One request per claimed row, HTTP/2 over TLS, exactly:
 POST https://api.push.apple.com/3/device/<token>          (environment production)
 POST https://api.sandbox.push.apple.com/3/device/<token>  (environment development)
 authorization:   bearer <ES256 JWT>
-apns-push-type:  background
-apns-priority:   5
+apns-push-type:  alert
+apns-priority:   10
 apns-topic:      com.lhf.lowhangingfruit
 apns-expiration: <unix seconds, now + 120>
 content-type:    application/json
 
-{"aps":{"content-available":1}}
+{"aps":{"alert":{"title":"smooth","body":"checking your next deadline"},"mutable-content":1,"content-available":1,"interruption-level":"passive","thread-id":"sweeper"},"lhf":"sweep"}
 ```
 
 The JWT is the provider token: header `{"alg":"ES256","kid":<key id>}`, claims
@@ -2166,9 +2166,10 @@ a 502 on a real phone while a 53-word one succeeded.
   `to_tsvector('english', text)`); the query scans the caller's enrolled
   courses' live documents. Fine at today's pool size; add the index before it is
   not.
-- Delivery of the Sweeper wake is Apple's best effort. A background push is
-  not guaranteed, may be throttled or held, and is never delivered to an app
-  the student force-quit. The server never knows whether a push woke the
+- Delivery of the Sweeper wake is Apple's best effort. The push is an alert
+  with `mutable-content` (it was a background push until 2026-11-21, which iOS
+  drops for a force-quit app), so a Notification Service Extension can run
+  even then; it is still not guaranteed and may be throttled or held. The server never knows whether a push woke the
   phone (there is no acknowledgement): a 200 from APNs is acceptance, not
   delivery. The only honest delivery number is the one the phone counts.
 - A tick of the Sweeper wake that dies after claiming leaves its rows claimed
