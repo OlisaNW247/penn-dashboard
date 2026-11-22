@@ -388,11 +388,22 @@ Screen by screen, as of 2026-10-20 on `v8` (Olisa's `v8` and Marco's
 Test baseline).
 Keep this current. It is the fastest way for a new session to know what exists.
 
-- **Onboarding.** A three-beat intro (`MissionIntroView`: since 2026-10-30
-  the first pane's scattered chips gather into an ordered list 0.9 s after
-  it appears, replaying on re-entry and skipped under Reduce Motion, and
-  the third pane lists Dashboard, Reminders and Ask only; Grade Watcher
-  was dropped from it). Then `OnboardingView`'s walk:
+- **Onboarding.** The animated opening story (`IntroView`: a stick
+  figure stands, is buried in notifications, the storm gathers into the
+  squiggle, and the figure relaxes; since 2026-11-21 the relaxed figure,
+  `RelaxedStudent`, sits leaning back on one arm with a knee up and a leg
+  along the squiggle, redrawn at Marco's word because the old lying pose
+  "doesn't really look that good"; compiled, not yet seen on a phone), then
+  a **two-page** tour (`MissionIntroView`, since 2026-11-21: "Go get the
+  low hanging fruit" with the sample list, then Dashboard / Reminders /
+  Ask; the "We kept losing points on the easy stuff" pane with its
+  gathering chips, `MissionScatter`, was cut because the story already
+  makes that point, at Marco's "make it go a little faster"; the dots
+  derive from `pageCount`). Then `OnboardingView`'s walk (its three
+  progress dots, canvas · gradescope · reminders, show on the "Canvas
+  connected" page, the Gradescope choice and the reminders page since
+  2026-11-21; before that dot 1 was never lit and the Gradescope choice
+  had none, `IntroTourTests`):
   1. university search (220 curated Canvas sites; manual address fallback)
   2. Canvas login (WebKit, the school's own SSO; Penn is PennKey + Duo),
      detection unchanged since 3.3.0
@@ -6847,10 +6858,25 @@ then tap it or swipe left in "prev" to bring it back. The undo lands
 straight on the first feature card (lists); a "You've got it, tap Next"
 pause sat between them until 2026-10-30, when the owner cut it because it
 did nothing. The `.ready` end state is seen only while the first sync is
-still running ("Almost there."). The fixtures live
-inside the guide; nothing reaches `AppState` or the ledger, and the login
-WebView stays mounted underneath. A failed sync returns to the retained
-login view.
+still running ("Almost there."). Nothing reaches `AppState` or the ledger,
+and the login WebView stays mounted underneath. A failed sync returns to
+the retained login view. **Since 2026-11-21 (Marco: testers said "I'm not
+taking those classes"; compiled and tested, not yet on a phone) the cards
+are the student's own**: `PracticeCards.items(from:now:)` (pure, in the
+guide's file) picks up to three upcoming assignments from the just-synced
+`state.canvasItems`, one per class first, soonest first, chosen once when
+the lesson opens (`OnboardingView.practiceItems`) so they cannot change
+under the student's finger; with nothing upcoming (and in the
+`-LHFCompletionGuideHarness`) three generic cards stand in (BIO 101,
+ECON 101, WRTG 101; `SampleData` is untouched, preview mode keeps its
+own). The practice card **nudges** 22pt in the swipe's direction and eases
+back, with a rest at home, until the first touch (`.phaseAnimator` on a
+wrapper outside the card, never inside it, since the card owns its drag;
+one branch only, so the first touch cannot re-create the card mid-swipe;
+re-armed for the prev card; off under Reduce Motion). A "skip" at the top
+right (`DashboardPracticeProgress.skip()`, to `.ready` from any step)
+leaves the lesson; the sync gate on Continue still holds. The two
+practice titles are "swipe right to finish" and "swipe left to undo".
 
 **Connect, then confirm.** Once the connect starts, a "Canvas connected"
 confirmation (no progress dots; its button reads "Syncing Canvas…" and is

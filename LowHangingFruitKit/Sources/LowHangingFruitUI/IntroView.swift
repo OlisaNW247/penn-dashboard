@@ -578,45 +578,47 @@ private struct RelaxedStudent: View {
             let ink = Color.smoothInk
             let stroke = StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round)
 
+            func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+                CGPoint(x: size.width * x, y: size.height * y)
+            }
+
+            // Sitting on the line, leaning back on one straight arm, one knee
+            // up with the other hand resting on it, the other leg stretched out.
+            let headCentre = pt(0.205, 0.133)
+            let headRadius = size.width * 0.08
+            let shoulder = pt(0.31, 0.24)
+            let hip = pt(0.46, 0.52)
+            let supportingHand = pt(0.14, 0.52)
+            let restingHand = pt(0.71, 0.27)
+
+            var body = Path()
+            body.move(to: shoulder)
+            body.addLine(to: headCentre)
+            body.move(to: shoulder)
+            body.addCurve(to: hip, control1: pt(0.35, 0.33), control2: pt(0.42, 0.44))
+            body.move(to: shoulder)
+            body.addLine(to: supportingHand)
+            body.move(to: shoulder)
+            body.addLine(to: pt(0.50, 0.37))
+            body.addLine(to: restingHand)
+            body.move(to: hip)
+            body.addLine(to: pt(0.66, 0.28))
+            body.addLine(to: pt(0.72, 0.51))
+            body.move(to: hip)
+            body.addLine(to: pt(0.97, 0.52))
+            context.stroke(body, with: .color(ink), style: stroke)
+
+            // The head is drawn over the neck line so only its outline shows.
             let head = Path(
                 ellipseIn: CGRect(
-                    x: size.width * 0.17,
-                    y: size.height * 0.39,
-                    width: size.height * 0.24,
-                    height: size.height * 0.24
+                    x: headCentre.x - headRadius,
+                    y: headCentre.y - headRadius,
+                    width: headRadius * 2,
+                    height: headRadius * 2
                 )
             )
             context.fill(head, with: .color(Color.v2Bg))
             context.stroke(head, with: .color(ink), style: stroke)
-
-            var body = Path()
-            let shoulder = CGPoint(x: size.width * 0.36, y: size.height * 0.53)
-            let hip = CGPoint(x: size.width * 0.63, y: size.height * 0.61)
-            body.move(to: shoulder)
-            body.addCurve(
-                to: hip,
-                control1: CGPoint(x: size.width * 0.46, y: size.height * 0.52),
-                control2: CGPoint(x: size.width * 0.56, y: size.height * 0.58)
-            )
-
-            // One arm clearly props up the head; the other rests on the torso.
-            let supportingHand = CGPoint(x: size.width * 0.31, y: size.height * 0.48)
-            body.move(to: shoulder)
-            body.addLine(to: CGPoint(x: size.width * 0.24, y: size.height * 0.54))
-            body.addLine(to: supportingHand)
-
-            let restingHand = CGPoint(x: size.width * 0.55, y: size.height * 0.57)
-            body.move(to: CGPoint(x: size.width * 0.39, y: size.height * 0.54))
-            body.addLine(to: CGPoint(x: size.width * 0.47, y: size.height * 0.55))
-            body.addLine(to: restingHand)
-
-            body.move(to: hip)
-            body.addLine(to: CGPoint(x: size.width * 0.80, y: size.height * 0.70))
-            body.addLine(to: CGPoint(x: size.width * 0.97, y: size.height * 0.68))
-            body.move(to: hip)
-            body.addLine(to: CGPoint(x: size.width * 0.80, y: size.height * 0.53))
-            body.addLine(to: CGPoint(x: size.width * 0.94, y: size.height * 0.57))
-            context.stroke(body, with: .color(ink), style: stroke)
 
             let handRadius: CGFloat = 3.4
             for hand in [supportingHand, restingHand] {
@@ -632,8 +634,8 @@ private struct RelaxedStudent: View {
             }
 
             var breeze = Path()
-            breeze.move(to: CGPoint(x: size.width * 0.08, y: size.height * 0.13))
-            breeze.addCurve(to: CGPoint(x: size.width * 0.20, y: size.height * 0.06), control1: CGPoint(x: size.width * 0.11, y: size.height * 0.04), control2: CGPoint(x: size.width * 0.17, y: size.height * 0.15))
+            breeze.move(to: pt(0.40, 0.14))
+            breeze.addCurve(to: pt(0.51, 0.08), control1: pt(0.43, 0.04), control2: pt(0.48, 0.14))
             context.stroke(breeze, with: .color(Color.smoothTeal), style: StrokeStyle(lineWidth: 3, lineCap: .round))
         }
         .overlay(alignment: .topTrailing) {
