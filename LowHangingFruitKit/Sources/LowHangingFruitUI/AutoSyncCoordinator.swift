@@ -155,6 +155,16 @@ enum AutoSyncCoordinator {
     /// "canvas" is even in their hostname (Columbia's is
     /// `courseworks.columbia.edu`), so they use the newer, host-aware match.
     static func canvasCookies(forHost canvasHost: String = CanvasInstallation.penn.host) async -> [HTTPCookie] {
+        // A non-default store's jar is loaded into WebKit's network process
+        // only once a web view has used the store; before that `getAllCookies`
+        // answers nothing while the jar on disk is full (CLAUDE.md → Traps,
+        // 2026-11-22). Every reader here that runs in a cold process (a
+        // background or push wake, the launch pass before the dashboard's
+        // first refresh) would otherwise see only the persisted half, which
+        // the 24-hour clock rule empties a day after the last save, and read
+        // "no session" over a live one. Attaching a hidden, never-loaded web
+        // view once per process is enough; a no-op under the test runner.
+        LoginDataStores.warmCanvasStore()
         let live: [HTTPCookie] = await withCheckedContinuation { continuation in
             LoginDataStores.canvas.httpCookieStore.getAllCookies { continuation.resume(returning: $0) }
         }

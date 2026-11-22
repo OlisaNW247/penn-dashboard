@@ -85,6 +85,18 @@ extension AppState {
         if let probe = SweepProbeState.entry { entries.append(probe) }
         #endif
 
+        // Nothing armed: no push will come (the server's list is empty too),
+        // so the extension has nothing to check and the cookie copy has no
+        // consumer. Both go, as they do when no wake can reach the phone; the
+        // next pass that arms an alarm writes both again (test pass of
+        // 2026-11-22). Before this the copy of the login outlived the last
+        // alarm until reminders or Canvas were switched off.
+        guard !entries.isEmpty else {
+            SweepFiles.deleteManifest(in: directory)
+            SweepCookieMirror.deleteAll()
+            return
+        }
+
         SweepFiles.saveManifest(
             SweepManifest(writtenAt: now, canvasBaseURL: canvasBaseURL, entries: entries), in: directory)
 
