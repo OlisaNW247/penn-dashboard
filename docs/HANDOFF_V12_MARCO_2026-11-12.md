@@ -215,9 +215,8 @@ In rough order.
    number it has seen, so check TestFlight → Builds there before choosing
    the next one. Whether 3.4.1 is live was not readable from the cloud
    session (Apple's lookup did not answer).
-6. **The server zip of 2026-11-22** (the download count, section 2c), if
-   it is not deployed yet. The app is quiet against an older server: the
-   count retries every six hours and the row stays hidden.
+6. Nothing is waiting on the server side: the download count's zip
+   (section 2c) went live on 2026-11-22.
 
 Known and left alone: Yik Yak is reported to cap a post at 200 characters,
 and every anonymous post is longer than that once its link is counted. If an

@@ -4211,15 +4211,22 @@ none is a ship line.
 
 ## Known gaps
 
-- **The install count (2026-11-22) has never run on a phone, is not
-  deployed and is not in any released build.** Compiled and tested on the
+- **The install count (2026-11-22) has never run on a phone and is not in
+  any released build; its server half is live.** Compiled and tested on the
   runner; the Worker half tested under Miniflare, beside the original site
-  and against the scan backup, and reviewed for security. What only the
-  real world settles: that the Sites runtime passes `cf-connecting-ip` (if
-  it does not, every caller shares one `noip` bucket and a school stops
-  counting at 300 a day, which would look like a plateau at exactly 300);
-  that `URLSession`'s request reaches the route from a phone; and the
-  first real numbers, which should jump at Penn in the days after release
+  and against the scan backup, and reviewed for security. **Deployed the
+  same day by the ChatGPT session**, which reported that live GET and POST
+  requests to `/api/install` reached the Worker with `cf-connecting-ip`
+  set by the platform (so the shared `noip` bucket is not in use and the
+  300-a-day limit is per network as designed), scan totals unchanged and
+  no test install recorded. Read from here afterwards, GETs only: `GET
+  /api/install` is 405; a UVA ambassador's `plan.json` carries
+  `numbers.schoolInstalls` 0 and `schoolInstallsRecent` 0; the page has
+  the "uva downloads" tile; `/` and `/api/stats` answer with the same two
+  totals above the 2026-11-10 backup as before and none below. A counted
+  POST was deliberately not sent from here: there is no route that removes
+  one. What is still unsettled: that `URLSession`'s request reaches the
+  route from a phone; and the first real numbers, which should jump at Penn in the days after release
   as existing students update (`existing`) and then grow by `new`. Known
   limits: the number can be inflated by anyone who can script requests
   (300 a day per network per school; acceptable while it only motivates,
