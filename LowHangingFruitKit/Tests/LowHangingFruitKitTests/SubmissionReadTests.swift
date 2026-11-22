@@ -39,4 +39,20 @@ struct SubmissionReadTests {
         #expect(SubmissionRead.verdicts(fromPlanner: [none], readAt: at).isEmpty)
         #expect(SubmissionRead.verdicts(fromPlanner: [], readAt: at).isEmpty)
     }
+
+    @Test("Excused work reads as submitted; not excused and not submitted stays unsubmitted")
+    func excused() {
+        let json = """
+        [{"plannable_type":"assignment","plannable_id":1,"plannable":{"title":"A","assignment_id":1},
+          "submissions":{"submitted":false,"excused":true}},
+         {"plannable_type":"assignment","plannable_id":2,"plannable":{"title":"B","assignment_id":2},
+          "submissions":{"submitted":false,"excused":false}},
+         {"plannable_type":"assignment","plannable_id":3,"plannable":{"title":"C","assignment_id":3},
+          "submissions":{"submitted":false,"graded":true}}]
+        """
+        let r = CanvasStructuredDecoding.decode(CanvasPlannerItem.self, fromPages: [Data(json.utf8)])
+        #expect(r.elements.map(\.excused) == [true, false, nil])
+        let reads = SubmissionRead.verdicts(fromPlanner: r.elements, readAt: at)
+        #expect(reads.map(\.verdict) == [.submitted, .unsubmitted, .unsubmitted])
+    }
 }

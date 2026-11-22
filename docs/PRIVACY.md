@@ -1,6 +1,6 @@
 # Privacy Policy — Low Hanging Fruit (LHF)
 
-_Last updated: 2026-11-12_
+_Last updated: 2026-11-22_
 
 Low Hanging Fruit ("LHF", "the app") is a personal academic dashboard that shows
 your Canvas assignments and deadlines in one place. This policy explains what
@@ -34,7 +34,9 @@ does not remove everything it saved on the phone: see "Deleting your data".
 
 - **Your Canvas and Gradescope logins.** You sign in through each service's own
   web page inside the app. Session cookies and your Canvas calendar feed URL
-  are stored in this device's Keychain. For Penn Canvas, the sign-in screen
+  are stored in this device's Keychain (the Sweeper keeps one more copy of
+  the Canvas session cookies there; see "A wake-up call for the Sweeper"
+  below). For Penn Canvas, the sign-in screen
   explains that Smooth also saves the PennKey credentials you submit after a
   successful connection, to reconnect automatically. Gradescope and other
   schools' passwords are not captured. See "Automatic Canvas reconnection" below.
@@ -52,7 +54,8 @@ does not remove everything it saved on the phone: see "Deleting your data".
 - **Your work list and your name.** Assignments you add yourself, due-date
   edits, reminder settings, and the first name you enter never go to our
   server, with one opt-in exception for the work list and your own tasks
-  described under "Connecting an AI assistant" (never your name). The work Canvas and Gradescope give you is the exception: its titles
+  described under "Connecting an AI assistant" (never your name; not in
+  this build). The work Canvas and Gradescope give you is the exception: its titles
   and due dates are in the summary sent with each question you ask "the tree"
   (see "What is sent to our server"), though your own tasks and your due-date
   edits are not. Your own tasks and due-date edits are shared, encrypted, with
@@ -313,13 +316,21 @@ on-device alone:
   install for push notifications (it identifies the install to Apple, not
   you to us), and a short list of minutes at which the phone would like to
   be woken, at most twenty-four over two days. At those minutes our server
-  sends your phone a silent push with nothing in it; your phone wakes for a
-  few seconds, asks Canvas or Gradescope with your own login whether the
-  work is in, and cancels the alarm only if it is. The server never learns
-  which class, which assignment, when it is due or whether you submitted:
-  the minutes are just minutes, and we do not log them. Apple may deliver
-  these pushes late or not at all, and never after you force-quit the app,
-  so they help the alarm; they never control it.
+  sends your phone a push that says nothing about your work, only "checking
+  your next deadline". A small part of Smooth that runs on your phone even
+  after you swipe the app away then asks Canvas, with your own login,
+  whether the work is in, cancels the alarm only if it is, and changes that
+  line to say so ("PS7 is in · alarm off"). The line makes no sound and
+  doesn't light the screen, and Smooth clears these lines the next time you
+  open it. For that check, Smooth keeps a second copy of your Canvas session
+  cookies in this phone's Keychain that only Smooth's own parts can read:
+  this device only, never synced, and deleted when you disconnect Canvas.
+  The server never learns which class, which assignment, when it is due or
+  whether you submitted: the minutes are just minutes, and we do not log
+  them. If the check can't finish (no signal, an expired login, Canvas too
+  slow), the alarm rings as usual. Pushes can arrive late or not at all, and
+  not at all if you turn off Smooth's notifications, so they help the
+  alarm; they never control it.
 
 - **An anonymous account id.** The first time you launch the app, it creates an
   anonymous account with our backend — no email, no password, no name — so the
@@ -495,6 +506,32 @@ nothing until you pair it with your phone.
 - **Academic integrity.** What you submit is your responsibility under your
   school's rules, and Smooth marks every draft with the assistant's name so
   that is never hidden.
+## One anonymous count: which school
+
+Once, after you connect Canvas, the app tells our poster-scan server
+(smooth-poster-scans.jazzysmile20.chatgpt.site, the small service described
+under "Ambassador mode" below) which school you connected. The message is
+two things: the web address of that school's Canvas site (for example
+`canvas.upenn.edu`), and whether Smooth was already set up on this phone
+before the update that added the count. That is the whole message. It
+carries no id, no name, no account, and nothing about your classes or your
+work. It is sent one time per install, not each time you open the app, and
+preview mode never sends it.
+
+- **What the server keeps:** a tally, one number per school per day. There
+  is no row per phone, so we can't tell who is in a count, and there is
+  nothing of yours to look up or delete.
+- **Your network address:** like any web server, ours sees the address a
+  message comes from. It does not store it. To stop one person from
+  inflating a school's number, it keeps a scrambled form of the address,
+  mixed with a random value that changes every day, for that day only. Both
+  are deleted the next time the server is used after the day ends.
+- **Why:** we show each school's total to the students who volunteer as
+  campus ambassadors there, and we use it to see where Smooth is being
+  used.
+
+If your school is not Penn, this (plus ambassador mode, if you sign in to it) is the only thing the app sends us on its own.
+
 ## Ambassador mode (optional, for campus ambassadors only)
 
 A few students help spread the word about Smooth at their schools. If one
@@ -505,8 +542,8 @@ is separate from the server described above and shares nothing with it.
 
 What it sends, and only while signed in: the code; which anonymous campus
 app the ambassador picked and the phone's time-zone offset (so "today's
-post" is their today); and what they tap on that page: "i posted it", a
-checklist tick, a pause, and the feedback they type. Since 2026-11-11 an
+post" is their today); and what they tap on that page: "done" on a task,
+a pause, and the feedback they type. Since 2026-11-11 an
 ambassador can also send a **poster idea**: a picture they choose, a note,
 or both, and only when they tap "send". The picture is rebuilt from its
 pixels on the phone first, at no more than 1280 pixels and 600 KB, so
@@ -621,7 +658,8 @@ storage with it: your list of work and what you've checked off, your grade
 readings and settings, the announcements list and the widget snapshot. iOS
 does not remove Keychain items when an app is deleted. If you delete Smooth
 and install it again on the same phone, these can still be there: your Canvas
-and Gradescope session cookies, your Canvas calendar feed address, a PennKey
+and Gradescope session cookies (including the Sweeper's copy of the Canvas
+ones), your Canvas calendar feed address, a PennKey
 password you saved, your Ed Discussion session, the key that signs the phone
 in to its anonymous account, and a laptop pairing key. Smooth does not clear
 them when it is installed fresh, so a reinstall is not a clean sign-out. They
@@ -648,13 +686,16 @@ worth stating plainly rather than implying a guarantee we haven't built.
 
 ## What we don't do
 
-- **No analytics, tracking, or advertising**, and no data broker or ad network
-  ever receives anything from this app.
+- **No tracking or advertising**, and no data broker or ad network ever
+  receives anything from this app. The only usage number we collect is the
+  one anonymous count per install described under "One anonymous count:
+  which school"; nothing follows you across launches, screens or apps.
 - **No third-party SDKs.** The app is built directly against Apple's and
   Supabase's plain HTTP APIs — no analytics kit, ad kit, or crash reporter
   bundled in.
-- **No push notifications.** Reminders are scheduled and delivered locally on
-  your device.
+- **No push notifications with anything in them.** Reminders are scheduled
+  and delivered locally on your device. The only push is the Sweeper's
+  check-in above, which carries no information about your work.
 - We don't sell your data. There's nothing to sell: we keep no questions,
   answers or grades, and no readable list of your work unless you turn on
   "connect an AI assistant", which keeps exactly that list for you and

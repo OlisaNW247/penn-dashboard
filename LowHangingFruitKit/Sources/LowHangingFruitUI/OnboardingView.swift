@@ -50,6 +50,10 @@ struct OnboardingView: View {
     @State private var showsCompletionGuide = false
     @State private var showsCanvasConfirmation = false
     @State private var completionGuideReady = false
+    /// The lesson's cards, picked once when the lesson opens from the
+    /// assignments the first sync fetched, so they cannot change under the
+    /// student's finger while the lesson is on screen.
+    @State private var practiceItems: [DashItem] = []
     /// The school the student tapped while a different one was already
     /// chosen, held here until they answer the "switch school?" dialog.
     /// `CanvasInstallation` is `Identifiable`, but the dialog is driven by a
@@ -145,6 +149,7 @@ struct OnboardingView: View {
         if ProcessInfo.processInfo.arguments.contains("-LHFCompletionGuideHarness") {
             _showsCompletionGuide = State(initialValue: true)
             _completionGuideReady = State(initialValue: true)
+            _practiceItems = State(initialValue: PracticeCards.items(from: [], now: Date()))
         }
         #endif
     }
@@ -162,7 +167,7 @@ struct OnboardingView: View {
                               isReady: false, onBack: nil, onContinue: {})
             }
             if showsCompletionGuide {
-                CanvasCompletionGuide(isReady: completionGuideReady, notice: canvasConnectionNotice) {
+                CanvasCompletionGuide(items: practiceItems, isReady: completionGuideReady, notice: canvasConnectionNotice) {
                     guard completionGuideReady else { return }
                     showsCompletionGuide = false
                     advancePastCanvasStep()
@@ -358,6 +363,7 @@ struct OnboardingView: View {
 
     private func beginCanvasWalkthrough() {
         if state.onboardingDestination == .full {
+            practiceItems = PracticeCards.items(from: state.canvasItems, now: Date())
             showsCompletionGuide = true
         } else {
             advancePastCanvasStep()
@@ -392,12 +398,17 @@ struct OnboardingView: View {
                         .foregroundStyle(Color.v2Ink)
                         .multilineTextAlignment(.center)
                     Spacer(minLength: 48)
-                    Button(action: gradescopeSkipped) {
-                        Text("Continue with Canvas only")
-                            .frame(maxWidth: .infinity, minHeight: 52)
-                            .background(Color.v2Ink, in: Capsule())
+                    // The dots sit 14 above the first button, as on the
+                    // other footers; the outer stack spaces by 24.
+                    VStack(spacing: 14) {
+                        progressDots(current: 2)
+                        Button(action: gradescopeSkipped) {
+                            Text("Continue with Canvas only")
+                                .frame(maxWidth: .infinity, minHeight: 52)
+                                .background(Color.v2Ink, in: Capsule())
+                        }
+                        .foregroundStyle(Color.v2ToggleActiveTx)
                     }
-                    .foregroundStyle(Color.v2ToggleActiveTx)
                     Button { phase = .gradescopeLogin } label: {
                         Text("Add Gradescope")
                             .frame(maxWidth: .infinity, minHeight: 52)
@@ -860,7 +871,7 @@ struct OnboardingView: View {
             Spacer()
 
             VStack(spacing: 14) {
-                if step != 1 { progressDots(current: step) }
+                progressDots(current: step)
 
                 Button(action: onContinue) {
                     Text(isReady ? "continue" : "Syncing Canvas…")

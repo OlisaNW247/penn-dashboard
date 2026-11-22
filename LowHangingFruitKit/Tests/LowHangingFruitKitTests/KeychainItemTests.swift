@@ -252,6 +252,11 @@ struct KeychainSingleDoorTests {
         for case let file as URL in walker where file.pathExtension == "swift" {
             let name = file.lastPathComponent
             if name == "KeychainItem.swift" { continue }
+            // `KeychainItem` lives in LowHangingFruitUI, which the Sweeper's
+            // notification extension must not link, so the cookie mirror (Kit,
+            // read by that extension) has to make its own calls. It updates
+            // before it adds, the same shape `KeychainItem.write` enforces.
+            if name == "SweepCookieMirror.swift" { continue }
             let text = try String(contentsOf: file, encoding: .utf8)
             scanned += 1
             let lines = text.split(separator: "\n", omittingEmptySubsequences: false)

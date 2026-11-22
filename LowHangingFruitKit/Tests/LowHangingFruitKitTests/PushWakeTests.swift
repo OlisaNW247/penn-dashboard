@@ -28,7 +28,10 @@ struct PushWakeTests {
         #expect(body.contains("LiveAppStateRegistry.shared.beginWake()"))
         #expect(body.contains("defer { wake.end() }"))
         #expect(body.contains("SweeperCounts.wakesPush"))
-        #expect(body.contains("SessionCookieStore.isExpired(service: .canvas)"))
+        // The gate reads the live-merged jar, never the clock-gated one alone
+        // (2026-11-22 test pass M2).
+        #expect(body.contains("AutoSyncCoordinator.canvasCookies(forHost:"))
+        #expect(!body.contains("SessionCookieStore.isExpired(service: .canvas)"))
         #expect(body.contains("isUsingFixtureData"))
     }
 

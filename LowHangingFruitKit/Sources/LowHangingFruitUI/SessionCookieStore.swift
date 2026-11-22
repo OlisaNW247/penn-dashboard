@@ -475,6 +475,12 @@ enum SessionCookieStore {
     /// Removes every service's persisted cookies.
     static func clear() {
         for s in Service.allCases { KeychainItem.delete(baseQuery(service: s)) }
+        // Disconnecting must delete the Sweeper's copies too: the mirrored
+        // cookies and the manifest the notification extension reads. A
+        // reconnect purge lands here as well, which is fine: the next
+        // foreground pass writes a fresh copy.
+        SweepCookieMirror.deleteAll()
+        SweepFiles.deleteManifest()
     }
 
     /// Removes only `service`'s persisted cookies, leaving every other
@@ -482,6 +488,11 @@ enum SessionCookieStore {
     /// domain (e.g. both flowing through `upenn.edu` Penn SSO).
     static func remove(service: Service) {
         KeychainItem.delete(baseQuery(service: service))
+        if service == .canvas {
+            // Same reason as `clear()`: the Sweeper's copies go with the login.
+            SweepCookieMirror.deleteAll()
+            SweepFiles.deleteManifest()
+        }
     }
 
     #if DEBUG

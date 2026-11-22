@@ -2,13 +2,13 @@
 // §3). Two callers, one function:
 //
 //   POST /       the phone, with the student's own Supabase JWT, uploads the
-//                minutes at which it wants a silent nudge (`action: "put"`) or
+//                minutes at which it wants a content-free alert nudge (`action: "put"`) or
 //                withdraws them (`action: "delete"`). Run with
 //                `verify_jwt = false` (config.toml), so the bearer is verified
 //                here by `requireUser`, the way `agent-auth` and `mcp` do it.
 //   POST /tick   pg_cron through pg_net, once a minute, with a dedicated
 //                secret in `x-sweeper-tick-secret` (never the service key).
-//                It claims the rows due now and sends each a background push.
+//                It claims the rows due now and sends each a content-free alert push.
 //
 // `put` and `delete` are POSTs with an `action` because the phone's
 // `BackendClient` has one wire and `agent-snapshot` already uses this shape.
@@ -18,7 +18,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.115.0";
 import { corsHeaders, errorResponse, HttpError, json } from "../_shared/http.ts";
 import { enforceMinimumVersion, type VersionOptions } from "../_shared/version.ts";
 import { requireUser } from "../_shared/auth.ts";
-import { apnsCredentialsFromEnv, forgetProviderToken, sendBackgroundPush } from "../_shared/apns.ts";
+import { apnsCredentialsFromEnv, forgetProviderToken, sendSweepPush } from "../_shared/apns.ts";
 import {
   type ApnsSender,
   PostgrestSweeperWakeStore,
@@ -167,7 +167,7 @@ function productionApns(): ApnsSender {
   return {
     send: (row, now) => {
       const credentials = apnsCredentialsFromEnv(row.environment);
-      return sendBackgroundPush({ token: row.token, environment: row.environment, topic: credentials.topic, now, fetch, credentials });
+      return sendSweepPush({ token: row.token, environment: row.environment, topic: credentials.topic, now, fetch, credentials });
     },
     forget: (environment) => forgetProviderToken(apnsCredentialsFromEnv(environment).keyID),
   };

@@ -115,18 +115,51 @@ _Description: 3,373 characters including line breaks, within the 4,000 limit (th
 
 ## What's New in 3.5.0 (release notes, ≤4000)
 
-The Sweeper gets its own page.
+The Sweeper gets its own page, and rings only when it should.
 
 • The Smooth Sweeper has its own page, opened from the alarm button in the
-  header: see a countdown to the next alarm, and set the lead time and sound
-  for each class
-• Swipe a card either way to complete it
-• Scrolling no longer sticks when your finger starts on a card
+  header: a countdown to the next alarm, and a lead time and sound for each
+  class
+• The alarm now stands down the moment Canvas shows the work turned in, and
+  in the last hour before a deadline Smooth checks Canvas every minute while
+  it is open
+• Work Smooth cannot confirm (an outside tool) gets three notifications at
+  the sweeping time instead of the alarm
+• Staying signed in: Smooth renews Duo's trust for this phone before it runs
+  out, so a day away no longer ends on a push you were not there for; if a
+  push is missed, one notification tells you to sign in
+• Swipe a card either way to complete it; scrolling no longer sticks when
+  your finger starts on a card
 • A card with nothing to hand in says "in class" or "off canvas" under its due
   time, whichever is true
+• Ask knows each class's weekly schedule and your own section, and leans on
+  the newest posts for questions about this week
+• Campus ambassadors get their own page under Profile
 • The update screen lists what changed
 
-_What's New: 448 characters, within the 4,000 limit._
+_What's New: about 1,000 characters, within the 4,000 limit. Drafted
+2026-11-22 for Marco's review; the agent connection and degree progress are
+switched off in this build and deliberately not mentioned._
+
+### Update wall list for 3.5.0 (the manifest's `changes`)
+
+Set on `lhf-update.json` (the `update-manifest` branch) when 3.5.0 goes
+live, beside the floor the workflow raises. Each line lowercase, at most 40
+characters, no link, at most 6 (`UpdatePolicy.sanitizedChanges` drops a line
+that breaks a rule, never cuts it). Replaces whatever list was there.
+
+```json
+"changes": [
+  "sweeper page with per-class lead time",
+  "alarms stand down once canvas sees it",
+  "swipe a card either way to finish it",
+  "stays signed in through duo",
+  "ask knows your weekly schedule",
+  "ambassador mode in profile"
+]
+```
+
+Longest line: 37 characters. Drafted 2026-11-22 for Marco's review.
 
 ## What's New in 3.4.1 (release notes, ≤4000)
 
@@ -332,6 +365,15 @@ When prompted in App Store Connect → App Privacy, this app now collects data:
   (pooled Canvas course material — syllabi, pages, assignment descriptions,
   announcements — uploaded from the student's own Canvas session; not used for
   tracking).
+
+**Open for the first build with the install count (2026-11-22):** after
+Canvas is connected the app sends the school's Canvas web address once, with
+no identifier, to the poster-scan site, which keeps a per-school daily tally
+(`docs/PRIVACY.md` → "One anonymous count: which school"). It is not linked
+to a user and not used for tracking. The cautious answer is one more entry,
+**Usage Data → Other Usage Data, not linked to the user, Analytics**; the
+"there is no ... analytics SDK" sentence below stays true (it is our own
+request, no SDK). Olisa or Marco decides before that build is submitted.
 
 The feedback form (3.3.0) does not change these answers: it is a Google
 Form opened in Safari, outside the app, and the app sends it nothing.

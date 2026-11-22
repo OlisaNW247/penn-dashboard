@@ -19,6 +19,7 @@
 //   /f/{FOUNDER_TOKEN}/capture/{id}  a capture's image bytes (founders only)
 //   /f/{FOUNDER_TOKEN}/export.json
 //   /api/leaderboard            public, school level only
+//   POST /api/install           the app's anonymous install count (host + new/existing)
 
 import qrcode from "qrcode-generator";
 import { CHANNELS, SCHOOLS, designsFor, isValidCombo, posterName, scanKey } from "./catalog.js";
@@ -27,6 +28,7 @@ import messages from "./templates/messages.json";
 import checklist from "./templates/checklist.json";
 import playbook from "./templates/playbook.json";
 import guidance from "./templates/guidance.json";
+import canvasHosts from "./canvas-hosts.json";
 import { ambassadorLinks } from "./digest.js";
 import { html } from "./html.js";
 import {
@@ -71,6 +73,9 @@ import {
   ideaImage,
   markIdeaSeen,
   schoolDesignScans,
+  installTotals,
+  recordInstall,
+  pruneInstallMarks,
 } from "./data.js";
 import { recordScan, appStoreRedirect, notFound } from "./legacy.js";
 import { ambassadorPage, stickersPage, founderPage } from "./pages.js";
@@ -108,6 +113,7 @@ async function planPayload(env, amb, url, pub) {
   const caps = await captureCounts(env, amb);
   const suggested = await suggestionsFor(env, amb.id);
   const designScans = await schoolDesignScans(env, amb.school);
+  const installs = await installTotals(env, amb.school, stats.days);
   const links = ambassadorLinks(pub, amb);
   const anonParam = url.searchParams.get("anon");
   const anonApp = ANON_APPS.includes(anonParam) ? anonParam : "fizz";
@@ -136,6 +142,8 @@ async function planPayload(env, amb, url, pub) {
       drops: stats.drops,
       posts: stats.posts,
       days: stats.days,
+      // Only for a school with a mapped Canvas host; omitted otherwise.
+      ...(installs ? { schoolInstalls: installs.total, schoolInstallsRecent: installs.recent } : {}),
     },
     today: today && {
       dayIndex: idx,
@@ -478,10 +486,49 @@ function qrSvg(text) {
   return qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true }).replace("<svg ", '<svg class="qr" ');
 }
 
+// POST /api/install: public and unauthenticated by design, no CORS (the app is
+// not a browser). 200 whenever the body was well formed, even when a limit
+// swallowed the count, so a caller can never learn it hit one.
+let knownHosts = null;
+function knownCanvasHost(host) {
+  knownHosts ??= new Set([...canvasHosts, ...Object.values(SCHOOLS).flatMap((s) => s.canvasHosts ?? [])]);
+  return knownHosts.has(host);
+}
+const INSTALL_BODY_MAX = 512;
+const INSTALL_HOST = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/;
+async function installRoute(request, env) {
+  await pruneInstallMarks(env); // before any early return
+  const headers = { "cache-control": "no-store" };
+  const reply = (status, body, extra = {}) => Response.json(body, { status, headers: { ...headers, ...extra } });
+  if (request.method !== "POST") return reply(405, { ok: false }, { allow: "POST" });
+  if (!(request.headers.get("content-type") || "").toLowerCase().startsWith("application/json")) return reply(400, { ok: false });
+  const declared = parseInt(request.headers.get("content-length") || "0", 10);
+  if (declared > INSTALL_BODY_MAX) return reply(400, { ok: false });
+  const raw = new Uint8Array(await request.arrayBuffer());
+  if (raw.byteLength > INSTALL_BODY_MAX) return reply(400, { ok: false });
+  let body;
+  try {
+    body = JSON.parse(new TextDecoder().decode(raw));
+  } catch {
+    return reply(400, { ok: false });
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) return reply(400, { ok: false });
+  const host = typeof body.host === "string" ? body.host.toLowerCase() : "";
+  if (host.length < 4 || host.length > 100 || !INSTALL_HOST.test(host)) return reply(400, { ok: false });
+  if (body.kind !== "new" && body.kind !== "existing") return reply(400, { ok: false });
+  // Unknown host: answer as if counted and write nothing at all (no salt, no
+  // bucket), so junk cannot fill the table or spend a network's slots.
+  if (!knownCanvasHost(host)) return reply(200, { ok: true });
+  await recordInstall(env, { host, kind: body.kind, ip: request.headers.get("cf-connecting-ip") || "noip" });
+  return reply(200, { ok: true });
+}
+
 export async function handleAmbassadors(request, env, ctx) {
   const url = new URL(request.url);
   const parts = url.pathname.split("/").filter(Boolean);
   if (parts.length === 0) return null;
+
+  if (url.pathname === "/api/install") return installRoute(request, env);
 
   if (url.pathname === "/api/leaderboard") {
     const days = Math.min(90, Math.max(1, parseInt(url.searchParams.get("days") || "14", 10) || 14));
@@ -548,17 +595,19 @@ async function ambassadorRoutes(request, env, parts, url) {
   if (request.method === "GET") {
     if (arg !== undefined) return notFound();
     if (!action) {
-      const [stats, ideas, designScans, caps, suggested] = await Promise.all([
+      const [stats, ideas, designScans, caps, suggested, installs] = await Promise.all([
         ambassadorStats(env, amb),
         ideaCounts(env, amb),
         schoolDesignScans(env, amb.school),
         captureCounts(env, amb),
         suggestionsFor(env, amb.id),
+        installTotals(env, amb.school),
       ]);
-      return html(ambassadorPage({ amb, stats, ideas, designScans, playbook, suggested, captures: capturesPlan(caps), origin: pub, flash: url.searchParams.get("ok") }));
+      return html(ambassadorPage({ amb, stats, installs, ideas, designScans, playbook, suggested, captures: capturesPlan(caps), origin: pub, flash: url.searchParams.get("ok") }));
     }
     if (action === "stickers") return html(stickersPage({ amb, origin: pub, qrSvg }));
     if (action === "plan.json") {
+      await pruneInstallMarks(env);
       return Response.json(await planPayload(env, amb, url, pub), { headers: { "cache-control": "no-store" } });
     }
     if (action === "me.json") {
@@ -619,6 +668,7 @@ async function founderRoutes(request, env, parts, url) {
   }
   const base = `/f/${secret}`;
   const pub = origin(request, env);
+  await pruneInstallMarks(env);
 
   if (request.method === "GET") {
     if (action === "idea") {

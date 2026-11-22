@@ -28,19 +28,32 @@ enum SubmissionObservation {
                     || (a.linkedID.map(submittedAssignmentIDs.contains) ?? false)
                     || (a.canvasAssignmentID.map(submittedAssignmentIDs.contains) ?? false)
             else { continue }
-            for offset in LeadOffset.allCases {
-                requestIDs.append("\(NotificationScheduler.requestIdentifierPrefix)\(a.id):\(offset.rawValue)")
-            }
-            // The Sweeper's fallback buzzes (`loud:<id>:<1...loudAlertCount>`):
-            // when AlarmKit is unavailable or refused, these three pending
-            // requests are the whole alert, and they are not `due:` requests.
-            requestIDs.append(contentsOf: NotificationScheduler.loudIdentifiers(forAssignmentID: a.id))
-            guard let due = item.due else { continue }
-            for minutes in NotificationScheduler.sweeperMinuteOptions {
-                let fireDate = due.addingTimeInterval(-TimeInterval(minutes * 60))
-                for sound in SweeperSound.allCases {
-                    alarmIDs.insert(BerserkAlarmPlan.alarmID(assignmentID: a.id, fireDate: fireDate, sound: sound))
-                }
+            let ids = Self.ids(forAssignmentID: a.id, due: item.due)
+            requestIDs.append(contentsOf: ids.requestIDs)
+            alarmIDs.formUnion(ids.alarmIDs)
+        }
+        return (requestIDs, alarmIDs)
+    }
+
+    /// One item's share of `cancellations`: every request id and alarm id it
+    /// could have been scheduled under. Extracted so the Sweeper's manifest
+    /// (`writeSweepHandoff`) lists exactly the ids a cancel would remove, from
+    /// one copy of the arithmetic. A nil `due` yields no alarm ids, as before.
+    nonisolated static func ids(forAssignmentID id: String, due: Date?) -> (requestIDs: [String], alarmIDs: Set<UUID>) {
+        var requestIDs: [String] = []
+        var alarmIDs = Set<UUID>()
+        for offset in LeadOffset.allCases {
+            requestIDs.append("\(NotificationScheduler.requestIdentifierPrefix)\(id):\(offset.rawValue)")
+        }
+        // The Sweeper's fallback buzzes (`loud:<id>:<1...loudAlertCount>`):
+        // when AlarmKit is unavailable or refused, these three pending
+        // requests are the whole alert, and they are not `due:` requests.
+        requestIDs.append(contentsOf: NotificationScheduler.loudIdentifiers(forAssignmentID: id))
+        guard let due else { return (requestIDs, alarmIDs) }
+        for minutes in NotificationScheduler.sweeperMinuteOptions {
+            let fireDate = due.addingTimeInterval(-TimeInterval(minutes * 60))
+            for sound in SweeperSound.allCases {
+                alarmIDs.insert(BerserkAlarmPlan.alarmID(assignmentID: id, fireDate: fireDate, sound: sound))
             }
         }
         return (requestIDs, alarmIDs)

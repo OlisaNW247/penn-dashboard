@@ -1,7 +1,12 @@
 // Apple Push Notification service client for the Sweeper wake
 // (docs/SERVER_SWEEPER_DESIGN_2026-11-17.md §3.3 and §3.4). One kind of push
-// only: a silent background nudge, `{"aps":{"content-available":1}}`, that
-// asks a suspended phone to run its wake handler. No library: the provider
+// only: a content-free ALERT push (see `sendSweepPush`) that asks the phone
+// to check its next deadline. It is an alert and not a silent background
+// push because iOS discards a `content-available` background push for an app
+// the student force-quit, which is exactly when the Sweeper must cancel an
+// alarm for work already handed in; an alert with `mutable-content` runs the
+// app's Notification Service Extension even then. It still carries nothing
+// about the student's work. No library: the provider
 // token is an ES256 JWT signed with `crypto.subtle` over the team's `.p8`
 // key (PKCS#8), and the request is a plain `fetch` that the Edge runtime
 // sends to Apple over HTTP/2 (whether it does is what the end-to-end probe
@@ -152,13 +157,43 @@ export interface SendDeps {
   credentials: ApnsCredentials;
 }
 
-/** One silent background push. Header values are Apple's, verbatim from
- *  "Sending notification requests to APNs": background type, priority 5
- *  ("using priority 10 is an error"), the bundle id as topic, an expiration
- *  two minutes out. A transport failure is `status: 0, outcome: "failed"`,
+/** The exact body of every sweep push; a test pins it byte for byte. */
+export const SWEEP_PUSH_BODY = JSON.stringify({
+  aps: {
+    alert: { title: "smooth", body: "checking your next deadline" },
+    "mutable-content": 1,
+    "content-available": 1,
+    "interruption-level": "passive",
+    "thread-id": "sweeper",
+  },
+  lhf: "sweep",
+});
+
+/** One content-free alert push. Header values are Apple's, verbatim from
+ *  "Sending notification requests to APNs": alert type, priority 10
+ *  (delivered immediately; the ring is minutes away), the bundle id as
+ *  topic, an expiration two minutes out so a phone that was offline never
+ *  gets a check after its ring.
+ *
+ *  Why an alert: a `background` push (priority 5, `content-available` only)
+ *  is dropped by iOS for an app the user force-quit, and that is the very
+ *  moment the Sweeper needs to run. `mutable-content: 1` routes this push
+ *  through the Notification Service Extension, which runs even after a
+ *  force-quit. `content-available` stays so an app that is merely suspended
+ *  still gets its in-app wake (iOS ignores it for a force-quit app, which is
+ *  fine, the extension covers that case). `interruption-level: passive`
+ *  means no sound and no screen wake; `thread-id` lets the app clear these
+ *  lines later; `lhf: "sweep"` is how the extension recognises its own push.
+ *  The visible text appears only if the extension fails.
+ *
+ *  The body is fixed text and holds nothing about the student's work. The
+ *  wrong version is a push naming the assignment ("PS7 is due at 5"): the
+ *  server would then know what is due, and it is built to learn nothing. The
+ *  other wrong version is the old background push: silently dropped after a
+ *  force-quit. A transport failure is `status: 0, outcome: "failed"`,
  *  with the error's class (never its message, which may hold the URL and so
  *  the token) as the reason. */
-export async function sendBackgroundPush(deps: SendDeps): Promise<ApnsResult> {
+export async function sendSweepPush(deps: SendDeps): Promise<ApnsResult> {
   const jwt = await providerToken(deps.credentials, deps.now);
   let response: Response;
   try {
@@ -166,13 +201,13 @@ export async function sendBackgroundPush(deps: SendDeps): Promise<ApnsResult> {
       method: "POST",
       headers: {
         authorization: `bearer ${jwt}`,
-        "apns-push-type": "background",
-        "apns-priority": "5",
+        "apns-push-type": "alert",
+        "apns-priority": "10",
         "apns-topic": deps.topic,
         "apns-expiration": String(Math.floor(deps.now / 1000) + EXPIRATION_SECONDS),
         "content-type": "application/json",
       },
-      body: JSON.stringify({ aps: { "content-available": 1 } }),
+      body: SWEEP_PUSH_BODY,
     });
   } catch (err) {
     return { status: 0, reason: err instanceof Error ? err.constructor.name : "transport", outcome: "failed" };

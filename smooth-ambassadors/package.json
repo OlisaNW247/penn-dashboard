@@ -15,6 +15,7 @@
     "posters": "node scripts/fetch-posters.mjs",
     "build:sites": "node scripts/build-sites.mjs",
     "test:sites": "node --test test/sites.test.mjs",
+    "gen:hosts": "node scripts/gen-canvas-hosts.mjs",
     "rehearse": "node scripts/rehearse-backup.mjs"
   },
   "devDependencies": {

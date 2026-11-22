@@ -41,7 +41,7 @@ WHAT IT DOES
 A dashboard for university students: their own Canvas deadlines (calendar feed and signed-in session) and, optionally, Gradescope, in one list with local reminders.
 
 ALARMS AND NOTIFICATIONS
-The Sweeper rings before work the student has not turned in (10 minutes by default, on by default): on iOS 26 one AlarmKit alarm, full screen like Clock, after asking permission once; on earlier iOS, or if refused, three Time Sensitive notifications. The app also registers for silent remote notifications: our server sends a push with no content a few minutes before an alarm so the app can check, with the student's own login, whether the work is already in and cancel the alarm. No user-facing notification is ever sent from the server.
+The Sweeper rings before work the student has not turned in (10 minutes by default, on by default): on iOS 26 one AlarmKit alarm, full screen like Clock, after asking permission once; on earlier iOS, or if refused, three Time Sensitive notifications. This version holds the code for a server-sent wake-up before an alarm, but it is switched off in the shipped build: the app carries no push entitlement, registers for nothing, and the server function is not deployed. Every notification the student sees is local.
 
 AMBASSADOR MODE
 Profile > ambassador mode is for a few student volunteers who promote Smooth at their schools. It asks for a code we send them (no account, no password) and shows the job, a suggested post for the day with a copy button, their school's posters, a feedback box, a daily local reminder they can turn off, and their link-open counts. It never asks for or rewards ratings or reviews. To see it, enter this test code: <code>. Any other student sees only the row.
@@ -49,7 +49,7 @@ Profile > ambassador mode is for a few student volunteers who promote Smooth at 
 PRIVACY AND NETWORKING
 - Grades, completions, the work list, the name and login cookies stay on the device (cookies in the Keychain, this device only).
 - At Penn, our backend (Supabase) pools non-personal course material (syllabi, pages, assignment descriptions, announcements, Ed staff posts) per Canvas course and answers "ask" through an AI model via OpenRouter; questions and answers are not stored. The announcement "ai assist" is on by default; Profile > notifications turns it off. Each install has an anonymous account (no email or name); disconnecting Canvas deletes it.
-- No analytics, tracking, ads or third-party SDKs.
+- No tracking, ads or third-party SDKs. One anonymous count per install: after Canvas is connected the app sends the school's Canvas web address once, with no identifier, and our server keeps only a per-school daily tally.
 
 STAY SIGNED IN (PENN ONLY)
 A one-line notice above Penn's login page says signing in saves the PennKey on this device. After a verified sign-in in the app's own login web view, the PennKey is kept in the device Keychain (this device only, never synced, sent only to Penn's login page) to sign the student back in. Duo is never bypassed; one rejected password turns it off; disconnecting Canvas deletes it; preview mode never uses it.
@@ -58,13 +58,23 @@ THIRD-PARTY SERVICES (5.2.2)
 Smooth is an independent client for services the student already uses, with their own credentials, showing only their own data; not affiliated with Instructure (Canvas), Turnitin (Gradescope), Ed Discussion or any university.
 ```
 
-_Character count of the block above: 3174 (limit 4,000), measured on the text between the fences._
+_Character count of the block above: 3609 (limit 4,000), measured on the text between the fences._
 
 **Before submitting:** the App Store privacy label needs no agent-connection
 answers for 3.5.0 (the feature is off); the label in `LISTING.md` still lists
 the 2026-09 answers, which hold.
 
 What's New: paste the 3.5.0 text from `LISTING.md`.
+
+**Install count (2026-11-22, merged from `v12`).** The block above already
+carries the replacement for the old "No analytics, tracking, ads or
+third-party SDKs" line, because this build sends one anonymous per-install
+count (`FeatureFlags.installCount`, `docs/PRIVACY.md`). The App Store privacy
+label has to be re-read for the same build (`LISTING.md` -> App Privacy): the
+count carries no identifier and is not linked to a user, but it is data the
+app sends and we keep as a tally, so whether the label gains a "Usage Data,
+not linked to you, Analytics" entry is Olisa's and Marco's decision, not an
+assumption.
 
 ## History: as pasted for 3.2.0 (14), 2026-10-23 (the same block served 3.1.0 (13) on 2026-10-20)
 
@@ -300,10 +310,10 @@ end-to-end.
    through the same session and regroups them into syllabus categories, which
    the student can edit.
 7. **Reminders (optional):** local notifications before each due date, with
-   per-class settings. Since 3.5.0 (2026-11-18) one kind of remote push:
-   a silent background push with no content that wakes the app to check
-   submission status before a Sweeper alarm; nothing visible is ever sent
-   from the server.
+   per-class settings. 3.5.0 holds the code for a server-sent wake-up
+   before a Sweeper alarm, switched off in the shipped build (no push
+   entitlement, nothing registered, the server function not deployed);
+   every notification is local.
 
 ## Data, privacy, and networking
 
