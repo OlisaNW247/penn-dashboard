@@ -4,6 +4,64 @@ For the ChatGPT session that deploys project
 `appgprj_6aebbfcc56e48191a690c176014ceddf`. Base commit:
 `3770608515c285cc1e034f8be04e8d5e4c335640`.
 
+## Update, 2026-11-22: downloads by school
+
+This archive is the seventh. **The live site is the sixth** (the two-posts
+change, read on 2026-11-21: `messages` is `question` and `list`). New here:
+one public route, three small tables, two optional `plan.json` keys. No new
+runtime variable. Every existing route and the public dashboard are
+unchanged.
+
+Why: Apple reports no downloads by school, so a future version of the iOS
+app sends one anonymous count per install after the student connects Canvas.
+
+- **`POST /api/install`**, public and unauthenticated on purpose, JSON
+  `{"host":"canvas.upenn.edu","kind":"new"}` (`kind` is `new` or
+  `existing`), at most 512 bytes. A well-formed body always answers 200
+  `{"ok":true}`, including when a limit swallowed it or the host is unknown;
+  a malformed one answers 400; any other method 405.
+- **What is stored:** `installs(host, day, kind, n)`, a tally per school
+  host per UTC day. No row per phone, no IP, no user agent.
+- **Only known schools count.** A host is stored only if it is in the list
+  bundled in the Worker (227 Canvas hosts generated from the app's own
+  school catalog). Anything else answers 200 and writes nothing.
+- **A limit per network.** At most 300 counts per network per school per
+  day. To enforce it the Worker keeps a SHA-256 of a random daily value,
+  the caller's network (`cf-connecting-ip`; an IPv6 address is reduced to
+  its /64) and the host, in `install_seen`, with the daily value in
+  `install_salts`. Both hold the current UTC day only and are deleted on the
+  next install post, `plan.json` request or founder-page load after the day
+  ends. The limit is enforced inside the write statement.
+- **Where it shows:** `plan.json` `numbers.schoolInstalls` and
+  `numbers.schoolInstallsRecent` (present only for a school with a mapped
+  host; all five schools are mapped); a "{school} downloads" tile on the
+  ambassador page; on the founder page a "downloads" card per school and
+  "other schools" for hosts no ambassador school maps to.
+- **New tables** `installs`, `install_seen`, `install_salts`
+  (`migrations/0004_installs.sql`, a reference copy), created lazily like
+  the others.
+
+What that means for the deploy:
+
+- Only the generated section of `worker/index.js` changes, plus
+  `AMBASSADORS.md` and the reference migration.
+- **One thing to confirm on the real runtime:** the limit depends on the
+  `cf-connecting-ip` request header. If the Sites runtime does not pass it,
+  every caller shares one bucket and a school would stop counting at 300 a
+  day. After deploying, please say whether a request to the Worker carries
+  that header.
+- Check after deploying (no `/scan/...` or `/r/...` link needs opening):
+  1. `GET /` and `GET /api/stats` look as before.
+  2. `GET /api/install` answers 405. A POST with
+     `{"host":"junk.example.com","kind":"new"}` answers 200 and changes
+     nothing anywhere.
+  3. One real test count: POST `{"host":"canvas.its.virginia.edu","kind":"new"}`
+     once. A UVA ambassador's `plan.json` then shows
+     `numbers.schoolInstalls` one higher, and the founder page's downloads
+     card shows it for UVA. This test count cannot be removed through the
+     site; if you want it gone, delete that one row from `installs` (host
+     `canvas.its.virginia.edu`, today's date), and say that you did.
+
 ## Update, 2026-11-19 (small)
 
 This archive is the sixth. **The live site is the fifth** (read on

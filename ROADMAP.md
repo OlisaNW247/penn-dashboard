@@ -55,8 +55,10 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   phone, the daily reminder and its tap, dark mode), the merge with `v11`
   (five files conflict, six Swift files merge without a marker and need
   reading), a test code and paragraph for App Review, a new build number,
-  and nothing on the server side: both the zip of 2026-11-18 and the
-  two-posts zip of 2026-11-19 went live on 2026-11-19. Also unseen on any phone: the
+  and the server zip of 2026-11-22 (the per-school download count), which
+  is not deployed; the two before it went live on 2026-11-19. The same
+  count needs the App Store privacy label re-read before the build is
+  submitted. Also unseen on any phone: the
   2026-11-18 sections (what works, from the founders, the feed recording
   and post-result sheets).
 - **Degree progress is switched off** (2026-11-12, Olisa: not ready;
@@ -951,6 +953,13 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-22.** Downloads by school. Apple reports none, so the app
+  sends one anonymous count per install after Canvas is connected (the
+  school's Canvas host, new or existing, no id), the ambassador site keeps
+  a per-school daily tally, and each ambassador sees "{school} downloads"
+  in the app and on their web page; the founder page lists every school.
+  The privacy policy says so. On `v12`, compiled on the runner, not on a
+  phone; needs a server deploy and an app release before any number moves.
 - **2026-11-19.** The ambassador post bank is two posts. Olisa had every
   written post removed and kept only his two real Sidechat posts (the
   question, the ranking), each with the reply "Smooth for Students on the

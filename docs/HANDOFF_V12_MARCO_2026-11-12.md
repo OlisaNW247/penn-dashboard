@@ -121,6 +121,25 @@ show twice on the page ("what works" explains them, "more messages" is where
 they are copied), and a reply is its own list row with a bordered button,
 which nobody has looked at on a device.
 
+### 2c. Added on 2026-11-22: downloads by school
+
+Olisa: "measure the amount of downloads at each school and display that on
+the ambassador dashboard". Apple reports nothing by school, so the app now
+sends one anonymous count per install, once, after Canvas is connected: the
+school's Canvas host and `new` or `existing`. No id. The ambassador site
+keeps a per-school daily tally and shows each ambassador "{school}
+downloads". Code: `InstallCountReporter.swift`, `InstallCountRule.swift`,
+the hook in `RootView.swift`, `FeatureFlags.installCount`.
+
+This one is not only an ambassador feature: **every install at every school
+sends it**, and it is the first thing a non-Penn phone has ever sent us.
+`docs/PRIVACY.md` has a new section and "No analytics" became "No tracking".
+Two decisions are yours and Olisa's before a build with it is submitted: the
+App Store privacy label (`docs/appstore/LISTING.md` → App Privacy) and the
+line in the pasted review notes (`REVIEW_NOTES.md`, top). If you would
+rather not ship it yet, set `FeatureFlags.installCount` to `false`; nothing
+is sent and the ambassador row hides itself.
+
 Rules that are easy to break by accident:
 
 - Never open a `/scan/...` or `/r/...` link on the live site. Each one is a
@@ -196,7 +215,9 @@ In rough order.
    number it has seen, so check TestFlight → Builds there before choosing
    the next one. Whether 3.4.1 is live was not readable from the cloud
    session (Apple's lookup did not answer).
-6. Nothing is waiting on the server side as of 2026-11-19 (section 2).
+6. **The server zip of 2026-11-22** (the download count, section 2c), if
+   it is not deployed yet. The app is quiet against an older server: the
+   count retries every six hours and the row stays hidden.
 
 Known and left alone: Yik Yak is reported to cap a post at 200 characters,
 and every anonymous post is longer than that once its link is counted. If an

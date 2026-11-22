@@ -48,7 +48,8 @@ address can be entered manually. Catalog sources and limitations live in
 `docs/canvas-directory/`; authenticated support is not proven for all sites. Everything
 server-side is Penn-only for now: pooled course materials, the server path
 of ask, the announcement AI assist, and "stay signed in" (PennKey).
-Non-Penn installs run fully on-device, because the backend keys course
+Non-Penn installs run fully on-device (apart from the one anonymous
+per-school count below, since 2026-11-22), because the backend keys course
 material by numeric Canvas course id, and two schools' ids would collide.
 
 **Privacy posture; say it this way.** "The student's own data stays
@@ -88,8 +89,15 @@ stored in the Keychain for it. The page's sign-in token, Penn's id for the
 student, the name, the pronoun, the rendered audit and any sentence about a
 GPA or grades never cross from the page into the app, and nothing about the
 degree goes to the server, the laptop or the tree (`docs/PRIVACY.md` →
-"Degree progress"). There is no analytics, tracking,
-or third-party SDK. Don't say "everything is on-device" (untrue since
+"Degree progress"). Since 2026-11-22 (`v12`, compiled on the runner, never
+on a phone, not released) every install, at any school, sends **one
+anonymous count**: after Canvas is connected, the school's Canvas host and
+`new` or `existing`, once, with no id, to the poster-scan site, which keeps a
+per-school daily tally (`docs/PRIVACY.md` → "One anonymous count: which
+school"). It is the first thing a non-Penn install has ever sent, so "non-Penn
+installs run fully on-device" now has that one exception. There is no
+tracking and no third-party SDK; say "no tracking", not "no analytics", from
+that build on. Don't say "everything is on-device" (untrue since
 `assistant-ui`) or "no server" (untrue since the backend). `docs/PRIVACY.md`
 is the student-facing version and must change in the same commit as any
 behaviour it describes.
@@ -1274,7 +1282,33 @@ Keep this current. It is the fastest way for a new session to know what exists.
      also pulls to refresh since the same evening (`.refreshable`, a
      plain `model.refresh()`), because the plan is cached for half an
      hour and the posts in it are the server's. Compiled on the runner,
-     not on a phone; the server half went live the same day. **Since 2026-11-18 the page
+     not on a phone; the server half went live the same day. **Since
+     2026-11-22 the numbers include "{school} downloads"** (Olisa: "measure
+     the amount of downloads at each school and display that on the
+     ambassador dashboard"). Apple reports nothing by school, and his two
+     posts carry no link, so a campaign tag would miss most of it; he chose
+     the app reporting its school. `InstallCountReporter` (UI) with
+     `InstallCountRule` (Kit, pure) sends `POST /api/install`
+     `{"host","kind"}` once per install from `RootCore` (cold launch and
+     each return to the foreground, after the update check, never behind
+     the wall, never from the background wake, never in preview or demo),
+     behind `FeatureFlags.installCount`. `kind` is `existing` when
+     onboarding was already complete at the first launch of a build with
+     the code (`installCountOnboardedBeforeV1`, the `signupBacklogSeenV1`
+     pattern) and `new` otherwise; a 2xx or a 400 ends it for good
+     (`installCountReportedV1`), anything else retries after six hours. One
+     count per install for the school first connected: a school switch does
+     not report again. The Worker keeps `installs(host, day, kind, n)` and
+     nothing per phone; it counts only hosts in `worker/canvas-hosts.json`
+     (generated from the app's catalog by `scripts/gen-canvas-hosts.mjs`, a
+     test fails when they drift) and caps one network at 300 a day per
+     host with a daily-salted hash kept for that day only. `plan.json`
+     gains `numbers.schoolInstalls` and `schoolInstallsRecent`; the web
+     page has the same tile and the founder page a downloads card and
+     "other schools". What the number is: students who connected Canvas on
+     a build that has the count, so it starts at zero when that build
+     ships and jumps as existing students update. Not a download count in
+     Apple's sense; a typed-in school outside the catalog is not counted. **Since 2026-11-18 the page
      also teaches what works and collects what each campus looks like**
      (Olisa, after two of his own Sidechat posts did well with no pitch in
      them, a question at 22 upvotes and Smooth slipped into a frat ranking
@@ -3011,6 +3045,23 @@ itself.
 
 ## Traps that have already bitten
 
+- **A cap per key is not a cap when the caller chooses the key.** The
+  install count (2026-11-22) limited one network to a number of counts per
+  host per day, and separately capped the distinct hosts it would store at
+  2,000. Each new host was a fresh bucket, so one phone could have filled
+  all 2,000 slots with invented names in a minute, after which no real new
+  school could ever be counted. Found in my own review of the builder's
+  diff before any test or deploy. The same shape came back from the
+  security reviewer an hour later through a different key: the bucket
+  hashed the whole IPv6 address, and one /64 is 2^64 keys. The fixes close
+  the key space instead of counting inside it: only hosts from the app's
+  own school catalog are stored, and an IPv6 address is reduced to its /64
+  before hashing. The wrong fix is a bigger or smaller number. When a
+  limit is keyed on something the request supplies, ask how many distinct
+  keys one caller can make. Pair of it: the salted marks were pruned only
+  on a counted write, so a quiet week kept old salts beside their hashes,
+  which is enough to recover addresses by trying all of IPv4; deletion
+  that depends on traffic of one kind has to run on the other kinds too.
 - **A strict check on a value that was trimmed first is not strict.** The
   founder routes refuse any id that is not plain digits
   (`/^[1-9][0-9]{0,9}$/`), a rule added on 2026-11-11 after `-1` and `1e3`
@@ -4143,6 +4194,27 @@ none is a ship line.
 
 ## Known gaps
 
+- **The install count (2026-11-22) has never run on a phone, is not
+  deployed and is not in any released build.** Compiled and tested on the
+  runner; the Worker half tested under Miniflare, beside the original site
+  and against the scan backup, and reviewed for security. What only the
+  real world settles: that the Sites runtime passes `cf-connecting-ip` (if
+  it does not, every caller shares one `noip` bucket and a school stops
+  counting at 300 a day, which would look like a plateau at exactly 300);
+  that `URLSession`'s request reaches the route from a phone; and the
+  first real numbers, which should jump at Penn in the days after release
+  as existing students update (`existing`) and then grow by `new`. Known
+  limits: the number can be inflated by anyone who can script requests
+  (300 a day per network per school; acceptable while it only motivates,
+  not if anything is ever paid on it, where App Attest is the answer); a
+  reinstall counts again; a student who typed a Canvas address outside the
+  220-school catalog is not counted; a new catalog host needs
+  `npm run gen:hosts` and a redeploy before it counts. Open decisions for
+  Olisa and Marco before the build is submitted: the App Store privacy
+  label (`docs/appstore/LISTING.md` → App Privacy) and the pasted review
+  notes line (`REVIEW_NOTES.md`, top). `docs/site/privacy.html` carries
+  the new section; whether the published policy page updates on a push or
+  by hand was not checked.
 - **Ambassador mode (2026-11-09) has signed in on one phone, and little
   else is checked.** The Debug build of `v12` `76bc6a0` went onto
   Olisa's iPhone with `scripts/build-to-phone.sh` on 2026-11-12 (built,

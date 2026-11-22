@@ -425,11 +425,71 @@ export const INSTALL_DISTINCT_HOST_LIMIT = 2000;
 
 const utcDay = (date) => date.toISOString().slice(0, 10);
 
+// The address a bucket is keyed on. An IPv6 /64 holds 2^64 addresses and one
+// household or allocation controls a whole /64, so hashing the full address gave
+// anyone with a v6 prefix a fresh 300-count bucket (and a fresh row) per request.
+// IPv6 therefore keeps its first four hextets; an IPv4-mapped IPv6 address is the
+// IPv4 it wraps; IPv4 and anything unparseable pass through trimmed and
+// lowercased. Never throws.
+export function networkKey(ip) {
+  const raw = String(ip ?? "").trim().toLowerCase();
+  if (!raw.includes(":")) return raw;
+  try {
+    let a = raw.replace(/%.*$/, "");
+    const v4 = a.match(/^(.*:)(\d{1,3}(?:\.\d{1,3}){3})$/);
+    let tail4 = null;
+    if (v4) {
+      const o = v4[2].split(".").map(Number);
+      if (o.some((n) => n > 255)) return raw;
+      tail4 = o;
+      a = v4[1] + ((o[0] << 8) | o[1]).toString(16) + ":" + ((o[2] << 8) | o[3]).toString(16);
+    }
+    const halves = a.split("::");
+    if (halves.length > 2) return raw;
+    const head = halves[0] ? halves[0].split(":") : [];
+    const rest = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
+    let groups;
+    if (halves.length === 2) {
+      const fill = 8 - head.length - rest.length;
+      if (fill < 1) return raw;
+      groups = [...head, ...Array(fill).fill("0"), ...rest];
+    } else groups = head;
+    if (groups.length !== 8 || !groups.every((g) => /^[0-9a-f]{1,4}$/.test(g))) return raw;
+    const n = groups.map((g) => parseInt(g, 16));
+    if (n.slice(0, 5).every((x) => x === 0) && n[5] === 0xffff) {
+      return [n[6] >> 8, n[6] & 255, n[7] >> 8, n[7] & 255].join(".");
+    }
+    return n.slice(0, 4).map((x) => x.toString(16).padStart(4, "0")).join(":");
+  } catch {
+    return raw;
+  }
+}
+
+// Network marks (the day's salt and the buckets hashed with it) are kept for the
+// current UTC day only: yesterday's bucket is never read again, and while a salt
+// and its buckets exist someone could hash every IPv4 address and recover which
+// addresses reported a host that day. So they are pruned on every request that
+// reaches the install route, plan.json and the founder page, not only on a
+// counted write. The wrong version pruned inside the counted write, so a quiet
+// week (or a flood of unknown hosts that never wrote) kept old salts. Never
+// fails a request: a database without the tables yet is a no-op.
+export async function pruneInstallMarks(env, now = new Date()) {
+  try {
+    const today = utcDay(now);
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM install_seen WHERE day < ?1").bind(today),
+      env.DB.prepare("DELETE FROM install_salts WHERE day < ?1").bind(today),
+    ]);
+  } catch {
+    /* tables not created yet, or a busy database: the next request prunes */
+  }
+}
+
 async function installBucket(env, day, ip, host) {
   const salt = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
   await env.DB.prepare("INSERT OR IGNORE INTO install_salts (day, salt) VALUES (?1, ?2)").bind(day, salt).run();
   const row = await env.DB.prepare("SELECT salt FROM install_salts WHERE day = ?1").bind(day).first();
-  const bytes = new TextEncoder().encode(`${row.salt}|${ip}|${host}`);
+  const bytes = new TextEncoder().encode(`${row.salt}|${networkKey(ip)}|${host}`);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -438,13 +498,7 @@ async function installBucket(env, day, ip, host) {
 // false, and the caller still answers 200.
 export async function recordInstall(env, { host, kind, ip, now = new Date() }) {
   const day = utcDay(now);
-  const yesterday = utcDay(new Date(now.getTime() - 86400000));
-  // Opportunistic: whoever writes next removes what is over. The tally in
-  // `installs` is the only thing that outlives the day.
-  await env.DB.batch([
-    env.DB.prepare("DELETE FROM install_seen WHERE day < ?1").bind(yesterday),
-    env.DB.prepare("DELETE FROM install_salts WHERE day < ?1").bind(yesterday),
-  ]);
+  await pruneInstallMarks(env, now);
   const bucket = await installBucket(env, day, ip || "noip", host);
   // The DO UPDATE only fires while n is under the limit, so the statement
   // itself decides; RETURNING gives a row only when it wrote.

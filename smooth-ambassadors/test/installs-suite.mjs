@@ -1,6 +1,7 @@
 // Install-count tests shared by test/routes.test.mjs (the source Worker) and
 // test/sites.test.mjs (the built single file). Not a test file itself.
 import assert from "node:assert/strict";
+import { networkKey } from "../worker/data.js";
 
 // Written out on purpose: the built-file run must not import the source module.
 const PER_NETWORK = 300;
@@ -160,19 +161,76 @@ export function installTests({ test, skip, req, founder, db, label = "" }) {
     assert.match(s.salt, /^[0-9a-f]{32}$/);
   });
 
-  t("installs: salts and buckets older than yesterday are removed on the next write", async () => {
+  t("installs: only today's salts and buckets survive; an unknown-host post, plan.json and the founder page all prune", async () => {
     const d = await db();
     const iso = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
-    await d.prepare("INSERT INTO install_seen (day, bucket, n) VALUES (?1, 'old', 3), (?2, 'yesterday', 1)").bind(iso(2), iso(1)).run();
-    await d.prepare("INSERT INTO install_salts (day, salt) VALUES (?1, 'oldsalt'), (?2, 'yestsalt')").bind(iso(5), iso(1)).run();
-    await d.prepare("INSERT INTO installs (host, day, kind, n) VALUES ('keeps.tally.edu', ?1, 'new', 4)").bind(iso(40)).run();
-    assert.equal((await post({ host: "canvas.upenn.edu", kind: "new" }, { ip: "198.51.100.5" })).status, 200);
     const left = async (sql) => (await d.prepare(sql).first()).n;
-    assert.equal(await left("SELECT COUNT(*) n FROM install_seen WHERE bucket = 'old'"), 0);
-    assert.equal(await left("SELECT COUNT(*) n FROM install_salts WHERE salt = 'oldsalt'"), 0);
-    assert.equal(await left("SELECT COUNT(*) n FROM install_seen WHERE bucket = 'yesterday'"), 1);
-    assert.equal(await left("SELECT COUNT(*) n FROM install_salts WHERE salt = 'yestsalt'"), 1);
+    await d.prepare("INSERT INTO installs (host, day, kind, n) VALUES ('keeps.tally.edu', ?1, 'new', 4)").bind(iso(40)).run();
+    await d.prepare("INSERT OR IGNORE INTO install_salts (day, salt) VALUES (?1, 'todaysalt')").bind(today()).run();
+    await d.prepare("INSERT OR IGNORE INTO install_seen (day, bucket, n) VALUES (?1, 'todaybucket', 1)").bind(today()).run();
+    const seed = async () => {
+      await d.prepare("INSERT OR REPLACE INTO install_seen (day, bucket, n) VALUES (?1, 'old', 3), (?2, 'yesterday', 1)").bind("2020-01-01", iso(1)).run();
+      await d.prepare("INSERT OR REPLACE INTO install_salts (day, salt) VALUES ('2020-01-01', 'oldsalt'), (?1, 'yestsalt')").bind(iso(1)).run();
+    };
+    const gone = async (what) => {
+      for (const sql of [
+        "SELECT COUNT(*) n FROM install_seen WHERE bucket IN ('old','yesterday')",
+        "SELECT COUNT(*) n FROM install_salts WHERE salt IN ('oldsalt','yestsalt')",
+      ]) assert.equal(await left(sql), 0, what);
+      assert.equal(await left("SELECT COUNT(*) n FROM install_seen WHERE bucket = 'todaybucket'"), 1, what);
+    };
+    // today's real salt may already exist, so check by count of today's rows
+    const todaySalts = await left(`SELECT COUNT(*) n FROM install_salts WHERE day = '${today()}'`);
+    const check = async (what) => {
+      await gone(what);
+      assert.equal(await left(`SELECT COUNT(*) n FROM install_salts WHERE day = '${today()}'`), todaySalts, what);
+    };
+    await seed();
+    assert.equal((await post({ host: "junk.example.edu", kind: "new" }, { ip: "198.51.100.5" })).status, 200);
+    await check("unknown-host post");
+    await seed();
+    assert.equal((await post({ host: "canvas.upenn.edu", kind: "new" }, { ip: "198.51.100.5" })).status, 200);
+    await seed();
+    await add("prune", "Prune Friend", "uva");
+    await seed();
+    assert.equal((await req(`/a/${amb.prune}/plan.json`)).status, 200);
+    await check("plan.json");
+    await seed();
+    assert.equal((await req(F)).status, 200);
+    await check("founder page");
     assert.equal(await tally("keeps.tally.edu", "new"), 4, "the tally itself is never cleaned");
+  });
+
+  t("installs: networkKey buckets IPv6 by /64 and unwraps IPv4-mapped addresses", async () => {
+    assert.equal(networkKey("2001:db8:1:2::1"), "2001:0db8:0001:0002");
+    assert.equal(networkKey("2001:0db8:0001:0002:0000:0000:0000:0001"), networkKey("2001:db8:1:2::1"));
+    assert.equal(networkKey("2001:db8:1:2:aaaa:bbbb:cccc:dddd"), networkKey("2001:DB8:1:2::9"));
+    assert.notEqual(networkKey("2001:db8:1:3::1"), networkKey("2001:db8:1:2::1"));
+    assert.equal(networkKey("::ffff:1.2.3.4"), "1.2.3.4");
+    assert.equal(networkKey("::ffff:0102:0304"), "1.2.3.4");
+    assert.equal(networkKey("1.2.3.4"), "1.2.3.4");
+    assert.equal(networkKey("::1"), "0000:0000:0000:0000");
+    assert.equal(networkKey("noip"), "noip");
+    for (const junk of ["", "  Garbage ", "1:2:3", "::::", "g::1", "1::2::3", "::ffff:999.1.1.1", undefined, null]) assert.equal(typeof networkKey(junk), "string");
+    assert.equal(networkKey("  Garbage "), "garbage");
+  });
+
+  t("installs: two addresses in one /64 share a bucket", async () => {
+    const d = await db();
+    await d.prepare("DELETE FROM install_seen").run();
+    const host = "asu.instructure.com";
+    const before = await tally(host, "new");
+    const a = "2001:db8:aaaa:bbbb::1";
+    const b = "2001:db8:aaaa:bbbb:1234:5678:9abc:def0";
+    assert.equal((await post({ host, kind: "new" }, { ip: a })).status, 200);
+    assert.equal((await d.prepare("SELECT COUNT(*) n FROM install_seen").first()).n, 1);
+    await d.prepare("UPDATE install_seen SET n = 299").run();
+    assert.equal((await post({ host, kind: "new" }, { ip: b })).status, 200);
+    assert.equal((await post({ host, kind: "new" }, { ip: a })).status, 200);
+    assert.equal(await tally(host, "new"), before + 2, "one counted after seeding to 299, the other swallowed");
+    assert.equal((await d.prepare("SELECT COUNT(*) n FROM install_seen").first()).n, 1);
+    assert.equal((await post({ host, kind: "new" }, { ip: "2001:db8:aaaa:cccc::1" })).status, 200);
+    assert.equal(await tally(host, "new"), before + 3, "another /64 has its own bucket");
   });
 
   t("installs: plan.json, the ambassador page and the founder page show the counts", async () => {

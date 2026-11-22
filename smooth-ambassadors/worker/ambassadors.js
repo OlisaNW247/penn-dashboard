@@ -74,6 +74,7 @@ import {
   schoolDesignScans,
   installTotals,
   recordInstall,
+  pruneInstallMarks,
 } from "./data.js";
 import { recordScan, appStoreRedirect, notFound } from "./legacy.js";
 import { ambassadorPage, stickersPage, founderPage } from "./pages.js";
@@ -491,6 +492,7 @@ function knownCanvasHost(host) {
 const INSTALL_BODY_MAX = 512;
 const INSTALL_HOST = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/;
 async function installRoute(request, env) {
+  await pruneInstallMarks(env); // before any early return
   const headers = { "cache-control": "no-store" };
   const reply = (status, body, extra = {}) => Response.json(body, { status, headers: { ...headers, ...extra } });
   if (request.method !== "POST") return reply(405, { ok: false }, { allow: "POST" });
@@ -600,6 +602,7 @@ async function ambassadorRoutes(request, env, parts, url) {
     }
     if (action === "stickers") return html(stickersPage({ amb, origin: pub, qrSvg }));
     if (action === "plan.json") {
+      await pruneInstallMarks(env);
       return Response.json(await planPayload(env, amb, url, pub), { headers: { "cache-control": "no-store" } });
     }
     if (action === "me.json") {
@@ -660,6 +663,7 @@ async function founderRoutes(request, env, parts, url) {
   }
   const base = `/f/${secret}`;
   const pub = origin(request, env);
+  await pruneInstallMarks(env);
 
   if (request.method === "GET") {
     if (action === "idea") {
