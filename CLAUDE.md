@@ -4073,6 +4073,20 @@ itself.
   is a quiz id, another id space (the reconciler's own comment). The lesson
   about fixtures: when two readers of one payload exist, feed the new one the
   old one's fixtures, not fixtures written from the new one's assumptions.
+- **The 2026-11-22 test pass's high finding: a plain assignment's planner
+  row was never read** (`docs/TEST_SWEEPER_SIGNIN_2026-11-22.md` H1, fixed
+  on the line). `SubmissionRead.verdicts` keyed a read on
+  `plannable.assignment_id`, which only a quiz or graded discussion carries;
+  a plain assignment is `plannable_type == "assignment"` with its id in
+  `plannable_id`. So the last-hour poll, the push wake and the force-quit
+  extension read the window every minute and cancelled nothing for a
+  problem set; only the 15-minute grades fetch could. Every fixture had put
+  `assignment_id` on assignments too, which is why 4,375 tests were green
+  over it. The tell: `polls` rising in `sweeperCountsV1` with no
+  `cancelledAtObservation.poll` after a real submission. The same pass found
+  the push wake's own gate reading only the clock-gated jar (M2, fixed the
+  same night: it now asks `AutoSyncCoordinator.canvasCookies`, which warms
+  the store first, M1).
 - **A non-default `WKWebsiteDataStore` answers an empty cookie jar in a cold
   process until a web view is attached to it** (2026-11-22, Marco's phone).
   `refreshDuoRememberSummary` asked `LoginDataStores.canvas.httpCookieStore`

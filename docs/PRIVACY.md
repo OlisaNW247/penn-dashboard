@@ -54,7 +54,8 @@ does not remove everything it saved on the phone: see "Deleting your data".
 - **Your work list and your name.** Assignments you add yourself, due-date
   edits, reminder settings, and the first name you enter never go to our
   server, with one opt-in exception for the work list and your own tasks
-  described under "Connecting an AI assistant" (never your name). The work Canvas and Gradescope give you is the exception: its titles
+  described under "Connecting an AI assistant" (never your name; not in
+  this build). The work Canvas and Gradescope give you is the exception: its titles
   and due dates are in the summary sent with each question you ask "the tree"
   (see "What is sent to our server"), though your own tasks and your due-date
   edits are not. Your own tasks and due-date edits are shared, encrypted, with
@@ -515,8 +516,8 @@ is separate from the server described above and shares nothing with it.
 
 What it sends, and only while signed in: the code; which anonymous campus
 app the ambassador picked and the phone's time-zone offset (so "today's
-post" is their today); and what they tap on that page: "i posted it", a
-checklist tick, a pause, and the feedback they type. Since 2026-11-11 an
+post" is their today); and what they tap on that page: "done" on a task,
+a pause, and the feedback they type. Since 2026-11-11 an
 ambassador can also send a **poster idea**: a picture they choose, a note,
 or both, and only when they tap "send". The picture is rebuilt from its
 pixels on the phone first, at no more than 1280 pixels and 600 KB, so

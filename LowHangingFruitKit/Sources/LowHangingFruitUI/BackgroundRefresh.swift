@@ -195,9 +195,13 @@ public enum LHFBackgroundRefresh {
         let started = Date()
         guard FeatureFlags.sweeperWake, !state.isUsingFixtureData else { return false }
 
-        // A saved login that Canvas has not outlived. With none, the wake ends
-        // here: it never starts a renewal of its own.
-        guard state.hasCanvasCredentials, !SessionCookieStore.isExpired(service: .canvas) else {
+        // A login to ask with. Not the persisted jar alone: its 24-hour rule
+        // empties it a day after the last save while WebKit still holds a
+        // live session (the 2026-11-21 poll fault, test pass M2), so the
+        // live-merged cookies decide, as in `fetchPlannerWindowForPoll`. With
+        // none, the wake ends here: it never starts a renewal of its own.
+        let liveCookies = await AutoSyncCoordinator.canvasCookies(forHost: state.canvasInstallation.host)
+        guard !liveCookies.isEmpty || state.hasCanvasCredentials else {
             SweeperCounts.increment(SweeperCounts.pushNoSession)
             #if DEBUG
             DebugWakeLog.record(source: .push, outcome: "no-session", duration: Date().timeIntervalSince(started),

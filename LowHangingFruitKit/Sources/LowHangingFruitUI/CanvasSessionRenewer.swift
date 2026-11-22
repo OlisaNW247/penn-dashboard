@@ -1544,7 +1544,7 @@ private final class RenewalNavigationDelegate: NSObject, WKNavigationDelegate {
     #if DEBUG
     private static func logFailure(_ webView: WKWebView, _ error: Error) {
         let nsError = error as NSError
-        DebugRenewalLog.record("navigation failed: \(webView.url?.host ?? "(no host)") \(webView.url?.path ?? "") \(nsError.domain)/\(nsError.code)")
+        DebugRenewalLog.record("navigation failed: \(webView.url?.host ?? "(no host)") \(nsError.domain)/\(nsError.code)")
     }
     #endif
 

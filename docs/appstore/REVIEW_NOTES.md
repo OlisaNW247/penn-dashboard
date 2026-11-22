@@ -41,7 +41,7 @@ WHAT IT DOES
 A dashboard for university students: their own Canvas deadlines (calendar feed and signed-in session) and, optionally, Gradescope, in one list with local reminders.
 
 ALARMS AND NOTIFICATIONS
-The Sweeper rings before work the student has not turned in (10 minutes by default, on by default): on iOS 26 one AlarmKit alarm, full screen like Clock, after asking permission once; on earlier iOS, or if refused, three Time Sensitive notifications. The app also registers for silent remote notifications: our server sends a push with no content a few minutes before an alarm so the app can check, with the student's own login, whether the work is already in and cancel the alarm. No user-facing notification is ever sent from the server.
+The Sweeper rings before work the student has not turned in (10 minutes by default, on by default): on iOS 26 one AlarmKit alarm, full screen like Clock, after asking permission once; on earlier iOS, or if refused, three Time Sensitive notifications. This version holds the code for a server-sent wake-up before an alarm, but it is switched off in the shipped build: the app carries no push entitlement, registers for nothing, and the server function is not deployed. Every notification the student sees is local.
 
 AMBASSADOR MODE
 Profile > ambassador mode is for a few student volunteers who promote Smooth at their schools. It asks for a code we send them (no account, no password) and shows the job, a suggested post for the day with a copy button, their school's posters, a feedback box, a daily local reminder they can turn off, and their link-open counts. It never asks for or rewards ratings or reviews. To see it, enter this test code: <code>. Any other student sees only the row.
@@ -300,10 +300,10 @@ end-to-end.
    through the same session and regroups them into syllabus categories, which
    the student can edit.
 7. **Reminders (optional):** local notifications before each due date, with
-   per-class settings. Since 3.5.0 (2026-11-18) one kind of remote push:
-   a silent background push with no content that wakes the app to check
-   submission status before a Sweeper alarm; nothing visible is ever sent
-   from the server.
+   per-class settings. 3.5.0 holds the code for a server-sent wake-up
+   before a Sweeper alarm, switched off in the shipped build (no push
+   entitlement, nothing registered, the server function not deployed);
+   every notification is local.
 
 ## Data, privacy, and networking
 
