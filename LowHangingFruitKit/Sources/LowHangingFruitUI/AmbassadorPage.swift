@@ -43,6 +43,7 @@ struct AmbassadorPage: View {
                 numbersSection
                 remindersSection
                 accountSection
+                contactsSection
             } else {
                 signInSection
             }
@@ -265,6 +266,37 @@ struct AmbassadorPage: View {
             SmoothSectionHeader(model.statusLine, accent: .smoothCobalt)
         }
         .smoothSectionBackground(.smoothMarigold)
+    }
+}
+
+extension AmbassadorPage {
+    // MARK: Contacts
+
+    @ViewBuilder
+    private var contactsSection: some View {
+        if let contacts = model.plan?.contacts, !contacts.isEmpty {
+            Section {
+                ForEach(contacts) { contact in
+                    Button {
+                        if let url = AmbassadorPlan.Contact.smsURL(for: contact) { openURL(url) }
+                    } label: {
+                        HStack {
+                            Image(systemName: "message").frame(width: 22)
+                            Text(contact.name)
+                            Spacer()
+                            Text(contact.phone)
+                                .font(.lhfMono(14))
+                                .foregroundStyle(Color.v2DateText)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            } header: {
+                SmoothSectionHeader("questions, feedback, comments? tell us!", accent: .smoothCobalt)
+            }
+            .smoothSectionBackground(.smoothGrape)
+        }
     }
 }
 

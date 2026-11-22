@@ -372,6 +372,24 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
     public var links: [String: String]?
     /// How to post (2026-11-22); nil from an older server.
     public var guidance: Guidance?
+    /// The founders' lines for the foot of the page (2026-11-22); the server
+    /// reads them from a deploy variable, so the repo never holds a number.
+    public var contacts: [Contact]?
+
+    public struct Contact: Codable, Equatable, Sendable, Identifiable {
+        public var name: String
+        public var phone: String
+        public var id: String { name + phone }
+        public init(name: String, phone: String) { self.name = name; self.phone = phone }
+
+        /// `sms:` plus the digits and a leading plus; nil with no digits.
+        public static func smsURL(for contact: Contact) -> URL? {
+            let trimmed = contact.phone.trimmingCharacters(in: .whitespacesAndNewlines)
+            let digits = trimmed.filter(\.isASCII).filter(\.isNumber)
+            guard !digits.isEmpty else { return nil }
+            return URL(string: "sms:" + (trimmed.hasPrefix("+") ? "+" : "") + digits)
+        }
+    }
 
     public init(name: String, school: String, schoolName: String? = nil, title: String? = nil,
                 status: String? = nil, pausedUntil: String? = nil, page: String? = nil,
@@ -380,7 +398,9 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
                 tips: [String]? = nil, generatedAt: String? = nil,
                 posters: [Poster]? = nil, dashboard: String? = nil, ideas: Ideas? = nil,
                 playbook: Playbook? = nil, suggested: [Suggestion]? = nil, captures: Captures? = nil,
-                links: [String: String]? = nil, guidance: Guidance? = nil) {
+                links: [String: String]? = nil, guidance: Guidance? = nil,
+                contacts: [Contact]? = nil) {
+        self.contacts = contacts
         self.guidance = guidance
         self.links = links
         self.playbook = playbook
@@ -444,6 +464,11 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
         captures = (try? c.decodeIfPresent(Captures.self, forKey: .captures)) ?? nil
         links = (try? c.decodeIfPresent([String: String].self, forKey: .links)) ?? nil
         guidance = (try? c.decodeIfPresent(Guidance.self, forKey: .guidance)) ?? nil
+        if let boxes = try? c.decodeIfPresent([LossyElement<Contact>].self, forKey: .contacts) {
+            contacts = boxes.compactMap(\.value)
+        } else {
+            contacts = nil
+        }
     }
 
     /// An element that decodes to nil instead of throwing.

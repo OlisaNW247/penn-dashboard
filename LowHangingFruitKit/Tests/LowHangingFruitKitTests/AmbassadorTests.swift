@@ -66,6 +66,18 @@ struct AmbassadorPlanTests {
      "tips":["post once"],"unknownFutureField":{"a":1},"generatedAt":"2026-11-09T20:00:00.000Z"}
     """
 
+    @Test("contacts decode element by element, read nil when absent, and make sms links")
+    func contacts() throws {
+        let good = Self.json.replacingOccurrences(of: "\"tips\"", with: "\"contacts\":[{\"name\":\"olisa\",\"phone\":\"+1 555 010 0100\"},{\"name\":\"x\"},7],\"tips\"")
+        let plan = try AmbassadorPlan.decode(Data(good.utf8))
+        #expect(plan.contacts == [.init(name: "olisa", phone: "+1 555 010 0100")])
+        #expect(try AmbassadorPlan.decode(Data(Self.json.utf8)).contacts == nil)
+        let bad = Self.json.replacingOccurrences(of: "\"tips\"", with: "\"contacts\":{\"a\":1},\"tips\"")
+        #expect(try AmbassadorPlan.decode(Data(bad.utf8)).contacts == nil)
+        #expect(AmbassadorPlan.Contact.smsURL(for: .init(name: "a", phone: "+1 (555) 010-0100"))?.absoluteString == "sms:+15550100100")
+        #expect(AmbassadorPlan.Contact.smsURL(for: .init(name: "a", phone: "n/a")) == nil)
+    }
+
     @Test("links decode as a map, and a wrong shape reads as none without costing the plan")
     func links() throws {
         let good = Self.json.replacingOccurrences(of: "\"tips\"", with: "\"links\":{\"gc\":\"https://example.test/r/k3m9x2p7qa/s/gc\"},\"tips\"")
@@ -1065,6 +1077,16 @@ struct AmbassadorWiringTests {
         let page = try uiSource("AmbassadorPage.swift")
         #expect(page.contains(#"\(plan.schoolLabel) downloads"#))
         #expect(page.contains("if let installs = n.schoolInstalls"))
+    }
+
+    @Test("the contacts section is last and invites the question")
+    func contactsLast() throws {
+        let page = try uiSource("AmbassadorPage.swift")
+        let body = try #require(page.range(of: "if model.isSignedIn {"))
+        let account = try #require(page.range(of: "accountSection", range: body.upperBound..<page.endIndex))
+        let contacts = try #require(page.range(of: "contactsSection", range: account.upperBound..<page.endIndex))
+        #expect(account.lowerBound < contacts.lowerBound)
+        #expect(page.contains("tell us"))
     }
 
     @Test("ambassador mode never mentions ratings or reviews")

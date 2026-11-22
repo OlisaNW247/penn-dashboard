@@ -51,6 +51,10 @@ struct ContentView: View {
     /// handled against an empty `vm.items` completes nothing and re-plans the
     /// reminders from an empty list (see `NotificationActionInbox.drain`).
     @State private var isDashboardBound = false
+    /// The one-time overdue swipe lesson's card, while its cover is up.
+    @State private var overdueLesson: DashItem?
+    /// Decided once per process, on the first non-empty item list.
+    @State private var overdueLessonDecided = false
 
     @State private var filter: DashFilter = .thisWeek
     @State private var editing: DashItem?
@@ -372,12 +376,14 @@ struct ContentView: View {
             isDashboardBound = true
             takeLoudAlertActions()
             openDuoSignInIfAsked()
+            decideOverdueLesson()
         }
         // Every later tap, with the dashboard already on screen.
         .onChange(of: actionInbox.queue) { _, queue in
             guard !queue.isEmpty else { return }
             takeLoudAlertActions()
         }
+        .onChange(of: vm.items) { _, _ in decideOverdueLesson() }
         .task {
             // Read Duo's trust cookie once up front. The loop below sleeps
             // five minutes before its first `refresh()`, and
@@ -531,6 +537,11 @@ struct ContentView: View {
         #else
         .sheet(isPresented: reconnectCoverBinding) { reconnectCover }
         #endif
+        #if os(iOS)
+        .fullScreenCover(item: $overdueLesson) { overdueLessonCover(for: $0) }
+        #else
+        .sheet(item: $overdueLesson) { overdueLessonCover(for: $0) }
+        #endif
         // The one-ask "include this class's readings?" popup that used to
         // live here (`CourseNudgeSheet`, driven off `pendingCourseNudge`)
         // was removed 2026-08-27 (docs/decisions.md): readings now import
@@ -545,6 +556,53 @@ struct ContentView: View {
             vm.reload(preservingEdits: true)
             rescheduleNotifications()
         }
+    }
+
+    /// Decided once per process on the first non-empty item list; the key is
+    /// written at presentation so a kill mid-screen never shows it twice.
+    private func decideOverdueLesson() {
+        guard isDashboardBound, !overdueLessonDecided, !vm.items.isEmpty else { return }
+        let store = OverdueSwipeLessonStore()
+        #if DEBUG
+        if OverdueSwipeLesson.isForced {
+            overdueLessonDecided = true
+            overdueLesson = OverdueSwipeLesson.forcedCandidate(in: vm.items, now: Date())
+            return
+        }
+        #endif
+        let candidate = OverdueSwipeLesson.candidate(in: vm.items, now: Date())
+        guard OverdueSwipeLesson.shouldShow(hasCandidate: candidate != nil, alreadyShown: store.hasShown,
+                                            usingFixtureData: state.isUsingFixtureData,
+                                            reconnecting: state.isReconnecting) else {
+            // A reconnect in progress leaves it undecided so it is asked again.
+            if store.hasShown || state.isUsingFixtureData || candidate == nil { overdueLessonDecided = true }
+            return
+        }
+        overdueLessonDecided = true
+        store.markShown()
+        overdueLesson = candidate
+    }
+
+    /// The two closures are the timeline's own `onCommit`/`onComplete` wiring,
+    /// byte for byte, so the lesson writes exactly what a dashboard swipe
+    /// writes and nothing else.
+    private func overdueLessonCover(for item: DashItem) -> some View {
+        OverdueSwipeLessonView(
+            item: item,
+            overdueDays: OverdueSwipeLesson.overdueDays(of: item, now: Date()),
+            onCommit: { vm.commitCompletion(item) },
+            onComplete: {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                    vm.complete(item)
+                }
+                rescheduleNotifications()
+            },
+            onDismiss: { overdueLesson = nil }
+        )
+        .lhfSheetTheme()
+        #if os(macOS)
+        .frame(minWidth: 480, minHeight: 600)
+        #endif
     }
 
     private func openDuoSignInIfAsked() {

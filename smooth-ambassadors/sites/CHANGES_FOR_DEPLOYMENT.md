@@ -4,6 +4,15 @@ For the ChatGPT session that deploys project
 `appgprj_6aebbfcc56e48191a690c176014ceddf`. Base commit:
 `3770608515c285cc1e034f8be04e8d5e4c335640`.
 
+## Note, 2026-11-22: founder contacts
+
+Set one runtime variable, `FOUNDER_CONTACTS`, a JSON string, values from
+Marco, never committed:
+`[{"name":"olisa","phone":"+1 555 010 0100"},{"name":"marco","phone":"+1 555 010 0101"}]`.
+`plan.json` then carries `contacts` (at most four; malformed entries dropped;
+the key is omitted when nothing survives) and the app lists them at the foot
+of the ambassador page. Unset, nothing changes.
+
 ## Update, 2026-11-22: downloads by school
 
 This archive is the seventh. **The live site is the sixth** (the two-posts
