@@ -1641,6 +1641,17 @@ Keep this current. It is the fastest way for a new session to know what exists.
      only through the server's plan once Olisa deploys. Unseen on a phone:
      the intro, the four sheets, the ticks surviving a relaunch, the
      twice-weekly reminder firing.
+     **The Worker teaches the anonymous posts since 2026-11-22**
+     (`worker/templates/guidance.json`, sent as `plan.guidance`, additive;
+     Marco's framing relayed by the master session): two kinds of post,
+     `straight` (smooth helps with assignments, told as a student would, a
+     tip or a question) and `misc` (any post about anything at your school
+     with smooth sideways, the link in a comment or the bio, never the
+     post), each with one rule, three prompts and three or four example
+     texts; one test line, "if it reads like an ad, it's an ad". His own
+     example is the Odyssey reply. The two real posts in `messages.json`
+     are untouched. Not deployed (Olisa's zip); the app's half of this is
+     the next commit.
   9. feedback (since 3.3.0, 2026-10-27): one "send feedback ↗" row that
      opens the Google feedback form in Safari (`FeedbackForm.defaultURL`,
      or the live notice's link when the manifest carries one)
