@@ -1608,7 +1608,24 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `v12` (2026-11-19, a post's reply and pull to refresh on the
+**Current on `v12` (2026-11-22, the per-school install count): 3915 tests /
+385 suites, all green, `swift test --no-parallel` on the GitHub macOS runner
+in 89 s, with the unsigned iOS `xcodebuild`, Deno and the extension suite
+green in the same run (manual run 44978237573 at `5ad2470`; the commits
+after it change only `smooth-ambassadors/`, `docs/` and notes).** +15 tests
+and +3 suites over 3900 / 382: `InstallCountTests.swift` (the rule's truth
+table, host shapes, the exact body, outcomes; the reporter against a
+`URLProtocol` stub; a scan that `BackgroundRefresh.swift` never names it)
+and two in `AmbassadorTests.swift` (`installNumbers`, `downloadsRow`). It
+compiled at the first attempt. The ambassador Worker's own suite (separate,
+never added to these counts): 85 pass with `npm test`, 68 of 68 with the
+built single-file artifact beside the original site, the rehearsal on the
+real scan backup 22 checks with none failing; 412 posts from 412 IPv6
+addresses in four /64s left four buckets, and the founder page has no
+sideways overflow at 390 points. A security review found no blocker and
+two things that were fixed before the zip (Traps, "a cap per key").
+
+Before it: **on `v12` (2026-11-19, a post's reply and pull to refresh on the
 ambassador page): 3900 tests / 382 suites, all green, `swift test
 --no-parallel` on the GitHub macOS runner in 96 s, with the unsigned iOS
 `xcodebuild`, Deno and the extension suite green in the same run (manual

@@ -656,7 +656,7 @@ export function founderPage({ stats, origin, secret, flash, created }) {
       <table class="small"><tr><th>school</th><th class="num">total</th><th class="num">new ${stats.days}d</th></tr>
       ${lb.schools.map((s) => { const d = stats.installsBySchool?.[s.school]; return `<tr><td>${esc(s.name)}</td><td class="num">${d ? d.total : "&ndash;"}</td><td class="num">${d ? d.recent : "&ndash;"}</td></tr>`; }).join("")}</table>
     </div>
-    <div class="card"><h3>other schools <span class="muted">downloads from hosts no school maps to</span></h3>
+    <div class="card"><h3>other schools <span class="muted">downloads where there is no ambassador yet</span></h3>
       ${(stats.installsUnmapped ?? []).length ? `<table class="small"><tr><th>host</th><th class="num">total</th><th class="num">new ${stats.days}d</th></tr>
       ${stats.installsUnmapped.map((h) => `<tr><td>${esc(h.host)}</td><td class="num">${h.total}</td><td class="num">${h.recent}</td></tr>`).join("")}</table>` : `<p class="small muted">none yet.</p>`}
     </div>
