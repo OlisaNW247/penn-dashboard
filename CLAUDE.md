@@ -2303,6 +2303,17 @@ iOS Debug build of the tree succeeded. Predicted full count after the merge:
 Other sessions were running filtered suites on the Mac at the time (the
 shared-defaults trap), so nothing here is a baseline.**
 
+**Current on `claude/ambassador-header` (2026-11-22, `f43f781`: `origin/v12`'s
+install count merged (`d26d286`) and the ambassador round two
+(`claude/ambassador-work-c14201` at `3d3a61f`, with the posters branch and the
+Worker guidance) merged on top): 4447 tests / 458 suites, all green, `swift test
+--no-parallel` alone on Marco's Mac (94 s, helper domain cleared first, load
+under 12); the unsigned iOS Debug build succeeded. The ambassador session's
+build of `3d3a61f` is on Marco's iPhone (the dormant `LHFSweeperCheck`
+extension left out of that one signed build, because Apple holds a new Program
+License Agreement that only the Account Holder, Olisa, can accept; the project
+file was restored). The same agreement blocks the 3.5.0 archive.**
+
 **Current on `claude/ambassador-header` (2026-11-22, `d77018b`: the four side
 branches merged, `claude/test-sweeper-signin-1cb733` (the Sweeper and sign-in
 test pass, `docs/TEST_SWEEPER_SIGNIN_2026-11-22.md`), `claude/release-review-3766d5`
