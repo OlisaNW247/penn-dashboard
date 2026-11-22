@@ -21,7 +21,7 @@
 //   /api/leaderboard            public, school level only
 
 import qrcode from "qrcode-generator";
-import { CHANNELS, SCHOOLS, designsFor, isValidCombo, posterName, scanKey } from "./catalog.js";
+import { CHANNELS, SCHOOLS, isValidCombo, offeredDesignsFor, posterName, scanKey } from "./catalog.js";
 import { fontResponse } from "./fonts.js";
 import messages from "./templates/messages.json";
 import checklist from "./templates/checklist.json";
@@ -150,7 +150,9 @@ async function planPayload(env, amb, url, pub) {
     channels: CHANNELS,
     generatedAt: new Date().toISOString(),
     // Added 2026-11-11, additive: the app ignores keys it does not know.
-    posters: designsFor(amb.school).map((key) => ({
+    // Retired designs (catalog.js RETIRED) are left out here, as everywhere an
+    // ambassador is handed a design; a printed one still scans.
+    posters: offeredDesignsFor(amb.school).map((key) => ({
       key,
       name: posterName(key),
       image: `${pub}/posters/${amb.school}/${key}.jpg`,

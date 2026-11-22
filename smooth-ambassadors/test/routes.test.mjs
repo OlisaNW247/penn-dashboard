@@ -78,8 +78,16 @@ test("existing routes: /api/stats lists exactly the live rows, in the live order
   const s = await r.json();
   assert.deepEqual(Object.keys(s), ["rows"]);
   const live = JSON.parse(readFileSync(join(root, "test/fixtures/live-stats-shape.json"), "utf8")).rows;
-  assert.equal(s.rows.length, 62);
-  assert.deepEqual(s.rows.map(({ total, ...rest }) => rest), live);
+  // The 62 live rows of 2026-11-10 are all still there, in their order
+  // (retiring a design never removes its row); the designs added on
+  // 2026-11-22 follow them within each school, one row per school.
+  const liveKeys = new Set(live.map((r) => r.poster));
+  assert.equal(s.rows.length, 62 + 5 * 5);
+  assert.deepEqual(s.rows.filter((r) => liveKeys.has(r.poster)).map(({ total, ...rest }) => rest), live);
+  for (const school of ["upenn", "umiami", "uva", "case-western", "clark"]) {
+    const tail = s.rows.filter((r) => r.school === school).slice(-5).map((r) => r.poster);
+    assert.deepEqual(tail, ["missed", "moved", "one-list", "sweeper", "ask"], school);
+  }
   assert.deepEqual(Object.keys(s.rows[0]), ["school", "schoolName", "poster", "name", "total"]);
   const total = (school, poster) => s.rows.find((x) => x.school === school && x.poster === poster).total;
   assert.equal(total("upenn", "ib"), 40);
@@ -198,10 +206,44 @@ test("two-tap drop log, post log, checklist, feedback, pause", async () => {
   assert.match(page, /paused until/);
 });
 
-test("stickers page renders a QR per design", async () => {
+test("stickers page renders a QR per offered design, none for a retired one", async () => {
   const t = await (await get(`/a/${token}/stickers`)).text();
-  assert.equal((t.match(/<svg class="qr"/g) || []).length, 12);
+  const { offeredDesignsFor, RETIRED } = await import("../worker/catalog.js");
+  assert.equal((t.match(/<svg class="qr"/g) || []).length, offeredDesignsFor("uva").length);
+  assert.equal(RETIRED.length, 2);
+  for (const d of RETIRED) assert.doesNotMatch(t, new RegExp(`/p/${d}\\b`), d);
   assert.doesNotMatch(t, new RegExp(token));
+});
+
+// Retired designs (Marco, 2026-11-21: "Tabard rush list, what does that even
+// mean for a non-Penn student?", "have you seen these two ... get rid of
+// that one") leave everything an ambassador is handed and nothing a printed
+// code depends on.
+test("a retired design is not offered, but its printed codes still scan and count", async () => {
+  const { RETIRED, designsFor, offeredDesignsFor } = await import("../worker/catalog.js");
+  assert.deepEqual(RETIRED, ["these-two", "tabard"]);
+  for (const school of ["upenn", "uva", "umiami", "case-western", "clark"]) {
+    for (const d of RETIRED) {
+      assert.ok(designsFor(school).includes(d), `${school} still accepts ${d}`);
+      assert.ok(!offeredDesignsFor(school).includes(d), `${school} no longer offers ${d}`);
+    }
+  }
+  // Nothing handed out names them: the plan, the page's gallery and drop chips.
+  const plan = await (await get(`/a/${token}/plan.json?anon=sidechat&tz=300`)).json();
+  assert.deepEqual(plan.posters.map((p) => p.key), offeredDesignsFor("uva"));
+  const page = await (await get(`/a/${token}`)).text();
+  assert.doesNotMatch(page, /tabard|these-two/);
+  // The printed codes keep working: a plain scan, the ambassador's poster link, the stats row.
+  const before = await total("uva/tabard");
+  assert.equal((await get("/scan/uva/tabard")).status, 302);
+  assert.equal(await total("uva/tabard"), before + 1);
+  assert.equal((await get(`/r/${ref}/p/these-two`)).status, 302);
+  assert.equal(await total("uva/these-two"), 1);
+  const stats = await (await get("/api/stats")).json();
+  assert.ok(stats.rows.some((r) => r.school === "uva" && r.poster === "tabard"));
+  assert.ok(stats.rows.some((r) => r.school === "upenn" && r.poster === "these-two"));
+  // A drop of one still logs (an ambassador may hold printed copies).
+  assert.equal((await post(`/a/${token}/drop`, { design: "tabard", copies: "1" })).status, 303);
 });
 
 test("founder view reflects everything and digest skips paused", async () => {

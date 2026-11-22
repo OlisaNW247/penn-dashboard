@@ -45,8 +45,13 @@ const before = JSON.stringify([...rows].sort((a, b) => (a.poster < b.poster ? -1
 // 2. Every backed-up key is one the Worker lists: nothing orphaned, nothing missing.
 const statsO = await (await get(original, "/api/stats")).text();
 const statsE = await (await get(edited, "/api/stats")).text();
-say(statsO === statsE, `/api/stats identical from both Workers on the real data (sha ${sha(statsE)})`);
-const stats = JSON.parse(statsE).rows;
+// The edited Worker may list designs the original does not (added by
+// build-sites); every original row must still be there, unchanged, in place.
+const rowsO = JSON.parse(statsO).rows;
+const rowsE = JSON.parse(statsE).rows;
+const origKeys = new Set(rowsO.map((r) => r.poster));
+say(JSON.stringify(rowsE.filter((r) => origKeys.has(r.poster))) === JSON.stringify(rowsO), `/api/stats from the edited Worker keeps the original's ${rowsO.length} rows (sha ${sha(statsO)}); it lists ${rowsE.length}`);
+const stats = rowsO;
 const key = (r) => (r.school === "upenn" ? r.poster : r.school + "/" + r.poster);
 const listed = new Map(stats.map((r) => [key(r), r.total]));
 say(rows.every((r) => listed.get(r.poster) === r.total), "every backed-up row shows in /api/stats with its exact total");

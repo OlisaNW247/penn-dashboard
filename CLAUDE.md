@@ -1566,7 +1566,25 @@ Keep this current. It is the fastest way for a new session to know what exists.
      poster ideas") a "posters" section sits right after today's post**:
      "all posters" opens an in-app gallery of the school's designs as a
      sheet (`AmbassadorPostersView`: two columns, scan counts, tap for
-     full size with "share or save"); "scan dashboard ↗" opens the public
+     full size with "share or save"; **since 2026-11-22 the list is the
+     catalog's offered designs**, `offeredDesignsFor` in
+     `smooth-ambassadors/worker/catalog.js`: `tabard` and `these-two` are
+     `RETIRED` at Marco's word (2026-11-21, "what does that even mean for a
+     non-Penn student?"; a printed code of either still scans and still
+     counts, it is only no longer handed out), and five generic designs he
+     approved from renders the next day are appended (`missed`, `moved`,
+     `one-list`, `sweeper`, `ask`; sources in `smooth-ambassadors/posters/src`,
+     previews in `posters/previews`, rendered by `scripts/render-posters.mjs`
+     with the Mac's Chrome; each carries a dashed slot for the QR sticker
+     from the stickers page instead of a printed code, so one print serves
+     every school). The app changes nothing: it shows what `plan.json`
+     lists. Server side the new designs reach the live Worker only through
+     `scripts/build-sites.mjs`, which since the same day adds them to the
+     host's own `posters` Map and `imageData` (`scripts/lib/add-posters.mjs`;
+     the seventh zip, not built: the Sites archive was not on the Mac, see
+     `docs/deploy.md`). Marco's two "more serious" posters are still to be
+     added: neither of the two unpublished masters in `posters-print/` is
+     one of them, by his word, and he has not yet named them; "scan dashboard ↗" opens the public
      live counts for their school in Safari; "send a poster idea" opens
      `PosterIdeaSheet` (a `PhotosPicker`, a note, send). A row that leaves
      the app carries the arrow, and "my page" became "my web page ↗" for

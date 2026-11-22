@@ -48,6 +48,15 @@ These block shipping, or would make shipping risky. The launch-prep
 work of 2026-10-09/10 is summarised, with the order to take these in,
 in `docs/LAUNCH_PREP_HANDOFF.md`.
 
+- **Ambassador posters: finish the seventh zip** (2026-11-22,
+  `claude/ambassador-posters-f068d6`). Needs the current Sites export from
+  Olisa's ChatGPT session (not on the Mac), then `docs/deploy.md` steps 2
+  to 5; the first run of `build-sites.mjs` against the real `imageData`
+  decides whether `scripts/lib/add-posters.mjs` read its shape right (it
+  refuses rather than guesses). And Marco's two "more serious" posters:
+  he says neither `life-is-so-smooth` nor `brutal-russian-beheading` is
+  one; ask him for the files, then catalog key, name, preview, same path.
+
 - **3.5.0 (21) ships without the agent connection** (Marco, 2026-11-17: "we're not going to actually go with the agent stuff from V11 ... V12 will be solely the ambassador stuff and just some of the other stuff"). `FeatureFlags.agentConnection = false` on `claude/v12-isolate-ab8b22` with the two leaks closed (the cached draft chip, prev's "submitted by" line), the agent tests skipping while off, and the review notes, listing and privacy text without it (`docs/V12_ISOLATION_2026-11-17.md`: route A, flag off, over route B, a branch that deletes the code, which would cost two days and make `v11` unmergeable). Marco settled the rest the same day: "keep all but agent" (the Sweeper page and header button, the scroll fix, swipe both ways, the squircle header, the wordmark backflip, the hovering shapes, the Atkinson class code, the truthful in-class label, the held course-material sync, the assignment-PDF pass, the update-wall changes list, the ambassador header all ship). Left for Marco: merging the branch into the release line, the phone check of the off state, the stamp, archive and upload. The agent-connection item below is now `v11`'s, not this release's.
 - **Ship 3.5.0 (21), the v11 release, now with ambassador mode** (`origin/v12`
   merged into `v11` on 2026-11-12, degree progress off; `docs/V11_RETURN_2026-11-11.md` is
@@ -1154,6 +1163,19 @@ Kept so nobody rebuilds them blind.
   later and was reverted (`CLAUDE.md` → the 24-hour trap).
 
 ## Done recently
+
+- **2026-11-22.** Ambassador posters, on `claude/ambassador-posters-f068d6`
+  (not merged, nothing live). `tabard` and `these-two` retired from what an
+  ambassador is offered (plan, gallery, drop chips, stickers), while their
+  printed codes keep scanning and counting; five generic designs
+  (`missed`, `moved`, `one-list`, `sweeper`, `ask`), approved by Marco from
+  the renders, in the catalog with sources and 700 px previews;
+  `build-sites.mjs` learned to add designs to the live Worker's own Map and
+  image dictionary (`scripts/lib/add-posters.mjs`, tested against synthetic
+  hosts of three shapes, never yet against the real file). Worker suite 77
+  pass plus the pre-existing chunked-body failure. Still open: the seventh
+  zip needs the Sites archive from Olisa's ChatGPT session, and Marco's two
+  "more serious" posters are unidentified (not the two unpublished masters).
 
 - **2026-11-21.** Two sign-in fixes on the release line, from Marco's own
   phone sitting on "duo needs you" for a day: the hidden sign-in renews

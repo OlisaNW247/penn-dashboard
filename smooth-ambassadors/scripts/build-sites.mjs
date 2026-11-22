@@ -14,9 +14,11 @@
 // It is idempotent: a second run rewrites only the generated section.
 // Every anchor must occur exactly once or nothing is written.
 import { build } from "esbuild";
-import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from "node:fs";
 import { join, dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { AddPostersError, addPosters, hostDesigns } from "./lib/add-posters.mjs";
+import { DESIGNS, POSTER_NAMES, SCHOOLS } from "../worker/catalog.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repo = process.argv[2] && resolve(process.argv[2]);
@@ -81,6 +83,28 @@ if (count(text, B_INSERT) === 1) {
 if (count(text, A_NEW) !== 1 || count(text, B_INSERT) !== 1) fail("edits A and B must each be present exactly once");
 for (const needle of ["const appStore =", "const posters = new Map(", "const schools = new Map(", "function counterKey(", "async function initialize("]) {
   if (count(text, needle) !== 1) fail(`host file: "${needle}" found ${count(text, needle)} times, expected 1`);
+}
+
+// New designs. The host's Map is the one list the deployed Worker reads, so a
+// catalog design it does not have yet is added there with its preview from
+// posters/previews (every school gets the same picture: the QR is a sticker,
+// not printed). A catalog design with neither is a mistake, not a warning.
+// What the host already lists is left alone, keys and pictures alike.
+try {
+  const have = hostDesigns(text).keys;
+  const additions = [];
+  for (const key of DESIGNS) {
+    if (have.includes(key)) continue;
+    const file = join(root, "posters/previews", `${key}.jpg`);
+    if (!existsSync(file)) fail(`catalog design "${key}" is not in the host and has no posters/previews/${key}.jpg`);
+    additions.push({ key, name: POSTER_NAMES[key], jpeg: readFileSync(file) });
+  }
+  const r = addPosters(text, additions, Object.keys(SCHOOLS));
+  text = r.text;
+  if (r.added.length) console.log(`build-sites: added ${r.added.length} design(s) to the host: ${r.added.join(", ")}`);
+} catch (err) {
+  if (err instanceof AddPostersError) fail(`adding posters: ${err.message}`);
+  throw err;
 }
 
 // Bundle. The alias applies only to imports made from worker/, so sites/host-*.js
