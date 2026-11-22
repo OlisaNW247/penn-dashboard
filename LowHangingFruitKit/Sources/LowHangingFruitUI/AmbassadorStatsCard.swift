@@ -18,7 +18,14 @@ struct AmbassadorStatsLine: View {
             Text("\(users) users at \(schoolLabel) so far")
                 .font(.lhfMono(14, weight: .medium))
                 .foregroundStyle(Color.smoothMuted)
+                // One line, always (Marco, 2026-11-22: "make sure that 0 users
+                // at ... is one line not two"): the title stack shares the row
+                // with four header buttons, so a long school label wrapped.
+                // Shrink a little before ever wrapping.
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
+        .layoutPriority(1)
         .accessibilityElement(children: .combine)
     }
 }
