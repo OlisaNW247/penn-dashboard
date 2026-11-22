@@ -1727,14 +1727,18 @@ Keep this current. It is the fastest way for a new session to know what exists.
      only**: the date line under "Ambassador" reads the full month and an
      ordinal day, "November 22nd" (`AmbassadorDateLine`, Kit; Marco's
      example "ambassador November 12th"), the medal is the header buttons'
-     42pt (`SmoothWordmark.badgeSize`), and a **stats line** sits directly
-     under the date line in the header's title stack (`AmbassadorStatsLine`,
-     round three the same day; it was a card with a "stats" label between
-     the banners and the control row for one build, Marco: "one line, and
-     nicer"): a small marigold medal and "n users at <school>" in the date
-     line's own face and ink, from `plan.numbers.schoolInstalls`, Olisa's
-     per-school install count ("we'll just start with that"); nothing is
-     drawn when the server sends no count. (3) **The downloads goal** opens the page
+     42pt (`SmoothWordmark.badgeSize`), and a **stats line** takes the
+     date line's place under the title (`AmbassadorStatsLine`; round three
+     the same day put it under the date, then Marco: "remove the date
+     entirely on the dashboard, just the users underneath ambassador, and
+     end that line with so far"; it was a card with a "stats" label between
+     the banners and the control row for one build): a small marigold medal
+     and "n users at <school> so far" in the date line's mono face and muted
+     ink, from `plan.numbers.schoolInstalls`, Olisa's per-school install
+     count ("we'll just start with that"); an ambassador sees no date line
+     at all, and nothing under the title until the server sends a count.
+     `AmbassadorDateLine` ("November 22nd") stays in the Kit with its
+     tests, unused since then. (3) **The downloads goal** opens the page
      (`goalSection`, `AmbassadorGoalLine`): "downloads at <school>", "n of
      100" and a progress track (`AmbassadorGoals.downloadsTarget = 100`,
      "100 is super chill"), hidden when the count is unknown. The word is

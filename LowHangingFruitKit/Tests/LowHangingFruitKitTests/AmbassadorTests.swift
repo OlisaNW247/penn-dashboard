@@ -1342,7 +1342,10 @@ struct AmbassadorHeaderTests {
         #expect(source.contains("var badgeSize: CGFloat? = nil"))
         #expect(source.contains("AmbassadorStatsLine("))
         #expect(!source.contains("AmbassadorStatsCard("))
-        #expect(source.contains("AmbassadorDateLine.text("))
+        // No date line for an ambassador (Marco, 2026-11-22): the stats line
+        // takes its place, and it ends "so far".
+        #expect(!source.contains("AmbassadorDateLine.text("))
+        #expect(try uiSource("AmbassadorStatsCard.swift").contains("users at \\(schoolLabel) so far"))
         #expect(source.contains("struct WordmarkBadge: View"))
         #expect(source.contains("ambassadorBadgeSymbol = \"medal.fill\""))
         #expect(source.contains("badgeTrailing: true"))

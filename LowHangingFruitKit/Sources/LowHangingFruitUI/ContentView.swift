@@ -896,16 +896,19 @@ struct ContentView: View {
                 .layoutPriority(1)
                 .frame(height: 48, alignment: .center)
 
-                Text(ambassador.isSignedIn ? AmbassadorDateLine.text(for: now) : Self.dateText(now))
-                    .font(.lhfMono(14, weight: .medium))
-                    .foregroundStyle(Color.smoothMuted)
-
-                // Ambassadors only: how many people at their school have the
-                // app, as one line in the date line's own face. Nothing until
-                // the server sends the count.
-                if ambassador.isSignedIn, let plan = ambassador.plan,
-                   let users = plan.numbers?.schoolInstalls {
-                    AmbassadorStatsLine(schoolLabel: plan.schoolLabel, users: users)
+                // An ambassador gets no date line (Marco, 2026-11-22: "remove
+                // the date entirely on the dashboard, just the users underneath
+                // ambassador"): the one line under the title is how many people
+                // at their school have the app, in the date line's own face,
+                // and nothing at all until the server sends the count.
+                if ambassador.isSignedIn {
+                    if let plan = ambassador.plan, let users = plan.numbers?.schoolInstalls {
+                        AmbassadorStatsLine(schoolLabel: plan.schoolLabel, users: users)
+                    }
+                } else {
+                    Text(Self.dateText(now))
+                        .font(.lhfMono(14, weight: .medium))
+                        .foregroundStyle(Color.smoothMuted)
                 }
             }
 

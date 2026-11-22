@@ -1,10 +1,10 @@
 import SwiftUI
 import LowHangingFruitKit
 
-/// The ambassador's one stat on the dashboard, one line under the date line
+/// The ambassador's one stat on the dashboard, the one line under the title
 /// (Marco, 2026-11-22: "we'll just start with that", then "one line, nicer, no
-/// card"). Same face and ink as the date line it sits under, so it reads as
-/// part of the header and not as a second block. Shown only to a signed-in
+/// card", then "remove the date entirely ... end that line with so far"). The
+/// date line's face and ink, in the date line's place. Shown only to a signed-in
 /// ambassador once the server sends the count.
 struct AmbassadorStatsLine: View {
     let schoolLabel: String
@@ -15,7 +15,7 @@ struct AmbassadorStatsLine: View {
             Image(systemName: "medal.fill")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color.smoothMarigold)
-            Text("\(users) users at \(schoolLabel)")
+            Text("\(users) users at \(schoolLabel) so far")
                 .font(.lhfMono(14, weight: .medium))
                 .foregroundStyle(Color.smoothMuted)
         }
