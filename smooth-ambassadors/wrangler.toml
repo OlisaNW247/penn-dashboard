@@ -24,7 +24,8 @@ run_worker_first = true
 # Public origin the printed QR codes encode. Used to build ambassador links.
 PUBLIC_ORIGIN = "https://smooth-poster-scans.jazzysmile20.chatgpt.site"
 
-# Secrets (never in git): FOUNDER_TOKEN. Locally: copy .dev.vars.example to .dev.vars.
+# Secrets (never in git): FOUNDER_TOKEN. Also set at deploy, never committed:
+# FOUNDER_CONTACTS, a JSON array like [{"name":"olisa","phone":"+1 555 010 0100"}]. Locally: copy .dev.vars.example to .dev.vars.
 
 # The page fonts are imported as files. The production bundle turns them into
 # base64 text (esbuild's base64 loader), and wrangler hands them over as bytes.

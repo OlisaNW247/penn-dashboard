@@ -28,6 +28,7 @@ import messages from "./templates/messages.json";
 import checklist from "./templates/checklist.json";
 import playbook from "./templates/playbook.json";
 import guidance from "./templates/guidance.json";
+import { parseContacts } from "./founder-lines.js";
 import canvasHosts from "./canvas-hosts.json";
 import { ambassadorLinks } from "./digest.js";
 import { html } from "./html.js";
@@ -133,6 +134,7 @@ async function planPayload(env, amb, url, pub) {
     status: amb.status,
     pausedUntil: paused ? amb.paused_until : null,
     page: links.page,
+    ...(parseContacts(env).length ? { contacts: parseContacts(env) } : {}),
     appStore: "https://apps.apple.com/us/app/smooth-for-students/id6783911002",
     numbers: {
       linkOpens: stats.linkOpens + stats.posterOpens,

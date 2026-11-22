@@ -222,6 +222,11 @@ test("stickers page renders a QR per offered design, none for a retired one", as
 // mean for a non-Penn student?", "have you seen these two ... get rid of
 // that one") leave everything an ambassador is handed and nothing a printed
 // code depends on.
+test("plan.json carries no contacts key when FOUNDER_CONTACTS is unset", async () => {
+  const plan = await (await get(`/a/${token}/plan.json?anon=sidechat&tz=300`)).json();
+  assert.equal("contacts" in plan, false);
+});
+
 test("a retired design is not offered, but its printed codes still scan and count", async () => {
   const { RETIRED, designsFor, offeredDesignsFor } = await import("../worker/catalog.js");
   assert.deepEqual(RETIRED, ["these-two", "tabard"]);
@@ -591,4 +596,17 @@ test("canvas-hosts.json matches the Swift school catalog it is generated from", 
   if (!files.length) return t.skip("LowHangingFruitKit's CanvasSchoolCatalogData.swift is not present; run from the full repository");
   const fresh = extractCanvasHosts(files.map((f) => readFile(f, "utf8")));
   assert.deepEqual(JSON.parse(readFile(HOSTS_JSON, "utf8")), fresh, "run: npm run gen:hosts");
+});
+
+test("plan.json: contacts come from FOUNDER_CONTACTS, leniently, and the key is absent otherwise", async () => {
+  const { parseContacts } = await import("../worker/founder-lines.js");
+  const good = JSON.stringify([{ name: "olisa", phone: "+1 555 010 0100" }, { name: " marco ", phone: "+1 555 010 0101" }]);
+  assert.deepEqual(parseContacts({ FOUNDER_CONTACTS: good }), [
+    { name: "olisa", phone: "+1 555 010 0100" }, { name: "marco", phone: "+1 555 010 0101" }]);
+  assert.deepEqual(parseContacts({}), []);
+  assert.deepEqual(parseContacts({ FOUNDER_CONTACTS: "not json" }), []);
+  assert.deepEqual(parseContacts({ FOUNDER_CONTACTS: '{"a":1}' }), []);
+  assert.deepEqual(parseContacts({ FOUNDER_CONTACTS: JSON.stringify([{ name: "x" }, { name: "", phone: "1" }, 4, null]) }), []);
+  const five = JSON.stringify([1, 2, 3, 4, 5].map((i) => ({ name: "n" + i, phone: "+1 555 010 010" + i })));
+  assert.equal(parseContacts({ FOUNDER_CONTACTS: five }).length, 4);
 });
