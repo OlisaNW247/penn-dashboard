@@ -150,16 +150,14 @@ that breaks a rule, never cuts it). Replaces whatever list was there.
 
 ```json
 "changes": [
-  "sweeper page with per-class lead time",
-  "alarms stand down once canvas sees it",
+  "the smooth sweeper has its own page",
+  "the sweeper is more accurate and careful",
   "swipe a card either way to finish it",
-  "stays signed in through duo",
-  "ask knows your weekly schedule",
-  "ambassador mode in profile"
+  "become a smooth ambassador"
 ]
 ```
 
-Longest line: 37 characters. Drafted 2026-11-22 for Marco's review.
+Longest line: 40 characters (the limit). Marco's wording, 2026-11-22.
 
 ## What's New in 3.4.1 (release notes, ≤4000)
 
