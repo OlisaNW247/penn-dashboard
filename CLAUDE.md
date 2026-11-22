@@ -1752,7 +1752,19 @@ Keep this current. It is the fastest way for a new session to know what exists.
      count ("we'll just start with that"); an ambassador sees no date line
      at all, and nothing under the title until the server sends a count.
      `AmbassadorDateLine` ("November 22nd") stays in the Kit with its
-     tests, unused since then. (3) **The downloads goal** opens the page
+     tests, unused since then. **Founder contacts** (round five, the same
+     evening, Marco: "at the bottom of smooth ambassador have it say:
+     questions, feedback, comments? tell us!" with his and Olisa's phone
+     numbers): the page ends with that header and one tap-to-text row per
+     founder (`contactsSection`, `AmbassadorPlan.Contact`, `sms:`), shown
+     only when `plan.contacts` is non-empty. The numbers are never in the
+     repo (public; `check-no-secrets.mjs` refuses them): the Worker reads
+     the `FOUNDER_CONTACTS` variable (`worker/founder-lines.js`,
+     `[{"name","phone"}]`, at most 4, lenient) and serves them, so the
+     section appears on phones once Olisa's deploy sets the variable with
+     the values Marco gave in chat (`sites/CHANGES_FOR_DEPLOYMENT.md`
+     says so with placeholders). Hardcoding them was offered and not taken
+     up when this was written. (3) **The downloads goal** opens the page
      (`goalSection`, `AmbassadorGoalLine`): "downloads at <school>", "n of
      100" and a progress track (`AmbassadorGoals.downloadsTarget = 100`,
      "100 is super chill"), hidden when the count is unknown. The word is
