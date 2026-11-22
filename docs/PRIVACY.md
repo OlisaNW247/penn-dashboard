@@ -34,7 +34,9 @@ does not remove everything it saved on the phone: see "Deleting your data".
 
 - **Your Canvas and Gradescope logins.** You sign in through each service's own
   web page inside the app. Session cookies and your Canvas calendar feed URL
-  are stored in this device's Keychain. For Penn Canvas, the sign-in screen
+  are stored in this device's Keychain (the Sweeper keeps one more copy of
+  the Canvas session cookies there; see "A wake-up call for the Sweeper"
+  below). For Penn Canvas, the sign-in screen
   explains that Smooth also saves the PennKey credentials you submit after a
   successful connection, to reconnect automatically. Gradescope and other
   schools' passwords are not captured. See "Automatic Canvas reconnection" below.
@@ -313,13 +315,21 @@ on-device alone:
   install for push notifications (it identifies the install to Apple, not
   you to us), and a short list of minutes at which the phone would like to
   be woken, at most twenty-four over two days. At those minutes our server
-  sends your phone a silent push with nothing in it; your phone wakes for a
-  few seconds, asks Canvas or Gradescope with your own login whether the
-  work is in, and cancels the alarm only if it is. The server never learns
-  which class, which assignment, when it is due or whether you submitted:
-  the minutes are just minutes, and we do not log them. Apple may deliver
-  these pushes late or not at all, and never after you force-quit the app,
-  so they help the alarm; they never control it.
+  sends your phone a push that says nothing about your work, only "checking
+  your next deadline". A small part of Smooth that runs on your phone even
+  after you swipe the app away then asks Canvas, with your own login,
+  whether the work is in, cancels the alarm only if it is, and changes that
+  line to say so ("PS7 is in · alarm off"). The line makes no sound and
+  doesn't light the screen, and Smooth clears these lines the next time you
+  open it. For that check, Smooth keeps a second copy of your Canvas session
+  cookies in this phone's Keychain that only Smooth's own parts can read:
+  this device only, never synced, and deleted when you disconnect Canvas.
+  The server never learns which class, which assignment, when it is due or
+  whether you submitted: the minutes are just minutes, and we do not log
+  them. If the check can't finish (no signal, an expired login, Canvas too
+  slow), the alarm rings as usual. Pushes can arrive late or not at all, and
+  not at all if you turn off Smooth's notifications, so they help the
+  alarm; they never control it.
 
 - **An anonymous account id.** The first time you launch the app, it creates an
   anonymous account with our backend — no email, no password, no name — so the
@@ -621,7 +631,8 @@ storage with it: your list of work and what you've checked off, your grade
 readings and settings, the announcements list and the widget snapshot. iOS
 does not remove Keychain items when an app is deleted. If you delete Smooth
 and install it again on the same phone, these can still be there: your Canvas
-and Gradescope session cookies, your Canvas calendar feed address, a PennKey
+and Gradescope session cookies (including the Sweeper's copy of the Canvas
+ones), your Canvas calendar feed address, a PennKey
 password you saved, your Ed Discussion session, the key that signs the phone
 in to its anonymous account, and a laptop pairing key. Smooth does not clear
 them when it is installed fresh, so a reinstall is not a clean sign-out. They
@@ -653,8 +664,9 @@ worth stating plainly rather than implying a guarantee we haven't built.
 - **No third-party SDKs.** The app is built directly against Apple's and
   Supabase's plain HTTP APIs — no analytics kit, ad kit, or crash reporter
   bundled in.
-- **No push notifications.** Reminders are scheduled and delivered locally on
-  your device.
+- **No push notifications with anything in them.** Reminders are scheduled
+  and delivered locally on your device. The only push is the Sweeper's
+  check-in above, which carries no information about your work.
 - We don't sell your data. There's nothing to sell: we keep no questions,
   answers or grades, and no readable list of your work unless you turn on
   "connect an AI assistant", which keeps exactly that list for you and

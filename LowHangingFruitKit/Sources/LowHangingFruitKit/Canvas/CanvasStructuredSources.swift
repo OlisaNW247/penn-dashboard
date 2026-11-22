@@ -89,6 +89,9 @@ public struct CanvasPlannerItem: Decodable, Sendable, Hashable {
     public let submitted: Bool?
     public let missing: Bool?
     public let graded: Bool?
+    /// `submissions.excused`: the instructor waived the work. Nothing is ever
+    /// handed in for it, so Canvas sends `submitted` false or nothing.
+    public let excused: Bool?
     /// `plannable.assignment_id`: for a quiz, the id of the assignment that
     /// backs it, which is what a feed row carries. Not every Canvas sends it.
     public let assignmentID: String?
@@ -119,8 +122,9 @@ public struct CanvasPlannerItem: Decodable, Sendable, Hashable {
             submitted = subs.lenientBool(key("submitted"))
             missing = subs.lenientBool(key("missing"))
             graded = subs.lenientBool(key("graded"))
+            excused = subs.lenientBool(key("excused"))
         } else {
-            submitted = nil; missing = nil; graded = nil
+            submitted = nil; missing = nil; graded = nil; excused = nil
         }
     }
 
@@ -128,13 +132,14 @@ public struct CanvasPlannerItem: Decodable, Sendable, Hashable {
         plannableType: String, plannableID: String?, title: String? = nil, dueAt: Date? = nil,
         todoDate: Date? = nil, pageURL: String? = nil, courseID: String? = nil, htmlURL: String? = nil,
         markedComplete: Bool = false, dismissed: Bool = false,
-        submitted: Bool? = nil, missing: Bool? = nil, graded: Bool? = nil, assignmentID: String? = nil
+        submitted: Bool? = nil, missing: Bool? = nil, graded: Bool? = nil, excused: Bool? = nil,
+        assignmentID: String? = nil
     ) {
         self.assignmentID = assignmentID
         self.plannableType = plannableType; self.plannableID = plannableID; self.title = title
         self.dueAt = dueAt; self.todoDate = todoDate; self.pageURL = pageURL; self.courseID = courseID
         self.htmlURL = htmlURL; self.markedComplete = markedComplete; self.dismissed = dismissed
-        self.submitted = submitted; self.missing = missing; self.graded = graded
+        self.submitted = submitted; self.missing = missing; self.graded = graded; self.excused = excused
     }
 }
 

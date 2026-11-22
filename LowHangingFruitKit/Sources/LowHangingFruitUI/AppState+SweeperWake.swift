@@ -129,6 +129,20 @@ extension AppState {
     func sweeperWakePass(plan: [PlannedAlarm], remindersOn: Bool, sweeperOn: Bool,
                          force: Bool = false, now: Date = Date()) async {
         guard renewalContext == .foreground, !isSweeperWakeRunning else { return }
+        // The force-quit check's handoff (`AppState+SweepHandoff.swift`) runs
+        // before the server-wake flag guard below: folding the inbox has
+        // nothing to do with whether the wake push is enabled. The cookie copy
+        // is another matter: it is kept only while a push can actually reach
+        // this phone, which is exactly when the wake's own gates pass, so the
+        // handoff is told that answer and deletes the copy otherwise.
+        let facts = sweeperWakeInstallFacts
+        let token = loadedSweeperWakeToken()
+        let reachable = SweeperWakeRules.gatesPass(
+            hasBackend: facts.hasBackend, pastOnboarding: facts.pastOnboarding, isPenn: facts.isPenn,
+            flag: FeatureFlags.sweeperWake, remindersOn: remindersOn, sweeperOn: sweeperOn,
+            hasToken: token != nil, fixture: isUsingFixtureData, foreground: renewalContext == .foreground)
+        foldSweepInbox(now: now)
+        await writeSweepHandoff(plan: plan, wakeReachable: reachable, now: now)
         let everSent = sweeperWakeDefaults.bool(forKey: Self.sweeperWakeEverSentKey)
 
         // A build with the flag off cleans up after an earlier one.
@@ -136,19 +150,13 @@ extension AppState {
             if everSent { await deleteSweeperWake() }
             return
         }
-        let facts = sweeperWakeInstallFacts
         let installOK = facts.hasBackend && facts.pastOnboarding && facts.isPenn && !isUsingFixtureData
         if SweeperWakeRules.shouldWithdraw(everSent: everSent, installOK: installOK,
                                            remindersOn: remindersOn, sweeperOn: sweeperOn) {
             await deleteSweeperWake()
             return
         }
-        let token = loadedSweeperWakeToken()
-        guard SweeperWakeRules.gatesPass(
-                hasBackend: facts.hasBackend, pastOnboarding: facts.pastOnboarding, isPenn: facts.isPenn,
-                flag: FeatureFlags.sweeperWake, remindersOn: remindersOn, sweeperOn: sweeperOn,
-                hasToken: token != nil, fixture: isUsingFixtureData, foreground: renewalContext == .foreground),
-              let token, let transport = sweeperWakeTransport
+        guard reachable, let token, let transport = sweeperWakeTransport
         else { return }
 
         let moments = SweeperWakePlan.moments(fromFireDates: plan.map(\.fireDate), now: now)

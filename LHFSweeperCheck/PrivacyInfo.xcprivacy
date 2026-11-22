@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The Sweeper's notification extension reads the manifest the app writes
+	     to the shared App Group container, asks Canvas's planner with the
+	     student's own session, and cancels alarms for work already handed in.
+	     No analytics, no third-party SDKs. See docs/PRIVACY.md.
+
+	     Apple's required-reason check runs per *binary*, not per app, so this
+	     manifest has to stand on its own: anything LowHangingFruitKit calls
+	     ends up statically linked into the appex and must be declared here
+	     even though the app's own manifest already declares it. -->
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<!-- Kit's file helpers read/write files in the App Group container
+		     and the shared Kit code reads their timestamps. -->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>C617.1</string>
+			</array>
+		</dict>
+		<!-- Kit's shared defaults are in this binary. CA92.1: accessing only
+		     this app group's own data. -->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+</dict>
+</plist>

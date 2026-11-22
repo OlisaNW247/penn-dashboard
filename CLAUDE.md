@@ -1705,6 +1705,51 @@ Keep this current. It is the fastest way for a new session to know what exists.
   scrape outside `syncGradescope`, Olisa's), so a Gradescope-only item is
   cancelled by a wake only through the `.refresh` wake's full sync. When
   no push arrives the alarm rings as armed: that is the floor, not a bug.
+
+  **The force-quit check (2026-11-21, `sweeper/force-quit-check`; compiled
+  and tested, never on a phone, the push change never deployed;
+  `docs/SWEEPER_FORCE_QUIT_RESEARCH_2026-11-21.md`).** The push wake above
+  is a background push, which iOS discards for a force-quit app, the one
+  case that rings for work handed in on the website. So the push is now a
+  content-free **alert** (`sendSweepPush`, `_shared/apns.ts`: `alert`,
+  priority 10, the 2-minute expiry; body pinned as `SWEEP_PUSH_BODY`:
+  "checking your next deadline", `mutable-content`, `content-available`
+  kept for a merely suspended app, `passive`, `thread-id: sweeper`,
+  `lhf: "sweep"`), which iOS hands to a **Notification Service Extension**
+  even after a force-quit. `LHFSweeperCheck/` (bundle
+  `com.lhf.lowhangingfruit.sweepercheck`, links only the Kit) reads three
+  things the app leaves it at every foreground pass
+  (`AppState+SweepHandoff.swift`, called from the top of `sweeperWakePass`
+  before the flag guard): a manifest in the App Group
+  (`sweeper-manifest-v1.json`, `SweepManifest`: per planned alarm the item
+  id, Canvas assignment id, title, ring time, every alarm and request id
+  it could be armed under via `SubmissionObservation.ids`), and a copy of
+  the live Canvas cookies (`SweepCookieMirror`: a generic-password item in
+  the App Group access group, after-first-unlock this-device-only, never
+  synced, deleted with the Canvas login in `SessionCookieStore.clear` /
+  `remove(.canvas)`, never erased by an empty live jar). Both are kept only
+  while the wake's own gates pass (`SweeperWakeRules.gatesPass`: Penn,
+  backend, flag, reminders and Sweeper on, a device token), so no copy of
+  the login sits on a phone no push can reach; otherwise both are deleted. It takes the
+  entries ringing within 20 minutes, makes one planner GET (ephemeral
+  session, 10 s / 18 s), believes it only when complete (the app's rule),
+  and `SweepCheck.decide`s: submitted cancels the AlarmKit alarms it
+  holds and the pending `due:`/`loud:` requests, appends to
+  `sweeper-inbox-v1.json`, and rewrites the line to "PS7 is in · alarm
+  off"; unsubmitted says "PS7 · not turned in yet"; **unknown touches
+  nothing**. The app folds the inbox through `applyPlannerWindow` (so the
+  student's overrides hold; the file is left alone when that can't apply)
+  and clears delivered `sweeper` lines at every foreground pass. The drain
+  renames the inbox before reading it, so an append during a drain is kept
+  for the next one. **Whether an extension may cancel an AlarmKit
+  alarm is unproven**; the DEBUG readout is `debugSweepCheckLogV1` in the
+  App Group defaults (`SweepDebugLog`; counts, held-before/after, AlarmKit
+  errors, never a cookie or title), written by the extension and by a
+  DEBUG widget probe that reads `AlarmManager.shared.alarms` per timeline.
+  `-LHFSweepProbe` (DEBUG) arms a test alarm 16 minutes out with a
+  manifest entry the DEBUG extension treats as submitted. Also here:
+  `CanvasPlannerItem.excused`, read as submitted (excused work is never
+  handed in, so the poll could never cancel it).
 - **Widget** (`LHFWidget/`, a separate process). Next-due list in small and
   medium; lock-screen inline, rectangular, and circular ("N due" within 24
   hours). It shows the app's published snapshot whenever one decodes,
@@ -2094,6 +2139,11 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
+**Merged on `claude/ambassador-header` (2026-11-22, `sweeper/force-quit-check`
+`43d95f3` merged in at Marco's "merge this when you get the chance"): the
+gate on the merged tree is recorded in the line that carries this commit's
+successor; predicted 4375 / 441 (4348 + 27, 436 + 5).**
+
 **Current on `claude/ambassador-header` (2026-11-21, later: the Duo trust
 renewal and the missed-push notice): 4348 tests / 436 suites, `swift test
 --no-parallel` alone on Marco's Mac (180 s of tests), after one red in the
@@ -2105,7 +2155,20 @@ Debug build of the same tree succeeded. +23 / +2 over 4325 / 434:
 `DuoTrustRenewalTests` (14), `DuoWaitNoticeTests` (8), the re-pin. Nothing
 on a phone; the force_login question is in Known gaps.**
 
-**Current on `claude/ambassador-header` (2026-11-21, the release line with
+**Current on `sweeper/force-quit-check` (2026-11-21, the force-quit check
+on top of `claude/ambassador-header` `4bd49bc`): 4352 tests / 439 suites,
+all green, `swift test --no-parallel` on Marco's Mac; Deno 945 passed
+(run without type-checking: `deno task test` fails type-checking before
+any of this work on four `TS2741` errors at `_shared/catalog.ts:861`,
+`CatalogEntryMeetingWire` missing `room`, untouched here).** +27 / +5 over
+the line: `SweeperForceQuitKitTests` (manifest window, the check table,
+inbox, files and its drain race, cookie mirror codec), `SweepHandoffTests`, one
+`SubmissionReadTests` (`excused`), one `SubmissionObservationTests`.
+`BerserkAlarmTests`' pbxproj sound test now checks both extension targets
+(it hard-coded one). iOS Debug and Release and macOS Debug unsigned builds
+green; nothing signed, nothing on a phone.
+
+**Before that, on `claude/ambassador-header` (2026-11-21, the release line with
 `origin/v10` `d22ec49` and `origin/v12` `8fc16c8` merged in): 4325 tests /
 434 suites, all green, `swift test --no-parallel` alone on Marco's Mac
 (107 s of tests, helper domain cleared first, no other run on the machine).**
@@ -4479,7 +4542,12 @@ itself.
 - **`xcodegen generate` deletes Info.plist content** unless it lives in
   `project.yml`'s `info.properties`. The widget dependency must be
   `platformFilter: iOS` — case-sensitive; `platforms:` is silently discarded.
-  Don't regenerate unless a build actually demands it.
+  Don't regenerate unless a build actually demands it. When one does (a new
+  target, 2026-11-21): xcodegen 2.45.4 also renames the app's product
+  reference in the pbxproj from `Smooth.app` to `LowHangingFruit.app` (three
+  places: the file reference, the Products group, `productReference`) and
+  reorders entries. Rename it back by hand and check that `git diff` of
+  every Info.plist and entitlements file is empty before building.
 - **iOS names an app from `CFBundleDisplayName`; macOS does not.** The Mac
   build called itself "LowHangingFruit" for every version of the Smooth
   rename, in the application menu beside the Apple logo, in About, and under
@@ -5215,6 +5283,8 @@ it holds work that exists nowhere else.
 | Branch | What |
 |---|---|
 | `claude/sweeper-build-0a4dd0` | **2026-11-18, off `claude/ambassador-header` `65d3558` with `claude/server-sweeper-3dea9b` merged in, local, not pushed; fast-forwarded into `claude/ambassador-header` the same day at Marco's word (equal to it at `b1a6aa8`).** The Sweeper accuracy work for 3.5.0, both releases of `docs/SWEEPER_ACCURACY_PLAN_2026-11-16.md` in the order of `docs/SWEEPER_BUILD_PLAN_2026-11-18.md`: the pure rules (`0233970`), cancel at observation and the last-hour poll (`ac4c6d1`), the `sweeper-wake` backend (`0916393`, hardened after review in `d612ed5`), the phone's registration and push wake (`2b846bc`). 4254/421 Swift, Deno 942, both iOS builds green; nothing deployed, nothing on a phone, no `aps-environment` entitlement until Olisa enables Push Notifications on the App ID. Merges into the release line at Marco's word. |
+| `sweeper/force-quit-check` | **2026-11-21, off `claude/ambassador-header` `4bd49bc`, local, not pushed; merges into the release line at Marco's word.** The force-quit check built at Marco's "build it": the alert push (not deployed), the `LHFSweeperCheck` notification extension, the manifest and cookie copy, `excused`. 4352/439 green, unsigned iOS and macOS builds green, never on a phone. The other session on `claude/ambassador-header` was editing `AppState.swift`, `ContentView.swift` and the notification files uncommitted at the time, so this branch touches none of them; expect `project.pbxproj` to conflict with any hand edit there (regenerate, then restore `Smooth.app`). |
+| `research/sweeper-force-quit` | **2026-11-21, off `claude/ambassador-header` `279b14f`, local; committed `48eea48` and cherry-picked onto `sweeper/force-quit-check`.** Research only: `docs/SWEEPER_FORCE_QUIT_RESEARCH_2026-11-21.md` (an alert push and a Notification Service Extension as the force-quit-proof cancel; AlarmKit-from-an-extension evidence and the two-hour device test that settles it; the planner `excused` gap) and its `ROADMAP.md` → Next entry. No code. |
 | `claude/v12-isolate-ab8b22` | **2026-11-17, off `claude/ambassador-header` `05ee0a8`, local, not merged.** The agent connection switched off for 3.5.0 (`FeatureFlags.agentConnection = false`), its two leaks closed, its tests skipping while off, the review notes, listing and privacy text without it; `docs/V12_ISOLATION_2026-11-17.md` has the inventory and the route comparison. The session that started it merges at Marco's word. |
 | `claude/ambassador-header` | **The release line for 3.5.0 (21) since 2026-11-17; since 2026-11-18 at `b1a6aa8` with the agent switch-off and the Sweeper accuracy work fast-forwarded in (Release state, above); local, not pushed, not merged into `v11`.** Began 2026-11-12, off the `v12` merge `82bea86`, as a design change waiting on Marco's approval. While signed in as an ambassador the dashboard title is a marigold medal and "Ambassador" with the wordmark's squiggle under it, in place of "Smooth {weekday}" (`ContentView.ambassadorTitle`; Marco's ask that day). Before sign-in nothing changes. The Debug build of `1a4ceaa` is on Marco's iPhone 17 Pro since 15:16 local, over the pre-stamp 3.4.1 (20) build of `f03dce0`; so the merged `v12` tree first reached his phone through this branch. 20 targeted tests green; the full gate was run on its base, not on it. |
 | `claude/font-research-22067c` | 2026-11-11, off `v11-master`, docs only, merged into `v11-master` at `fee63ba`. The class-code font research and renders (`docs/FONT_RESEARCH_2026-11-11.md`). Safe to delete. |
@@ -5325,6 +5395,23 @@ none is a ship line.
   zero-points and optional-title quiet rules (Marco's word list). The floor
   the plan names stays: a force-quit app with a website submission inside
   the last hour rings once; "turned in" on the alarm silences it.
+- **The force-quit check has never run** (2026-11-21,
+  `sweeper/force-quit-check`; What the app does → "The force-quit check").
+  Unproven: whether a notification extension may cancel an AlarmKit alarm
+  (the DEBUG widget probe gives a first answer without any push), whether
+  `UNUserNotificationCenter` in the extension removes the app's pending
+  requests, and how often the copied Canvas session is still alive when
+  the push lands (an expired one is an unknown read, so the alarm rings).
+  What a real test needs, beyond the server wake's own steps below: the new
+  bundle id `com.lhf.lowhangingfruit.sweepercheck` registered (automatic
+  signing does it), Push Notifications on the App ID and `aps-environment`
+  in the app's entitlements, then one push from Apple's Push Notifications
+  Console with `SWEEP_PUSH_BODY` to a DEBUG build launched with
+  `-LHFSweepProbe` and force-quit, and the result read off the phone from
+  `debugSweepCheckLogV1`. The alert push is not deployed; deploying
+  `sweeper-wake` with it is a production change. Without Apple's filtering
+  entitlement every check leaves a passive line until the app is next
+  opened.
 - **The server wake (Release 2) is built on both sides and verified on
   neither** (2026-11-18, `claude/sweeper-build-0a4dd0`; Deno 942, Swift
   green, the unsigned iOS build green). Nothing here has met Apple, a live

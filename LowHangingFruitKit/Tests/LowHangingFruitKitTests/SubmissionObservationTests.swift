@@ -41,6 +41,16 @@ struct SubmissionObservationTests {
         #expect(r.requestIDs.allSatisfy { !$0.contains(b.id) })
     }
 
+    @Test("ids(forAssignmentID:due:) equals cancellations for a single item")
+    func idsMatchCancellations() {
+        let a = item("a", due: due)
+        let c = SubmissionObservation.cancellations(submittedAssignmentIDs: [a.id], items: [a])
+        let i = SubmissionObservation.ids(forAssignmentID: a.id, due: a.due)
+        #expect(i.requestIDs == c.requestIDs)
+        #expect(i.alarmIDs == c.alarmIDs)
+        #expect(SubmissionObservation.ids(forAssignmentID: a.id, due: nil).alarmIDs.isEmpty)
+    }
+
     @Test("Two ids yield both, and nothing else's")
     func twoItems() {
         let a = item("a", due: due), b = item("b", due: due), c = item("c", due: due)
