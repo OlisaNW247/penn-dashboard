@@ -2311,6 +2311,14 @@ iOS Debug build of the tree succeeded. Predicted full count after the merge:
 Other sessions were running filtered suites on the Mac at the time (the
 shared-defaults trap), so nothing here is a baseline.**
 
+**Current on `claude/ambassador-header` (2026-11-22, `1c044bb`: ambassador
+rounds three and four, two plainly named kinds of post and the one-line users
+count under "Ambassador", fast-forwarded in): 4447 tests / 458 suites, all
+green, `swift test --no-parallel` alone on Marco's Mac (94 s, helper domain
+cleared first, load under 4); the unsigned iOS Debug build succeeded. The same
+count as `f43f781`: the two rounds re-pointed existing pins and added none
+net. This is the tree the 3.5.0 (21) archive is to be cut from.**
+
 **Current on `claude/ambassador-header` (2026-11-22, `f43f781`: `origin/v12`'s
 install count merged (`d26d286`) and the ambassador round two
 (`claude/ambassador-work-c14201` at `3d3a61f`, with the posters branch and the
