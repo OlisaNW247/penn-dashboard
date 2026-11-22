@@ -321,23 +321,21 @@ struct AmbassadorAnonChatsSheet: View {
         }
         ForEach(guidance.kinds) { kind in
             Section {
-                Text(kind.rule)
-                    .font(.lhfSecondary(14))
-                    .fixedSize(horizontal: false, vertical: true)
-                ForEach(kind.prompts, id: \.self) { prompt in
-                    Text("\u{00B7} \(prompt)")
+                Text("example post")
+                    .font(.lhfSecondary(12))
+                    .foregroundStyle(Color.v2DateText)
+                VStack(alignment: .leading, spacing: 8) {
+                    AmbassadorPostBox(text: kind.example.text)
+                    AmbassadorCopyButton(label: "copy", text: kind.example.text)
+                        .font(.lhfSecondary(14, weight: .semibold))
+                    AmbassadorReplyBlock(reply: kind.example.reply)
+                }
+                .padding(.vertical, 2)
+                if let how = kind.how, !how.isEmpty {
+                    Text(how)
                         .font(.lhfSecondary(13))
                         .foregroundStyle(Color.v2DateText)
                         .fixedSize(horizontal: false, vertical: true)
-                }
-                ForEach(kind.examples) { example in
-                    VStack(alignment: .leading, spacing: 8) {
-                        AmbassadorPostBox(text: example.text)
-                        AmbassadorCopyButton(label: "copy", text: example.text)
-                            .font(.lhfSecondary(14, weight: .semibold))
-                        AmbassadorReplyBlock(reply: example.reply)
-                    }
-                    .padding(.vertical, 2)
                 }
             } header: {
                 SmoothSectionHeader(kind.label, accent: .smoothCobalt)

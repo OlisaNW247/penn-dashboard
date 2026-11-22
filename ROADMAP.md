@@ -1242,8 +1242,10 @@ Kept so nobody rebuilds them blind.
   opens on a downloads goal of 100; posters has a 0...30 slider instead of
   a tick; anonymous chats has a "1 a day" goal with a week of dots and the
   weekly minimum, a daily reminder, and the Worker's two-kind posting
-  guidance (straight and misc, Marco's Odyssey rule) with a bundled
-  fallback. The release line and the posters branch were merged in first.
+  guidance ("plug smooth" and "sneak smooth in" since round three the same
+  evening, one example post each and a how line; Marco's Odyssey rule)
+  with a bundled fallback; the stats became one line under the date in
+  round three. The release line and the posters branch were merged in first.
   Nothing deployed: the Worker's `guidance` and the posters wait for
   Olisa's zip.
 - **2026-11-21.** Ambassador mode cut to the job (Marco, from the build on

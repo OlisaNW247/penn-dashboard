@@ -1052,6 +1052,8 @@ struct AmbassadorWiringTests {
         #expect(sheets.contains("1 a day"))
         #expect(sheets.contains("posted today"))
         #expect(sheets.contains("AmbassadorGuidance.bundled"))
+        #expect(sheets.contains("example post"))
+        #expect(!sheets.contains("prompts"))
         #expect(try uiSource("AmbassadorPage.swift").contains("AmbassadorGoals.caption"))
     }
 
@@ -1338,7 +1340,8 @@ struct AmbassadorHeaderTests {
         #expect(!source.contains("path = [.profile, .ambassador]"))
         #expect(source.contains("badgeSize: Self.headerButtonSize"))
         #expect(source.contains("var badgeSize: CGFloat? = nil"))
-        #expect(source.contains("AmbassadorStatsCard("))
+        #expect(source.contains("AmbassadorStatsLine("))
+        #expect(!source.contains("AmbassadorStatsCard("))
         #expect(source.contains("AmbassadorDateLine.text("))
         #expect(source.contains("struct WordmarkBadge: View"))
         #expect(source.contains("ambassadorBadgeSymbol = \"medal.fill\""))
@@ -1394,17 +1397,20 @@ struct AmbassadorGuidancePlanTests {
     func decodes() throws {
         let json = Self.base + #"""
         ,"guidance":{"test":"if it reads like an ad, it's an ad.","kinds":[
-          {"key":"a","label":"straight","rule":"r","prompts":["p1","p2"],"examples":[{"key":"e1","text":"t","reply":"x"},{"key":"bad"}]},
-          {"key":"b","label":"misc","rule":"r2","prompts":[],"examples":[]},
+          {"key":"a","label":"plug","example":{"text":"t","reply":"x"},"how":"h"},
+          {"key":"b","label":"sneak","example":{"text":"t2"}},
+          {"key":"bad","label":"no example"},
           {"label":"no key"}]}}
         """#
         let plan = try AmbassadorPlan.decode(Data(json.utf8))
         let guidance = try #require(plan.guidance)
         #expect(guidance.test == "if it reads like an ad, it's an ad.")
         #expect(guidance.kinds.map(\.key) == ["a", "b"])
-        #expect(guidance.kinds[0].prompts == ["p1", "p2"])
-        #expect(guidance.kinds[0].examples.map(\.key) == ["e1"])
-        #expect(guidance.kinds[0].examples[0].reply == "x")
+        #expect(guidance.kinds[0].how == "h")
+        #expect(guidance.kinds[0].example.text == "t")
+        #expect(guidance.kinds[0].example.reply == "x")
+        #expect(guidance.kinds[1].example.reply == nil)
+        #expect(guidance.kinds[1].how == nil)
     }
 
     @Test("absent or wrongly shaped guidance reads nil and the plan survives")
@@ -1425,6 +1431,6 @@ struct AmbassadorGuidancePlanTests {
         let data = try Data(contentsOf: file)
         let decoded = try JSONDecoder().decode(AmbassadorPlan.Guidance.self, from: data)
         #expect(decoded == AmbassadorGuidance.bundled)
-        #expect(!decoded.kinds.isEmpty)
+        #expect(decoded.kinds.map(\.key) == ["plug", "sneak"])
     }
 }

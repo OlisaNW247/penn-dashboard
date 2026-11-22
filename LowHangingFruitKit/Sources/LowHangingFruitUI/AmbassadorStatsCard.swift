@@ -1,33 +1,24 @@
 import SwiftUI
 import LowHangingFruitKit
 
-/// The ambassador's one stat on the dashboard: how many people at their
-/// school have the app (Marco, 2026-11-22: "we'll just start with that").
-/// Shown only to a signed-in ambassador once the server sends the count.
-struct AmbassadorStatsCard: View {
+/// The ambassador's one stat on the dashboard, one line under the date line
+/// (Marco, 2026-11-22: "we'll just start with that", then "one line, nicer, no
+/// card"). Same face and ink as the date line it sits under, so it reads as
+/// part of the header and not as a second block. Shown only to a signed-in
+/// ambassador once the server sends the count.
+struct AmbassadorStatsLine: View {
     let schoolLabel: String
     let users: Int
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("stats")
-                .font(.lhfSecondary(12))
-                .foregroundStyle(Color.v2DateText)
-            HStack(alignment: .firstTextBaseline) {
-                Text("users at \(schoolLabel)")
-                    .font(.lhfSecondary(15))
-                    .foregroundStyle(Color.smoothInk)
-                Spacer()
-                Text("\(users)")
-                    .font(.lhfMono(17, weight: .semibold))
-                    .foregroundStyle(Color.smoothInk)
-            }
+        HStack(spacing: 6) {
+            Image(systemName: "medal.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.smoothMarigold)
+            Text("\(users) users at \(schoolLabel)")
+                .font(.lhfMono(14, weight: .medium))
+                .foregroundStyle(Color.smoothMuted)
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.smoothSurface))
-        .padding(.horizontal, 20)
-        .padding(.top, 10)
         .accessibilityElement(children: .combine)
     }
 }

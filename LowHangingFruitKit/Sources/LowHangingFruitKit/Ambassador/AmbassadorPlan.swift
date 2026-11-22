@@ -179,49 +179,41 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
     /// dropped, never the plan. `AmbassadorGuidance.bundled` is the copy used
     /// when the server sends none.
     public struct Guidance: Codable, Equatable, Sendable {
-        public struct Example: Codable, Equatable, Sendable, Identifiable {
-            public var key: String
+        public struct Example: Codable, Equatable, Sendable {
             public var text: String
             public var reply: String?
-            public var id: String { key }
 
-            public init(key: String, text: String, reply: String? = nil) {
-                self.key = key
+            public init(text: String, reply: String? = nil) {
                 self.text = text
                 self.reply = reply
             }
         }
 
+        /// One way to post: a label, one example the ambassador rewrites in
+        /// their own words, and at most one line of how. A kind with no label
+        /// or no example is dropped by the lossy list decode, not the plan.
         public struct Kind: Codable, Equatable, Sendable, Identifiable {
             public var key: String
             public var label: String
-            public var rule: String
-            public var prompts: [String]
-            public var examples: [Example]
+            public var example: Example
+            public var how: String?
             public var id: String { key }
 
-            public init(key: String, label: String, rule: String,
-                        prompts: [String] = [], examples: [Example] = []) {
+            public init(key: String, label: String, example: Example, how: String? = nil) {
                 self.key = key
                 self.label = label
-                self.rule = rule
-                self.prompts = prompts
-                self.examples = examples
+                self.example = example
+                self.how = how
             }
 
-            private enum CodingKeys: String, CodingKey { case key, label, rule, prompts, examples }
+            private enum CodingKeys: String, CodingKey { case key, label, example, how }
 
             public init(from decoder: Decoder) throws {
                 let c = try decoder.container(keyedBy: CodingKeys.self)
                 key = try c.decode(String.self, forKey: .key)
                 label = try c.decode(String.self, forKey: .label)
-                rule = (try? c.decodeIfPresent(String.self, forKey: .rule)) ?? ""
-                prompts = (try? c.decodeIfPresent([String].self, forKey: .prompts)) ?? []
-                if let boxes = try? c.decodeIfPresent([LossyElement<Example>].self, forKey: .examples) {
-                    examples = boxes.compactMap(\.value)
-                } else {
-                    examples = []
-                }
+                example = try c.decode(Example.self, forKey: .example)
+                how = (try? c.decodeIfPresent(String.self, forKey: .how)) ?? nil
             }
         }
 

@@ -390,19 +390,18 @@ test("plan.json carries the posting guidance, with no links or token anywhere in
   const plan = await (await get(`/a/${token}/plan.json?anon=fizz&tz=300`)).json();
   const g = plan.guidance;
   assert.equal(typeof g.test, "string");
-  assert.deepEqual(g.kinds.map((k) => k.key), ["straight", "misc"]);
+  assert.ok(g.test.length > 0 && g.test.length < 60);
+  assert.deepEqual(g.kinds.map((k) => k.key), ["plug", "sneak"]);
   for (const k of g.kinds) {
-    assert.ok(k.rule.length > 0 && k.label.length > 0, k.key);
-    assert.ok(k.prompts.length >= 2 && k.prompts.length <= 3, `${k.key} prompts`);
-    for (const pr of k.prompts) assert.ok(pr.length < 120, pr);
-    assert.ok(k.examples.length >= 3 && k.examples.length <= 4, `${k.key} examples`);
-    for (const e of k.examples) {
-      assert.ok(e.key && e.reply.trim().length > 0, e.key);
-      assert.ok(e.text.length < 300, e.key);
-    }
+    assert.ok(k.label.length > 0, k.key);
+    assert.ok(k.example.text.length > 0 && k.example.text.length < 300, k.key);
+    assert.ok(k.example.reply.trim().length > 0, k.key);
+    assert.ok(k.how.length > 0 && k.how.length < 120, k.key);
+    assert.equal(k.prompts, undefined);
+    assert.equal(k.examples, undefined);
   }
   const all = JSON.stringify(g);
-  for (const bad of ["http", "://", token]) assert.ok(!all.includes(bad), bad);
+  for (const bad of ["http", "://", "hoco", token]) assert.ok(!all.includes(bad), bad);
   const [q, l] = playbookExamples();
   assert.equal(plan.messages.length, 2);
   assert.equal(plan.messages[0].text, q.post);
@@ -411,7 +410,7 @@ test("plan.json carries the posting guidance, with no links or token anywhere in
 
 test("every guidance example has a reply (template only)", () => {
   const g = JSON.parse(readFileSync(join(root, "worker/templates/guidance.json"), "utf8"));
-  for (const k of g.kinds) for (const e of k.examples) assert.ok(e.reply.trim().length > 0, e.key);
+  for (const k of g.kinds) assert.ok(k.example.reply.trim().length > 0, k.key);
 });
 
 test("the old token share and poster routes are gone and count nothing", async () => {

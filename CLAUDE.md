@@ -1707,11 +1707,13 @@ Keep this current. It is the fastest way for a new session to know what exists.
      **The Worker teaches the anonymous posts since 2026-11-22**
      (`worker/templates/guidance.json`, sent as `plan.guidance`, additive;
      Marco's framing relayed by the master session): two kinds of post,
-     `straight` (smooth helps with assignments, told as a student would, a
-     tip or a question) and `misc` (any post about anything at your school
-     with smooth sideways, the link in a comment or the bio, never the
-     post), each with one rule, three prompts and three or four example
-     texts; one test line, "if it reads like an ad, it's an ad". His own
+     `straight` and `misc`, each with a rule, prompts and examples, for one
+     round; **since round three the same day they are `plug smooth` and
+     `sneak smooth in`** (Marco: "one plugging smooth, two sneaking smooth
+     in randomly"; "straight" and the rule/prompt scaffolding dropped, the
+     homecoming example gone), each one example post first (text, copy,
+     reply) and at most one `how` line; one test line, "if it reads like an
+     ad, it's an ad". His own
      example is the Odyssey reply. The two real posts in `messages.json`
      are untouched. Not deployed (Olisa's zip); the app's half of this is
      the next commit.
@@ -1725,12 +1727,14 @@ Keep this current. It is the fastest way for a new session to know what exists.
      only**: the date line under "Ambassador" reads the full month and an
      ordinal day, "November 22nd" (`AmbassadorDateLine`, Kit; Marco's
      example "ambassador November 12th"), the medal is the header buttons'
-     42pt (`SmoothWordmark.badgeSize`), and a **stats card** sits between
-     the banners and the control row (`AmbassadorStatsCard`): a "stats"
-     label and one row, "users at <school>" with
-     `plan.numbers.schoolInstalls`, Olisa's per-school install count
-     ("we'll just start with that"); nothing is drawn when the server sends
-     no count. (3) **The downloads goal** opens the page
+     42pt (`SmoothWordmark.badgeSize`), and a **stats line** sits directly
+     under the date line in the header's title stack (`AmbassadorStatsLine`,
+     round three the same day; it was a card with a "stats" label between
+     the banners and the control row for one build, Marco: "one line, and
+     nicer"): a small marigold medal and "n users at <school>" in the date
+     line's own face and ink, from `plan.numbers.schoolInstalls`, Olisa's
+     per-school install count ("we'll just start with that"); nothing is
+     drawn when the server sends no count. (3) **The downloads goal** opens the page
      (`goalSection`, `AmbassadorGoalLine`): "downloads at <school>", "n of
      100" and a progress track (`AmbassadorGoals.downloadsTarget = 100`,
      "100 is super chill"), hidden when the count is unknown. The word is
@@ -1745,8 +1749,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
      "posted today" as the done, the app picker, then the **guidance**
      (`plan.guidance` from the Worker, else the bundled copy
      `AmbassadorGuidance.bundled`, which a test keeps byte-equal to
-     `guidance.json`): the test line, then per kind its rule, prompts and
-     example posts with copy buttons, then the founders' posts, the message
+     `guidance.json`): the test line, then per kind an "example post"
+     caption, the post with copy and reply, and one `how` line, then the founders' posts, the message
      bank and the tips as before. The reminder is daily by default again
      with the body "today's anonymous post. 1 a day.". Group chats and
      feedback are unchanged at Marco's word ("gas how it is"). The posters

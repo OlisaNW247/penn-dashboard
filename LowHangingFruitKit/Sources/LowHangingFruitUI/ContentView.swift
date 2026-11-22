@@ -184,14 +184,6 @@ struct ContentView: View {
                             .padding(.top, 10)
                     }
 
-                    // Ambassadors only: how many people at their school have
-                    // the app (Marco, 2026-11-22). Nothing until the server
-                    // sends the count.
-                    if ambassador.isSignedIn, let plan = ambassador.plan,
-                       let users = plan.numbers?.schoolInstalls {
-                        AmbassadorStatsCard(schoolLabel: plan.schoolLabel, users: users)
-                    }
-
                     HStack(alignment: .center, spacing: 8) {
                         DashViewPicker(selection: $filter)
                         ClassFilterMenu(courses: filterableCourses, selection: $classFilter, counts: openCountsByCourse)
@@ -907,6 +899,14 @@ struct ContentView: View {
                 Text(ambassador.isSignedIn ? AmbassadorDateLine.text(for: now) : Self.dateText(now))
                     .font(.lhfMono(14, weight: .medium))
                     .foregroundStyle(Color.smoothMuted)
+
+                // Ambassadors only: how many people at their school have the
+                // app, as one line in the date line's own face. Nothing until
+                // the server sends the count.
+                if ambassador.isSignedIn, let plan = ambassador.plan,
+                   let users = plan.numbers?.schoolInstalls {
+                    AmbassadorStatsLine(schoolLabel: plan.schoolLabel, users: users)
+                }
             }
 
             // 2, not 12, since 2026-11-11: the title may sit right beside the
