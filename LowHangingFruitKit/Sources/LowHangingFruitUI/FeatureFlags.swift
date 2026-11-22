@@ -165,6 +165,16 @@ enum FeatureFlags {
     /// that are skipped while it is false run again by themselves.
     static let degreeProgress = false
 
+    /// The anonymous install count (2026-11-22, the owner's ask: Apple
+    /// reports no downloads by school, so how many students have set Smooth
+    /// up at each one?). After a student has really connected Canvas, the app
+    /// sends ONE request per install carrying the school's Canvas host and
+    /// `new` or `existing`, and nothing else (`InstallCountReporter`).
+    ///
+    /// **This is the kill switch.** False sends nothing, ever; the three
+    /// defaults keys it keeps are left alone.
+    static let installCount = true
+
     /// Evaluates a token-store read only while the experiment is enabled.
     /// Keeping the guard around the closure (rather than around its result)
     /// is load-bearing: Keychain reads are synchronous and must not happen at
