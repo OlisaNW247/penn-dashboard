@@ -3074,6 +3074,13 @@ final class AppState: ObservableObject {
     /// line shows "slow connection" only after 3 seconds of it.
     @Published private(set) var silentRenewalStartedAt: Date?
 
+    /// True while the renewal in flight is a forced Duo-trust renewal
+    /// (`renewDuoTrustIfDue`): one that runs over a live session on purpose.
+    /// The status line must not call that "slow connection · reconnecting"
+    /// (test pass of 2026-11-22: the weekly forced sign-in takes 6 to 27 s and
+    /// would have shown the line over a working session every week).
+    private(set) var silentRenewalIsForced = false
+
     /// True while the in-flight foreground renewal has sent a Duo push and
     /// is waiting for the student to approve it. Cleared when the attempt
     /// ends.
@@ -3099,6 +3106,7 @@ final class AppState: ObservableObject {
         let generation = silentRenewalGeneration
         isSilentRenewalInFlight = true
         silentRenewalStartedAt = Date()
+        silentRenewalIsForced = forceReauthentication
         pendingSilentRenewal = Task { @MainActor [weak self] in
             _ = await self?.performSilentCanvasRenewal(cooldown: cooldown, forceReauthentication: forceReauthentication)
             self?.finishSilentCanvasRenewal(generation: generation)
@@ -3110,6 +3118,7 @@ final class AppState: ObservableObject {
         pendingSilentRenewal = nil
         isSilentRenewalInFlight = false
         silentRenewalStartedAt = nil
+        silentRenewalIsForced = false
         duoPushSent = false
     }
 
@@ -4311,7 +4320,8 @@ final class AppState: ObservableObject {
         loginMissing: Bool,
         hasSavedCredentials: Bool,
         sessionExpired: Bool = true,
-        saveFailed: Bool = false
+        saveFailed: Bool = false,
+        forcedRenewal: Bool = false
     ) -> CanvasSessionStatusLine {
         if passwordRejected { return .passwordChanged }
         if saveFailed { return .couldntSavePassword }
@@ -4319,8 +4329,12 @@ final class AppState: ObservableObject {
         // a missed push must not speak over a live one (2026-11-02 review).
         if awaitingDuo && sessionExpired && !renewalInFlight { return .duoNeedsYou }
         if loginMissing && !hasSavedCredentials { return .signInNeeded }
+        // A push the forced Duo-trust renewal sent is still the student's to
+        // approve, so that line stays; "reconnecting" does not, because a
+        // forced attempt runs over a live session and nothing is being
+        // reconnected (`silentRenewalIsForced`).
         if renewalInFlight && duoPushSent { return .duoPush }
-        if renewalInFlight && inFlightFor >= 3 { return .reconnecting }
+        if renewalInFlight && inFlightFor >= 3 && !forcedRenewal { return .reconnecting }
         return .none
     }
 
@@ -4360,7 +4374,8 @@ final class AppState: ObservableObject {
             loginMissing: missing,
             hasSavedCredentials: missing ? hasCredentialForSilentRenewal : false,
             sessionExpired: canvasSessionExpired,
-            saveFailed: credentialSaveFailed
+            saveFailed: credentialSaveFailed,
+            forcedRenewal: silentRenewalIsForced
         )
     }
 

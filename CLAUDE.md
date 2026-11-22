@@ -2139,6 +2139,16 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
+**On `claude/test-sweeper-signin-1cb733` (2026-11-22, the hostile test pass over
+the Sweeper and sign-in work, off the line's `c694ce7`): filtered runs only,
+never the full suite. The 25 new tests / 8 suites of
+`SweeperSignInTestPassTests.swift` green (`--filter TestPass`); the 20 existing
+suites touching the changed files, 267 tests / 29 suites, green; the unsigned
+iOS Debug build of the tree succeeded. Predicted full count after the merge:
+4400 / 449 (4375 + 25, 441 + 8); read it off the master's run, not this line.
+Other sessions were running filtered suites on the Mac at the time (the
+shared-defaults trap), so nothing here is a baseline.**
+
 **Current on `claude/ambassador-header` (2026-11-22, `sweeper/force-quit-check`
 `43d95f3` merged in at Marco's "merge this when you get the chance"): 4375
 tests / 441 suites, all green, `swift test --no-parallel` alone on Marco's
@@ -3992,6 +4002,24 @@ itself.
 
 ## Traps that have already bitten
 
+- **A planner row for a plain assignment has no `plannable.assignment_id`;
+  its id is `plannable_id`** (2026-11-22, the hostile test pass,
+  `docs/TEST_SWEEPER_SIGNIN_2026-11-22.md` H1). `SubmissionRead.verdicts`,
+  the one function the last-hour poll, the push wake and the force-quit
+  extension all read Canvas's planner through, keyed a read on
+  `plannable.assignment_id` alone, which is a quiz's or a graded discussion's
+  pointer to the assignment that backs it. The full structured run
+  (`CanvasStructuredSourcesReconciler`) had always keyed an `assignment` row
+  by `plannable_id`. So a problem set handed in inside the last hour was read
+  every minute, produced no read, counted nothing, and the alarm would have
+  rung; only the grades fetch, under its 15-minute throttle, could cancel. It
+  sat under 4,375 green tests because every planner fixture, for assignments
+  too, put `assignment_id` inside `plannable`. `SubmissionRead.canvasAssignmentID(of:)`
+  now resolves the id the reconciler's way, and the new fixtures use Canvas's
+  own shape. The wrong fix is reading `plannable_id` for every type: a quiz's
+  is a quiz id, another id space (the reconciler's own comment). The lesson
+  about fixtures: when two readers of one payload exist, feed the new one the
+  old one's fixtures, not fixtures written from the new one's assumptions.
 - **A non-default `WKWebsiteDataStore` answers an empty cookie jar in a cold
   process until a web view is attached to it** (2026-11-22, Marco's phone).
   `refreshDuoRememberSummary` asked `LoginDataStores.canvas.httpCookieStore`
