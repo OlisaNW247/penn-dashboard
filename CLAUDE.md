@@ -914,6 +914,30 @@ Keep this current. It is the fastest way for a new session to know what exists.
     stays a left swipe or a tap), with a small paper-scatter animation that
     exits the way the card was pulled. A floating
     button opens **ask**.
+  - **Overdue swipe lesson** (2026-11-22, `claude/onboarding-work-f6b7f1`,
+    Marco's ask for 3.5.0; compiled and tested, not yet on a phone). A
+    student who updates with an unfinished item 5 or more whole days past
+    its (override-aware) due date is shown, once per install, a full-screen
+    cover over the dashboard (`OverdueSwipeLessonView`): "not now" top
+    right, "swipe right to clear it", "N days late. pull it right once it's
+    done.", then their most overdue card with the practice lesson's nudge;
+    after the swipe "cleared." / "that's all a swipe does." and a "done"
+    button. The swipe is a real swipe: the cover's two closures are the
+    timeline's own `vm.commitCompletion` and `vm.complete` +
+    `rescheduleNotifications()`, so nothing is written that a dashboard
+    swipe does not write. Rules in `OverdueSwipeLesson` (pure; the 5-day
+    boundary, most overdue first, `shouldShow`), shown-state in
+    `OverdueSwipeLessonStore` (`overdueSwipeLessonShownV1` in
+    `UserDefaults.lhf`, written at presentation so a kill mid-screen never
+    shows it twice). Never in preview or demo (`isUsingFixtureData`), never
+    while a reconnect cover is up (left undecided and asked again), never
+    during onboarding or behind the wall (the dashboard is not in the tree
+    there), and never on a fresh install that did the practice lesson
+    (`beginCanvasWalkthrough` marks the store shown). `ContentView.
+    decideOverdueLesson()` decides once per process on the first non-empty
+    item list. `-LHFForceOverdueLesson` (DEBUG) forces it with the first
+    unfinished item, or a practice card six days late, without writing the
+    key. Tests: `OverdueSwipeLessonTests`.
   - **Feedback card** (since 3.3.0, 2026-10-27, owner-approved from a
     mockup): under the header, a one-time card ("how's smooth so far?" /
     "takes 2 minutes.", grape speech bubble, ×) styled like the update
@@ -7254,7 +7278,9 @@ an empty answer row. (6) `AssistantSavedChat` has no schema version; a
 non-optional field added later makes old chats undecodable. (7) "Add
 Gradescope" has no back to the choice screen, only Skip.
 
-DEBUG review flags: `-LHFFullOnboardingReview` replays the full first run
+DEBUG review flags: `-LHFForceOverdueLesson` opens the one-time overdue
+swipe lesson over the dashboard whatever the dates (2026-11-22, "Overdue
+swipe lesson" under What the app does). `-LHFFullOnboardingReview` replays the full first run
 in memory for that launch without touching the saved connections,
 `-LHFSkipIntro` (with it) skips the three-beat intro so the school search is
 the first screen, and `-LHFCompletionGuideHarness` opens the practice lesson

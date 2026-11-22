@@ -365,6 +365,9 @@ struct OnboardingView: View {
         if state.onboardingDestination == .full {
             practiceItems = PracticeCards.items(from: state.canvasItems, now: Date())
             showsCompletionGuide = true
+            // A student who just did the practice lesson has been taught the
+            // swipe, so the one-time overdue lesson never shows on a fresh install.
+            OverdueSwipeLessonStore().markShown()
         } else {
             advancePastCanvasStep()
         }

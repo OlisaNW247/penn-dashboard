@@ -7,7 +7,7 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-11-22 on `claude/ambassador-header` (`origin/v12` merged in: the anonymous per-school install count, `FeatureFlags.installCount`). Before that, 2026-11-22 on `claude/ambassador-header` (the side sessions merged: the Sweeper and sign-in test pass, the release review, the onboarding pass, ambassador mode cut to four tasks). Before that, 2026-11-21 on `claude/onboarding-work-f6b7f1` and `claude/ambassador-work-c14201`. Before that, 2026-11-17 on `claude/v12-isolate-ab8b22` (the agent connection switched off for 3.5.0; it stays on `v11`). Before that, 2026-11-12 on `v11` (`origin/v12` merged in: ambassador mode ships in 3.5.0 (21), degree progress stays off). Before that, 2026-11-12 on `v12` (degree: weekly reads, the full view, Wharton concentrations; the Now entry). Before that, 2026-11-10 on `v12` (degree progress rewritten against the real Path@Penn). Before that, 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
+Last updated 2026-11-22 on `claude/onboarding-work-f6b7f1` (the overdue swipe lesson). Before that, 2026-11-22 on `claude/ambassador-header` (`origin/v12` merged in: the anonymous per-school install count, `FeatureFlags.installCount`). Before that, 2026-11-22 on `claude/ambassador-header` (the side sessions merged: the Sweeper and sign-in test pass, the release review, the onboarding pass, ambassador mode cut to four tasks). Before that, 2026-11-21 on `claude/onboarding-work-f6b7f1` and `claude/ambassador-work-c14201`. Before that, 2026-11-17 on `claude/v12-isolate-ab8b22` (the agent connection switched off for 3.5.0; it stays on `v11`). Before that, 2026-11-12 on `v11` (`origin/v12` merged in: ambassador mode ships in 3.5.0 (21), degree progress stays off). Before that, 2026-11-12 on `v12` (degree: weekly reads, the full view, Wharton concentrations; the Now entry). Before that, 2026-11-10 on `v12` (degree progress rewritten against the real Path@Penn). Before that, 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
 backend half went live 2026-11-05 01:20-01:45 UTC, the evening of 2026-11-04
 US Eastern). Before that, 2026-10-28 on `release/3.4.0` (the 3.4.0 release,
 renamed from 3.3.1 that afternoon when PR #16 was folded in). Before
@@ -1174,6 +1174,11 @@ Kept so nobody rebuilds them blind.
   The privacy policy says so. On `v12`, compiled on the runner, not on a
   phone; the server half went live the same day, and no number moves until
   an app build with it is released.
+- **2026-11-22.** Overdue swipe lesson on `claude/onboarding-work-f6b7f1`,
+  Marco's ask for 3.5.0 via the release session: a student updating with an
+  item 5+ days past due sees, once per install, a cover teaching the swipe on
+  their own most overdue card (`OverdueSwipeLesson`, CLAUDE.md → Dashboard).
+  Filtered suites and the unsigned iOS build green; not yet on a phone.
 - **2026-11-21.** Onboarding pass on `claude/onboarding-work-f6b7f1`, from
   Marco's list: the intro's relaxed figure redrawn (seated, leaning back on
   one arm), the tour cut from three pages to two, the walk's progress dots
