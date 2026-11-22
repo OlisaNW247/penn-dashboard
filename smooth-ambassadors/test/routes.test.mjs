@@ -386,22 +386,25 @@ test("plan.json carries a public share link per channel, never the token", async
   for (const link of Object.values(plan.links)) assert.ok(!link.includes(token), link);
 });
 
-test("plan.json carries the posting guidance, with no links or token anywhere in it", async () => {
+test("plan.json carries the posting guidance, with the share link filled in and the token nowhere", async () => {
   const plan = await (await get(`/a/${token}/plan.json?anon=fizz&tz=300`)).json();
   const g = plan.guidance;
-  assert.equal(typeof g.test, "string");
-  assert.ok(g.test.length > 0 && g.test.length < 60);
+  assert.equal(g.test, undefined);
+  assert.equal(typeof g.footer, "string");
+  assert.ok(g.footer.length > 0 && g.footer.length < 160);
   assert.deepEqual(g.kinds.map((k) => k.key), ["plug", "sneak"]);
   for (const k of g.kinds) {
     assert.ok(k.label.length > 0, k.key);
     assert.ok(k.example.text.length > 0 && k.example.text.length < 300, k.key);
     assert.ok(k.example.reply.trim().length > 0, k.key);
+    assert.ok(k.example.reply.includes("/r/"), k.key);
+    assert.ok(!k.example.text.includes("http"), k.key);
     assert.ok(k.how.length > 0 && k.how.length < 120, k.key);
     assert.equal(k.prompts, undefined);
     assert.equal(k.examples, undefined);
   }
   const all = JSON.stringify(g);
-  for (const bad of ["http", "://", "hoco", token]) assert.ok(!all.includes(bad), bad);
+  for (const bad of ["{link}", "hoco", token]) assert.ok(!all.includes(bad), bad);
   const [q, l] = playbookExamples();
   assert.equal(plan.messages.length, 2);
   assert.equal(plan.messages[0].text, q.post);

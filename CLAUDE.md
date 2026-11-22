@@ -1687,11 +1687,13 @@ Keep this current. It is the fastest way for a new session to know what exists.
      tick it. Feed stills and post results (`FeedRecordingSheet`,
      `PostResultSheet`) are deleted from the app at his word ("what the
      fuck ... remove that"); the model and Kit halves stay with their tests
-     because the server routes and the founder page still exist. **First
-     sign-in intro** (`AmbassadorIntroView`, once per install,
-     `ambassador.introSeenV1`, not cleared by sign-out): "thanks for being
-     one.", the job in one line, the four tasks, "you're smooth at your
-     school. bring back what people say.", "let's go". **The reminder** gained a
+     because the server routes and the founder page still exist. **Sign-in intro** (`AmbassadorIntroView`; once per install until
+     round four of 2026-11-22, when Marco asked for it "right when
+     ambassador is signed in", so now after every successful sign-in; the
+     `ambassador.introSeenV1` key is no longer read): "thanks for being
+     one.", the job in one line, the four tasks, "goal: 100 downloads at
+     <school>" (round four), "you're smooth at your school. bring back what
+     people say.", "let's go". **The reminder** gained a
      `twiceWeekly` cadence (Monday and Thursday, two reserved slots) and
      was twice a week by default for a day; since the second round below
      it is daily again, the picker offers every day / 2 a week / off, and a
@@ -1712,8 +1714,17 @@ Keep this current. It is the fastest way for a new session to know what exists.
      `sneak smooth in`** (Marco: "one plugging smooth, two sneaking smooth
      in randomly"; "straight" and the rule/prompt scaffolding dropped, the
      homecoming example gone), each one example post first (text, copy,
-     reply) and at most one `how` line; one test line, "if it reads like an
-     ad, it's an ad". His own
+     reply) and at most one `how` line. **Round four, the same evening,
+     at Marco's word:** plug is "what do you guys use to stay on top of
+     assignments" with the self-reply "i use this app {link}"; sneak is "yo
+     that [thing that happened] was crazy. smooth lowk clutch" with the link
+     as the reply and "put the smooth link in the comments" as the how;
+     `{link}` is the ambassador's share link for their anonymous app,
+     filled by `planPayload` on the server and by
+     `AmbassadorGuidance.filled` on the phone (the bundled copy keeps the
+     literal); the test line is gone and a `footer` closes the guidance:
+     "the idea is just to get the name and link out there without sounding
+     too much like an ad. quantity > quality, use your creativity.". His own
      example is the Odyssey reply. The two real posts in `messages.json`
      are untouched. Not deployed (Olisa's zip); the app's half of this is
      the next commit.
@@ -1727,7 +1738,10 @@ Keep this current. It is the fastest way for a new session to know what exists.
      only**: the date line under "Ambassador" reads the full month and an
      ordinal day, "November 22nd" (`AmbassadorDateLine`, Kit; Marco's
      example "ambassador November 12th"), the medal is the header buttons'
-     42pt (`SmoothWordmark.badgeSize`), and a **stats line** takes the
+     42pt (`SmoothWordmark.badgeSize` in round two; since round four the
+     same evening the medal is the first of the header's own buttons,
+     drawn with `headerButton` and 8pt from the Sweeper, Marco: "space all
+     the icons evenly"; the wordmark's badge parameters are unused), and a **stats line** takes the
      date line's place under the title (`AmbassadorStatsLine`; round three
      the same day put it under the date, then Marco: "remove the date
      entirely on the dashboard, just the users underneath ambassador, and
@@ -1747,15 +1761,18 @@ Keep this current. It is the fastest way for a new session to know what exists.
      no tick short of the goal: a `Slider` 0...30 for posters put up
      (`ambassador.postersPutUpV1`, `AmbassadorGoals.postersTarget = 30`),
      the row reads "12 of 30" and ticks only at 30. (5) **Anonymous
-     chats**: the sheet opens on the goal, "1 a day", seven dots for the
-     week and "n this week · at least 1" (the minimum turns teal when met;
-     `AmbassadorTaskLog.anonDays`, decoded leniently), then today's post,
-     "posted today" as the done, the app picker, then the **guidance**
+     chats**: the sheet opens on "goal: 1 post a day", "streak: n"
+     (`AmbassadorTaskLog.anonStreak`: consecutive posted days counting back
+     from today, or from yesterday while today is unposted; the week dots
+     and "at least 1" line of round two went the same evening, Marco:
+     "remove the min at least 1"; the week helpers stay in the Kit, unread)
+     and the "posted today" done row directly under it, then today's post,
+     the app picker, then the **guidance**
      (`plan.guidance` from the Worker, else the bundled copy
      `AmbassadorGuidance.bundled`, which a test keeps byte-equal to
      `guidance.json`): the test line, then per kind an "example post"
-     caption, the post with copy and reply, and one `how` line, then the founders' posts, the message
-     bank and the tips as before. The reminder is daily by default again
+     caption, the post with copy and reply, and one `how` line, then the founders' posts and the tips; the "more messages" disclosure
+     (the two-post bank, which the guidance now shows) went in round four. The reminder is daily by default again
      with the body "today's anonymous post. 1 a day.". Group chats and
      feedback are unchanged at Marco's word ("gas how it is"). The posters
      themselves came in with `claude/ambassador-posters-f068d6` (retired

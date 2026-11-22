@@ -223,7 +223,7 @@ final class AmbassadorModel: ObservableObject {
             code = candidate
             saveCode(candidate)
             store(plan: fetched)
-            if !defaults.bool(forKey: Self.introSeenKey) { introPending = true }
+            introPending = true
             await ensureReminders()
             return true
         } catch AmbassadorClientError.unknownCode {
@@ -234,9 +234,8 @@ final class AmbassadorModel: ObservableObject {
         return false
     }
 
-    /// The intro sheet was dismissed; it is not shown again on this install.
+    /// The intro sheet was dismissed. It returns at the next sign-in.
     func finishIntro() {
-        defaults.set(true, forKey: Self.introSeenKey)
         introPending = false
     }
 
@@ -346,6 +345,7 @@ final class AmbassadorModel: ObservableObject {
     /// Posts logged in the last seven days (today included).
     var anonPostsThisWeek: Int { taskLog.anonPostsInLastWeek(todayIndex: todayIndex) }
     var anonWeeklyMinimumMet: Bool { taskLog.anonWeeklyMinimumMet(todayIndex: todayIndex) }
+    var anonStreak: Int { taskLog.anonStreak(todayIndex: todayIndex) }
     var anonWeekDots: [Bool] { taskLog.anonPostedDays(todayIndex: todayIndex) }
 
     private func tick(_ task: AmbassadorTask) {

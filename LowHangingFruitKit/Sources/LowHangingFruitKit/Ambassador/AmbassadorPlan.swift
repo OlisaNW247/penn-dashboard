@@ -217,19 +217,20 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
             }
         }
 
-        public var test: String?
+        /// One closing line under both kinds.
+        public var footer: String?
         public var kinds: [Kind]
 
-        public init(test: String? = nil, kinds: [Kind] = []) {
-            self.test = test
+        public init(footer: String? = nil, kinds: [Kind] = []) {
+            self.footer = footer
             self.kinds = kinds
         }
 
-        private enum CodingKeys: String, CodingKey { case test, kinds }
+        private enum CodingKeys: String, CodingKey { case footer, kinds }
 
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            test = (try? c.decodeIfPresent(String.self, forKey: .test)) ?? nil
+            footer = (try? c.decodeIfPresent(String.self, forKey: .footer)) ?? nil
             if let boxes = try? c.decodeIfPresent([LossyElement<Kind>].self, forKey: .kinds) {
                 kinds = boxes.compactMap(\.value)
             } else {

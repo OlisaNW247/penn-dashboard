@@ -175,7 +175,15 @@ async function planPayload(env, amb, url, pub) {
     // Added 2026-11-18, additive: what works, posts a founder wants this
     // ambassador to try (only theirs), and the capture uploads' limits.
     playbook: { lead: playbook.lead, steps: playbook.steps, examples: playbook.examples },
-    guidance: { test: guidance.test, kinds: guidance.kinds },
+    guidance: {
+      footer: guidance.footer,
+      kinds: guidance.kinds.map((k) => ({
+        key: k.key,
+        label: k.label,
+        example: { text: fill(k.example.text, anonApp), reply: fill(k.example.reply, anonApp) },
+        how: fill(k.how, anonApp),
+      })),
+    },
     suggested: suggested.map((x) => ({ id: x.id, text: x.text, reply: x.reply, ts: x.ts })),
     captures: capturesPlan(caps),
   };

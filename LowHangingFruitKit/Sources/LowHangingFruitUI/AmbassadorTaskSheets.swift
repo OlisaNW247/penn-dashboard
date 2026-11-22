@@ -166,36 +166,19 @@ struct AmbassadorTaskSheet: View {
 
 struct AmbassadorAnonChatsSheet: View {
     @ObservedObject private var model = AmbassadorModel.shared
-    @State private var showMessages = false
     @State private var showTips = false
 
     var body: some View {
         AmbassadorTaskForm(task: .anonChats) {
             Section {
-                Text("1 a day")
+                Text("goal: 1 post a day")
                     .font(.lhfSecondary(17, weight: .semibold))
-                HStack(spacing: 8) {
-                    ForEach(Array(model.anonWeekDots.enumerated()), id: \.offset) { _, posted in
-                        Circle()
-                            .fill(posted ? Color.smoothTealInk : Color.clear)
-                            .overlay(Circle().stroke(posted ? Color.smoothTealInk : Color.smoothSurface, lineWidth: 2))
-                            .frame(width: 10, height: 10)
-                    }
-                }
-                .accessibilityHidden(true)
-                HStack(spacing: 4) {
-                    Text("\(model.anonPostsThisWeek) this week \u{00B7}")
-                    if model.anonWeeklyMinimumMet {
-                        Label("at least 1", systemImage: "checkmark")
-                            .foregroundStyle(Color.smoothTealInk)
-                    } else {
-                        Text("at least 1")
-                    }
-                }
-                .font(.lhfSecondary(13))
-                .foregroundStyle(model.anonWeeklyMinimumMet ? Color.smoothTealInk : Color.v2DateText)
+                Text("streak: \(model.anonStreak)")
+                    .font(.lhfSecondary(15))
             }
             .smoothSectionBackground(.smoothTeal)
+
+            AmbassadorDoneRow(task: .anonChats, model: model, label: "posted today")
 
             Section {
                 if let today = model.plan?.today {
@@ -221,8 +204,6 @@ struct AmbassadorAnonChatsSheet: View {
                 }
             }
             .smoothSectionBackground(.smoothGrape)
-
-            AmbassadorDoneRow(task: .anonChats, model: model, label: "posted today")
 
             Section {
                 Picker("my anonymous app", selection: Binding(
@@ -259,47 +240,21 @@ struct AmbassadorAnonChatsSheet: View {
                 .smoothSectionBackground(.smoothGrape)
             }
 
-            if let messages = model.plan?.messages, !messages.isEmpty {
+            if let tips = model.plan?.tips, !tips.isEmpty {
                 Section {
-                    DisclosureGroup(isExpanded: $showMessages) {
-                        ForEach(messages) { message in
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack {
-                                    Text(message.label)
-                                        .font(.lhfSecondary(13, weight: .semibold))
-                                    Spacer()
-                                    AmbassadorCopyButton(label: "copy", text: message.text)
-                                        .buttonStyle(.borderless)
-                                        .font(.lhfSecondary(13, weight: .semibold))
-                                }
-                                Text(message.text)
-                                    .font(.lhfSecondary(13))
-                                    .foregroundStyle(Color.v2DateText)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .textSelection(.enabled)
-                                AmbassadorReplyBlock(reply: message.reply)
-                            }
-                            .padding(.vertical, 2)
+                    DisclosureGroup(isExpanded: $showTips) {
+                        ForEach(tips, id: \.self) { tip in
+                            Text(tip)
+                                .font(.lhfSecondary(13))
+                                .foregroundStyle(Color.v2DateText)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     } label: {
-                        Text("more messages")
-                    }
-                    if let tips = model.plan?.tips, !tips.isEmpty {
-                        DisclosureGroup(isExpanded: $showTips) {
-                            ForEach(tips, id: \.self) { tip in
-                                Text(tip)
-                                    .font(.lhfSecondary(13))
-                                    .foregroundStyle(Color.v2DateText)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        } label: {
-                            Text("posting tips")
-                        }
+                        Text("posting tips")
                     }
                 }
                 .smoothSectionBackground(.smoothCobalt)
             }
-
         }
     }
 
@@ -310,29 +265,32 @@ struct AmbassadorAnonChatsSheet: View {
         model.plan?.guidance ?? AmbassadorGuidance.bundled
     }
 
+    /// The link `{link}` stands for: the ambassador's share link for the
+    /// chosen anonymous app (the Worker's channel keys are the app's raw values).
+    private var shareLink: String {
+        model.plan?.links?[model.anonApp.rawValue] ?? model.plan?.appStore ?? "smooth for students on the app store"
+    }
+
+    private func filled(_ text: String) -> String {
+        AmbassadorGuidance.filled(text, link: shareLink)
+    }
+
     @ViewBuilder
     private var guidanceSections: some View {
-        if let test = guidance.test, !test.isEmpty {
-            Section {
-                Text(test)
-                    .font(.lhfSecondary(13, weight: .semibold))
-            }
-            .smoothSectionBackground(.smoothCobalt)
-        }
         ForEach(guidance.kinds) { kind in
             Section {
                 Text("example post")
                     .font(.lhfSecondary(12))
                     .foregroundStyle(Color.v2DateText)
                 VStack(alignment: .leading, spacing: 8) {
-                    AmbassadorPostBox(text: kind.example.text)
-                    AmbassadorCopyButton(label: "copy", text: kind.example.text)
+                    AmbassadorPostBox(text: filled(kind.example.text))
+                    AmbassadorCopyButton(label: "copy", text: filled(kind.example.text))
                         .font(.lhfSecondary(14, weight: .semibold))
-                    AmbassadorReplyBlock(reply: kind.example.reply)
+                    AmbassadorReplyBlock(reply: kind.example.reply.map(filled))
                 }
                 .padding(.vertical, 2)
                 if let how = kind.how, !how.isEmpty {
-                    Text(how)
+                    Text(filled(how))
                         .font(.lhfSecondary(13))
                         .foregroundStyle(Color.v2DateText)
                         .fixedSize(horizontal: false, vertical: true)
@@ -341,6 +299,15 @@ struct AmbassadorAnonChatsSheet: View {
                 SmoothSectionHeader(kind.label, accent: .smoothCobalt)
             }
             .smoothSectionBackground(.smoothGrape)
+        }
+        if let footer = guidance.footer, !footer.isEmpty {
+            Section {
+                Text(footer)
+                    .font(.lhfSecondary(13))
+                    .foregroundStyle(Color.v2DateText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .smoothSectionBackground(.smoothCobalt)
         }
     }
 }
