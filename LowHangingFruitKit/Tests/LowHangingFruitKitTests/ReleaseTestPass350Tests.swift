@@ -380,3 +380,113 @@ enum WKNavigationTypeShim {
     case other, backForward
     var value: WKNavigationType { self == .other ? .other : .backForward }
 }
+
+// MARK: - The overdue swipe lesson (0071a1f)
+
+@Suite("3.5.0 pass: overdue swipe lesson picks")
+struct ReleasePassOverdueLessonTests {
+    static let now = Date(timeIntervalSince1970: 1_800_000_000)
+    static let day: TimeInterval = 86_400
+
+    static func item(_ id: String, daysLate: Double, kind: Assignment.Kind = .assignment) -> DashItem {
+        let a = Assignment(source: .canvas, sourceID: id, kind: kind, course: "CIS 4500", title: id,
+                           dueAt: now.addingTimeInterval(-daysLate * day), url: nil)
+        return DashItem(assignment: a, dueOverride: nil, isCompleted: false, completedAt: nil)
+    }
+
+    /// R-M3. An instructor cancelled the item (an applied fact): the dashboard
+    /// takes it out of todo into its own "cancelled" section, but the lesson
+    /// still offers it as "N days late. pull it right once it's done." and a
+    /// swipe completes it in the ledger.
+    @Test("an item a fact cancelled is not the lesson's card")
+    func cancelledByFact() {
+        var cancelled = Self.item("cancelled", daysLate: 9)
+        var fact = FactItemDisplay()
+        fact.cancelled = true
+        cancelled.fact = fact
+        let picked = OverdueSwipeLesson.candidate(in: [cancelled, Self.item("real", daysLate: 6)], now: Self.now)
+        withKnownIssue("R-M3: candidate ignores isFactCancelled") {
+            #expect(picked?.assignment.sourceID == "real")
+        }
+    }
+
+    /// R-L6. "Most overdue" is the oldest date, and a recycled Canvas site
+    /// carries last year's rows (the term trap in CLAUDE.md): the one card a
+    /// student is shown is "387 days late". Nothing-to-submit items and
+    /// events are picked the same way.
+    @Test("the pick prefers real, recent, submittable work")
+    func oldestIsNotBest() {
+        let items = [Self.item("last-year", daysLate: 387), Self.item("lecture", daysLate: 30, kind: .event),
+                     Self.item("ps3", daysLate: 6)]
+        let picked = OverdueSwipeLesson.candidate(in: items, now: Self.now)
+        withKnownIssue("R-L6: the oldest row wins, whatever it is") {
+            #expect(picked?.assignment.sourceID == "ps3")
+        }
+        var inClass = Self.item("in-class", daysLate: 40)
+        inClass.requiresNoSubmission = true
+        withKnownIssue("R-L6: a nothing-to-submit item is offered too") {
+            #expect(OverdueSwipeLesson.candidate(in: [inClass], now: Self.now) == nil)
+        }
+    }
+
+    @Test("no due at all, a far-future clock and an empty list never crash and pick nothing")
+    func empty() {
+        #expect(OverdueSwipeLesson.candidate(in: [], now: Self.now) == nil)
+        #expect(OverdueSwipeLesson.candidate(in: [Self.item("x", daysLate: -1)], now: Self.now) == nil)
+        #expect(OverdueSwipeLesson.overdueDays(of: Self.item("x", daysLate: -3), now: Self.now) == 0)
+        #expect(OverdueSwipeLesson.overdueDays(of: Self.item("x", daysLate: 4.99), now: Self.now) == 4)
+    }
+}
+
+// MARK: - Ambassador contacts (d886fad)
+
+@Suite("3.5.0 pass: ambassador contacts")
+struct ReleasePassContactsTests {
+    typealias Contact = AmbassadorPlan.Contact
+
+    @Test("phone shapes become sms: URLs of digits, a leading plus kept",
+          arguments: [
+              ("+1 (215) 555-0100", "sms:+12155550100"),
+              ("215.555.0100", "sms:2155550100"),
+              ("  +44 20 7946 0958 ", "sms:+442079460958"),
+              ("٢١٥٥٥٥", nil),           // Arabic-Indic digits are not ASCII
+              ("", nil), ("call me", nil),
+          ] as [(String, String?)])
+    func sms(phone: String, expected: String?) {
+        #expect(Contact.smsURL(for: Contact(name: "a", phone: phone))?.absoluteString == expected)
+    }
+
+    /// R-L7. Letters are dropped, not mapped: a vanity number texts the wrong
+    /// person, and an extension is glued onto the number.
+    @Test("a vanity number or an extension never becomes a different number")
+    func lettersAndExtensions() {
+        let vanity = Contact.smsURL(for: Contact(name: "a", phone: "1-800-SMOOTH1"))
+        let ext = Contact.smsURL(for: Contact(name: "a", phone: "215-555-0100 ext 22"))
+        withKnownIssue("R-L7: digits are concatenated whatever surrounds them") {
+            #expect(vanity == nil)
+            #expect(ext?.absoluteString == "sms:2155550100")
+        }
+    }
+
+    /// R-L7. `id` is name + phone, so two rows the deploy variable repeats, or
+    /// ("Ol", "isa1") against ("Olisa", "1"), share an id inside `ForEach`.
+    @Test("contact ids are unique for distinct and for repeated rows")
+    func ids() throws {
+        let json = #"{"name":"M","school":"uva","schoolName":"UVA","title":"t","page":"https://x.test/a/k","contacts":[{"name":"Ol","phone":"isa1"},{"name":"Olisa","phone":"1"},{"name":"Marco","phone":"2"},{"name":"Marco","phone":"2"},{"name":7},"x"]}"#
+        let plan = try AmbassadorPlan.decode(Data(json.utf8))
+        let contacts = try #require(plan.contacts)
+        #expect(contacts.count == 4) // the two malformed rows dropped, the rest kept
+        withKnownIssue("R-L7: ids collide, ForEach gets duplicate identities") {
+            #expect(Set(contacts.map(\.id)).count == contacts.count)
+        }
+    }
+
+    @Test("contacts as a string, an object or null cost the contacts and never the plan")
+    func lenient() throws {
+        for value in [#""no""#, #"{}"#, "null", "[]"] {
+            let json = #"{"name":"M","school":"uva","schoolName":"UVA","title":"t","page":"https://x.test/a/k","contacts":"# + value + "}"
+            let plan = try AmbassadorPlan.decode(Data(json.utf8))
+            #expect(plan.contacts == nil || plan.contacts?.isEmpty == true)
+        }
+    }
+}
