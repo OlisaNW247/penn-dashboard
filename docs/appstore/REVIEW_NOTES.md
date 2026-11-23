@@ -27,10 +27,10 @@ alarm button and its page.
 HOW TO REVIEW WITHOUT A SCHOOL LOGIN
 Sign-in is each university's own Canvas single sign-on (Penn: PennKey plus Duo); only the university issues those accounts, so there is no demo login. You don't need one:
 
-On the first screen, tap "just exploring? preview with sample data" (also at the bottom of the Connect Canvas screen). It loads a populated demo; no account or network is needed.
+On the first screen, tap "Preview" under "Get started" (also at the bottom right of the school search screen). It loads a populated demo; no account or network is needed.
 
 From the demo:
-1. Dashboard: the todo / all / prev switch. Swipe a card right to complete it; tap it for details.
+1. Dashboard: the todo / all / prev switch. Swipe a card either way to complete it; tap it for details.
 2. Megaphone (header): announcements and the tasks found in them.
 3. Ask: the floating button; in the demo it answers on the device.
 4. Profile: the person button in the header. Accounts, reminders, classes, notifications.
@@ -41,10 +41,10 @@ WHAT IT DOES
 A dashboard for university students: their own Canvas deadlines (calendar feed and signed-in session) and, optionally, Gradescope, in one list with local reminders.
 
 ALARMS AND NOTIFICATIONS
-The Sweeper rings before work the student has not turned in (10 minutes by default, on by default): on iOS 26 one AlarmKit alarm, full screen like Clock, after asking permission once; on earlier iOS, or if refused, three Time Sensitive notifications. This version holds the code for a server-sent wake-up before an alarm, but it is switched off in the shipped build: the app carries no push entitlement, registers for nothing, and the server function is not deployed. Every notification the student sees is local.
+The Sweeper rings before work the student has not turned in (10 minutes by default, on by default): on iOS 26 one AlarmKit alarm, full screen like Clock, after asking permission once; on earlier iOS, or if refused, three Time Sensitive notifications. This version holds the code for a server-sent wake-up before an alarm, but it does not run in the shipped build: the app carries no push entitlement, so its request for a push token fails, and the server function is not deployed. Every notification the student sees is local.
 
 AMBASSADOR MODE
-Profile > ambassador mode is for a few student volunteers who promote Smooth at their schools. It asks for a code we send them (no account, no password) and shows the job, a suggested post for the day with a copy button, their school's posters, a feedback box, a daily local reminder they can turn off, and their link-open counts. It never asks for or rewards ratings or reviews. To see it, enter this test code: <code>. Any other student sees only the row.
+Profile > ambassador mode is for a few student volunteers who promote Smooth at their schools. It asks for a code we send them (no account, no password) and shows four tasks (a suggested anonymous post for the day with a copy button, a share link for group chats, their school's posters, a feedback box), their school's download count against a goal, a daily local reminder they can turn off, and a way to text the founders. It never asks for or rewards ratings or reviews. To see it, enter this test code: <code>. Any other student sees only the row.
 
 PRIVACY AND NETWORKING
 - Grades, completions, the work list, the name and login cookies stay on the device (cookies in the Keychain, this device only).
