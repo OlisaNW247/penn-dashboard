@@ -66,6 +66,9 @@ This is a decision for you and Marco. Nothing has been changed.
 - For Smooth's own "ask", the cheap, account-free routes are Apple's
   on-device model and Private Cloud Compute, plus Anthropic App Attest. Not
   account linking.
+- A student's AI can still power parts of Smooth from the front: a daily
+  brief, a study plan, summaries, Smooth cards inside the chat. The route
+  with no server copy of the work list is Shortcuts. See Part 3.
 
 ---
 
@@ -382,6 +385,84 @@ read-only once the consent and switch work in Part 1.5 is done, and list it in
 Claude's directory. For ask itself, keep paying (a small cached model costs
 fractions of a cent per question) and add Private Cloud Compute as the free
 path on iOS 27 phones.
+
+---
+
+## Part 3. Which parts of Smooth a student's own AI could power
+
+Added 2026-11-24, at Olisa's ask: "the possibility of using personal Claude
+to power some of a student's Smooth app … or ChatGPT or any other personal
+AI". Notes: `docs/research/agent-audit/personal-claude-anthropic-routes.md`,
+`personal-ai-apple-routes.md`, `personal-ai-other-providers.md`. The
+surprising claims were re-read on the live pages.
+
+**The short answer.** No consumer AI plan can sit *behind* Smooth's own
+screens. A student's AI can sit *in front of* Smooth, and from there it can
+do real work for the app: answer from the student's classes, show Smooth
+cards inside the chat, run every morning, and write results back for Smooth
+to display. So "powered by your own Claude" is buildable for some features,
+as long as the AI app is where the thinking happens.
+
+### 3.1 Routes that put the student's plan behind Smooth's own screens
+
+| Route | Status | Why it does or doesn't work for students |
+|---|---|---|
+| Claude subscription login | **Forbidden** | "Unless previously approved, Anthropic does not allow third party developers to offer claude.ai login or rate limits" ([Agent SDK overview](https://code.claude.com/docs/en/agent-sdk/overview)). No public application form or partner list; the legal page points to sales |
+| Claude Platform OAuth, "Linked billing" (**new**, beta) | Exists, wrong audience | Users "click a Link your Claude organization button, sign in to Claude, and approve your app", and their organization pays ([overview](https://platform.claude.com/docs/en/manage-claude/oauth-apps/overview)). But the approver needs the Admin or Billing role in an organization that buys API credit directly. Subscription-only accounts are refused (403 `user_profile_not_billable`), and the Max/Ultra/Team monthly API credits "can't pay for these requests" ([linked billing](https://platform.claude.com/docs/en/manage-claude/oauth-apps/organization-billing-connections)). A student with Claude Pro cannot use it |
+| ChatGPT plan usage ("Sign in with ChatGPT") | Partner-only | "We've launched with a limited set of partners"; commercial apps apply by interest form. The only documented redirect is a loopback on `127.0.0.1`, so a native iPhone app is not a documented target. Requests cannot carry a system prompt, which ask relies on |
+| Gemini subscription | No route | Nothing spends a user's Gemini plan from another app. Firebase AI Logic bills the developer |
+| Student pastes an API key | Possible, poor fit | Anthropic and OpenAI keys work but almost no student has a funded one. Max/Ultra plans include $100/$200 of monthly API credit, Pro and Free none ([credits](https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers)). Google's free key is ruled out by its own terms: "Do not submit sensitive, confidential, or personal information to the Unpaid Services" |
+| "Sign in with OpenRouter" | Possible | The one self-serve, user-pays sign-in. The student must first buy credit (5.5% fee, $0.80 minimum). Needs an https callback on iOS. Smooth would have to build ask's prompt on the phone |
+| Apple Intelligence "Extensions" (student picks Claude or ChatGPT system-wide) | Unconfirmed | Reported for iOS 27 by press; Apple's own pages read here do not mention it, and no source says another app's requests would go to the student's chosen provider. Check on an iOS 27 phone before counting on it |
+| Anthropic App Attest, Apple Private Cloud Compute | Work, but not the student's account | App Attest is "billed to your workspace" (Smooth pays). Private Cloud Compute is Apple's model, free at Smooth's size |
+
+### 3.2 Routes that put the student's AI in front of Smooth
+
+| Route | Whose plan pays | Works on | What it can do for Smooth | Server copy of the work list? |
+|---|---|---|---|---|
+| **Connector, reading** (built: Marco's `v11`) | the student's | Claude: every plan, Free included, web, desktop and phone. ChatGPT: web only, read-only on Pro, full on Business/Edu (plan matrix not fully confirmed). Gemini: its help page says you can link an MCP server; which plans is unclear. Perplexity and Grok: paid plans, per secondary sources | The student's own AI answers questions about their classes | yes, for those who opt in |
+| **Connector, Smooth cards in the chat** (MCP Apps) | the student's | "available for all users on Claude, Cowork, Claude Desktop, and Claude for iOS/Android" ([help](https://support.claude.com/en/articles/13454812-use-interactive-connectors-in-claude)); on iOS it renders in a web view. A custom connector's card may be marked "Unverified". Not device-tested | Smooth's week view or a card for one assignment, drawn inside Claude, with up to two actions | yes |
+| **Connector, write-back** | the student's | same as reading | Claude writes a study plan, a summary of new announcements, or flashcards into Smooth through a write tool, and the app shows it. Directory rules allow this if read and write tools are separate and annotated | yes |
+| **Scheduled tasks using the connector** | the student's, paid plans only | Claude Pro, Max, Ultra, Team, Enterprise: "run remotely, so they run on their cadence even when your computer is asleep" and can use "connected tools" ([help](https://support.claude.com/en/articles/13854387-schedule-recurring-tasks-in-claude-cowork)). ChatGPT also has scheduled tasks that can use connected apps | A morning brief: every day the student's Claude reads new posts and due dates and writes a brief into Smooth. The write tool must be set to "always allow" | yes |
+| **Shortcuts** | the student's | Claude's iPhone app has an "Ask Claude" action for Siri, Spotlight, Share and Shortcuts, and it counts against the student's plan ([help](https://support.claude.com/en/articles/10263469-use-claude-app-intents-shortcuts-and-widgets-on-ios)). Apple's "Use Model" action can use ChatGPT | Smooth exposes actions such as "get my work list" and "save a note". A shortcut chains them with the AI step. Smooth could publish a ready-made shortcut. Whether Claude's reply passes cleanly to the next step is implied, not confirmed | **no**: phone to AI app directly |
+| **Share sheet** | the student's | any AI app with a share extension | An "ask about this" button on a card hands the assignment's text to the student's AI app. The answer stays in that app | **no** |
+| **Siri** (Apple's model, not the student's account) | nobody | iOS 27 | If Smooth exposes its items as app actions, Siri can answer "what's due this week" | no |
+
+### 3.3 Feature by feature
+
+| Smooth feature | Can the student's own AI power it? | How |
+|---|---|---|
+| ask, inside the app | **No**, on any consumer plan | Keep it on Smooth's key; add Private Cloud Compute as the free path |
+| ask, as a hand-off | Yes | "ask in claude / chatgpt" through the share sheet or a shortcut; or the connector |
+| A daily brief of what changed | Yes, Claude paid plans (ChatGPT likely) | Scheduled task + connector + a write-back tool |
+| A study or day plan on the dashboard | Yes | Write-back tool; the app draws it |
+| Summaries of long announcements, flashcards | Yes | Write-back tool, or a shortcut |
+| Smooth's week inside the student's AI chat | Yes, Claude | MCP Apps card |
+| Announcement task finding, course facts | No | These run for the whole class on the server, not per student |
+
+### 3.4 Recommendation
+
+1. **Start with Shortcuts and the share sheet.** Give Smooth a few app
+   actions (work list, one assignment's text, save a note). This is the only
+   route where the student's own Claude or ChatGPT works on their Smooth data
+   with **no copy on Smooth's server**. It needs no approval from any AI
+   company, works across providers, and also lets Siri answer from Smooth. It
+   is roughly a week of work and nothing in it touches Canvas. Disclose it per
+   Apple 5.1.2(i) on the screen that sets it up.
+2. **Then the connector, read plus one write-back tool for notes and
+   briefs**, not for submissions (Part 1.5). With an MCP Apps card and a
+   documented "morning brief" scheduled task, this is the fullest form of
+   "your own Claude powers Smooth". It needs the consent and off-switch work
+   listed in Part 1.5, and a device test of the card on the iPhone app.
+3. **Ask, at no cost:** file OpenAI's interest form, and ask Anthropic's sales
+   contact what "previously approved" requires. Plan nothing on either.
+4. **Skip** key pasting and Gemini's free key. Offer OpenRouter sign-in only
+   if power users ask for it.
+
+**Not confirmed:** the ChatGPT plan matrix for custom connectors (sources
+conflict), MCP Apps for an unlisted connector on the iPhone app, Claude's
+reply chaining to the next Shortcuts step, and whether iOS 27 Extensions
+shipped. Each can be settled in minutes on a real phone.
 
 ---
 

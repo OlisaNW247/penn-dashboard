@@ -70,6 +70,10 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   expiry, a verified host on the approve sheet. On personal AI accounts:
   Smooth may not run on a student's Claude plan (Anthropic's terms) and
   ChatGPT plan use is partner-only; the connector is the sanctioned form.
+  Part 3 of the same report (which parts of Smooth a student's own AI could
+  power): start with Shortcuts and share-sheet actions (no server copy, any
+  provider), then the read connector with one write-back tool for notes and
+  a daily brief; never for submissions.
 
 - **3.5.0 (21) ships without the agent connection** (Marco, 2026-11-17: "we're not going to actually go with the agent stuff from V11 ... V12 will be solely the ambassador stuff and just some of the other stuff"). `FeatureFlags.agentConnection = false` on `claude/v12-isolate-ab8b22` with the two leaks closed (the cached draft chip, prev's "submitted by" line), the agent tests skipping while off, and the review notes, listing and privacy text without it (`docs/V12_ISOLATION_2026-11-17.md`: route A, flag off, over route B, a branch that deletes the code, which would cost two days and make `v11` unmergeable). Marco settled the rest the same day: "keep all but agent" (the Sweeper page and header button, the scroll fix, swipe both ways, the squircle header, the wordmark backflip, the hovering shapes, the Atkinson class code, the truthful in-class label, the held course-material sync, the assignment-PDF pass, the update-wall changes list, the ambassador header all ship). Left for Marco: merging the branch into the release line, the phone check of the off state, the stamp, archive and upload. The agent-connection item below is now `v11`'s, not this release's.
 - **Ship 3.5.0 (21), the v11 release, now with ambassador mode** (`origin/v12`

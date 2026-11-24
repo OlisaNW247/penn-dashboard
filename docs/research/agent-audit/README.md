@@ -24,3 +24,18 @@ Apple's public lookup for app 6783911002 (3.5.0, released 2026-11-23
 unsigned POST to `/functions/v1/mcp` (401 with a bearer challenge); the
 `update-manifest` branch (floor 3.4.1). No Supabase management token was on
 the machine, so function versions come from the project's notes.
+
+Added later on 2026-11-24, for Part 3 of the report (which parts of Smooth a
+student's own AI could power):
+
+- `personal-claude-anthropic-routes.md`: sign-in programmes, Claude Platform
+  OAuth linked billing, MCP Apps, write-back rules, the Claude iPhone app's
+  Shortcuts action, scheduled tasks, plan API credits, App Attest.
+- `personal-ai-apple-routes.md`: iOS 27 Extensions (unconfirmed), Foundation
+  Models and provider packages, App Intents and Siri, Shortcuts, share sheet.
+- `personal-ai-other-providers.md`: ChatGPT plan usage and custom connectors,
+  Gemini, other consumer AIs, user-pays brokers. Several lines there rest on
+  secondary sources and are marked so.
+
+The linked-billing, interactive-connector and scheduled-task quotes were
+re-read on the live pages for the report.
