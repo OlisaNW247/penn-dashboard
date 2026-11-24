@@ -23,7 +23,12 @@ export function schoolsTests({ test, skip, req, founder, db, label = "", origin 
   const schoolRow = async (id) => (await db()).prepare("SELECT * FROM schools WHERE id = ?1").bind(id).first();
   const plan = async (code) => (await req(`/a/${code}/plan.json`)).json();
   // The daily school limit is per UTC day; backdate what earlier tests made.
-  const relax = async () => (await db()).prepare("UPDATE schools SET created_ts = '2000-01-01T00:00:00.000Z'").run();
+  // Also backdates invited rows, so the shared inviter keeps its daily 20.
+  const relax = async () => {
+    const d = await db();
+    await d.prepare("UPDATE schools SET created_ts = '2000-01-01T00:00:00.000Z'").run();
+    await d.prepare("UPDATE ambassadors SET created_at = '2000-01-01T00:00:00.000Z' WHERE invited_by IS NOT NULL").run();
+  };
   async function add(name, school, extra = {}) {
     const r = await asForm(`${F}/add`, { name, school, contact: "", notes: "", ...extra });
     assert.equal(r.status, 303, `${name} ${school}`);
@@ -82,6 +87,43 @@ export function schoolsTests({ test, skip, req, founder, db, label = "", origin 
     assert.equal((await invite("nope-aaaaaaaaaaaaaa", { name: "X", school: "uva" })).status, 404);
   });
 
+  t("invite: an invited person cannot invite until a founder says so, and no body can change that", async () => {
+    await relax();
+    const r = await invite(s.penn, { name: "Chain One", school: "upenn", can_invite: 1, canInvite: true });
+    assert.equal(r.status, 200);
+    const b = await r.json();
+    const d = await db();
+    assert.equal((await d.prepare("SELECT can_invite FROM ambassadors WHERE token = ?1").bind(b.code).first()).can_invite, 0);
+    assert.equal((await plan(b.code)).invite, undefined);
+    const no = await invite(b.code, { name: "Chain Two", school: "upenn" });
+    assert.equal(no.status, 403);
+    assert.deepEqual(await no.json(), { ok: false, error: "not_allowed" });
+    assert.equal((await asForm(`${F}/can-invite`, { id: String(await idOf(b.code)), value: "1" })).status, 303);
+    assert.equal((await plan(b.code)).invite.allowed, true);
+    assert.equal((await invite(b.code, { name: "Chain Two", school: "upenn" })).status, 200);
+    // a row a founder adds keeps the default (NULL)
+    const f = await add("Founder Row", "upenn");
+    assert.equal((await d.prepare("SELECT can_invite FROM ambassadors WHERE token = ?1").bind(f).first()).can_invite, null);
+    assert.equal((await plan(f)).invite.allowed, true);
+  });
+
+  t("invite: names refuse bidi and zero-width characters, contacts are stripped, accents slug cleanly", async () => {
+    for (const ch of ["\u200b", "\u200c", "\u200d", "\u200e", "\u200f", "\u202a", "\u202e", "\u2066", "\u2069", "\ufeff"]) {
+      const a = await invite(s.penn, { name: `Bad${ch}Name`, school: "uva" });
+      assert.equal(a.status, 400, JSON.stringify(ch));
+      assert.deepEqual(await a.json(), { ok: false, error: "bad_name" });
+      const b = await invite(s.penn, { name: "Ok", schoolName: `Bad${ch}School` });
+      assert.equal(b.status, 400, JSON.stringify(ch));
+      assert.deepEqual(await b.json(), { ok: false, error: "bad_school" });
+    }
+    const r = await (await invite(s.penn, { name: "Contact Person", school: "uva", contact: "55\u200b5\u202e0100" })).json();
+    assert.equal((await (await db()).prepare("SELECT contact FROM ambassadors WHERE token = ?1").bind(r.code).first()).contact, "5550100");
+    await relax();
+    const u = await (await invite(s.penn, { name: "Accent", schoolName: "Ünï School" })).json();
+    assert.equal(u.school.id, "uni-school");
+    assert.equal((await invite(s.penn, { name: "Accent", schoolName: "Ü" })).status, 400);
+  });
+
   t("invite: a new school by name gets a slug id, a short code, and the same name finds it again", async () => {
     await relax();
     const r = await invite(s.penn, { name: "Name Friend", schoolName: "Test University One" });
@@ -123,12 +165,30 @@ export function schoolsTests({ test, skip, req, founder, db, label = "", origin 
     assert.equal((await schoolRow("xyz-2")).canvas_host, H3);
     // the same name with no host is the existing school
     assert.equal((await mk({ schoolName: "Xyz" })).school.id, "xyz");
-    // a dynamic school with no host yet learns the one the request brings
+    // an invite never changes an existing school: the host stays NULL
     const nh = await mk({ schoolName: "Nullhost College" });
     assert.equal((await schoolRow(nh.school.id)).canvas_host, null);
     const nh2 = await mk({ schoolName: "Nullhost College", schoolHost: H4 });
     assert.deepEqual(nh2.school, { id: nh.school.id, name: "Nullhost College", isNew: false });
-    assert.equal((await schoolRow(nh.school.id)).canvas_host, H4);
+    assert.equal((await schoolRow(nh.school.id)).canvas_host, null);
+    // only a founder sets it, and the page says why when it refuses
+    const sid = nh.school.id;
+    assert.equal((await asForm(`${F}/school-host`, { school: sid, host: H4 })).status, 303);
+    assert.equal((await schoolRow(sid)).canvas_host, H4);
+    const refuse = async (host) => {
+      const r = await asForm(`${F}/school-host`, { school: sid, host });
+      assert.equal(r.status, 303);
+      return decodeURIComponent(new URL(r.headers.get("location"), "https://x").searchParams.get("ok")).replace(/\+/g, " ");
+    };
+    assert.match(await refuse("nope.example.edu"), /not saved/);
+    assert.match(await refuse(H1), /not saved/); // auburn-u has it
+    assert.equal((await schoolRow(sid)).canvas_host, H4);
+    assert.match(await refuse("miami.instructure.com"), /not saved/); // a built-in has it
+    assert.equal((await asForm(`${F}/school-host`, { school: `${sid} `, host: "" })).status, 400);
+    assert.equal((await asForm(`${F}/school-host`, { school: "uva", host: H3 })).status, 400);
+    assert.equal((await schoolRow(sid)).canvas_host, H4);
+    assert.match(await refuse(""), /cleared/);
+    assert.equal((await schoolRow(sid)).canvas_host, null);
     // a built-in is found by its host, whatever the short name
     assert.deepEqual((await mk({ schoolName: "Miami", schoolHost: "miami.instructure.com" })).school, { id: "umiami", name: "UMiami", isNew: false });
     assert.equal((await mk({ schoolName: "Case Western" })).school.id, "case-western");
@@ -288,6 +348,8 @@ export function schoolsTests({ test, skip, req, founder, db, label = "", origin 
     assert.equal(p.school, "founder-made-college");
     assert.equal(p.schoolName, "Founder College");
     assert.equal((await asForm(`${F}/school-rename`, { school: "uva", name: "Hacked" })).status, 400);
+    assert.equal((await asForm(`${F}/school-rename`, { school: "founder-made-college ", name: "Hacked" })).status, 400);
+    assert.equal((await asForm(`${F}/school-rename`, { school: "founder-made-college", name: "Hack\u202ed" })).status, 400);
     assert.equal((await asForm(`${F}/school-rename`, { school: "founder-made-college", name: "<x>" })).status, 400);
     assert.equal((await plan(s.uva)).schoolName, "UVA");
     const ex = await (await req(`${F}/export.json`)).json();
@@ -314,6 +376,37 @@ export function schoolsTests({ test, skip, req, founder, db, label = "", origin 
     assert.equal(rr.status, 429);
     assert.equal(await schoolRow("limit-school-twelfth"), null);
     await relax();
+  });
+
+  t("schools: the 300 invited cap and the 500 school cap hold, and leaving frees the first", async () => {
+    await relax();
+    const d = await db();
+    const inv = await add("Cap Inviter", "upenn");
+    // 300 invited rows (seeded directly), all counted until marked left
+    const seed = Array.from({ length: 300 }, (_, i) =>
+      d.prepare("INSERT INTO ambassadors (token, ref, name, school, invited_by) VALUES (?1, ?2, 'seed', 'uva', 999999)").bind(`seedcap-${String(i).padStart(4, "0")}-xxxxxxxx`, `seedr${String(i).padStart(5, "0")}`));
+    await d.batch(seed);
+    const used = (await d.prepare("SELECT COUNT(*) AS n FROM ambassadors WHERE invited_by IS NOT NULL AND status <> 'left'").first()).n;
+    // top up to exactly 300 counted rows
+    if (used < 300) await d.batch(Array.from({ length: 300 - used }, (_, i) => d.prepare("INSERT INTO ambassadors (token, ref, name, school, invited_by) VALUES (?1, ?2, 'seed', 'uva', 999999)").bind(`seedtop-${i}-xxxxxxxxxxx`, `seedt${String(i).padStart(5, "0")}`)));
+    const before = (await d.prepare("SELECT COUNT(*) AS n FROM ambassadors").first()).n;
+    const full = await invite(inv, { name: "Capped", school: "uva" });
+    assert.equal(full.status, 429);
+    assert.deepEqual(await full.json(), { ok: false, error: "limit" });
+    assert.equal((await d.prepare("SELECT COUNT(*) AS n FROM ambassadors").first()).n, before);
+    await d.prepare("UPDATE ambassadors SET status = 'left' WHERE name = 'seed' AND invited_by = 999999").run();
+    assert.equal((await invite(inv, { name: "Freed", school: "uva" })).status, 200);
+    await d.prepare("DELETE FROM ambassadors WHERE name = 'seed' AND invited_by = 999999").run();
+    // 500 schools in all
+    const have = (await d.prepare("SELECT COUNT(*) AS n FROM schools").first()).n;
+    await d.batch(Array.from({ length: 500 - have }, (_, i) => d.prepare("INSERT INTO schools (id, name, created_ts) VALUES (?1, ?2, '2000-01-01T00:00:00.000Z')").bind(`seed-school-${i}`, `Seed School ${i}`)));
+    const rr = await invite(s.penn, { name: "Too Many", schoolName: "Five Hundred And One" });
+    assert.equal(rr.status, 429);
+    assert.equal(await schoolRow("five-hundred-and-one"), null);
+    assert.equal((await asForm(`${F}/add`, { name: "Too Many", school: "__new", schoolName: "Five Hundred And One", contact: "", notes: "" })).status, 429);
+    // an existing school still takes people at the cap
+    assert.equal((await invite(s.penn, { name: "Still Fine", school: "uva" })).status, 200);
+    await d.prepare("DELETE FROM schools WHERE id LIKE 'seed-school-%'").run();
   });
 
   t("schools: nothing the host owns moved (stats rows, a uva ambassador's plan)", async () => {

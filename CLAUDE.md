@@ -1815,6 +1815,27 @@ Keep this current. It is the fastest way for a new session to know what exists.
      themselves came in with `claude/ambassador-posters-f068d6` (retired
      `tabard` and `these-two`, five generic designs) and reach phones only
      through Olisa's deploy. Unseen on a phone: everything in this round.
+     **Inviting from the app (2026-11-24, 3.5.1, compiled on the runner,
+     never on a phone; nothing shows until the ninth site zip is deployed).**
+     Olisa: "a button that generates a new code for a new person at a new
+     school", for the founders, with no app update per school. When the
+     server's plan carries `invite.allowed` (`AmbassadorPlan.Invite`; who
+     that is belongs to the server: a Penn ambassador a founder added, or
+     anyone a founder switched on), the page gains an "invite" section after
+     "your job" with one row, "add an ambassador" (`AmbassadorModel.canInvite`).
+     It opens `AmbassadorInviteSheet`: a name, a school search over the
+     schools the site already has and then the app's own 220-school catalog
+     (`AmbassadorSchoolSearch`, Kit, which reuses `CanvasSchoolCatalog`'s
+     relevance rule), "use “…”" for a school in neither, an editable short
+     name for a new school (it becomes the label on every screen and the
+     front of that school's codes), an optional phone, and "make code"
+     (`POST /a/{code}/invite`, body built by `AmbassadorInvite.body`). The
+     answer's code is shown once with "copy code", "copy welcome text" and a
+     share button; it is held in the sheet's state alone and written nowhere
+     on the phone. A school that is new arrives with its Canvas host when it
+     came from the catalog, which is what makes its downloads count. What
+     leaves the phone is in `docs/PRIVACY.md` → "Ambassador mode". The
+     invited person's code works on 3.5.0.
   9. feedback (since 3.3.0, 2026-10-27): one "send feedback ↗" row that
      opens the Google feedback form in Safari (`FeedbackForm.defaultURL`,
      or the live notice's link when the manifest carries one)
@@ -4284,6 +4305,25 @@ itself.
 
 ## Traps that have already bitten
 
+- **A default that grants power is inherited by everything the power
+  creates.** The invite route (2026-11-24) let an ambassador who may invite
+  mint a new ambassador, and "may invite" defaulted to "is at Penn", because
+  the Penn ambassadors are the founders. So a Penn code could invite someone
+  into Penn, and that new row, with no flag of its own, could invite too:
+  one leaked code made unlimited inviters, each with its own daily
+  allowance. Found by the verifier's script before any deploy; my own tests
+  had asked only whether a non-Penn ambassador was refused. Fixed by writing
+  the refusal into the row at the moment it is created (`can_invite = 0`, a
+  literal in the INSERT, so no request body can change it); only a founder
+  switches it on. The wrong fixes: a lower daily limit (it bounds each
+  inviter, not how many inviters there are) and a rule that reads who
+  invited whom at check time (a second default to get wrong). When a
+  permission has a default, ask what the permission can create, and whether
+  the thing it creates gets the default. Pair of it, same review: the
+  invite could also fill in a missing Canvas host on a school that already
+  existed, which let an inviter point a school at another campus's
+  downloads; a request that creates a thing may set its fields, a request
+  that merely names an existing thing may not.
 - **A planner row for a plain assignment has no `plannable.assignment_id`;
   its id is `plannable_id`** (2026-11-22, the hostile test pass,
   `docs/TEST_SWEEPER_SIGNIN_2026-11-22.md` H1). `SubmissionRead.verdicts`,
@@ -5638,7 +5678,7 @@ it holds work that exists nowhere else.
 | `sweeper/force-quit-check` | **2026-11-21, off `claude/ambassador-header` `4bd49bc`, local, not pushed; merges into the release line at Marco's word.** The force-quit check built at Marco's "build it": the alert push (not deployed), the `LHFSweeperCheck` notification extension, the manifest and cookie copy, `excused`. 4352/439 green, unsigned iOS and macOS builds green, never on a phone. The other session on `claude/ambassador-header` was editing `AppState.swift`, `ContentView.swift` and the notification files uncommitted at the time, so this branch touches none of them; expect `project.pbxproj` to conflict with any hand edit there (regenerate, then restore `Smooth.app`). |
 | `research/sweeper-force-quit` | **2026-11-21, off `claude/ambassador-header` `279b14f`, local; committed `48eea48` and cherry-picked onto `sweeper/force-quit-check`.** Research only: `docs/SWEEPER_FORCE_QUIT_RESEARCH_2026-11-21.md` (an alert push and a Notification Service Extension as the force-quit-proof cancel; AlarmKit-from-an-extension evidence and the two-hour device test that settles it; the planner `excused` gap) and its `ROADMAP.md` → Next entry. No code. |
 | `claude/v12-isolate-ab8b22` | **2026-11-17, off `claude/ambassador-header` `05ee0a8`, local, not merged.** The agent connection switched off for 3.5.0 (`FeatureFlags.agentConnection = false`), its two leaks closed, its tests skipping while off, the review notes, listing and privacy text without it; `docs/V12_ISOLATION_2026-11-17.md` has the inventory and the route comparison. The session that started it merges at Marco's word. |
-| `claude/new-session-b3ylkg` (2026-11-24) | **`v11` `141ac20` plus one commit: Harvard as an ambassador school** (`smooth-ambassadors/` only; Known gaps, top). The branch was fast-forwarded from `v12` `33740dd` to `v11` that day, which is possible because `v11` contains all of `v12`; older rows in this table that describe it as `v12`'s working branch are history. Not merged into `v11`; Marco or Olisa does that. Worker suite 112 pass / 73 skipped without the Sites export, 73 of 73 with it. No Swift changed. |
+| `claude/new-session-b3ylkg` (2026-11-24) | **`v11` `141ac20` plus Harvard as an ambassador school, then schools without a deploy and inviting from the app, stamped 3.5.1 (22)** (Known gaps, the top two entries; `ROADMAP.md` → Now). The branch was fast-forwarded from `v12` `33740dd` to `v11` that day, which is possible because `v11` contains all of `v12`; older rows in this table that describe it as `v12`'s working branch are history. Not merged into `v11`; Marco or Olisa does that. Worker suite 112 pass / 73 skipped without the Sites export, 73 of 73 with it. No Swift changed. |
 | `claude/ambassador-header` | **The release line for 3.5.0 (21) since 2026-11-17; since 2026-11-18 at `b1a6aa8` with the agent switch-off and the Sweeper accuracy work fast-forwarded in (Release state, above); local, not pushed, not merged into `v11`.** Began 2026-11-12, off the `v12` merge `82bea86`, as a design change waiting on Marco's approval. While signed in as an ambassador the dashboard title is a marigold medal and "Ambassador" with the wordmark's squiggle under it, in place of "Smooth {weekday}" (`ContentView.ambassadorTitle`; Marco's ask that day). Before sign-in nothing changes. The Debug build of `1a4ceaa` is on Marco's iPhone 17 Pro since 15:16 local, over the pre-stamp 3.4.1 (20) build of `f03dce0`; so the merged `v12` tree first reached his phone through this branch. 20 targeted tests green; the full gate was run on its base, not on it. |
 | `claude/font-research-22067c` | 2026-11-11, off `v11-master`, docs only, merged into `v11-master` at `fee63ba`. The class-code font research and renders (`docs/FONT_RESEARCH_2026-11-11.md`). Safe to delete. |
 | `claude/v11-ui-pass-84648c` | **2026-11-11, off `v11-master` `0936f29`, local, not merged.** Marco's UI pass: one Sweeper title with the switch row, the header button as an alarm glyph with a once-only new dot, the agent in its own Profile "agent" section, the slop cut; then the five asks of the same afternoon (the + and Sweeper swap colours, the "on" row under the title, hovering shapes on ask, a triple-tap backflip of the wordmark, a slightly larger header title), with Simulator photos in `docs/v11-ui/` and `docs/V11_UI_PHOTOS_2026-11-11.md`. The session that started it merges. |
@@ -5688,6 +5728,28 @@ none is a ship line.
 
 ## Known gaps
 
+- **Inviting from the app and schools without a deploy (2026-11-24) are
+  built, tested off the phone, and live nowhere.** `ROADMAP.md` → Now has
+  what it is and how it ships. Checked: the Swift compiled on the GitHub
+  runner at the first attempt and the unsigned iOS build succeeded (Test
+  baseline); the Worker's suite, the built file beside the original site and
+  the rehearsal on the real scan backup all pass, with the legacy part of
+  the built file identical to the Harvard build's. Not checked: anything on
+  a phone (the sheet's layout, the school search under the keyboard,
+  `ShareLink`, dark mode), the founder page's new forms in a browser (they
+  are tested as requests, never looked at), and the route against the live
+  database. Known limits, by design: a school made this way has the five
+  generic posters only and is absent from the public scan dashboard and
+  `/api/stats` (those are the host file's fixed lists; "promoting" a school
+  is a build, as Harvard was, and keeps its id); its downloads count only
+  when its Canvas host is in the app's catalog; the new code is shown to the
+  inviter once and kept nowhere on the phone, so a closed sheet means
+  reading it off the founder web page; two requests that create schools
+  whose names slug alike at the same instant put both people in the first
+  school; an inviter can name a brand-new school with any catalog host, so
+  a founder can mislabel a campus's download count (the founder page's
+  schools card can clear or move a host). 3.5.1 (22) is a stamp on this
+  branch: whether build 22 is free in App Store Connect was not checked.
 - **Harvard is a school in the ambassador source and not on the live site
   (2026-11-24).** Olisa asked to onboard ambassadors at Case Western and
   Harvard. Case Western has been a school since the first deploy. Harvard

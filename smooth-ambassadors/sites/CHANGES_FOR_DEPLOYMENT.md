@@ -480,7 +480,11 @@ What is new:
 - **One route**, `POST /a/{code}/invite` (JSON; the app calls it): an ambassador
   who may invite makes the next ambassador's code at an existing school or a
   brand-new one, with no deploy. Limits (inside the statements): 20 invites per
-  inviter per UTC day, 300 invited in all, 10 new schools per UTC day, 500 in all.
+  inviter per UTC day, 300 invited in all (rows marked `left` do not count, so
+  a founder frees room by marking junk left), 10 new schools per UTC day, 500 in
+  all. A person made by an invite gets `can_invite = 0` and cannot invite until
+  a founder switches it on; an invite never changes an existing school's Canvas
+  host (only the founder page's new `school-host` action does).
 - **Founder page**: the add form's school select ends with "new school…" and two
   inputs (name, optional Canvas host); a roster control per ambassador for who
   may invite, "invited by" shown; a "schools made here" card with a rename form.

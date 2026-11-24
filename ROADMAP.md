@@ -48,6 +48,27 @@ These block shipping, or would make shipping risky. The launch-prep
 work of 2026-10-09/10 is summarised, with the order to take these in,
 in `docs/LAUNCH_PREP_HANDOFF.md`.
 
+- **3.5.1 (22) and the ninth site zip: a new school needs no deploy and no
+  app update** (2026-11-24, `claude/new-session-b3ylkg`, on `v11` `141ac20`).
+  Olisa: "there should be a button that generates a new code for a new
+  person at a new school. the penn ambassadors which are really the founders
+  should have this power." Two halves. **Site** (`smooth-ambassadors/`):
+  schools can be rows in D1 (`schools`), created by the founder page's "new
+  school" form or by `POST /a/{code}/invite`; a new school gets the five
+  generic posters and sticker QR codes, and its downloads count when its
+  Canvas host is one the app's catalog knows. **App**: an "add an
+  ambassador" row on the ambassador page, shown only when the server's plan
+  says so (`plan.invite`), with a sheet that searches the app's own school
+  catalog. Who may invite is the server's rule: a Penn ambassador a founder
+  added, or anyone a founder switches on; an invited person never inherits
+  it. The invitee needs no update: their code works on 3.5.0. **To ship:**
+  Olisa hands `smooth-sites-update-9-for-chatgpt.zip` to the ChatGPT session
+  (it replaces the eighth and carries Harvard and the seventh's undeployed
+  parts; checks in `sites/CHANGES_FOR_DEPLOYMENT.md`, last section); Marco
+  or Olisa merges the branch into `v11`, runs it on a phone, archives 3.5.1
+  (22) and submits. Until the zip is deployed the app's row never shows,
+  which is the quiet behaviour against an older server. Unseen: everything
+  on a phone, and the founder page's new forms in a real browser.
 - **Deploy the eighth ambassador site zip: Harvard, plus everything in the
   seventh** (2026-11-24, `claude/new-session-b3ylkg`, one commit on `v11`
   `141ac20`). Olisa wants to onboard ambassadors at Case Western and Harvard.
@@ -1195,6 +1216,12 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-24.** Schools without a deploy, and inviting from the app
+  (3.5.1 (22), stamped, not archived): dynamic schools in D1, the invite
+  route with its limits inside the write, founder controls for who may
+  invite and for a school's Canvas host, and the app's "add an ambassador"
+  sheet. Reviewed for security before the zip; four findings fixed (Traps,
+  "a default that grants power").
 - **2026-11-24.** Harvard added as an ambassador school
   (`smooth-ambassadors/`: `scripts/lib/add-school.mjs`,
   `scripts/lib/school-edition.mjs`, `worker/catalog.js`). Server side only,

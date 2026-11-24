@@ -119,7 +119,8 @@ The founders:
 | `GET /f/{FOUNDER_TOKEN}/export.json` | everything, for a backup (poster ideas without their image data: id, ambassador, ts, note, mime, hasImage; `captures` as metadata only, with no image data; and `suggestions`) |
 
 | `POST /f/{FOUNDER_TOKEN}/can-invite` `id`, `value` (`1` yes, `0` no, empty = default) | who may invite; the id rule is the same strict digits rule |
-| `POST /f/{FOUNDER_TOKEN}/school-rename` `school` (a school made here), `name` | renames a dynamic school; its id never changes; a built-in is refused (400) |
+| `POST /f/{FOUNDER_TOKEN}/school-rename` `school` (a school made here, checked as sent), `name` | renames a dynamic school; its id never changes; a built-in is refused (400) |
+| `POST /f/{FOUNDER_TOKEN}/school-host` `school`, `host` (empty clears) | sets or clears a dynamic school's Canvas host; it must be an app Canvas host no other school has, else a line on the page says why |
 
 Public: `GET /api/leaderboard?days=14` gives counts per school. No names,
 contacts or codes.
@@ -178,15 +179,21 @@ when allowlisted in `worker/canvas-hosts.json` and held by no other school)
 plays the role of a built-in's `canvasHosts` for `numbers.schoolInstalls`.
 
 Who may invite: `ambassadors.can_invite` 1 yes, 0 no, NULL yes only for a
-UPenn ambassador (the founders), never while paused or left. `plan.json` gains
+UPenn ambassador (the founders), never while paused or left. **A person made by
+the invite route gets `can_invite = 0`** (a literal in the INSERT, so no body can
+change it); only a founder turns it on (`can-invite`). A row a founder adds on
+the founder page keeps NULL. `plan.json` gains
 `invite: {allowed: true, left, schools: [{id, name}]}` only for those who may.
 Resolution (invite and founder page): an allowlisted `schoolHost` that a school
 already has wins; else a case-insensitive name match is the same school unless
 the request carries a host and the match has a different one (then a new
-school, id suffixed `-2`); else a new school, id = the name's slug cut to 24
-characters (a code is `{id}-{14 chars}`, at most 40). Limits, all inside the
+school, id suffixed `-2`); else a new school (its `schoolHost`, if allowlisted
+and unowned, is stored at creation and never afterwards by an invite; **only a
+founder attaches, changes or clears a host on an existing school**, with the
+founder page's `school-host` action), id = the name's slug cut to 24
+characters (a code is `{id}-{14 chars}`, at most 40). Names are NFKD-normalised with accents dropped before slugging (`Ünï School` is `uni-school`), and bidirectional or zero-width characters are refused in names and stripped from contacts. Limits, all inside the
 INSERT statements: 20 invites per inviter per UTC day, 300 invited
-ambassadors in all, 10 new schools per UTC day, 500 in all. The school and the
+ambassadors in all (rows marked `left` do not count, so a founder frees room by marking junk left), 10 new schools per UTC day, 500 in all. The school and the
 ambassador are one batch (a transaction) and the ambassador's insert carries the
 same limits as the school's, so a refusal leaves no school without an ambassador.
 `0005` adds two columns with `ALTER TABLE`, which SQLite cannot make

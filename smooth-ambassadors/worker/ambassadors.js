@@ -25,7 +25,7 @@
 
 import qrcode from "qrcode-generator";
 import { CHANNELS, SCHOOLS, posterName } from "./catalog.js";
-import { loadSchools, resolveSchool, validSchoolName, INVITE_DAILY_LIMIT } from "./schools.js";
+import { loadSchools, resolveSchool, validSchoolName, isAllowlistedHost, INVISIBLE, INVITE_DAILY_LIMIT } from "./schools.js";
 import { fontResponse } from "./fonts.js";
 import messages from "./templates/messages.json";
 import checklist from "./templates/checklist.json";
@@ -84,7 +84,7 @@ import {
   invitesToday,
   setCanInvite,
   renameSchool,
-  fillSchoolHost,
+  setSchoolHost,
   createWithSchool,
 } from "./data.js";
 import { recordScan, appStoreRedirect, notFound } from "./legacy.js";
@@ -621,7 +621,7 @@ async function handleInvite(request, env, amb, pub) {
   if (parsed.error) return inviteReply(parsed.error.status, { ok: false, error: "bad_name" });
   const f = parsed.f;
   const name = field(f, "name", 400);
-  if (name.length < 1 || name.length > 80) return inviteReply(400, { ok: false, error: "bad_name" });
+  if (name.length < 1 || name.length > 80 || INVISIBLE.test(name)) return inviteReply(400, { ok: false, error: "bad_name" });
   const S = await loadSchools(env);
   const plan = resolveSchool(S, { school: field(f, "school", 100), schoolName: field(f, "schoolName", 200), schoolHost: field(f, "schoolHost", 200) });
   if (plan.error) return inviteReply(400, { ok: false, error: plan.error });
@@ -630,7 +630,6 @@ async function handleInvite(request, env, amb, pub) {
   if ((await invitesToday(env, amb.id)) >= INVITE_DAILY_LIMIT) return inviteReply(429, { ok: false, error: "limit" });
   const made = await createWithSchool(env, { name, contact: field(f, "contact", 120), plan, inviterId: amb.id }, S);
   if (made.error) return inviteReply(429, { ok: false, error: "limit" });
-  if (plan.fillHost) await fillSchoolHost(env, plan.id, plan.fillHost);
   const created = made.amb;
   return inviteReply(200, {
     ok: true,
@@ -792,7 +791,7 @@ async function founderRoutes(request, env, parts, url) {
   }
 
   if (request.method === "POST") {
-    if (!["add", "update", "reminder", "replied", "feedback-seen", "idea-seen", "idea-delete", "suggest", "suggest-delete", "capture-seen", "capture-delete", "can-invite", "school-rename"].includes(action)) return notFound();
+    if (!["add", "update", "reminder", "replied", "feedback-seen", "idea-seen", "idea-delete", "suggest", "suggest-delete", "capture-seen", "capture-delete", "can-invite", "school-rename", "school-host"].includes(action)) return notFound();
     const parsed = await form(request);
     if (parsed.error) return parsed.error;
     const f = parsed.f;
@@ -808,7 +807,7 @@ async function founderRoutes(request, env, parts, url) {
     const captureTarget = id ? { id } : ambId && batchOk ? { amb: ambId, batch } : null;
     if (action === "capture-seen" || action === "capture-delete") {
       if (!captureTarget) return badRequest();
-    } else if (action !== "add" && action !== "school-rename" && !id) return badRequest();
+    } else if (action !== "add" && action !== "school-rename" && action !== "school-host" && !id) return badRequest();
     switch (action) {
       case "add": {
         try {
@@ -820,8 +819,7 @@ async function founderRoutes(request, env, parts, url) {
             if (plan.error) return new Response("school: " + plan.error, { status: 400 });
             const made = await createWithSchool(env, { name: field(f, "name", 400), contact: field(f, "contact", 120), notes: field(f, "notes", 500), plan }, S);
             if (made.error) return new Response("limit reached: too many new schools today or in all.", { status: 429 });
-            if (plan.fillHost) await fillSchoolHost(env, plan.id, plan.fillHost);
-            amb = made.amb;
+                      amb = made.amb;
           } else amb = await createAmbassador(env, f, S);
           return new Response(null, { status: 303, headers: { location: `${base}?created=${amb.token}` } });
         } catch (e) {
@@ -831,12 +829,26 @@ async function founderRoutes(request, env, parts, url) {
       case "can-invite":
         await setCanInvite(env, id, field(f, "value", 4));
         return redirectBack(base + "#roster", "saved.");
+      // The school id is checked against the value as sent, like a numeric id.
       case "school-rename": {
-        const sid = field(f, "school", 40);
+        const sid = parsed.rawValues.school;
         const nm = field(f, "name", 200);
-        if (!S.isDynamic(sid) || !validSchoolName(nm)) return badRequest();
+        if (typeof sid !== "string" || !S.isDynamic(sid) || !validSchoolName(nm)) return badRequest();
         await renameSchool(env, sid, nm);
         return redirectBack(base + "#schools", "renamed.");
+      }
+      case "school-host": {
+        const sid = parsed.rawValues.school;
+        if (typeof sid !== "string" || !S.isDynamic(sid)) return badRequest();
+        const host = field(f, "host", 200).toLowerCase();
+        let msg = "host cleared.";
+        if (host) {
+          const owner = S.ids().find((i) => i !== sid && S.canvasHosts(i).includes(host));
+          if (!isAllowlistedHost(host)) msg = "not saved: that host is not one of the app's canvas hosts.";
+          else if (owner || !(await setSchoolHost(env, sid, host))) msg = "not saved: another school already has that host.";
+          else msg = "host saved.";
+        } else await setSchoolHost(env, sid, null);
+        return redirectBack(base + "#schools", msg);
       }
       case "update":
         await updateAmbassador(env, id, f, S);

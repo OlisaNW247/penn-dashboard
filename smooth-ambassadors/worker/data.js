@@ -8,6 +8,8 @@ import {
   INVITED_TOTAL_LIMIT,
   SCHOOLS_DAILY_LIMIT,
   SCHOOLS_TOTAL_LIMIT,
+  INVISIBLE,
+  stripInvisible,
 } from "./schools.js";
 
 const ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"; // no 0/o/1/l/i
@@ -106,14 +108,16 @@ export async function setCanInvite(env, id, value) {
   await env.DB.prepare("UPDATE ambassadors SET can_invite = ?2 WHERE id = ?1").bind(id, v).run();
 }
 
-// A dynamic school with no host learns one. Only while it has none and no other
-// school holds that host, so it can never take a host away.
-export async function fillSchoolHost(env, id, host) {
-  await env.DB.prepare(
-    "UPDATE schools SET canvas_host = ?2 WHERE id = ?1 AND canvas_host IS NULL AND NOT EXISTS (SELECT 1 FROM schools WHERE canvas_host = ?2)",
+// Founder only. Sets (or, with null, clears) a dynamic school's Canvas host. The
+// caller has checked the allowlist and the built-in schools; this statement
+// refuses a host another dynamic school holds. True when a row changed.
+export async function setSchoolHost(env, id, host) {
+  const r = await env.DB.prepare(
+    "UPDATE schools SET canvas_host = ?2 WHERE id = ?1 AND (?2 IS NULL OR NOT EXISTS (SELECT 1 FROM schools WHERE canvas_host = ?2 AND id <> ?1))",
   )
     .bind(id, host)
     .run();
+  return (r.meta?.changes ?? 0) > 0;
 }
 
 export async function renameSchool(env, id, name) {
@@ -134,6 +138,8 @@ export async function renameSchool(env, id, name) {
 export async function createWithSchool(env, { name, contact = "", notes = "", plan, inviterId = null }, S = defaultSchools()) {
   name = (name || "").trim().slice(0, 80);
   if (!name) throw new Error("name required");
+  if (INVISIBLE.test(name)) throw new Error("bad name");
+  contact = stripInvisible(contact);
   const token = `${plan.id}-${newToken()}`;
   const ref = newToken(10);
   const day = dayStartIso();
@@ -142,7 +148,8 @@ export async function createWithSchool(env, { name, contact = "", notes = "", pl
       ? []
       : [
           `(SELECT COUNT(*) FROM ambassadors WHERE invited_by = ${q(inviterId)} AND created_at >= ${q(day)}) < ${q(INVITE_DAILY_LIMIT)}`,
-          `(SELECT COUNT(*) FROM ambassadors WHERE invited_by IS NOT NULL) < ${q(INVITED_TOTAL_LIMIT)}`,
+          // Departed rows do not count, so a founder can clear junk by marking it left.
+          `(SELECT COUNT(*) FROM ambassadors WHERE invited_by IS NOT NULL AND status <> 'left') < ${q(INVITED_TOTAL_LIMIT)}`,
         ];
   const statements = [];
   if (plan.isNew) {
@@ -163,11 +170,14 @@ export async function createWithSchool(env, { name, contact = "", notes = "", pl
   {
     const b = [];
     const q = (v) => (b.push(v), `?${b.length}`);
-    const cols = [q(token), q(ref), q(name), q(plan.id), q((contact || "").trim().slice(0, 120)), q((notes || "").trim().slice(0, 500)), q(inviterId ?? null)];
+    // A person an ambassador invites never inherits invite power: can_invite is
+    // the literal 0, not a bound value, so no body can change it. Only a founder
+    // turns it on. A row a founder adds keeps NULL (the default rule).
+    const cols = [q(token), q(ref), q(name), q(plan.id), q((contact || "").trim().slice(0, 120)), q((notes || "").trim().slice(0, 500)), q(inviterId ?? null), inviterId == null ? "NULL" : "0"];
     const conds = [...inviter(q), ...(S.isDynamic(plan.id) || plan.isNew ? [`EXISTS (SELECT 1 FROM schools WHERE id = ${q(plan.id)})`] : [])];
     statements.push(
       env.DB.prepare(
-        `INSERT INTO ambassadors (token, ref, name, school, contact, notes, invited_by) SELECT ${cols.join(", ")}${conds.length ? ` WHERE ${conds.join(" AND ")}` : ""}`,
+        `INSERT INTO ambassadors (token, ref, name, school, contact, notes, invited_by, can_invite) SELECT ${cols.join(", ")}${conds.length ? ` WHERE ${conds.join(" AND ")}` : ""}`,
       ).bind(...b),
     );
   }

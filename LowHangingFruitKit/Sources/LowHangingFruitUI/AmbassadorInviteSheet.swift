@@ -10,7 +10,7 @@ import LowHangingFruitKit
 /// school (an existing one's id, or a new one's name with its Canvas host when
 /// it came from the app's own school list) and a phone number if one was
 /// typed. The new code comes back once and is shown here; it is held in this
-/// view's state alone, never written to defaults or the Keychain, and is gone
+/// view's state alone, never written anywhere on the phone, and is gone
 /// when the sheet closes.
 struct AmbassadorInviteSheet: View {
     @ObservedObject private var model = AmbassadorModel.shared

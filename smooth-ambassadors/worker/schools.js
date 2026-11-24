@@ -21,8 +21,16 @@ const hostSet = new Set([...allowlist, ...Object.values(cat.SCHOOLS).flatMap((x)
 export const isAllowlistedHost = (h) => typeof h === "string" && hostSet.has(h);
 const hasOwn = (o, k) => Object.hasOwn(o, k);
 
+// Bidirectional controls and zero-width characters: they make one name look like
+// another, or like nothing, so they are refused in names and stripped from contacts.
+export const INVISIBLE = /[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/;
+export const stripInvisible = (t) => String(t ?? "").replace(/[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, "");
+
+// NFKD and no combining marks first, so "Ünï School" is uni-school and not n-school.
 const fullSlug = (name) =>
   String(name ?? "")
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
@@ -35,7 +43,7 @@ export function slugify(name) {
 
 // 2..60 characters, no control characters, none of <>"'&\ .
 export function validSchoolName(name) {
-  return typeof name === "string" && name.length >= 2 && name.length <= 60 && !/[\u0000-\u001f\u007f-\u009f<>"'&\\]/.test(name);
+  return typeof name === "string" && name.length >= 2 && name.length <= 60 && !/[\u0000-\u001f\u007f-\u009f<>"'&\\]/.test(name) && !INVISIBLE.test(name);
 }
 
 export function buildSchools(rows = []) {
@@ -126,8 +134,9 @@ export function resolveSchool(S, { school, schoolName, schoolHost }) {
     const theirs = S.canvasHosts(same);
     const reqHost = host && isAllowlistedHost(host) ? host : null;
     if (!reqHost || !theirs.length) {
-      // A dynamic school with no host yet learns the one the request brings.
-      return { id: same, name: S.get(same).name, isNew: false, ...(reqHost && S.isDynamic(same) ? { fillHost: reqHost } : {}) };
+      // An invite never changes an existing school, its host included: only a
+      // founder attaches a host to one (the founder page's school-host action).
+      return { id: same, name: S.get(same).name, isNew: false };
     }
   }
   if (!SCHOOL_ID_RE.test(slug) || RESERVED_IDS.includes(slug)) return { error: "bad_school" };

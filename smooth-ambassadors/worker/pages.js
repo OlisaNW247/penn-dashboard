@@ -705,7 +705,9 @@ export function founderPage({ stats, origin, secret, flash, created, schools = n
         <input type="hidden" name="school" value="${attr(d.id)}">
         <input name="name" value="${attr(d.name)}" maxlength="60" aria-label="school name" required>
         <span class="muted mono">${esc(d.id)} · ${esc(d.host ?? "no canvas host")} · ${stats.ambassadors.filter((a) => a.school === d.id).length} ambassadors</span>
-        <button class="small ghost">rename</button></form></div>`).join("") : `<p class="muted small">none yet. a school made from the add form above, or by an ambassador who invites, shows up here. its id never changes.</p>`}
+        <button class="small ghost">rename</button></form>
+        <form method="post" action="${base}/school-host" class="row small"><input type="hidden" name="school" value="${attr(d.id)}">
+        <input name="host" value="${attr(d.host ?? "")}" maxlength="100" aria-label="canvas host" placeholder="canvas host (empty clears)"><button class="small ghost">set host</button></form></div>`).join("") : `<p class="muted small">none yet. a school made from the add form above, or by an ambassador who invites, shows up here. its id never changes.</p>`}
     </section>
 
     <section class="sec t-grape"><h2 id="digest">two-week digest</h2>
