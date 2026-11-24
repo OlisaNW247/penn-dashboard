@@ -117,3 +117,18 @@ with 1 known issue (R-M1, deferred). The first run had one red,
 literal rather than loosening the scan. No iOS-only file changed, so no
 `xcodebuild` here. 32 tests in `ReleaseTestPass350Tests.swift` now (30 + 2:
 `sixtyDayCap`, `onlinePostTicks`).
+
+## Closed on `v13` (2026-11-24)
+
+The five deferred findings were fixed on `v13`, the line after 3.5.0 (21);
+not compiled when written, the `tests` workflow is the gate. R-M1: the
+ambassador day index is always computed on the phone with the server's
+formula, never read from a cached plan (`staleCachedDayIndex` lost its
+`withKnownIssue`). R-M2, group chat: a failed log sets
+`ambassador.groupChatLogPendingV1` and the next refresh that reaches the
+server resends it; sign-out clears it (`offlineGroupChat` rewritten,
+`signOutClearsPendingGroupChat` added). R-I1: a `@GestureState` flag resets
+the card's swipe axis when a drag is cancelled. R-I2: the overdue lesson's
+key is written in the cover's `onAppear`. R-I3: a one-shot foreground pass
+deletes the server snapshot (revoking the agents) for a phone whose opt-in
+is still on while the flag is off (`AgentOffSwitchCleanupTests`).

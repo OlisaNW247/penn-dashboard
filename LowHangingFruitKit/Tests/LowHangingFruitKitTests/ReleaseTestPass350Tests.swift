@@ -112,10 +112,9 @@ struct ReleasePassAmbassadorTaskTests {
 
             service.plans[AmbassadorModelTests.code] = AmbassadorModelTests.plan(dayIndex: today)
             await model.refresh()
-            withKnownIssue("R-M1: todayIndex prefers a stale cached plan's dayIndex over the phone's own day") {
-                #expect(model.isDone(.anonChats))
-                #expect(model.anonStreak == 1)
-            }
+            #expect(model.isDone(.anonChats))
+            #expect(model.anonStreak == 1)
+            #expect(model.postedToday)
         }
     }
 
@@ -152,14 +151,39 @@ struct ReleasePassAmbassadorTaskTests {
         }
     }
 
-    @Test("a group-chat drop that failed to log is ticked and never sent (same shape as R-M2)")
+    @Test("a group-chat drop that failed to log is ticked, kept pending, and resent on the next refresh")
     func offlineGroupChat() async {
         await withModel(planDay: Self.localToday()) { model, service in
             #expect(await model.signIn(AmbassadorModelTests.code))
             service.offline = true
             await model.markDone(.groupChats)
             #expect(model.isDone(.groupChats))
-            #expect(model.lastError == nil) // silent: `try?`
+            #expect(model.lastError == nil) // still quiet on screen
+            #expect(service.sent.isEmpty)
+            #expect(model.groupChatLogPending)
+            // Offline refresh: nothing goes, the flag stays.
+            await model.refresh()
+            #expect(model.groupChatLogPending)
+            service.offline = false
+            await model.refresh()
+            #expect(!model.groupChatLogPending)
+            #expect(service.sent.filter { $0.action == "post" && $0.body["channel"] == "gc" }.count == 1)
+            // Cleared for good: a further refresh sends nothing more.
+            await model.refresh()
+            #expect(service.sent.filter { $0.body["channel"] == "gc" }.count == 1)
+        }
+    }
+
+    @Test("signing out forgets a pending group-chat log")
+    func signOutClearsPendingGroupChat() async {
+        await withModel(planDay: Self.localToday()) { model, service in
+            #expect(await model.signIn(AmbassadorModelTests.code))
+            service.offline = true
+            await model.markDone(.groupChats)
+            #expect(model.groupChatLogPending)
+            model.signOut()
+            #expect(!model.groupChatLogPending)
+            service.offline = false
             #expect(service.sent.isEmpty)
         }
     }

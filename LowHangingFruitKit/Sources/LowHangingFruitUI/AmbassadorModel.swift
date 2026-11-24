@@ -96,6 +96,9 @@ final class AmbassadorModel: ObservableObject {
     @Published private(set) var authStatus: UNAuthorizationStatus = .notDetermined
     /// The day index (the server's) the student last marked "posted".
     @Published private(set) var postedDayIndex: Int?
+    /// True while a group-chat drop is ticked on the phone but its log never
+    /// reached the server; the next `refresh()` sends it again.
+    private(set) var groupChatLogPending = false
     /// Set by a reminder tap or an `smooth://ambassador` link; the dashboard
     /// pushes Profile → ambassador and calls `consumePendingOpen()`.
     @Published private(set) var pendingOpen = false
@@ -118,6 +121,9 @@ final class AmbassadorModel: ObservableObject {
     private let saveCode: (String) -> Void
     private let removeCode: () -> Void
     private let timeZone: TimeZone
+    /// The clock the day index reads. A seam for tests only; the app uses the
+    /// real one.
+    private let now: () -> Date
 
     static let planCacheKey = "ambassador.planCache"
     static let cadenceKey = "ambassador.cadence"
@@ -131,6 +137,8 @@ final class AmbassadorModel: ObservableObject {
     static let introSeenKey = "ambassador.introSeenV1"
     static let taskLogKey = "ambassador.taskLogV1"
     static let postersPutUpKey = "ambassador.postersPutUpV1"
+    /// Set while a group-chat drop has ticked but the server has not logged it.
+    static let groupChatPendingKey = "ambassador.groupChatLogPendingV1"
     /// A plan older than this is fetched again when the app becomes active
     /// or the page opens. Half an hour: the numbers move slowly, and the post
     /// changes once a day.
@@ -156,7 +164,9 @@ final class AmbassadorModel: ObservableObject {
          loadCode: @escaping () -> String?,
          saveCode: @escaping (String) -> Void,
          removeCode: @escaping () -> Void,
-         timeZone: TimeZone = .current) {
+         timeZone: TimeZone = .current,
+         now: @escaping () -> Date = Date.init) {
+        self.now = now
         self.defaults = defaults
         self.client = client
         self.center = center
@@ -172,6 +182,7 @@ final class AmbassadorModel: ObservableObject {
         self.reminderMinute = minute.map { max(0, min(59, $0)) } ?? AmbassadorReminders.defaultMinute
         self.anonApp = AmbassadorAnonApp(rawValue: defaults.string(forKey: Self.anonAppKey) ?? "") ?? .fizz
         self.postedDayIndex = defaults.object(forKey: Self.postedDayKey) as? Int
+        self.groupChatLogPending = defaults.bool(forKey: Self.groupChatPendingKey)
         self.postersPutUp = max(0, min(AmbassadorGoals.postersTarget, defaults.integer(forKey: Self.postersPutUpKey)))
         if let data = defaults.data(forKey: Self.taskLogKey),
            let log = try? JSONDecoder().decode(AmbassadorTaskLog.self, from: data) {
@@ -195,12 +206,13 @@ final class AmbassadorModel: ObservableObject {
         return "\(plan.firstName.lowercased()) \u{00B7} \(plan.schoolLabel)"
     }
 
-    /// Whether today's post has been marked posted. Compared on the server's
-    /// day index so the phone's midnight and the server's agree (the plan was
-    /// fetched with the phone's own offset).
+    /// Whether today's post has been marked posted. Compared on the phone's
+    /// own day index (`todayIndex`, the server's formula with the phone's
+    /// offset), never on a cached plan's, which can be 30 minutes or a whole
+    /// offline stretch old.
     var postedToday: Bool {
-        guard let today = plan?.today, let postedDayIndex else { return false }
-        return today.dayIndex == postedDayIndex
+        guard plan?.today != nil, let postedDayIndex else { return false }
+        return todayIndex == postedDayIndex
     }
 
     // MARK: Signing in and out
@@ -247,12 +259,13 @@ final class AmbassadorModel: ObservableObject {
         plan = nil
         planFetchedAt = nil
         postedDayIndex = nil
+        groupChatLogPending = false
         taskLog = AmbassadorTaskLog()
         postersPutUp = 0
         introPending = false
         lastError = nil
         removeCode()
-        for key in [Self.planCacheKey, Self.postedDayKey, Self.fetchedAtKey, Self.taskLogKey, Self.postersPutUpKey] { defaults.removeObject(forKey: key) }
+        for key in [Self.planCacheKey, Self.postedDayKey, Self.fetchedAtKey, Self.taskLogKey, Self.postersPutUpKey, Self.groupChatPendingKey] { defaults.removeObject(forKey: key) }
         NotificationScheduler.reservedForeignSlots = 0
         Task { await removeAllReminders() }
     }
@@ -267,6 +280,7 @@ final class AmbassadorModel: ObservableObject {
             let fetched = try await client.plan(code: code, anonApp: anonApp, tzOffsetMinutes: tzOffset())
             store(plan: fetched)
             lastError = nil
+            await resendGroupChatLogIfPending()
         } catch AmbassadorClientError.unknownCode {
             // The founders removed this ambassador. The cached plan stays
             // readable; the next action will say the code no longer works.
@@ -281,6 +295,24 @@ final class AmbassadorModel: ObservableObject {
         guard isSignedIn else { return }
         if let planFetchedAt, now.timeIntervalSince(planFetchedAt) < Self.staleAfter, plan != nil { return }
         await refresh()
+    }
+
+    /// A group-chat drop whose log failed is sent again on the next refresh
+    /// that reaches the server; the flag clears only when the send succeeds.
+    private func resendGroupChatLogIfPending() async {
+        guard groupChatLogPending, let code else { return }
+        do {
+            try await client.send(code: code, action: "post", body: ["channel": "gc", "place": "group chats"])
+            setGroupChatLogPending(false)
+        } catch {
+            // Still offline or refused: stays pending for the next refresh.
+        }
+    }
+
+    private func setGroupChatLogPending(_ pending: Bool) {
+        groupChatLogPending = pending
+        if pending { defaults.set(true, forKey: Self.groupChatPendingKey) }
+        else { defaults.removeObject(forKey: Self.groupChatPendingKey) }
     }
 
     private func store(plan fetched: AmbassadorPlan) {
@@ -309,8 +341,9 @@ final class AmbassadorModel: ObservableObject {
         defer { isWorking = false }
         do {
             try await client.send(code: code, action: "post", body: ["channel": channel, "place": "daily"])
-            postedDayIndex = today.dayIndex
-            defaults.set(today.dayIndex, forKey: Self.postedDayKey)
+            let day = todayIndex
+            postedDayIndex = day
+            defaults.set(day, forKey: Self.postedDayKey)
             lastError = nil
             return true
         } catch {
@@ -321,12 +354,14 @@ final class AmbassadorModel: ObservableObject {
 
     // MARK: The four tasks
 
-    /// The server's day index when the plan has one, else the phone's own
-    /// (days since the epoch in the phone's zone), so a task can be ticked
-    /// before the first plan arrives.
+    /// The phone's own day index, the server's formula
+    /// (`floor((ms - tz*60000)/86400000)`, tz being `tzOffsetMinutes`, so
+    /// the offset is added in seconds here). Never read from the cached
+    /// plan: a plan fetched at 23:50 would file a 00:05 tick under yesterday
+    /// (3.5.0 test pass, R-M1), while the server logs the post on its today.
     private var todayIndex: Int {
-        if let index = plan?.today?.dayIndex { return index }
-        let local = Date().timeIntervalSince1970 + Double(timeZone.secondsFromGMT())
+        let date = now()
+        let local = date.timeIntervalSince1970 + Double(timeZone.secondsFromGMT(for: date))
         return Int((local / 86_400).rounded(.down))
     }
 
@@ -362,7 +397,7 @@ final class AmbassadorModel: ObservableObject {
     /// post could never be logged again and the founders' count missed it
     /// (3.5.0 test pass, R-M2). With nothing to log (no plan yet, a rest
     /// day) it ticks as before. A group-chat drop still ticks first and
-    /// sends quietly; its retry is deferred (ROADMAP → Next).
+    /// sends quietly; a failed send is kept as a pending flag and resent on the next refresh.
     func markDone(_ task: AmbassadorTask) async {
         if task == .anonChats {
             if plan?.today?.channel == nil {
@@ -378,7 +413,12 @@ final class AmbassadorModel: ObservableObject {
             break
         case .groupChats:
             guard let code else { return }
-            try? await client.send(code: code, action: "post", body: ["channel": "gc", "place": "group chats"])
+            do {
+                try await client.send(code: code, action: "post", body: ["channel": "gc", "place": "group chats"])
+            } catch {
+                // Ticked already; remember the log is owed and resend on refresh.
+                setGroupChatLogPending(true)
+            }
         case .posters, .feedback:
             break
         }

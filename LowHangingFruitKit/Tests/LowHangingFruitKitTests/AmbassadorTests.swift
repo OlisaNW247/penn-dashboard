@@ -331,6 +331,12 @@ final class FakeAmbassadorCenter: AmbassadorNotificationCenter {
     }
 }
 
+/// A settable clock for the model's day index: midday, in the model's -5 h
+/// zone, of day 20766, the plan's own index in `AmbassadorModelTests.plan`.
+final class ModelClock: @unchecked Sendable {
+    var now = Date(timeIntervalSince1970: 20766 * 86_400 + 17 * 3600)
+}
+
 @MainActor
 @Suite("Ambassador model", .serialized)
 struct AmbassadorModelTests {
@@ -352,6 +358,7 @@ struct AmbassadorModelTests {
     /// so every test here restores it.
     private func withModel(
         storedCode: String? = nil,
+        clock: ModelClock = ModelClock(),
         _ body: @MainActor (AmbassadorModel, FakeAmbassadorService, FakeAmbassadorCenter, UserDefaults) async throws -> Void
     ) async rethrows {
         let before = NotificationScheduler.reservedForeignSlots
@@ -366,9 +373,11 @@ struct AmbassadorModelTests {
         let box = Box(storedCode)
         let model = AmbassadorModel(defaults: defaults, client: service, center: center,
                                     loadCode: { box.code }, saveCode: { box.code = $0 }, removeCode: { box.code = nil },
-                                    // A fixed offset, not New York: the model reads the real clock,
-                                    // and New York is 240 west of UTC for eight months of the year.
-                                    timeZone: TimeZone(secondsFromGMT: -5 * 3600)!)
+                                    // A fixed offset, not New York: New York is 240 west of
+                                    // UTC for eight months of the year. The clock is fixed at
+                                    // midday of the plan's day (index 20766).
+                                    timeZone: TimeZone(secondsFromGMT: -5 * 3600)!,
+                                    now: { clock.now })
         try await body(model, service, center, defaults)
     }
 
@@ -447,14 +456,16 @@ struct AmbassadorModelTests {
 
     @Test("posted today logs the post in today's channel and sticks for the day only")
     func posted() async {
-        await withModel { model, service, _, _ in
+        let clock = ModelClock()
+        await withModel(clock: clock) { model, service, _, _ in
             await model.signIn(Self.code)
             #expect(!model.postedToday)
             #expect(await model.markPostedToday())
             #expect(model.postedToday)
             #expect(service.sent.last?.action == "post")
             #expect(service.sent.last?.body == ["channel": "fizz", "place": "daily"])
-            // Tomorrow's plan is a new day.
+            // Tomorrow: the phone's own day rolls over and so does the plan.
+            clock.now = clock.now.addingTimeInterval(86_400)
             service.plans[Self.code] = Self.plan(dayIndex: 20767)
             await model.refresh()
             #expect(!model.postedToday)
