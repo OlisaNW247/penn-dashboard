@@ -8,13 +8,15 @@
 //   /a/{token}/me.json          their own numbers
 //   /a/{token}/plan.json        the app's plan
 //   POST /a/{token}/drop|post|check|feedback|pause|idea|capture
+//   POST /a/{token}/invite      JSON; an ambassador who may invite makes the next one,
+//                               at an existing school or a new one (no deploy)
 //   /a/_fonts/{name}.woff2      the page fonts, served from here (no third-party host)
 //   /r/{ref}/s/{channel}        PUBLIC share link (group chat, fizz, ...) → App Store
 //   /r/{ref}/p/{design}         PUBLIC poster/sticker code → App Store
 //                               (also increments the school/design counter)
 //                               both keep working after the ambassador leaves
 //   /f/{FOUNDER_TOKEN}          founder view (+ POST add|update|reminder|replied|feedback-seen|idea-seen|idea-delete|
-//                               suggest|suggest-delete|capture-seen|capture-delete)
+//                               suggest|suggest-delete|capture-seen|capture-delete|can-invite|school-rename)
 //   /f/{FOUNDER_TOKEN}/idea/{id}  a poster idea's image bytes (founders only)
 //   /f/{FOUNDER_TOKEN}/capture/{id}  a capture's image bytes (founders only)
 //   /f/{FOUNDER_TOKEN}/export.json
@@ -22,7 +24,8 @@
 //   POST /api/install           the app's anonymous install count (host + new/existing)
 
 import qrcode from "qrcode-generator";
-import { CHANNELS, SCHOOLS, isValidCombo, offeredDesignsFor, posterName, scanKey } from "./catalog.js";
+import { CHANNELS, SCHOOLS, posterName } from "./catalog.js";
+import { loadSchools, resolveSchool, validSchoolName, INVITE_DAILY_LIMIT } from "./schools.js";
 import { fontResponse } from "./fonts.js";
 import messages from "./templates/messages.json";
 import checklist from "./templates/checklist.json";
@@ -77,9 +80,16 @@ import {
   installTotals,
   recordInstall,
   pruneInstallMarks,
+  canInvite,
+  invitesToday,
+  setCanInvite,
+  renameSchool,
+  fillSchoolHost,
+  createWithSchool,
 } from "./data.js";
 import { recordScan, appStoreRedirect, notFound } from "./legacy.js";
 import { ambassadorPage, stickersPage, founderPage } from "./pages.js";
+import { welcomeText } from "./digest.js";
 
 function safeEqual(a, b) {
   if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) return false;
@@ -108,20 +118,20 @@ function redirectBack(path, flash, request) {
 
 // What the app shows: the ambassador's own numbers, today's post with their
 // link in it, the checklist, the tips. Never anyone else's data.
-async function planPayload(env, amb, url, pub) {
+async function planPayload(env, amb, url, pub, S) {
   const stats = await ambassadorStats(env, amb);
   const ideas = await ideaCounts(env, amb);
   const caps = await captureCounts(env, amb);
   const suggested = await suggestionsFor(env, amb.id);
   const designScans = await schoolDesignScans(env, amb.school);
-  const installs = await installTotals(env, amb.school, stats.days);
+  const installs = await installTotals(env, amb.school, stats.days, new Date(), S);
   const links = ambassadorLinks(pub, amb);
   const anonParam = url.searchParams.get("anon");
   const anonApp = ANON_APPS.includes(anonParam) ? anonParam : "fizz";
   const tzParsed = parseInt(url.searchParams.get("tz") || "", 10);
   const tz = Number.isFinite(tzParsed) ? Math.max(-840, Math.min(840, tzParsed)) : 300;
   const idx = dayIndex(new Date(), tz);
-  const school = SCHOOLS[amb.school];
+  const school = S.get(amb.school) ?? { name: amb.school };
   const fill = (t, ch) => t.replace(/\{(\w+)\}/g, (_, k) =>
     ({ link: ch ? links.share(ch) : links.page, school: school.name.toLowerCase(), name: amb.name.split(/\s+/)[0] })[k] ?? `{${k}}`);
   const today = dailyPost({ daily: messages.daily, dayIndex: idx, anonApp });
@@ -166,13 +176,17 @@ async function planPayload(env, amb, url, pub) {
     // Added 2026-11-11, additive: the app ignores keys it does not know.
     // Retired designs (catalog.js RETIRED) are left out here, as everywhere an
     // ambassador is handed a design; a printed one still scans.
-    posters: offeredDesignsFor(amb.school).map((key) => ({
+    posters: S.offeredDesignsFor(amb.school).map((key) => ({
       key,
       name: posterName(key),
-      image: `${pub}/posters/${amb.school}/${key}.jpg`,
-      scans: designScans[scanKey(amb.school, key)] ?? 0,
+      // A school made at request time has no pictures of its own: the generic
+      // designs are one JPEG for every school, served at UPenn's path.
+      image: pub + S.posterImagePath(amb.school, key),
+      scans: designScans[S.scanKey(amb.school, key)] ?? 0,
     })),
-    dashboard: `${pub}/?school=${amb.school}`,
+    // The host's dashboard lists only the host's own schools, so a school made
+    // here has no page there to link to.
+    ...(S.isDynamic(amb.school) ? {} : { dashboard: `${pub}/?school=${amb.school}` }),
     ideas: { sent: ideas.total, limit: IDEA_TOTAL_LIMIT, dailyLimit: IDEA_DAILY_LIMIT },
     // Added 2026-11-18, additive: what works, posts a founder wants this
     // ambassador to try (only theirs), and the capture uploads' limits.
@@ -188,6 +202,16 @@ async function planPayload(env, amb, url, pub) {
     },
     suggested: suggested.map((x) => ({ id: x.id, text: x.text, reply: x.reply, ts: x.ts })),
     captures: capturesPlan(caps),
+    // Added 2026-11-24, additive: only for an ambassador who may invite.
+    ...(canInvite(amb)
+      ? {
+          invite: {
+            allowed: true,
+            left: Math.max(0, INVITE_DAILY_LIMIT - (await invitesToday(env, amb.id))),
+            schools: S.list().map((x) => ({ id: x.id, name: x.name })),
+          },
+        }
+      : {}),
   };
 }
 
@@ -544,7 +568,7 @@ export async function handleAmbassadors(request, env, ctx) {
 
   if (url.pathname === "/api/leaderboard") {
     const days = Math.min(90, Math.max(1, parseInt(url.searchParams.get("days") || "14", 10) || 14));
-    return Response.json(await schoolLeaderboard(env, days), {
+    return Response.json(await schoolLeaderboard(env, days, await loadSchools(env)), {
       headers: { "access-control-allow-origin": "*", "cache-control": "public, max-age=60" },
     });
   }
@@ -575,8 +599,9 @@ async function publicRoutes(request, env, parts) {
     return appStoreRedirect(env, `${amb.school}-${amb.id}-${channel}`);
   }
   if (action === "p") {
-    if (!isValidCombo(amb.school, arg)) return notFound();
-    const key = scanKey(amb.school, arg);
+    const S = await loadSchools(env);
+    if (!S.isValidCombo(amb.school, arg)) return notFound();
+    const key = S.scanKey(amb.school, arg);
     // Counts for the school always, and for the ambassador while they are one.
     await recordScan(env, key, credited ? amb.id : null);
     if (credited) await recordHit(env, amb, "poster", arg);
@@ -585,7 +610,38 @@ async function publicRoutes(request, env, parts) {
   return notFound();
 }
 
-const AMBASSADOR_POSTS = ["drop", "post", "check", "feedback", "pause", "idea", "capture"];
+// POST /a/{code}/invite: an ambassador who may invite makes the next
+// ambassador's code, at an existing school or a new one, with no deploy and no
+// app update. JSON answers throughout (the app is the only caller).
+const inviteReply = (status, body) => Response.json(body, { status, headers: { "cache-control": "no-store" } });
+
+async function handleInvite(request, env, amb, pub) {
+  if (!canInvite(amb)) return inviteReply(403, { ok: false, error: "not_allowed" });
+  const parsed = await form(request);
+  if (parsed.error) return inviteReply(parsed.error.status, { ok: false, error: "bad_name" });
+  const f = parsed.f;
+  const name = field(f, "name", 400);
+  if (name.length < 1 || name.length > 80) return inviteReply(400, { ok: false, error: "bad_name" });
+  const S = await loadSchools(env);
+  const plan = resolveSchool(S, { school: field(f, "school", 100), schoolName: field(f, "schoolName", 200), schoolHost: field(f, "schoolHost", 200) });
+  if (plan.error) return inviteReply(400, { ok: false, error: plan.error });
+  // Only to answer the common case without a write; createWithSchool's own
+  // statements are what enforce every limit.
+  if ((await invitesToday(env, amb.id)) >= INVITE_DAILY_LIMIT) return inviteReply(429, { ok: false, error: "limit" });
+  const made = await createWithSchool(env, { name, contact: field(f, "contact", 120), plan, inviterId: amb.id }, S);
+  if (made.error) return inviteReply(429, { ok: false, error: "limit" });
+  if (plan.fillHost) await fillSchoolHost(env, plan.id, plan.fillHost);
+  const created = made.amb;
+  return inviteReply(200, {
+    ok: true,
+    code: created.token,
+    page: `${pub}/a/${created.token}`,
+    welcome: welcomeText({ amb: created, origin: pub, schoolName: plan.name }),
+    school: { id: plan.id, name: plan.name, isNew: made.createdSchool },
+  });
+}
+
+const AMBASSADOR_POSTS = ["drop", "post", "check", "feedback", "pause", "idea", "capture", "invite"];
 
 async function ambassadorRoutes(request, env, parts, url) {
   const [token, action, arg] = parts;
@@ -607,20 +663,21 @@ async function ambassadorRoutes(request, env, parts, url) {
   if (request.method === "GET") {
     if (arg !== undefined) return notFound();
     if (!action) {
+      const S = await loadSchools(env);
       const [stats, ideas, designScans, caps, suggested, installs] = await Promise.all([
         ambassadorStats(env, amb),
         ideaCounts(env, amb),
         schoolDesignScans(env, amb.school),
         captureCounts(env, amb),
         suggestionsFor(env, amb.id),
-        installTotals(env, amb.school),
+        installTotals(env, amb.school, 14, new Date(), S),
       ]);
-      return html(ambassadorPage({ amb, stats, installs, ideas, designScans, playbook, suggested, captures: capturesPlan(caps), origin: pub, flash: url.searchParams.get("ok") }));
+      return html(ambassadorPage({ amb, stats, installs, ideas, designScans, playbook, suggested, captures: capturesPlan(caps), origin: pub, flash: url.searchParams.get("ok"), schools: S }));
     }
-    if (action === "stickers") return html(stickersPage({ amb, origin: pub, qrSvg }));
+    if (action === "stickers") return html(stickersPage({ amb, origin: pub, qrSvg, schools: await loadSchools(env) }));
     if (action === "plan.json") {
       await pruneInstallMarks(env);
-      return Response.json(await planPayload(env, amb, url, pub), { headers: { "cache-control": "no-store" } });
+      return Response.json(await planPayload(env, amb, url, pub, await loadSchools(env)), { headers: { "cache-control": "no-store" } });
     }
     if (action === "me.json") {
       const s = await ambassadorStats(env, amb);
@@ -631,6 +688,7 @@ async function ambassadorRoutes(request, env, parts, url) {
 
   if (request.method === "POST") {
     if (arg !== undefined || !AMBASSADOR_POSTS.includes(action)) return notFound();
+    if (action === "invite") return handleInvite(request, env, amb, pub);
     if (action === "idea") return handleIdea(request, env, amb, base);
     if (action === "capture") return handleCapture(request, env, amb, base);
     const parsed = await form(request);
@@ -639,7 +697,7 @@ async function ambassadorRoutes(request, env, parts, url) {
     switch (action) {
       case "drop": {
         const design = field(f, "design", 40);
-        if (!isValidCombo(amb.school, design)) return new Response("bad design", { status: 400 });
+        if (!(await loadSchools(env)).isValidCombo(amb.school, design)) return new Response("bad design", { status: 400 });
         await logActivity(env, amb, { kind: "drop", design, place: field(f, "place", 200), copies: intField(f, "copies", 0, 999, 1) });
         return redirectBack(base + "#drop", "logged. thank you.", request);
       }
@@ -681,6 +739,7 @@ async function founderRoutes(request, env, parts, url) {
   const base = `/f/${secret}`;
   const pub = origin(request, env);
   await pruneInstallMarks(env);
+  const S = await loadSchools(env);
 
   if (request.method === "GET") {
     if (action === "idea") {
@@ -720,20 +779,20 @@ async function founderRoutes(request, env, parts, url) {
     if (arg !== undefined) return notFound();
     if (!action) {
       const days = Math.min(90, Math.max(1, parseInt(url.searchParams.get("days") || "14", 10) || 14));
-      const stats = await founderStats(env, days);
+      const stats = await founderStats(env, days, S);
       let created = null;
       if (url.searchParams.get("created")) created = await ambassadorByToken(env, url.searchParams.get("created"));
-      return html(founderPage({ stats, origin: pub, secret, flash: url.searchParams.get("ok"), created }));
+      return html(founderPage({ stats, origin: pub, secret, flash: url.searchParams.get("ok"), created, schools: S }));
     }
     if (action === "export.json") {
-      const stats = await founderStats(env, 365);
+      const stats = await founderStats(env, 365, S);
       return Response.json(stats, { headers: { "cache-control": "no-store" } });
     }
     return notFound();
   }
 
   if (request.method === "POST") {
-    if (!["add", "update", "reminder", "replied", "feedback-seen", "idea-seen", "idea-delete", "suggest", "suggest-delete", "capture-seen", "capture-delete"].includes(action)) return notFound();
+    if (!["add", "update", "reminder", "replied", "feedback-seen", "idea-seen", "idea-delete", "suggest", "suggest-delete", "capture-seen", "capture-delete", "can-invite", "school-rename"].includes(action)) return notFound();
     const parsed = await form(request);
     if (parsed.error) return parsed.error;
     const f = parsed.f;
@@ -749,18 +808,38 @@ async function founderRoutes(request, env, parts, url) {
     const captureTarget = id ? { id } : ambId && batchOk ? { amb: ambId, batch } : null;
     if (action === "capture-seen" || action === "capture-delete") {
       if (!captureTarget) return badRequest();
-    } else if (action !== "add" && !id) return badRequest();
+    } else if (action !== "add" && action !== "school-rename" && !id) return badRequest();
     switch (action) {
       case "add": {
         try {
-          const amb = await createAmbassador(env, f);
+          let amb;
+          if (f.school === "__new") {
+            // A school made here, by the same resolution the invite route uses
+            // (minus the per-inviter limit): the select said "new school…".
+            const plan = resolveSchool(S, { schoolName: field(f, "schoolName", 200), schoolHost: field(f, "schoolHost", 200) });
+            if (plan.error) return new Response("school: " + plan.error, { status: 400 });
+            const made = await createWithSchool(env, { name: field(f, "name", 400), contact: field(f, "contact", 120), notes: field(f, "notes", 500), plan }, S);
+            if (made.error) return new Response("limit reached: too many new schools today or in all.", { status: 429 });
+            if (plan.fillHost) await fillSchoolHost(env, plan.id, plan.fillHost);
+            amb = made.amb;
+          } else amb = await createAmbassador(env, f, S);
           return new Response(null, { status: 303, headers: { location: `${base}?created=${amb.token}` } });
         } catch (e) {
           return new Response(String(e.message), { status: 400 });
         }
       }
+      case "can-invite":
+        await setCanInvite(env, id, field(f, "value", 4));
+        return redirectBack(base + "#roster", "saved.");
+      case "school-rename": {
+        const sid = field(f, "school", 40);
+        const nm = field(f, "name", 200);
+        if (!S.isDynamic(sid) || !validSchoolName(nm)) return badRequest();
+        await renameSchool(env, sid, nm);
+        return redirectBack(base + "#schools", "renamed.");
+      }
       case "update":
-        await updateAmbassador(env, id, f);
+        await updateAmbassador(env, id, f, S);
         return redirectBack(base + "#roster", "saved.");
       case "reminder":
         await recordReminder(env, id, field(f, "kind", 40) || "digest");

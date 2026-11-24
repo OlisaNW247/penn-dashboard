@@ -12,6 +12,7 @@ import { captureTests } from "./captures-suite.mjs";
 import { existsSync, readFileSync as readFile } from "node:fs";
 import { extractCanvasHosts, findCatalogFiles, OUT as HOSTS_JSON, SWIFT_SOURCES } from "../scripts/gen-canvas-hosts.mjs";
 import { installTests } from "./installs-suite.mjs";
+import { schoolsTests } from "./schools-suite.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FOUNDER = "test-founder-token-0123456789";
@@ -42,7 +43,7 @@ before(async () => {
     },
   });
   const db = await mf.getD1Database("DB");
-  const sql = ["0001_ambassadors.sql", "0002_poster_ideas.sql", "0003_captures.sql", "0004_installs.sql"].map((f) => readFileSync(join(root, "migrations", f), "utf8")).join("\n");
+  const sql = ["0001_ambassadors.sql", "0002_poster_ideas.sql", "0003_captures.sql", "0004_installs.sql", "0005_schools.sql"].map((f) => readFileSync(join(root, "migrations", f), "utf8")).join("\n");
   const clean = sql.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n");
   for (const stmt of clean.split(";").map((s) => s.trim()).filter(Boolean)) {
     await db.prepare(stmt).run();
@@ -596,6 +597,15 @@ installTests({
   test,
   skip: false,
   founder: FOUNDER,
+  db: () => mf.getD1Database("DB"),
+  req: (path, init) => mf.dispatchFetch("https://example.test" + path, { redirect: "manual", ...init }),
+});
+
+schoolsTests({
+  test,
+  skip: false,
+  founder: FOUNDER,
+  imagesServed: false, // this harness's poster binding serves one file; the built file serves them all
   db: () => mf.getD1Database("DB"),
   req: (path, init) => mf.dispatchFetch("https://example.test" + path, { redirect: "manual", ...init }),
 });

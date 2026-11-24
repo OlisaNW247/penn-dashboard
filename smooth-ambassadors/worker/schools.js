@@ -5,7 +5,7 @@
 // synchronous and static; this module gives a request-scoped merged view, read
 // from D1 at most once per request (loadSchools) and passed down.
 import * as cat from "./catalog.js";
-import allowlist from "./canvas-hosts.json";
+import allowlist from "./canvas-hosts.json" with { type: "json" };
 
 export const GENERIC = cat.GENERIC;
 // Words that are routes, and so can never be a school id.
@@ -16,7 +16,8 @@ export const INVITED_TOTAL_LIMIT = 300;
 export const SCHOOLS_DAILY_LIMIT = 10;
 export const SCHOOLS_TOTAL_LIMIT = 500;
 
-const hostSet = new Set(allowlist);
+// The app's catalog hosts plus any a built-in school maps by hand.
+const hostSet = new Set([...allowlist, ...Object.values(cat.SCHOOLS).flatMap((x) => x.canvasHosts ?? [])]);
 export const isAllowlistedHost = (h) => typeof h === "string" && hostSet.has(h);
 const hasOwn = (o, k) => Object.hasOwn(o, k);
 

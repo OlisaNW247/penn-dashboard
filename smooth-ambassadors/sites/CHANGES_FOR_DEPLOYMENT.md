@@ -460,3 +460,45 @@ real count):
 4. Create the Harvard ambassador on the founder page: the code starts
    `harvard-`, and `plan.json` lists posters whose images all answer 200.
 5. Compare the totals of the five older schools with the backup: identical.
+
+
+## Update, 2026-11-24 (ninth): schools without a deploy
+
+This archive carries everything the live site lacks: **the eighth update
+(Harvard)** and the parts of **the seventh** that were never deployed (the
+five generic posters, `tabard` and `these-two` retired, `links`, `guidance`,
+`contacts`), plus this one. Deploy it whole.
+
+What is new:
+
+- **A table**, `schools (id, name, canvas_host, created_ts, created_by)`
+  (`migrations/0005_schools.sql`), created lazily like 0001 to 0004.
+- **Two columns** on `ambassadors`, `can_invite` and `invited_by`, added by
+  `ALTER TABLE` (not idempotent in SQLite, so the lazy migration runs them one
+  by one and ignores "duplicate column name"; a second cold start is a no-op and
+  never fails a request).
+- **One route**, `POST /a/{code}/invite` (JSON; the app calls it): an ambassador
+  who may invite makes the next ambassador's code at an existing school or a
+  brand-new one, with no deploy. Limits (inside the statements): 20 invites per
+  inviter per UTC day, 300 invited in all, 10 new schools per UTC day, 500 in all.
+- **Founder page**: the add form's school select ends with "new school…" and two
+  inputs (name, optional Canvas host); a roster control per ambassador for who
+  may invite, "invited by" shown; a "schools made here" card with a rename form.
+- **One plan key**, `invite`, only for an ambassador who may invite.
+
+What does not change: every legacy route (`/`, `/api/stats`, `/scan/...`,
+`/posters/...`), every existing row and total, the built-in schools and their
+pictures. A dynamic school never appears in `/api/stats` or on `/`; its posters
+are the five generic designs at UPenn's picture paths.
+
+Read-only checks after deploying (open no `/scan/` or `/r/` link; each is a real
+count):
+
+1. `GET /api/stats`: identical to what step 1 of the eighth update expects (104
+   rows from today's 62).
+2. `GET /a/{a real code}/plan.json`: the same as before, plus `invite` for a
+   UPenn ambassador (and not for anyone else).
+3. `GET /f/{FOUNDER_TOKEN}`: the add form ends its select with "new school…";
+   the roster shows an "invites" line per ambassador.
+4. `POST /a/{unknown code}/invite` answers 404; `GET /a/{code}/invite` is 404.
+5. `GET /api/leaderboard` lists the same schools as before.

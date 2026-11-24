@@ -106,6 +106,16 @@ export async function setCanInvite(env, id, value) {
   await env.DB.prepare("UPDATE ambassadors SET can_invite = ?2 WHERE id = ?1").bind(id, v).run();
 }
 
+// A dynamic school with no host learns one. Only while it has none and no other
+// school holds that host, so it can never take a host away.
+export async function fillSchoolHost(env, id, host) {
+  await env.DB.prepare(
+    "UPDATE schools SET canvas_host = ?2 WHERE id = ?1 AND canvas_host IS NULL AND NOT EXISTS (SELECT 1 FROM schools WHERE canvas_host = ?2)",
+  )
+    .bind(id, host)
+    .run();
+}
+
 export async function renameSchool(env, id, name) {
   await env.DB.prepare("UPDATE schools SET name = ?2 WHERE id = ?1").bind(id, name).run();
 }

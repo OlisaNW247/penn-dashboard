@@ -90,6 +90,24 @@ say((await dump(edited)) === JSON.stringify(want), "an ambassador's sticker scan
 await get(edited, `/r/${ref}/s/fizz`);
 say((await dump(edited)) === JSON.stringify(want), "a share-link open changes no scans row");
 
+// 4b. A school made at request time (no deploy): a upenn ambassador invites into a
+// new school, the new ambassador's sticker scans, and every backed-up row is
+// still exactly as it was, with one new row for the new school.
+const pennAdd = await get(edited, F + "/add", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "name=Rehearsal+Inviter&school=upenn&contact=&notes=" });
+const pennToken = new URL(pennAdd.headers.get("location"), "https://example.test").searchParams.get("created");
+const inv = await get(edited, `/a/${pennToken}/invite`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Rehearsal Friend", schoolName: "Rehearsal Polytechnic" }) });
+const invBody = await inv.json();
+say(inv.status === 200 && invBody.school?.isNew === true && invBody.school.id === "rehearsal-polytechnic", "an ambassador who may invite makes a new school and its first code");
+const newRef = (await edited.db.prepare("SELECT ref FROM ambassadors WHERE token = ?1").bind(invBody.code).first()).ref;
+const sticker = await get(edited, `/r/${newRef}/p/missed`);
+say(sticker.status === 302, "the new school's sticker scan redirects");
+const afterRows = (await edited.db.prepare("SELECT poster, total FROM scans ORDER BY poster").all()).results;
+const extra = afterRows.filter((r) => r.poster.startsWith("rehearsal-polytechnic/"));
+say(extra.length === 1 && extra[0].total === 1, "the new school has exactly one scans row, at 1");
+say(JSON.stringify(afterRows.filter((r) => !r.poster.startsWith("rehearsal-polytechnic/"))) === JSON.stringify(want), "all 62 backup rows are still exactly the backup (plus the earlier +1), nothing else moved");
+const statsAfter = JSON.parse(await (await get(edited, "/api/stats")).text()).rows;
+say(JSON.stringify(statsAfter) === JSON.stringify(rowsE.map((r) => (r.school === "uva" && r.poster === "ib" ? { ...r, total: r.total + 2 } : r))), "/api/stats lists the same rows and does not list the new school");
+
 // 5. The backup against the live site right now (read-only).
 if (process.env.LIVE === "1") {
   try {

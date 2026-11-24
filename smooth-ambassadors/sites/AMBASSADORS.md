@@ -96,6 +96,7 @@ The ambassador's own web page and links:
 | `GET /a/{code}` | their private page |
 | `GET /a/{code}/stickers`, `GET /a/{code}/me.json` | sticker sheet, their numbers |
 | `POST /a/{code}/drop` | log a poster drop |
+| `POST /a/{code}/invite` JSON `{name, school \| schoolName, schoolHost?, contact?}` | since 2026-11-24, for an ambassador who may invite: makes the next ambassador, at an existing school (`school`: its id) or a new one (`schoolName`). 200 `{ok, code, page, welcome, school: {id, name, isNew}}`; 400 `bad_name` / `bad_school`; 403 `not_allowed`; 429 `limit`. See "Schools made without a deploy". |
 | `GET /a/_fonts/{name}.woff2` | the page fonts (`familjen-grotesk`, `inter`, `space-mono`, `space-mono-bold`), public, `immutable` for a year, about 54 KB in all, served by the Worker so the pages call no other host. Anything else under `/a/_fonts/` is the plain 404. Handled before the code lookup. |
 
 The public links (the ref, never the code; GET only, 405 otherwise):
@@ -116,6 +117,9 @@ The founders:
 | `GET /f/{FOUNDER_TOKEN}/capture/{id}` | a capture's image bytes, with exactly the idea route's headers. Ambassadors cannot reach it. |
 | `GET /f/{FOUNDER_TOKEN}/idea/{id}` | a poster idea's image bytes with the sniffed type, `nosniff`, `private, no-store`, `Content-Security-Policy: default-src 'none'; sandbox`, `inline`. 404 for an id with no image. Ambassadors cannot reach it. The id uses the same strict digits rule: `/capture/01`, `/capture/+1` and `/capture/1%20` are 404. |
 | `GET /f/{FOUNDER_TOKEN}/export.json` | everything, for a backup (poster ideas without their image data: id, ambassador, ts, note, mime, hasImage; `captures` as metadata only, with no image data; and `suggestions`) |
+
+| `POST /f/{FOUNDER_TOKEN}/can-invite` `id`, `value` (`1` yes, `0` no, empty = default) | who may invite; the id rule is the same strict digits rule |
+| `POST /f/{FOUNDER_TOKEN}/school-rename` `school` (a school made here), `name` | renames a dynamic school; its id never changes; a built-in is refused (400) |
 
 Public: `GET /api/leaderboard?days=14` gives counts per school. No names,
 contacts or codes.
@@ -156,6 +160,38 @@ page.
 
 Names and contacts of real people live only in D1. Export `scans` before
 the first deploy anyway.
+
+## Schools made without a deploy (2026-11-24, `migrations/0005_schools.sql`)
+
+Two kinds of school. **Built-in** schools are the host's `schools` Map
+(`worker/catalog.js`), unchanged in every way and always winning an id
+collision. **Dynamic** schools are rows in the `schools` table, made by the
+invite route or by the founder page's "new school…" option. A dynamic school
+gets only the five generic designs (`GENERIC`, `missed`, `moved`, `one-list`,
+`sweeper`, `ask`), whose picture is the same for every school, served at
+UPenn's path (`/posters/upenn/{design}.jpg`); the legacy `/posters/{school}/`,
+`/scan/{school}/`, `/api/stats` and `/` routes are the host's and do not know a
+dynamic school, so its `plan.json` has no `dashboard` and its page has no
+scan-dashboard link. Sticker scans `/r/{ref}/p/{design}` count under
+`{id}/{design}` as for any non-UPenn school. Its `canvas_host` (stored only
+when allowlisted in `worker/canvas-hosts.json` and held by no other school)
+plays the role of a built-in's `canvasHosts` for `numbers.schoolInstalls`.
+
+Who may invite: `ambassadors.can_invite` 1 yes, 0 no, NULL yes only for a
+UPenn ambassador (the founders), never while paused or left. `plan.json` gains
+`invite: {allowed: true, left, schools: [{id, name}]}` only for those who may.
+Resolution (invite and founder page): an allowlisted `schoolHost` that a school
+already has wins; else a case-insensitive name match is the same school unless
+the request carries a host and the match has a different one (then a new
+school, id suffixed `-2`); else a new school, id = the name's slug cut to 24
+characters (a code is `{id}-{14 chars}`, at most 40). Limits, all inside the
+INSERT statements: 20 invites per inviter per UTC day, 300 invited
+ambassadors in all, 10 new schools per UTC day, 500 in all. The school and the
+ambassador are one batch (a transaction) and the ambassador's insert carries the
+same limits as the school's, so a refusal leaves no school without an ambassador.
+`0005` adds two columns with `ALTER TABLE`, which SQLite cannot make
+idempotent: `sites/entry.js` runs those statements one by one and ignores
+"duplicate column name".
 
 ## Verify after a deploy
 

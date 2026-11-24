@@ -6,6 +6,7 @@ import migration1 from "../migrations/0001_ambassadors.sql";
 import migration2 from "../migrations/0002_poster_ideas.sql";
 import migration3 from "../migrations/0003_captures.sql";
 import migration4 from "../migrations/0004_installs.sql";
+import migration5 from "../migrations/0005_schools.sql";
 
 // The platform has no migration step we can rely on, and the existing Worker
 // already creates its table lazily with CREATE TABLE IF NOT EXISTS, so the
@@ -15,17 +16,33 @@ import migration4 from "../migrations/0004_installs.sql";
 // the 0002 to 0004 tables on their first request with no manual step.
 let schemaReady = null;
 
+// Statements are split off the files; ALTER TABLE ... ADD COLUMN (0005) is not
+// idempotent in SQLite, so those run one by one and "duplicate column name" is
+// the expected answer on every cold isolate after the first ever run.
+const clean = (sql) =>
+  sql
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("--"))
+    .join("\n")
+    .split(";")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
 function ensureSchema(db) {
   if (!schemaReady) {
-    const statements = [migration1, migration2, migration3, migration4]
-      .join("\n")
-      .split("\n")
-      .filter((line) => !line.trim().startsWith("--"))
-      .join("\n")
-      .split(";")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    schemaReady = db.batch(statements.map((s) => db.prepare(s))).catch((err) => {
+    const all = [migration1, migration2, migration3, migration4, migration5].flatMap(clean);
+    const creates = all.filter((s) => !/^ALTER\s/i.test(s));
+    const alters = all.filter((s) => /^ALTER\s/i.test(s));
+    schemaReady = (async () => {
+      await db.batch(creates.map((s) => db.prepare(s)));
+      for (const a of alters) {
+        try {
+          await db.prepare(a).run();
+        } catch (err) {
+          if (!/duplicate column/i.test(String(err?.message ?? err) + String(err?.cause?.message ?? ""))) throw err;
+        }
+      }
+    })().catch((err) => {
       schemaReady = null; // let the next request retry
       throw err;
     });

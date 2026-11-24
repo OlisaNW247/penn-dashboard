@@ -13,6 +13,10 @@ import jsQR from "jsqr";
 import { ideaTests } from "./ideas-suite.mjs";
 import { captureTests } from "./captures-suite.mjs";
 import { installTests } from "./installs-suite.mjs";
+import { schoolsTests } from "./schools-suite.mjs";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const { SITES_ORIGINAL, SITES_EDITED } = process.env;
 const skip = SITES_ORIGINAL && SITES_EDITED ? false : "set SITES_ORIGINAL and SITES_EDITED to run";
@@ -395,6 +399,43 @@ installTests({
   founder: FOUNDER,
   db: () => edited.getD1Database("DB"),
   req: (path, init) => req(edited, path, init),
+});
+
+schoolsTests({
+  test,
+  skip,
+  label: "built file: ",
+  founder: FOUNDER,
+  origin: ORIGIN,
+  db: () => edited.getD1Database("DB"),
+  req: (path, init) => req(edited, path, init),
+});
+
+// The lazy schema adds two columns with ALTER TABLE, which SQLite cannot make
+// idempotent: a second cold start on the same database must still answer.
+test("built file: a second cold start on the same database runs the lazy migrations without failing", { skip }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), "d1-"));
+  const code = async (mf) => {
+    const add = await req(mf, `/f/${FOUNDER}/add`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ name: "Cold Start", school: "uva", contact: "", notes: "" }).toString(),
+    });
+    assert.equal(add.status, 303);
+    return new URL(add.headers.get("location"), "https://x").searchParams.get("created");
+  };
+  const open = () => make(SITES_EDITED, { bindings: { FOUNDER_TOKEN: FOUNDER }, d1Persist: dir });
+  const a = open();
+  const c1 = await code(a);
+  await a.dispose();
+  const b = open();
+  const c2 = await code(b);
+  assert.equal((await req(b, `/a/${c1}/plan.json`)).status, 200);
+  assert.equal((await req(b, `/a/${c2}/plan.json`)).status, 200);
+  const cols = (await (await b.getD1Database("DB")).prepare("PRAGMA table_info(ambassadors)").all()).results.map((r) => r.name);
+  assert.equal(cols.filter((n) => n === "can_invite").length, 1);
+  assert.equal(cols.filter((n) => n === "invited_by").length, 1);
+  await b.dispose();
 });
 
 test("a brand-new database: poster ideas work after a founder add (the lazy schema covers 0002)", { skip }, async () => {
