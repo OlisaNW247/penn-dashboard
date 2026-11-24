@@ -2376,6 +2376,23 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
+**Current on `claude/new-session-b3ylkg` (2026-11-24, `b74e877`: inviting an
+ambassador from the app, 3.5.1 (22), on `v11` `141ac20`): 4507 tests / 473
+suites, all green apart from the one deliberate known issue the line already
+carries (R-M1), `swift test --no-parallel` on the GitHub macOS runner in
+126 s, with the unsigned iOS `xcodebuild`, Deno and the extension suite green
+in the same run (manual run 45326527020).** +16 tests and +5 suites over the
+line's 4491 / 468, all in `AmbassadorTests.swift`: the plan's `invite` key,
+`AmbassadorInvite.body`, the result's decoding, `AmbassadorSchoolSearch`, the
+client's request and status mapping, the model against the fake, and the
+wiring scans. It compiled at the first attempt; the run before it (`d7699c1`,
+45325220674) had one red, the scan that forbids the word Keychain in the
+invite sheet, tripped by the sheet's own comment. Nothing ran on Marco's Mac
+or a phone. The ambassador Worker's own suite (separate, never added to
+these counts): 128 pass and 90 skipped with `npm test`, 90 of 90 with the
+built single-file artifact beside the original site, the rehearsal on the
+real scan backup 28 checks with none failing.
+
 **On `claude/test-sweeper-signin-1cb733` (2026-11-22, the hostile test pass over
 the Sweeper and sign-in work, off the line's `c694ce7`): filtered runs only,
 never the full suite. The 25 new tests / 8 suites of
