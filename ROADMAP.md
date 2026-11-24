@@ -68,8 +68,10 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   schools included. **Left to ship:** Marco or Olisa merges the branch into
   `v11`, runs it on a phone, archives 3.5.1 (22) and submits. Until then no
   phone shows the row, and the founder page is the only place to invite.
-  Unseen: everything on a phone, the founder page's new forms in a real
-  browser, and a real invite on the live site.
+  On Olisa's iPhone since 2026-11-24 ("everything looks good"), and his
+  first real invite, to an ambassador at Case Western, went out the same
+  day. Unseen: the founder page's new forms from here, an invite that
+  creates a brand-new school, and the invited person's sign-in.
 - **Done 2026-11-24, inside the ninth zip (kept for its build record):
   the eighth ambassador site zip, Harvard plus everything in the seventh**
   (2026-11-24, `claude/new-session-b3ylkg`, one commit on `v11`
