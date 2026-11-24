@@ -5777,12 +5777,15 @@ none is a ship line.
   list: the sheet in dark mode and the school search under the keyboard
   are not recorded. **The first real invite was made the same day**, by his
   word minutes after that build: an ambassador at Case Western (the name
-  stays out of this public repo). He did not say whether it came from the
-  phone's "add an ambassador" row or the founder web page, though the
-  build had just gone on; either way the live invite route or the founder
-  form has now created a real row. Not seen from here, because nothing
-  public shows it: the row itself, the new person's sign-in, and an invite
-  that creates a brand-new school. Checked before the deploy: the Swift compiled on the GitHub
+  stays out of this public repo), **from the "add an ambassador" row on his
+  phone**, by his word. So the app's row, the sheet, `POST /a/{code}/invite`
+  on the live site and the Penn default for who may invite have all worked
+  once, for a school that already existed. Not seen from here, because
+  nothing public shows it: the row itself and the new person's sign-in.
+  Still untried anywhere: an invite that creates a brand-new school (he
+  said he would try the University of Chicago next, which is in the app's
+  catalog as `canvas.uchicago.edu`, so its downloads would count). Checked
+  before the deploy: the Swift compiled on the GitHub
   runner at the first attempt and the unsigned iOS build succeeded (Test
   baseline); the Worker's suite, the built file beside the original site and
   the rehearsal on the real scan backup all pass, with the legacy part of
