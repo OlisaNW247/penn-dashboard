@@ -5769,7 +5769,14 @@ none is a ship line.
   would create a real ambassador and nothing here removes one), and the
   founder page's new forms. So the first real invite, from the founder page
   or a 3.5.1 phone, is the live proof. `ROADMAP.md` → Now has what is left
-  to ship. Checked before the deploy: the Swift compiled on the GitHub
+  to ship. **On a phone since 2026-11-24:** Olisa built this branch onto
+  his iPhone with `scripts/build-to-phone.sh` on his own Mac (the cloud
+  session could not reach the Mac: its `penn-dashboard` folder is in the
+  Remote Control list but not offered to cloud sessions) and reported
+  "downloaded everything looks good". That is a general pass, not a ticked
+  list: whether the "add an ambassador" row showed, whether a code was
+  made, and the sheet in dark mode are not recorded. Checked before the
+  deploy: the Swift compiled on the GitHub
   runner at the first attempt and the unsigned iOS build succeeded (Test
   baseline); the Worker's suite, the built file beside the original site and
   the rehearsal on the real scan backup all pass, with the legacy part of
