@@ -61,16 +61,18 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   says so (`plan.invite`), with a sheet that searches the app's own school
   catalog. Who may invite is the server's rule: a Penn ambassador a founder
   added, or anyone a founder switches on; an invited person never inherits
-  it. The invitee needs no update: their code works on 3.5.0. **To ship:**
-  Olisa hands `smooth-sites-update-9-for-chatgpt.zip` to the ChatGPT session
-  (it replaces the eighth and carries Harvard and the seventh's undeployed
-  parts; checks in `sites/CHANGES_FOR_DEPLOYMENT.md`, last section); Marco
-  or Olisa merges the branch into `v11`, runs it on a phone, archives 3.5.1
-  (22) and submits. Until the zip is deployed the app's row never shows,
-  which is the quiet behaviour against an older server. Unseen: everything
-  on a phone, and the founder page's new forms in a real browser.
-- **Deploy the eighth ambassador site zip: Harvard, plus everything in the
-  seventh** (2026-11-24, `claude/new-session-b3ylkg`, one commit on `v11`
+  it. The invitee needs no update: their code works on 3.5.0. **The site
+  half is live since 2026-11-24** (the ninth zip, deployed by the ChatGPT
+  session; read from here the same day, `CLAUDE.md` → Known gaps, top
+  entry), so the founder web page can add a person at any school today, new
+  schools included. **Left to ship:** Marco or Olisa merges the branch into
+  `v11`, runs it on a phone, archives 3.5.1 (22) and submits. Until then no
+  phone shows the row, and the founder page is the only place to invite.
+  Unseen: everything on a phone, the founder page's new forms in a real
+  browser, and a real invite on the live site.
+- **Done 2026-11-24, inside the ninth zip (kept for its build record):
+  the eighth ambassador site zip, Harvard plus everything in the seventh**
+  (2026-11-24, `claude/new-session-b3ylkg`, one commit on `v11`
   `141ac20`). Olisa wants to onboard ambassadors at Case Western and Harvard.
   Case Western is already a school and needs nothing. Harvard was not, so
   `build-sites.mjs` now adds a catalog school the host lacks (the `schools`
@@ -87,8 +89,10 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   `sites/CHANGES_FOR_DEPLOYMENT.md` → "Update, 2026-11-24: Harvard" has the
   checks. `FOUNDER_CONTACTS` is still Marco's to supply. Then Olisa adds both
   ambassadors on the founder page. Not merged into `v11`: Marco's branch.
-- **Ambassador posters: finish the seventh zip** (2026-11-22,
-  `claude/ambassador-posters-f068d6`). Needs the current Sites export from
+- **Ambassador posters: Marco's two "more serious" posters are still
+  owed; the rest of the seventh zip went live on 2026-11-24 inside the
+  ninth** (2026-11-22, `claude/ambassador-posters-f068d6`). As written
+  before the deploy: needs the current Sites export from
   Olisa's ChatGPT session (not on the Mac), then `docs/deploy.md` steps 2
   to 5; the first run of `build-sites.mjs` against the real `imageData`
   decides whether `scripts/lib/add-posters.mjs` read its shape right (it

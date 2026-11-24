@@ -1816,7 +1816,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
      `tabard` and `these-two`, five generic designs) and reach phones only
      through Olisa's deploy. Unseen on a phone: everything in this round.
      **Inviting from the app (2026-11-24, 3.5.1, compiled on the runner,
-     never on a phone; nothing shows until the ninth site zip is deployed).**
+     never on a phone; the ninth site zip that serves it went live the same day,
+     so the row shows on a 3.5.1 build for anyone the server lets invite).**
      Olisa: "a button that generates a new code for a new person at a new
      school", for the founders, with no app update per school. When the
      server's plan carries `invite.allowed` (`AmbassadorPlan.Invite`; who
@@ -5745,9 +5746,30 @@ none is a ship line.
 
 ## Known gaps
 
-- **Inviting from the app and schools without a deploy (2026-11-24) are
-  built, tested off the phone, and live nowhere.** `ROADMAP.md` → Now has
-  what it is and how it ships. Checked: the Swift compiled on the GitHub
+- **Inviting from the app and schools without a deploy (2026-11-24): the
+  site half is live, the app half is in no released build, and no invite has
+  been made on the live site.** The ChatGPT session deployed the ninth zip
+  the same day (its report: Harvard, the five generic posters, invitations
+  and new-school creation, the founders' contact numbers, two gallery
+  designs retired with their printed codes kept; local and live checks
+  passed, counts unchanged, no test records). Read from here right after,
+  GETs only, no scan or `/r/` link opened: `/api/stats` lists 104 rows (19
+  Penn, 17 for each of the five other schools, Harvard last), none below
+  the 2026-11-10 backup, the same two above it as before, every new row 0;
+  `/posters/harvard/{ib,kylie,soccer}.jpg` serve and their QR squares
+  decode to `/scan/harvard/{design}`; `harvard/missed` serves with no code,
+  as designed, and `harvard/jester` is 404; a UVA test ambassador's
+  `plan.json` now carries `links` (all `/r/`, the code in none),
+  `guidance` (`plug`, `sneak`), two `contacts`, the gallery without
+  `tabard` and `these-two` and with the five generic designs, and no
+  `invite` key, which is right for someone who may not invite; the
+  dashboard has the Harvard option; a GET of the invite route is 404,
+  `POST /` 405, an unknown code 404. **Not read:** an inviter's plan (no
+  Penn code is held here, on purpose), the invite route itself (a test POST
+  would create a real ambassador and nothing here removes one), and the
+  founder page's new forms. So the first real invite, from the founder page
+  or a 3.5.1 phone, is the live proof. `ROADMAP.md` → Now has what is left
+  to ship. Checked before the deploy: the Swift compiled on the GitHub
   runner at the first attempt and the unsigned iOS build succeeded (Test
   baseline); the Worker's suite, the built file beside the original site and
   the rehearsal on the real scan backup all pass, with the legacy part of
@@ -5767,8 +5789,9 @@ none is a ship line.
   a founder can mislabel a campus's download count (the founder page's
   schools card can clear or move a host). 3.5.1 (22) is a stamp on this
   branch: whether build 22 is free in App Store Connect was not checked.
-- **Harvard is a school in the ambassador source and not on the live site
-  (2026-11-24).** Olisa asked to onboard ambassadors at Case Western and
+- **Harvard is a school on the live site since 2026-11-24 (it went up
+  inside the ninth zip, the entry above; the eighth was never deployed on
+  its own).** What follows was written before that deploy. Olisa asked to onboard ambassadors at Case Western and
   Harvard. Case Western has been a school since the first deploy. Harvard
   needs the eighth zip (`ROADMAP.md` → Now), which also carries Marco's
   seventh (five generic posters, `tabard` and `these-two` retired, `links`,
