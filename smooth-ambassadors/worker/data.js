@@ -1,7 +1,14 @@
 // D1 queries for the ambassador system. Everything that touches the roster
 // lives here so it is easy to audit what is private.
 
-import { SCHOOLS, CHANNELS, designsFor, scanKey } from "./catalog.js";
+import { CHANNELS } from "./catalog.js";
+import {
+  defaultSchools,
+  INVITE_DAILY_LIMIT,
+  INVITED_TOTAL_LIMIT,
+  SCHOOLS_DAILY_LIMIT,
+  SCHOOLS_TOTAL_LIMIT,
+} from "./schools.js";
 
 const ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"; // no 0/o/1/l/i
 
@@ -50,8 +57,8 @@ export async function listAmbassadors(env) {
   return results;
 }
 
-export async function createAmbassador(env, { name, school, contact, notes }) {
-  if (typeof school !== "string" || !Object.hasOwn(SCHOOLS, school)) throw new Error("unknown school");
+export async function createAmbassador(env, { name, school, contact, notes }, S = defaultSchools()) {
+  if (typeof school !== "string" || !S.has(school)) throw new Error("unknown school");
   name = (name || "").trim().slice(0, 80);
   if (!name) throw new Error("name required");
   // The code starts with the school (`uva-7k3m9x2p4q8w`), so a founder reading a
@@ -73,13 +80,100 @@ export async function createAmbassador(env, { name, school, contact, notes }) {
   return ambassadorByToken(env, token);
 }
 
-export async function updateAmbassador(env, id, fields) {
+// ---- schools without a deploy, and invites (migration 0005).
+//
+// Who may invite: can_invite 1 yes, 0 no, NULL yes only for a UPenn ambassador
+// (the founders are the Penn ambassadors). Never while paused or left.
+export function canInvite(amb) {
+  if (!amb || amb.status === "paused" || amb.status === "left") return false;
+  if (amb.can_invite === 1) return true;
+  if (amb.can_invite === 0) return false;
+  return amb.school === "upenn";
+}
+
+const dayStartIso = () => new Date().toISOString().slice(0, 10) + "T00:00:00.000Z";
+
+export async function invitesToday(env, ambId) {
+  const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM ambassadors WHERE invited_by = ?1 AND created_at >= ?2")
+    .bind(ambId, dayStartIso())
+    .first();
+  return row?.n ?? 0;
+}
+
+export async function setCanInvite(env, id, value) {
+  // "1" yes, "0" no, anything else back to the default (NULL).
+  const v = value === "1" ? 1 : value === "0" ? 0 : null;
+  await env.DB.prepare("UPDATE ambassadors SET can_invite = ?2 WHERE id = ?1").bind(id, v).run();
+}
+
+export async function renameSchool(env, id, name) {
+  await env.DB.prepare("UPDATE schools SET name = ?2 WHERE id = ?1").bind(id, name).run();
+}
+
+// Creates an ambassador, and the school first when `plan.isNew`. Both inserts
+// are conditional statements in ONE batch (a D1 batch is a transaction, and
+// the second statement sees the first's row). The ambassador statement carries
+// the same inviter limits as the school statement and also requires the
+// school's row to exist, so there are only two ways a school appears without
+// an ambassador: neither can happen, because (1) a limit that stops the
+// ambassador also stopped the school, and (2) a school refused by its own limit
+// leaves nothing for the ambassador's EXISTS to find. The limits are inside the
+// statements, never a count read first: twenty concurrent requests all read the
+// same count before any writes (see addIdea).
+// Returns { amb, createdSchool } or { error: "limit" }.
+export async function createWithSchool(env, { name, contact = "", notes = "", plan, inviterId = null }, S = defaultSchools()) {
+  name = (name || "").trim().slice(0, 80);
+  if (!name) throw new Error("name required");
+  const token = `${plan.id}-${newToken()}`;
+  const ref = newToken(10);
+  const day = dayStartIso();
+  const inviter = (q) =>
+    inviterId == null
+      ? []
+      : [
+          `(SELECT COUNT(*) FROM ambassadors WHERE invited_by = ${q(inviterId)} AND created_at >= ${q(day)}) < ${q(INVITE_DAILY_LIMIT)}`,
+          `(SELECT COUNT(*) FROM ambassadors WHERE invited_by IS NOT NULL) < ${q(INVITED_TOTAL_LIMIT)}`,
+        ];
+  const statements = [];
+  if (plan.isNew) {
+    const b = [];
+    const q = (v) => (b.push(v), `?${b.length}`);
+    const conds = [
+      `NOT EXISTS (SELECT 1 FROM schools WHERE id = ${q(plan.id)})`,
+      `(SELECT COUNT(*) FROM schools WHERE created_ts >= ${q(day)}) < ${q(SCHOOLS_DAILY_LIMIT)}`,
+      `(SELECT COUNT(*) FROM schools) < ${q(SCHOOLS_TOTAL_LIMIT)}`,
+      ...(plan.host ? [`NOT EXISTS (SELECT 1 FROM schools WHERE canvas_host = ${q(plan.host)})`] : []),
+      ...inviter(q),
+    ];
+    const cols = [q(plan.id), q(plan.name), q(plan.host ?? null), q(new Date().toISOString()), q(inviterId ?? null)];
+    statements.push(
+      env.DB.prepare(`INSERT INTO schools (id, name, canvas_host, created_ts, created_by) SELECT ${cols.join(", ")} WHERE ${conds.join(" AND ")}`).bind(...b),
+    );
+  }
+  {
+    const b = [];
+    const q = (v) => (b.push(v), `?${b.length}`);
+    const cols = [q(token), q(ref), q(name), q(plan.id), q((contact || "").trim().slice(0, 120)), q((notes || "").trim().slice(0, 500)), q(inviterId ?? null)];
+    const conds = [...inviter(q), ...(S.isDynamic(plan.id) || plan.isNew ? [`EXISTS (SELECT 1 FROM schools WHERE id = ${q(plan.id)})`] : [])];
+    statements.push(
+      env.DB.prepare(
+        `INSERT INTO ambassadors (token, ref, name, school, contact, notes, invited_by) SELECT ${cols.join(", ")}${conds.length ? ` WHERE ${conds.join(" AND ")}` : ""}`,
+      ).bind(...b),
+    );
+  }
+  const results = await env.DB.batch(statements);
+  const ambChanges = results[results.length - 1].meta?.changes ?? 0;
+  if (!ambChanges) return { error: "limit" };
+  return { amb: await ambassadorByToken(env, token), createdSchool: plan.isNew && (results[0].meta?.changes ?? 0) > 0 };
+}
+
+export async function updateAmbassador(env, id, fields, S = defaultSchools()) {
   const allowed = ["name", "contact", "status", "title", "notes", "paused_until", "school"];
   const sets = [];
   const vals = [];
   for (const k of allowed) {
     if (fields[k] !== undefined) {
-      if (k === "school" && !Object.hasOwn(SCHOOLS, fields[k])) continue;
+      if (k === "school" && !S.has(fields[k])) continue;
       if (k === "status" && !["invited", "active", "paused", "left"].includes(fields[k])) continue;
       sets.push(`${k} = ?${vals.length + 1}`);
       vals.push(fields[k] === "" && k === "paused_until" ? null : String(fields[k]).slice(0, 500));
@@ -527,8 +621,8 @@ const placeholders = (n, from = 1) => Array.from({ length: n }, (_, i) => `?${i 
 // { total, recent } for one school: total is every kind and every day, recent
 // is kind 'new' within the last `days` UTC days. null when the school has no
 // mapped host, so a page can hide the number instead of showing a false zero.
-export async function installTotals(env, school, days = 14, now = new Date()) {
-  const hosts = SCHOOLS[school]?.canvasHosts;
+export async function installTotals(env, school, days = 14, now = new Date(), S = defaultSchools()) {
+  const hosts = S.canvasHosts(school);
   if (!hosts?.length) return null;
   const since = utcDay(new Date(now.getTime() - days * 86400000));
   const row = await env.DB.prepare(
@@ -541,18 +635,16 @@ export async function installTotals(env, school, days = 14, now = new Date()) {
   return { total: row?.total ?? 0, recent: row?.recent ?? 0 };
 }
 
-export async function installsBySchool(env, days = 14, now = new Date()) {
+export async function installsBySchool(env, days = 14, now = new Date(), S = defaultSchools()) {
   const out = {};
-  for (const school of Object.keys(SCHOOLS)) out[school] = await installTotals(env, school, days, now);
+  for (const school of S.ids()) out[school] = await installTotals(env, school, days, now, S);
   return out;
 }
 
-const mappedHosts = () => Object.values(SCHOOLS).flatMap((s) => s.canvasHosts ?? []);
-
 // Hosts no school maps to, most installs first: what a founder reads to decide
 // which school to add next.
-export async function installsUnmapped(env, limit = 30, days = 14, now = new Date()) {
-  const mapped = mappedHosts();
+export async function installsUnmapped(env, limit = 30, days = 14, now = new Date(), S = defaultSchools()) {
+  const mapped = S.mappedHosts();
   const since = utcDay(new Date(now.getTime() - days * 86400000));
   const { results } = await env.DB.prepare(
     `SELECT host, SUM(n) AS total, SUM(CASE WHEN kind = 'new' AND day >= ?1 THEN n ELSE 0 END) AS recent
@@ -605,7 +697,7 @@ export async function ambassadorStats(env, amb, days = 14) {
 }
 
 // Public, school level only. No names, no tokens, no contacts.
-export async function schoolLeaderboard(env, days = 14) {
+export async function schoolLeaderboard(env, days = 14, S = defaultSchools()) {
   const since = sinceIso(days);
   const [totals, recent, ambLinks, ambCount] = await env.DB.batch([
     env.DB.prepare("SELECT poster, total FROM scans"),
@@ -621,8 +713,8 @@ export async function schoolLeaderboard(env, days = 14) {
   ]);
   const schoolOf = (key) => (key.includes("/") ? key.split("/")[0] : "upenn");
   const out = {};
-  for (const k of Object.keys(SCHOOLS))
-    out[k] = { school: k, name: SCHOOLS[k].name, total: 0, recent: 0, linkOpensRecent: 0, ambassadors: 0 };
+  for (const k of S.ids())
+    out[k] = { school: k, name: S.get(k).name, total: 0, recent: 0, linkOpensRecent: 0, ambassadors: 0 };
   for (const r of totals.results) if (out[schoolOf(r.poster)]) out[schoolOf(r.poster)].total += r.total;
   for (const r of recent.results) if (out[schoolOf(r.poster)]) out[schoolOf(r.poster)].recent += r.n;
   for (const r of ambLinks.results) if (out[r.school]) out[r.school].linkOpensRecent = r.n;
@@ -633,7 +725,7 @@ export async function schoolLeaderboard(env, days = 14) {
 }
 
 // Founder-only: performance by school, design and ambassador.
-export async function founderStats(env, days = 14) {
+export async function founderStats(env, days = 14, S = defaultSchools()) {
   const since = sinceIso(days);
   const [ambs, hits, acts, fb, rems, designRecent, designTotals, checks] =
     await env.DB.batch([
@@ -698,9 +790,9 @@ export async function founderStats(env, days = 14) {
   const recentMap = Object.fromEntries(designRecent.results.map((r) => [r.poster, r.n]));
   const totalMap = Object.fromEntries(designTotals.results.map((r) => [r.poster, r.total]));
   const designs = [];
-  for (const school of Object.keys(SCHOOLS))
-    for (const d of designsFor(school)) {
-      const key = scanKey(school, d);
+  for (const school of S.ids())
+    for (const d of S.designsFor(school)) {
+      const key = S.scanKey(school, d);
       designs.push({ school, design: d, key, recent: recentMap[key] ?? 0, total: totalMap[key] ?? 0 });
     }
   designs.sort((a, b) => b.recent - a.recent || b.total - a.total);
@@ -714,9 +806,9 @@ export async function founderStats(env, days = 14) {
     captures: await listCaptures(env),
     suggestions: await listSuggestions(env),
     designs,
-    leaderboard: await schoolLeaderboard(env, days),
-    installsBySchool: await installsBySchool(env, days),
-    installsUnmapped: await installsUnmapped(env, 30, days),
+    leaderboard: await schoolLeaderboard(env, days, S),
+    installsBySchool: await installsBySchool(env, days, new Date(), S),
+    installsUnmapped: await installsUnmapped(env, 30, days, new Date(), S),
   };
 }
 

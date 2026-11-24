@@ -49,6 +49,13 @@ export const DESIGNS = [
   "ask",
 ];
 
+// The designs a school created at request time gets (a "dynamic" school, table
+// `schools`): the five generic posters of 2026-11-22, which carry a dashed slot
+// for a QR sticker and are the same JPEG for every school. A dynamic school has
+// no pictures of its own (those are built into the host file), so it borrows
+// these. Never printed for one school only, so the list may only grow.
+export const GENERIC = ["missed", "moved", "one-list", "sweeper", "ask"];
+
 // UPenn-only designs. On the live site they sit right after best-actor.
 export const UPENN_ONLY = ["regista", "jester"];
 

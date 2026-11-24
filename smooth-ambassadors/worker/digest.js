@@ -1,5 +1,5 @@
 // Text the founders send from their own phone. No automated texting.
-import { SCHOOLS } from "./catalog.js";
+import { defaultSchools } from "./schools.js";
 import moments from "./templates/moments.json";
 
 const ACTIONS = [
@@ -31,9 +31,10 @@ export function ambassadorLinks(origin, amb) {
 }
 
 // Two-week digest for one ambassador, built from real numbers.
-export function digestText({ amb, origin, leaderboard, week = 0, newPoster = null }) {
+export function digestText({ amb, origin, leaderboard, week = 0, newPoster = null, schools = null }) {
+  const S = schools ?? defaultSchools();
   const links = ambassadorLinks(origin, amb);
-  const school = SCHOOLS[amb.school]?.name ?? amb.school;
+  const school = S.get(amb.school)?.name ?? amb.school;
   const me = leaderboard.schools.find((s) => s.school === amb.school);
   const ahead = leaderboard.schools.find((s) => s.rank === (me?.rank ?? 1) - 1);
   const behind = leaderboard.schools.find((s) => s.rank === (me?.rank ?? 1) + 1);
@@ -56,23 +57,25 @@ export function digestText({ amb, origin, leaderboard, week = 0, newPoster = nul
   return parts.join(" ");
 }
 
-export function welcomeText({ amb, origin }) {
+export function welcomeText({ amb, origin, schools = null, schoolName = null }) {
   const links = ambassadorLinks(origin, amb);
+  const S = schools ?? defaultSchools();
   return [
-    `hey ${firstName(amb.name)}! thanks for helping with smooth at ${(SCHOOLS[amb.school]?.name ?? amb.school).toLowerCase()}.`,
+    `hey ${firstName(amb.name)}! thanks for helping with smooth at ${(schoolName ?? S.get(amb.school)?.name ?? amb.school).toLowerCase()}.`,
     `here's your page, it's private to you, no login: ${links.page}`,
     `it has the messages to copy, your school's posters, and your own numbers. the whole thing is 15 minutes if you want it to be.`,
     `if it ever feels like a chore, tell me and we'll dial it down. no pressure ever.`,
   ].join(" ");
 }
 
-export function momentTexts({ amb, origin, key }) {
+export function momentTexts({ amb, origin, key, schools = null }) {
+  const S = schools ?? defaultSchools();
   const m = moments.moments.find((x) => x.key === key);
   if (!m) return null;
   const links = ambassadorLinks(origin, amb);
   const vars = {
     name: firstName(amb.name),
-    school: (SCHOOLS[amb.school]?.name ?? amb.school).toLowerCase(),
+    school: (S.get(amb.school)?.name ?? amb.school).toLowerCase(),
     link: links.gc,
     page: links.page,
   };

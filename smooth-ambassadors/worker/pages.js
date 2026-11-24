@@ -1,5 +1,7 @@
 // Page rendering for ambassadors (/a/{token}) and founders (/f/{secret}).
-import { SCHOOLS, CHANNELS, offeredDesignsFor, posterImagePath, posterName, scanKey } from "./catalog.js";
+import { CHANNELS, posterName } from "./catalog.js";
+import { defaultSchools } from "./schools.js";
+import { canInvite } from "./data.js";
 import { layout, esc, attr } from "./html.js";
 import { isPhone, phoneForSms, IDEA_TOTAL_LIMIT } from "./data.js";
 import { ambassadorLinks, digestText, welcomeText, momentTexts, moments, firstName } from "./digest.js";
@@ -175,13 +177,15 @@ export function ambassadorPage({
   captures = null,
   origin,
   flash,
+  schools = null,
 }) {
-  const school = SCHOOLS[amb.school];
+  const S = schools ?? defaultSchools();
+  const school = S.get(amb.school);
   const schoolLower = school.name.toLowerCase();
   const links = ambassadorLinks(origin, amb);
   const base = `/a/${amb.token}`;
   const vars = { school: schoolLower, name: firstName(amb.name) };
-  const designs = offeredDesignsFor(amb.school);
+  const designs = S.offeredDesignsFor(amb.school);
   const recentByKey = Object.fromEntries(stats.byKeyRecent.map((r) => [`${r.kind}:${r.key}`, r.n]));
   const allByKey = Object.fromEntries(stats.byKeyAll.map((r) => [`${r.kind}:${r.key}`, r.n]));
   const dashboardHref = `/?school=${encodeURIComponent(amb.school)}`;
@@ -205,8 +209,8 @@ export function ambassadorPage({
 
   const postersHtml = designs
     .map((d) => {
-      const img = posterImagePath(amb.school, d);
-      const scans = designScans[scanKey(amb.school, d)] ?? 0;
+      const img = S.posterImagePath(amb.school, d);
+      const scans = designScans[S.scanKey(amb.school, d)] ?? 0;
       return `<div class="pcard">
         <img loading="lazy" src="${attr(img)}" alt="${attr(posterName(d))} poster">
         <div class="pb">
@@ -297,7 +301,7 @@ export function ambassadorPage({
 
     <nav class="jumps noprint" aria-label="where things are">
       <a class="jump t-tomato" href="#posters"><span class="gl">${ICON_POSTERS}</span><b>all posters</b><span>every design, on this page</span></a>
-      <a class="jump t-teal" href="${attr(dashboardHref)}" target="_blank" rel="noopener"><em>new tab</em><span class="gl">${ICON_DASH}</span><b>scan dashboard</b><span>live counts, every school</span></a>
+      ${S.isDynamic(amb.school) ? "" : `<a class="jump t-teal" href="${attr(dashboardHref)}" target="_blank" rel="noopener"><em>new tab</em><span class="gl">${ICON_DASH}</span><b>scan dashboard</b><span>live counts, every school</span></a>`}
       <a class="jump t-marigold" href="#idea"><span class="gl">${ICON_IDEA}</span><b>poster idea</b><span>send us a design</span></a>
     </nav>
     <nav class="tabs noprint">
@@ -314,7 +318,7 @@ export function ambassadorPage({
         <div class="stat t-marigold"><b>${stats.drops}</b><span>posters you've put up</span></div>
         <div class="stat t-grape"><b>${stats.posts}</b><span>posts you've logged</span></div>
       </div>
-      <p class="small muted">opens are taps, repeats included, not people. downloads are students who connected canvas, counted since the app update that added the count. <a href="${attr(dashboardHref)}" target="_blank" rel="noopener">${esc(schoolLower)} scan dashboard (new tab)</a></p>
+      <p class="small muted">opens are taps, repeats included, not people. downloads are students who connected canvas, counted since the app update that added the count. ${S.isDynamic(amb.school) ? "" : `<a href="${attr(dashboardHref)}" target="_blank" rel="noopener">${esc(schoolLower)} scan dashboard (new tab)</a>`}</p>
       <p class="small muted">for dms and group chats: <button class="small" data-copy="${attr(links.share("dm"))}">copy my link</button></p>
     </section>
 
@@ -414,9 +418,10 @@ export function ambassadorPage({
   return layout({ title: `smooth · ${firstName(amb.name)}`, body, script, who: `${amb.name} · ${schoolLower}` });
 }
 
-export function stickersPage({ amb, origin, qrSvg }) {
+export function stickersPage({ amb, origin, qrSvg, schools = null }) {
+  const S = schools ?? defaultSchools();
   const links = ambassadorLinks(origin, amb);
-  const designs = offeredDesignsFor(amb.school);
+  const designs = S.offeredDesignsFor(amb.school);
   const cards = designs
     .map(
       (d) => `<div class="card" style="text-align:center;padding:8px;margin:0">
@@ -430,15 +435,17 @@ export function stickersPage({ amb, origin, qrSvg }) {
     <p class="noprint"><a href=".">back to your page</a></p>
     <h1>your qr stickers</h1>
     <section class="sec t-tomato noprint"><h2>how it works</h2>
-      <p class="small">print this page, cut them out, stick one over the code on a poster or next to it. scans count for ${esc(SCHOOLS[amb.school].name.toLowerCase())} and for you.</p>
+      <p class="small">print this page, cut them out, stick one over the code on a poster or next to it. scans count for ${esc(S.get(amb.school).name.toLowerCase())} and for you.</p>
       <p><button onclick="print()">print this sheet</button></p></section>
     <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(110px,1fr))">${cards}</div>`;
-  return layout({ title: "smooth · stickers", body, who: `${amb.name} · ${SCHOOLS[amb.school].name.toLowerCase()}` });
+  return layout({ title: "smooth · stickers", body, who: `${amb.name} · ${S.get(amb.school).name.toLowerCase()}` });
 }
 
 // ------------------------------------------------------------------- founder
 
-export function founderPage({ stats, origin, secret, flash, created }) {
+export function founderPage({ stats, origin, secret, flash, created, schools = null }) {
+  const S = schools ?? defaultSchools();
+  const nm = (id) => S.get(id)?.name ?? id;
   const base = `/f/${secret}`;
   const lb = stats.leaderboard;
   const suggestions = stats.suggestions ?? [];
@@ -457,24 +464,26 @@ export function founderPage({ stats, origin, secret, flash, created }) {
 
   const createdHtml = created
     ? `<div class="card">
-        <h3>added ${esc(created.name)} <span class="muted">(${esc(SCHOOLS[created.school].name)})</span></h3>
+        <h3>added ${esc(created.name)} <span class="muted">(${esc(nm(created.school))})</span></h3>
         <p class="small">their private page: <a href="${attr(ambassadorLinks(origin, created).page)}">${esc(ambassadorLinks(origin, created).page)}</a></p>
-        <p class="msg">${esc(welcomeText({ amb: created, origin }))}</p>
-        <p>${sendButton(created.contact, welcomeText({ amb: created, origin }), "text the welcome")}
+        <p class="msg">${esc(welcomeText({ amb: created, origin, schools: S }))}</p>
+        <p>${sendButton(created.contact, welcomeText({ amb: created, origin, schools: S }), "text the welcome")}
         <form method="post" action="${base}/reminder" style="display:inline"><input type="hidden" name="id" value="${created.id}"><input type="hidden" name="kind" value="welcome"><button class="small ghost">mark sent</button></form></p>
       </div>`
     : "";
 
+  const nameById = new Map(stats.ambassadors.map((a) => [a.id, a.name]));
   const rosterRows = stats.ambassadors
     .map(
       (a) => `<details class="card">
-        <summary>${esc(a.name)} <span class="muted">· ${esc(SCHOOLS[a.school]?.name ?? a.school)} · ${esc(a.status)}${a.paused ? " · paused" : ""}${a.skipDigest && !a.paused ? " · quiet (2 unanswered)" : ""}</span>
+        <summary>${esc(a.name)} <span class="muted">· ${esc(nm(a.school))} · ${esc(a.status)}${a.paused ? " · paused" : ""}${a.skipDigest && !a.paused ? " · quiet (2 unanswered)" : ""}</span>
           <span class="small muted" style="float:right">${a.linkOpensRecent + a.posterOpensRecent} opens/${stats.days}d</span></summary>
         <table class="small">
           <tr><td>contact</td><td>${esc(a.contact || "—")}</td></tr>
           <tr><td>page</td><td><a href="${attr(ambassadorLinks(origin, a).page)}">open</a> · <button class="small ghost" data-copy="${attr(ambassadorLinks(origin, a).page)}">copy link</button></td></tr>
           <tr><td>opens</td><td>${a.linkOpens} links · ${a.posterOpens} stickers (${a.linkOpensRecent + a.posterOpensRecent} in ${stats.days}d)</td></tr>
           <tr><td>did</td><td>${a.drops} posters · ${a.posts} posts · last ${esc(ago(a.lastActivity))}</td></tr>
+          <tr><td>invites</td><td>${canInvite(a) ? "may invite" : "may not invite"}${a.can_invite == null ? " (default)" : ""}${a.invited_by ? ` · invited by ${esc(nameById.get(a.invited_by) ?? "someone")}` : ""}</td></tr>
           <tr><td>last reminder</td><td>${a.lastReminder ? `${esc(a.lastReminder.kind)} ${esc(ago(a.lastReminder.ts))}${a.lastReminder.replied ? " · replied" : ""}` : "none"}</td></tr>
         </table>
         <form method="post" action="${base}/update" class="row small">
@@ -483,6 +492,11 @@ export function founderPage({ stats, origin, secret, flash, created }) {
           <input name="title" value="${attr(a.title)}" aria-label="title" placeholder="title">
           <input name="contact" value="${attr(a.contact)}" aria-label="contact" placeholder="contact">
           <input name="notes" value="${attr(a.notes)}" aria-label="notes" placeholder="notes">
+          <button class="small ghost">save</button>
+        </form>
+        <form method="post" action="${base}/can-invite" class="row small">
+          <input type="hidden" name="id" value="${a.id}">
+          <select name="value" aria-label="may invite people">${[["", "invite: default (upenn yes, others no)"], ["1", "may invite"], ["0", "may not invite"]].map(([v, l]) => `<option value="${v}" ${String(a.can_invite ?? "") === v ? "selected" : ""}>${l}</option>`).join("")}</select>
           <button class="small ghost">save</button>
         </form>
         <form method="post" action="${base}/replied" class="row small"><input type="hidden" name="id" value="${a.id}"><button class="small ghost">they replied</button></form>
@@ -494,7 +508,7 @@ export function founderPage({ stats, origin, secret, flash, created }) {
   const digestRows = stats.ambassadors
     .filter((a) => a.status !== "left")
     .map((a, i) => {
-      const text = digestText({ amb: a, origin, leaderboard: lb, week: Math.floor(Date.now() / (14 * 86400000)) + i });
+      const text = digestText({ amb: a, origin, schools: S, leaderboard: lb, week: Math.floor(Date.now() / (14 * 86400000)) + i });
       return `<div class="card ${a.skipDigest ? "muted" : ""}">
         <div class="row" style="justify-content:space-between"><strong>${esc(a.name)}</strong><span class="small">${a.skipDigest ? (a.paused ? "paused, skip" : "quiet after 2 unanswered, skip until a campus moment") : ""}</span></div>
         <p class="msg small">${esc(text)}</p>
@@ -510,7 +524,7 @@ export function founderPage({ stats, origin, secret, flash, created }) {
     .map((a) => {
       const id = `m-${a.id}`;
       return `<div class="card" data-moment-card data-id="${a.id}" data-name="${attr(a.name)}">
-        <strong>${esc(a.name)}</strong> <span class="muted small">${esc(SCHOOLS[a.school]?.name ?? "")}</span>
+        <strong>${esc(a.name)}</strong> <span class="muted small">${esc(S.get(a.school)?.name ?? "")}</span>
         <p class="msg small" id="${id}"></p>
         <p><span data-send></span>
         <form method="post" action="${base}/reminder" style="display:inline"><input type="hidden" name="id" value="${a.id}"><input type="hidden" name="kind" value="" data-kind><button class="small ghost">mark sent</button></form></p>
@@ -521,7 +535,7 @@ export function founderPage({ stats, origin, secret, flash, created }) {
   for (const a of stats.ambassadors)
     momentData[a.id] = Object.fromEntries(
       moments.moments.map((m) => {
-        const t = momentTexts({ amb: a, origin, key: m.key });
+        const t = momentTexts({ amb: a, origin, schools: S, key: m.key });
         return [m.key, { text: t.combined, sms: smsLink(a.contact, t.combined) }];
       }),
     );
@@ -529,7 +543,7 @@ export function founderPage({ stats, origin, secret, flash, created }) {
   const feedbackHtml = stats.feedback.length
     ? stats.feedback
         .map(
-          (f) => `<div class="card ${f.seen ? "muted" : ""}"><p class="small muted">${esc(f.name)} · ${esc(SCHOOLS[f.school]?.name ?? "")} · ${esc(ago(f.ts))}</p><p>${esc(f.body)}</p>
+          (f) => `<div class="card ${f.seen ? "muted" : ""}"><p class="small muted">${esc(f.name)} · ${esc(S.get(f.school)?.name ?? "")} · ${esc(ago(f.ts))}</p><p>${esc(f.body)}</p>
           ${f.seen ? "" : `<form method="post" action="${base}/feedback-seen"><input type="hidden" name="id" value="${f.id}"><button class="small ghost">seen</button></form>`}</div>`,
         )
         .join("")
@@ -540,7 +554,7 @@ export function founderPage({ stats, origin, secret, flash, created }) {
         .slice(0, 40)
         .map(
           (a) =>
-            `<tr><td>${esc(a.name)} <span class="muted">${esc(SCHOOLS[a.school]?.name ?? "")}</span></td><td>${esc(a.kind === "drop" ? `${a.copies} × ${a.design}` : `post · ${channelName(a.channel)}`)}${a.place ? ` <span class="muted">· ${esc(a.place)}</span>` : ""}</td><td class="num muted">${esc(ago(a.ts))}</td></tr>`,
+            `<tr><td>${esc(a.name)} <span class="muted">${esc(S.get(a.school)?.name ?? "")}</span></td><td>${esc(a.kind === "drop" ? `${a.copies} × ${a.design}` : `post · ${channelName(a.channel)}`)}${a.place ? ` <span class="muted">· ${esc(a.place)}</span>` : ""}</td><td class="num muted">${esc(ago(a.ts))}</td></tr>`,
         )
         .join("")}</table>`
     : `<p class="muted">nothing logged yet.</p>`;
@@ -550,7 +564,7 @@ export function founderPage({ stats, origin, secret, flash, created }) {
     ? stats.ideas
         .map(
           (i) => `<div class="card ${i.seenAt ? "muted" : ""}">
-          <p class="small muted mono">${esc(i.ambassador)} · ${esc(SCHOOLS[i.school]?.name ?? i.school)} · ${esc(ago(i.ts))}${i.seenAt ? " · seen" : ""}</p>
+          <p class="small muted mono">${esc(i.ambassador)} · ${esc(nm(i.school))} · ${esc(ago(i.ts))}${i.seenAt ? " · seen" : ""}</p>
           ${i.note ? `<p class="msg">${esc(i.note)}</p>` : ""}
           ${i.hasImage ? `<a href="${base}/idea/${i.id}" target="_blank" rel="noopener"><img class="thumb" loading="lazy" src="${base}/idea/${i.id}" alt="poster idea from ${attr(i.ambassador)}"></a>` : ""}
           <div class="row">
@@ -583,7 +597,7 @@ export function founderPage({ stats, origin, secret, flash, created }) {
           const hidden = `<input type="hidden" name="amb" value="${c.ambassadorId}"><input type="hidden" name="batch" value="${attr(c.batch)}">`;
           const unseen = b.frames.some((x) => !x.seenAt);
           return `<div class="card ${unseen ? "" : "muted"}">
-          <p class="small muted mono">${esc(c.ambassador)} · ${esc(SCHOOLS[c.school]?.name ?? c.school)} · ${stamp(c.ts)} · ${b.frames.length} frame${b.frames.length === 1 ? "" : "s"}${unseen ? "" : " · seen"}</p>
+          <p class="small muted mono">${esc(c.ambassador)} · ${esc(nm(c.school))} · ${stamp(c.ts)} · ${b.frames.length} frame${b.frames.length === 1 ? "" : "s"}${unseen ? "" : " · seen"}</p>
           <div>${[...b.frames].sort((x, y) => x.seq - y.seq).map(thumb).join("")}</div>
           <form method="post" action="${base}/suggest" class="small">
             <input type="hidden" name="id" value="${c.ambassadorId}">
@@ -615,7 +629,7 @@ export function founderPage({ stats, origin, secret, flash, created }) {
     ? `${styleTable}${resultRows
         .map(
           (r) => `<div class="card">
-        <p class="small mono">${esc(r.ambassador)} · ${esc(SCHOOLS[r.school]?.name ?? r.school)} · ${stamp(r.ts)}</p>
+        <p class="small mono">${esc(r.ambassador)} · ${esc(nm(r.school))} · ${stamp(r.ts)}</p>
         <p class="small">${esc(r.platform)} · ${esc(r.style)} · <b>${r.upvotes ?? "—"}</b> upvotes · <b>${r.views ?? "—"}</b> views</p>
         ${r.note ? `<p class="msg">${esc(r.note)}</p>` : ""}
         <div>${thumb(r)}</div>
@@ -662,11 +676,11 @@ export function founderPage({ stats, origin, secret, flash, created }) {
     </div>
     <details><summary>by design</summary>
       <table class="small"><tr><th>school</th><th>design</th><th class="num">${stats.days}d</th><th class="num">total</th></tr>
-      ${stats.designs.filter((d) => d.total || d.recent).map((d) => `<tr><td>${esc(SCHOOLS[d.school].name)}</td><td>${esc(d.design)}</td><td class="num">${d.recent}</td><td class="num">${d.total}</td></tr>`).join("")}
+      ${stats.designs.filter((d) => d.total || d.recent).map((d) => `<tr><td>${esc(nm(d.school))}</td><td>${esc(d.design)}</td><td class="num">${d.recent}</td><td class="num">${d.total}</td></tr>`).join("")}
       </table></details>
     <details><summary>by ambassador</summary>
       <table class="small"><tr><th>name</th><th>school</th><th class="num">opens ${stats.days}d</th><th class="num">all</th><th class="num">posters</th><th class="num">posts</th></tr>
-      ${[...stats.ambassadors].sort((a, b) => b.linkOpensRecent + b.posterOpensRecent - (a.linkOpensRecent + a.posterOpensRecent)).map((a) => `<tr><td>${esc(a.name)}</td><td>${esc(SCHOOLS[a.school]?.name ?? "")}</td><td class="num">${a.linkOpensRecent + a.posterOpensRecent}</td><td class="num">${a.linkOpens + a.posterOpens}</td><td class="num">${a.drops}</td><td class="num">${a.posts}</td></tr>`).join("")}
+      ${[...stats.ambassadors].sort((a, b) => b.linkOpensRecent + b.posterOpensRecent - (a.linkOpensRecent + a.posterOpensRecent)).map((a) => `<tr><td>${esc(a.name)}</td><td>${esc(S.get(a.school)?.name ?? "")}</td><td class="num">${a.linkOpensRecent + a.posterOpensRecent}</td><td class="num">${a.linkOpens + a.posterOpens}</td><td class="num">${a.drops}</td><td class="num">${a.posts}</td></tr>`).join("")}
       </table></details>
     </section>
 
@@ -677,11 +691,21 @@ export function founderPage({ stats, origin, secret, flash, created }) {
     <section class="sec t-cobalt"><h2 id="add">add an ambassador</h2>
     <form method="post" action="${base}/add" class="card">
       <label>name</label><input name="name" required maxlength="80" autocomplete="off">
-      <label>school</label><select name="school">${Object.entries(SCHOOLS).map(([k, s]) => `<option value="${attr(k)}">${esc(s.name)}</option>`).join("")}</select>
+      <label>school</label><select name="school">${S.list().map((x) => `<option value="${attr(x.id)}">${esc(x.name)}</option>`).join("")}<option value="__new">new school…</option></select>
+      <label>new school (only if not in the list)</label><input name="schoolName" maxlength="60" autocomplete="off" placeholder="school name">
+      <label>its canvas host (optional)</label><input name="schoolHost" maxlength="100" autocomplete="off" placeholder="canvas.example.edu" inputmode="url">
       <label>contact (phone is best, enables one-tap texts)</label><input name="contact" maxlength="120" autocomplete="off" inputmode="tel">
       <label>notes (optional)</label><input name="notes" maxlength="500" autocomplete="off">
       <p><button>add and get their link</button></p>
     </form>
+    </section>
+
+    <section class="sec t-teal"><h2 id="schools">schools made here <span class="muted">${S.dynamic.length}</span></h2>
+    ${S.dynamic.length ? S.dynamic.map((d) => `<div class="card"><form method="post" action="${base}/school-rename" class="row small">
+        <input type="hidden" name="school" value="${attr(d.id)}">
+        <input name="name" value="${attr(d.name)}" maxlength="60" aria-label="school name" required>
+        <span class="muted mono">${esc(d.id)} · ${esc(d.host ?? "no canvas host")} · ${stats.ambassadors.filter((a) => a.school === d.id).length} ambassadors</span>
+        <button class="small ghost">rename</button></form></div>`).join("") : `<p class="muted small">none yet. a school made from the add form above, or by an ambassador who invites, shows up here. its id never changes.</p>`}
     </section>
 
     <section class="sec t-grape"><h2 id="digest">two-week digest</h2>

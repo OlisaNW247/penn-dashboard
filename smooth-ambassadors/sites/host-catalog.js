@@ -8,7 +8,7 @@
 // the build's alias only applies to imports made from worker/, so this import
 // reaches the real catalog.
 
-export { CHANNELS, RETIRED, parseScanKey, posterImagePath } from "../worker/catalog.js";
+export { CHANNELS, GENERIC, RETIRED, parseScanKey, posterImagePath } from "../worker/catalog.js";
 import { SCHOOLS as SOURCE_SCHOOLS, RETIRED } from "../worker/catalog.js";
 
 export const APP_STORE_URL = SMOOTH_HOST.appStore;
