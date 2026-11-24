@@ -85,9 +85,18 @@ test("existing routes: /api/stats lists exactly the live rows, in the live order
   // (retiring a design never removes its row); the designs added on
   // 2026-11-22 follow them within each school, one row per school.
   const liveKeys = new Set(live.map((r) => r.poster));
-  assert.equal(s.rows.length, 62 + 5 * 5);
-  assert.deepEqual(s.rows.filter((r) => liveKeys.has(r.poster)).map(({ total, ...rest }) => rest), live);
-  for (const school of ["upenn", "umiami", "uva", "case-western", "clark"]) {
+  // Harvard (2026-11-24) is a school the live site did not have: its rows
+  // (one per non-UPenn design, 17) come after every row of the five older
+  // schools, which are unchanged and in their original relative order.
+  const liveSchools = new Set(live.map((r) => r.school));
+  assert.equal(s.rows.length, 62 + 5 * 5 + 17);
+  const old = s.rows.filter((r) => liveSchools.has(r.school));
+  assert.equal(old.length, 62 + 5 * 5);
+  assert.deepEqual(old.filter((r) => liveKeys.has(r.poster)).map(({ total, ...rest }) => rest), live);
+  assert.deepEqual(s.rows.slice(0, old.length), old, "the new school's rows all come last");
+  assert.deepEqual(s.rows.slice(old.length).map((r) => r.school), Array(17).fill("harvard"));
+  assert.ok(s.rows.slice(old.length).every((r) => r.total === 0));
+  for (const school of ["upenn", "umiami", "uva", "case-western", "clark", "harvard"]) {
     const tail = s.rows.filter((r) => r.school === school).slice(-5).map((r) => r.poster);
     assert.deepEqual(tail, ["missed", "moved", "one-list", "sweeper", "ask"], school);
   }
@@ -274,7 +283,7 @@ test("founder view reflects everything and digest skips paused", async () => {
 
 test("public leaderboard has schools only, no people", async () => {
   const lb = await (await get("/api/leaderboard")).json();
-  assert.equal(lb.schools.length, 5);
+  assert.equal(lb.schools.length, 6); // one per catalog school; Harvard joined on 2026-11-24
   const text = JSON.stringify(lb);
   assert.doesNotMatch(text, /Test Friend|555|token/);
   const uva = lb.schools.find((s) => s.school === "uva");

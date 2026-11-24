@@ -37,7 +37,7 @@ export function hostDesigns(text) {
   return { at, close, body, keys: entries.map((m) => m[2]), quote: entries[entries.length - 1][1] };
 }
 
-function imageLine(text) {
+export function imageLine(text) {
   const lines = text.split("\n");
   const i = lines.findIndex((l) => l.startsWith(IMAGE_PREFIX));
   if (i === -1 || lines.findIndex((l, j) => j > i && l.startsWith(IMAGE_PREFIX)) !== -1) fail("the imageData line was not found exactly once");

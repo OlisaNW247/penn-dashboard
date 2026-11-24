@@ -8,6 +8,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { Miniflare } from "miniflare";
+import jpeg from "jpeg-js";
+import jsQR from "jsqr";
 import { ideaTests } from "./ideas-suite.mjs";
 import { captureTests } from "./captures-suite.mjs";
 import { installTests } from "./installs-suite.mjs";
@@ -54,9 +56,9 @@ async function snapshot(mf, path, init) {
   return { status: r.status, headers: HEADERS.map((h) => [h, r.headers.get(h)]), body: sha(body) };
 }
 
+// The dashboard ("/") is not here: it gained the new schools' option and
+// schoolNames entry, and its own test below says that is the only difference.
 const cases = [
-  ["GET", "/"],
-  ["GET", "/?school=uva"],
   ["GET", "/scan/ib"],
   ["GET", "/scan/uva/ib"],
   ["GET", "/scan/uva/jester"],
@@ -104,17 +106,53 @@ async function statsParity() {
   for (const h of HEADERS) assert.equal(b.headers.get(h), a.headers.get(h), h);
   const A = (await a.json()).rows;
   const B = (await b.json()).rows;
+  const origSchools = new Set(A.map((r) => r.school));
   const origKeys = new Set(A.map((r) => r.poster));
-  assert.deepEqual(B.filter((r) => origKeys.has(r.poster)), A);
-  const { DESIGNS } = await import("../worker/catalog.js");
+  const { DESIGNS, SCHOOLS } = await import("../worker/catalog.js");
   const added = DESIGNS.filter((d) => !origKeys.has(d));
-  assert.equal(B.length, A.length + added.length * 5);
-  for (const school of new Set(A.map((r) => r.school))) {
+  const newSchools = Object.keys(SCHOOLS).filter((s) => !origSchools.has(s));
+  // Every original row is still there, unchanged, in its original relative
+  // order (the designs added since sit after them within each old school).
+  const oldRows = B.filter((r) => origSchools.has(r.school));
+  assert.deepEqual(oldRows.filter((r) => origKeys.has(r.poster)), A);
+  assert.equal(oldRows.length, A.length + added.length * origSchools.size);
+  for (const school of origSchools) {
     const tail = B.filter((r) => r.school === school).slice(-added.length).map((r) => r.poster);
     assert.deepEqual(tail, added, school);
   }
-  return { A, B, added };
+  // A new school's rows come after every row of the existing schools, all at 0,
+  // one per design that school may have (UPenn-only designs excluded).
+  assert.deepEqual(B.slice(0, oldRows.length), oldRows);
+  const fresh = B.slice(oldRows.length);
+  assert.deepEqual([...new Set(fresh.map((r) => r.school))], newSchools);
+  assert.equal(fresh.length, newSchools.length * DESIGNS.length);
+  assert.ok(fresh.every((r) => r.total === 0));
+  return { A, B, added, newSchools, fresh };
 }
+
+test("parity: the dashboard differs from the original only by the new schools' option and name", { skip }, async () => {
+  const { newSchools } = await statsParity();
+  const { SCHOOLS } = await import("../worker/catalog.js");
+  for (const path of ["/", "/?school=uva"]) {
+    const a = await req(orig, path);
+    const b = await req(edited, path);
+    for (const h of HEADERS) assert.equal(b.headers.get(h), a.headers.get(h), h);
+    let page = await b.text();
+    let n = 0;
+    for (const id of newSchools) {
+      const name = SCHOOLS[id].name;
+      const opt = `<option value="${id}">${name}</option>`;
+      const key = /^[A-Za-z_$][\w$]*$/.test(id) ? id : `'${id}'`;
+      for (const ins of [opt, `,${key}:'${name}'`]) {
+        assert.equal(page.split(ins).length - 1, 1, ins);
+        page = page.replace(ins, "");
+        n++;
+      }
+    }
+    assert.equal(n, newSchools.length * 2);
+    assert.equal(page, await a.text(), path);
+  }
+});
 
 test("parity: /api/stats keeps every original row and adds the new designs after them", { skip }, async () => {
   const { added } = await statsParity();
@@ -375,4 +413,64 @@ test("a brand-new database: poster ideas work after a founder add (the lazy sche
   const ex = await (await req(fresh, `/f/${FOUNDER}/export.json`)).json();
   assert.equal(ex.ideas.length, 1);
   assert.equal((await req(fresh, "/a/_fonts/inter.woff2")).status, 200);
+});
+
+// ---- Harvard (2026-11-24): a school the live site did not have
+
+const qrOf = async (mf, path) => {
+  const r = await req(mf, path);
+  assert.equal(r.status, 200, path);
+  assert.equal(r.headers.get("content-type"), "image/jpeg", path);
+  const img = jpeg.decode(Buffer.from(await r.arrayBuffer()), { useTArray: true, formatAsRGBA: true });
+  return jsQR(new Uint8ClampedArray(img.data.buffer, img.data.byteOffset, img.data.length), img.width, img.height)?.data;
+};
+
+test("harvard: the original does not know it; the edited file answers its posters, QR included", { skip }, async () => {
+  const { DESIGNS } = await import("../worker/catalog.js");
+  assert.equal((await req(orig, "/posters/harvard/ib.jpg")).status, 404);
+  assert.equal((await req(orig, "/scan/harvard/ib")).status, 404);
+  const ib = await qrOf(edited, "/posters/harvard/ib.jpg");
+  assert.match(ib ?? "", /\/scan\/harvard\/ib$/);
+  // The same host and path shape as the printed QR of an older school.
+  const uva = await qrOf(edited, "/posters/uva/ib.jpg");
+  assert.equal(ib, uva.replace("/scan/uva/ib", "/scan/harvard/ib"));
+  for (const d of DESIGNS) assert.equal((await req(edited, `/posters/harvard/${d}.jpg`)).status, 200, d);
+  assert.equal((await req(edited, "/posters/harvard/jester.jpg")).status, 404, "UPenn-only designs are not Harvard's");
+  assert.equal((await req(edited, "/scan/harvard/jester")).status, 404);
+});
+
+test("harvard: a scan adds exactly 1 under harvard/ib and changes no other row", { skip }, async () => {
+  const db = await edited.getD1Database("DB");
+  const all = async () => (await db.prepare("SELECT poster, total FROM scans ORDER BY poster").all()).results;
+  const before = await all();
+  const r = await req(edited, "/scan/harvard/ib");
+  assert.equal(r.status, 302);
+  assert.match(r.headers.get("location"), /apps\.apple\.com.*id6783911002/);
+  const want = before.filter((x) => x.poster !== "harvard/ib");
+  want.push({ poster: "harvard/ib", total: (before.find((x) => x.poster === "harvard/ib")?.total ?? 0) + 1 });
+  want.sort((a, b) => (a.poster < b.poster ? -1 : 1));
+  assert.deepEqual(await all(), want);
+  assert.equal(await total(edited, "harvard/ib"), (before.find((x) => x.poster === "harvard/ib")?.total ?? 0) + 1);
+});
+
+test("harvard: an ambassador there gets a harvard- code and a plan whose posters all have images", { skip }, async () => {
+  const add = await req(fresh, `/f/${FOUNDER}/add`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ name: "Harvard Friend", school: "harvard", contact: "", notes: "" }).toString(),
+  });
+  assert.equal(add.status, 303);
+  const code = new URL(add.headers.get("location"), "https://x").searchParams.get("created");
+  assert.match(code, /^harvard-[a-z0-9]{14}$/);
+  const plan = await (await req(fresh, `/a/${code}/plan.json`)).json();
+  assert.equal(plan.school, "harvard");
+  assert.equal(plan.schoolName, "Harvard");
+  assert.equal(plan.numbers.schoolInstalls, 0);
+  assert.ok(plan.posters.length > 0);
+  for (const p of plan.posters) {
+    assert.equal(p.image, `${ORIGIN}/posters/harvard/${p.key}.jpg`);
+    const r = await req(fresh, new URL(p.image).pathname);
+    assert.equal(r.status, 200, p.key);
+    assert.equal(r.headers.get("content-type"), "image/jpeg", p.key);
+  }
 });

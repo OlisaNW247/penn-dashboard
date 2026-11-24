@@ -33,8 +33,12 @@ only no longer offered to ambassadors.
 Do not edit the generated section by hand. Its source is the
 `smooth-ambassadors` project (`worker/`, `sites/`, `scripts/build-sites.mjs`
 in the `penn-dashboard` repository). `node scripts/build-sites.mjs
-<this repository>` rewrites the section and is safe to run twice. Adding a
-school to the Maps at the top of the file needs no rebuild. A poster is
+<this repository>` rewrites the section and is safe to run twice. A school is
+added by putting it at the end of `SCHOOLS` in `worker/catalog.js` and
+rebuilding: the build appends it to the `schools` Map, the dashboard's
+select and its `schoolNames`, and makes its poster pictures (see "Adding a
+school" in `docs/deploy.md`). Adding one to the Maps by hand would leave it
+without pictures. A poster is
 added by putting its key, name and preview in the `smooth-ambassadors`
 project (`worker/catalog.js`, `posters/previews/{key}.jpg`) and rebuilding,
 which writes the Map entry and the pictures here. A new

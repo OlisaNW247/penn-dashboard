@@ -5638,6 +5638,7 @@ it holds work that exists nowhere else.
 | `sweeper/force-quit-check` | **2026-11-21, off `claude/ambassador-header` `4bd49bc`, local, not pushed; merges into the release line at Marco's word.** The force-quit check built at Marco's "build it": the alert push (not deployed), the `LHFSweeperCheck` notification extension, the manifest and cookie copy, `excused`. 4352/439 green, unsigned iOS and macOS builds green, never on a phone. The other session on `claude/ambassador-header` was editing `AppState.swift`, `ContentView.swift` and the notification files uncommitted at the time, so this branch touches none of them; expect `project.pbxproj` to conflict with any hand edit there (regenerate, then restore `Smooth.app`). |
 | `research/sweeper-force-quit` | **2026-11-21, off `claude/ambassador-header` `279b14f`, local; committed `48eea48` and cherry-picked onto `sweeper/force-quit-check`.** Research only: `docs/SWEEPER_FORCE_QUIT_RESEARCH_2026-11-21.md` (an alert push and a Notification Service Extension as the force-quit-proof cancel; AlarmKit-from-an-extension evidence and the two-hour device test that settles it; the planner `excused` gap) and its `ROADMAP.md` → Next entry. No code. |
 | `claude/v12-isolate-ab8b22` | **2026-11-17, off `claude/ambassador-header` `05ee0a8`, local, not merged.** The agent connection switched off for 3.5.0 (`FeatureFlags.agentConnection = false`), its two leaks closed, its tests skipping while off, the review notes, listing and privacy text without it; `docs/V12_ISOLATION_2026-11-17.md` has the inventory and the route comparison. The session that started it merges at Marco's word. |
+| `claude/new-session-b3ylkg` (2026-11-24) | **`v11` `141ac20` plus one commit: Harvard as an ambassador school** (`smooth-ambassadors/` only; Known gaps, top). The branch was fast-forwarded from `v12` `33740dd` to `v11` that day, which is possible because `v11` contains all of `v12`; older rows in this table that describe it as `v12`'s working branch are history. Not merged into `v11`; Marco or Olisa does that. Worker suite 112 pass / 73 skipped without the Sites export, 73 of 73 with it. No Swift changed. |
 | `claude/ambassador-header` | **The release line for 3.5.0 (21) since 2026-11-17; since 2026-11-18 at `b1a6aa8` with the agent switch-off and the Sweeper accuracy work fast-forwarded in (Release state, above); local, not pushed, not merged into `v11`.** Began 2026-11-12, off the `v12` merge `82bea86`, as a design change waiting on Marco's approval. While signed in as an ambassador the dashboard title is a marigold medal and "Ambassador" with the wordmark's squiggle under it, in place of "Smooth {weekday}" (`ContentView.ambassadorTitle`; Marco's ask that day). Before sign-in nothing changes. The Debug build of `1a4ceaa` is on Marco's iPhone 17 Pro since 15:16 local, over the pre-stamp 3.4.1 (20) build of `f03dce0`; so the merged `v12` tree first reached his phone through this branch. 20 targeted tests green; the full gate was run on its base, not on it. |
 | `claude/font-research-22067c` | 2026-11-11, off `v11-master`, docs only, merged into `v11-master` at `fee63ba`. The class-code font research and renders (`docs/FONT_RESEARCH_2026-11-11.md`). Safe to delete. |
 | `claude/v11-ui-pass-84648c` | **2026-11-11, off `v11-master` `0936f29`, local, not merged.** Marco's UI pass: one Sweeper title with the switch row, the header button as an alarm glyph with a once-only new dot, the agent in its own Profile "agent" section, the slop cut; then the five asks of the same afternoon (the + and Sweeper swap colours, the "on" row under the title, hovering shapes on ask, a triple-tap backflip of the wordmark, a slightly larger header title), with Simulator photos in `docs/v11-ui/` and `docs/V11_UI_PHOTOS_2026-11-11.md`. The session that started it merges. |
@@ -5687,6 +5688,33 @@ none is a ship line.
 
 ## Known gaps
 
+- **Harvard is a school in the ambassador source and not on the live site
+  (2026-11-24).** Olisa asked to onboard ambassadors at Case Western and
+  Harvard. Case Western has been a school since the first deploy. Harvard
+  needs the eighth zip (`ROADMAP.md` → Now), which also carries Marco's
+  seventh (five generic posters, `tabard` and `these-two` retired, `links`,
+  `guidance`, `contacts`): the live site read that day had the install count
+  and none of those, so until it is deployed the 3.5.0 app's group-chat link
+  and the `{link}` in its example replies fall back to the plain App Store
+  link and "your link opens" does not move. What was checked: the built file
+  beside the original (73 of 73), the backup rehearsal (23 PASS, 0 FAIL),
+  every original picture identical as data, and each of the twelve Harvard
+  QR editions decoded from the built file to `/scan/harvard/{design}` by a
+  second decoder. What was not: a phone camera on a printed Harvard poster
+  (the pictures are 700 pixels wide, as every school's are), and anything
+  on the live site. Harvard gets the same designs as the other non-Penn
+  schools, the Penn-flavoured ones included. From the read-only review of
+  `v11`'s ambassador mode the same day, none blocking and none fixed here
+  (the app is Marco's line): resuming after a pause sets the reminder to
+  "2 a week" where the default is every day (`AmbassadorModel.pause`); the
+  reminder body says "1 a day" on the twice-weekly cadence; the doc comments
+  on `AmbassadorModel.introSeenKey` and `AmbassadorIntroView` still describe
+  a first-sign-in intro and a key nothing writes, while the intro shows at
+  every sign-in; the poster count and the streak live on the phone only, so
+  the founders never see them and sign-out clears them; and "text marco" on
+  the ambassador web page has carried a real-looking phone number in this
+  public repo since 2026-11-09 (`worker/pages.js`, `docs/role.md`), which
+  Olisa has been asked to confirm.
 - **Two 3.5.0 test-pass findings left for a phone** (2026-11-22,
   `docs/TEST_RELEASE_3.5.0_2026-11-22.md` → Decisions). R-I1: a card drag
   that SwiftUI cancels never runs `onEnded`, so `swipeAxis` can stay

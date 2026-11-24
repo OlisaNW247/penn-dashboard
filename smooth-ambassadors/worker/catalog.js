@@ -14,6 +14,9 @@ export const SCHOOLS = {
   uva: { name: "UVA", canvasHosts: ["canvas.its.virginia.edu"] },
   "case-western": { name: "Case Western", canvasHosts: ["case.instructure.com"] },
   clark: { name: "Clark University", canvasHosts: ["canvas.clarku.edu"] },
+  // Added 2026-11-24 (an ambassador onboarding at Harvard). Appended, so every
+  // existing school keeps its place in /api/stats and on the dashboard.
+  harvard: { name: "Harvard", canvasHosts: ["canvas.harvard.edu"] },
 };
 
 // Designs available at every school, in the order the live /api/stats lists

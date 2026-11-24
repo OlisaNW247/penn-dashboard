@@ -97,6 +97,30 @@ session (step 1) before steps 2 to 5 can run.
    into the Sites repository). Compare `/api/stats` totals to the backup:
    identical, plus the one deliberate test scan.
 
+## Adding a school
+
+1. Append the school to `SCHOOLS` in `worker/catalog.js` (the id is a
+   lowercase slug, the name is what the dashboard shows, `canvasHosts` are the
+   hosts the app's catalog lists for it). At the end, never in the middle: the
+   order is the order of `/api/stats`, and the old rows must keep theirs.
+2. Run `npm run gen:hosts` if the Canvas host is not already in
+   `worker/canvas-hosts.json` (a test fails when it drifts).
+3. Rebuild (`node scripts/build-sites.mjs <repository>`). It appends the school
+   to the host's `schools` Map, the dashboard's `<select>` and its
+   `schoolNames`, then gives it a picture for every design: copied where the
+   design is the same at every school, rebuilt with the school's own QR where
+   it is not (`scripts/lib/school-edition.mjs` needs `npm install` for
+   `jpeg-js` and `jsqr`; they are build-time only and never end up in the
+   deployed file). It stops if a template poster's QR does not say what it
+   should, if a result does not decode to the new URL, or if any school and
+   design pair is left without a picture.
+4. Look at the editions it made (they are in the host's image dictionary; write
+   one out to a file and read it) before packaging. A QR edition is the
+   template's artwork with one square redrawn, so a design whose QR sits on
+   busy artwork is the one to look at twice.
+5. Package and deploy as usual. The checks to run afterwards are in
+   `sites/CHANGES_FOR_DEPLOYMENT.md`, "Update, 2026-11-24: Harvard".
+
 ## How Marco ships a change without Olisa
 
 Today he cannot, and the mirror job in `.github/workflows/deploy.yml` does

@@ -28,13 +28,13 @@ h2{font-size:1.1rem}.close{border:1px solid #ccd5e2;background:white;border-radi
 <p>Compare schools and poster designs. Click a poster name to see its school edition.</p>
 <div class="cards" id="cards"></div>
 <section class="panel"><div class="toolbar"><label for="school">School</label><select id="school">
-<option value="all">All schools</option><option value="upenn">UPenn</option><option value="umiami">UMiami</option><option value="uva">UVA</option><option value="case-western">Case Western</option><option value="clark">Clark University</option>
+<option value="all">All schools</option><option value="upenn">UPenn</option><option value="umiami">UMiami</option><option value="uva">UVA</option><option value="case-western">Case Western</option><option value="clark">Clark University</option><option value="harvard">Harvard</option>
 </select><span id="status" role="status">Loading counts…</span></div>
 <table><thead><tr><th scope="col">Poster design</th><th scope="col">School</th><th scope="col">Link opens</th></tr></thead><tbody id="rows"></tbody></table></section>
 <p>Counts include repeat link opens and verification scans. Updates every 15 seconds.</p>
 </main><dialog id="modal"><div class="modal-top"><h2 id="preview-title"></h2><button class="close" id="close">Close</button></div><img id="preview" alt=""></dialog>
 <script>
-const schoolNames = {upenn:'UPenn',umiami:'UMiami',uva:'UVA','case-western':'Case Western',clark:'Clark University'};
+const schoolNames = {upenn:'UPenn',umiami:'UMiami',uva:'UVA','case-western':'Case Western',clark:'Clark University',harvard:'Harvard'};
 const filter = document.querySelector('#school');
 const query = new URLSearchParams(location.search).get('school');
 if (query === 'all' || Object.hasOwn(schoolNames, query)) filter.value = query;

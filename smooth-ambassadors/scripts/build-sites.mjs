@@ -18,7 +18,9 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from
 import { join, dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AddPostersError, addPosters, hostDesigns } from "./lib/add-posters.mjs";
-import { DESIGNS, POSTER_NAMES, SCHOOLS } from "../worker/catalog.js";
+import { AddSchoolError, addSchools, addSchoolImages, missingImages } from "./lib/add-school.mjs";
+import { SchoolEditionError, makeSchoolEdition } from "./lib/school-edition.mjs";
+import { DESIGNS, POSTER_NAMES, SCHOOLS, UPENN_ONLY } from "../worker/catalog.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repo = process.argv[2] && resolve(process.argv[2]);
@@ -104,6 +106,29 @@ try {
   if (r.added.length) console.log(`build-sites: added ${r.added.length} design(s) to the host: ${r.added.join(", ")}`);
 } catch (err) {
   if (err instanceof AddPostersError) fail(`adding posters: ${err.message}`);
+  throw err;
+}
+
+// New schools. The host's `schools` Map, the dashboard's <select> and its
+// schoolNames object are the three places a school lives; a catalog school the
+// host lacks is appended to all three (never inserted, so every existing row
+// keeps its place), then given a picture of every design: copied where the
+// design is the same for every school, rebuilt from an existing school's
+// edition with its QR swapped where it is not (scripts/lib/school-edition.mjs
+// checks its own output). Runs after the designs above so the host's design
+// list is complete. What the host already has is left alone, so a second run
+// changes nothing.
+try {
+  const r = addSchools(text, Object.entries(SCHOOLS).map(([id, s]) => ({ id, name: s.name })));
+  text = r.text;
+  if (r.added.length) console.log(`build-sites: added ${r.added.length} school(s) to the host: ${r.added.join(", ")}`);
+  const img = addSchoolImages(text, [...new Set(missingImages(text, UPENN_ONLY).map((k) => k.split("/")[0]))].filter((id) => id !== "upenn" && SCHOOLS[id]), { upennOnly: UPENN_ONLY, makeEdition: (b, from, d, to) => makeSchoolEdition(b, from, d, to).jpeg });
+  text = img.text;
+  if (img.made.length) console.log(`build-sites: made ${img.made.length} school picture(s):\n  ${img.made.join("\n  ")}`);
+  const missing = missingImages(text, UPENN_ONLY);
+  if (missing.length) fail(`${missing.length} school and design pair(s) have no picture: ${missing.slice(0, 8).join(", ")}`);
+} catch (err) {
+  if (err instanceof AddSchoolError || err instanceof SchoolEditionError) fail(`adding schools: ${err.message}`);
   throw err;
 }
 

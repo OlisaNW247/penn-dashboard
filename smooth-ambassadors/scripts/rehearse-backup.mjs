@@ -45,12 +45,16 @@ const before = JSON.stringify([...rows].sort((a, b) => (a.poster < b.poster ? -1
 // 2. Every backed-up key is one the Worker lists: nothing orphaned, nothing missing.
 const statsO = await (await get(original, "/api/stats")).text();
 const statsE = await (await get(edited, "/api/stats")).text();
-// The edited Worker may list designs the original does not (added by
-// build-sites); every original row must still be there, unchanged, in place.
+// The edited Worker may list designs and schools the original does not (added
+// by build-sites): every original row must still be there, unchanged and in
+// its relative order, and a new school's rows must all come after them.
 const rowsO = JSON.parse(statsO).rows;
 const rowsE = JSON.parse(statsE).rows;
 const origKeys = new Set(rowsO.map((r) => r.poster));
-say(JSON.stringify(rowsE.filter((r) => origKeys.has(r.poster))) === JSON.stringify(rowsO), `/api/stats from the edited Worker keeps the original's ${rowsO.length} rows (sha ${sha(statsO)}); it lists ${rowsE.length}`);
+const origSchools = new Set(rowsO.map((r) => r.school));
+const oldE = rowsE.filter((r) => origSchools.has(r.school));
+say(JSON.stringify(oldE.filter((r) => origKeys.has(r.poster))) === JSON.stringify(rowsO), `/api/stats from the edited Worker keeps the original's ${rowsO.length} rows (sha ${sha(statsO)}); it lists ${rowsE.length}`);
+say(JSON.stringify(rowsE.slice(0, oldE.length)) === JSON.stringify(oldE) && rowsE.slice(oldE.length).every((r) => !origSchools.has(r.school) && r.total === 0), `the ${rowsE.length - oldE.length} rows of schools the original lacks all come after the existing schools' rows, at 0`);
 const stats = rowsO;
 const key = (r) => (r.school === "upenn" ? r.poster : r.school + "/" + r.poster);
 const listed = new Map(stats.map((r) => [key(r), r.total]));

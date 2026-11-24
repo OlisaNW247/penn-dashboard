@@ -400,3 +400,63 @@ Follow "Verify after a deploy" in `repository/AMBASSADORS.md`. Do not open
 `/scan/...` links beyond the one deliberate check: each is a real count.
 Then create one ambassador named for App Review in the founder page; its
 code goes into the App Store review notes.
+
+## Update, 2026-11-24: Harvard
+
+This archive is the eighth. It is the seventh plus one school. **The live
+site, read on 2026-11-24 (GETs only), has the downloads count and none of the
+rest of the seventh**: its `plan.json` has no `links`, `guidance` or
+`contacts`, it still offers `tabard` and `these-two`, `/api/stats` lists 62
+rows and `/posters/uva/missed.jpg` is a 404. So deploying this archive also
+puts live everything under "Note, 2026-11-22: founder contacts" and "Update,
+2026-11-22 (posters)" above; run those sections' checks too. `build-sites` is
+safe to run on a host that already has them.
+
+Why: an ambassador is onboarding at Harvard, and the host owns the list of
+schools, so Harvard has to exist there before `/scan/harvard/...`, its poster
+pictures, `/api/stats` and the ambassador page can know it.
+
+What changes in `worker/index.js`, and nothing more:
+
+- **The `schools` Map** gains `['harvard', 'Harvard']` at the end. Existing
+  schools keep their place.
+- **The dashboard** gains one `<option value="harvard">Harvard</option>` after
+  Clark University's, and one entry, `harvard:'Harvard'`, at the end of its
+  `schoolNames` object. Remove those two insertions from the new page and what
+  is left equals the old page exactly (a test does that).
+- **The image dictionary** gains `harvard/{design}` for every design a
+  non-UPenn school has: the five generic designs are the same picture for
+  every school and are copied; each of the twelve older designs has the
+  school's own QR code printed on it, so Harvard's edition is the Case
+  Western or UMiami edition with its QR square redrawn to say
+  `/scan/harvard/{design}` (`scripts/lib/school-edition.mjs`: it reads the
+  template's QR, refuses unless it says the expected school and design,
+  redraws that one square, and checks that the result decodes to exactly the
+  new URL and that nothing outside the square moved). Every existing picture
+  is unchanged, as data.
+- **`/api/stats`** has the previous number of rows plus one row per non-UPenn
+  design (17), every new row at 0, all after the rows of the five older
+  schools. Every old row, its total and its order are unchanged.
+
+What does not change: no table, no route, no runtime variable, no migration,
+no existing row, total or picture. The ambassador page already reads the
+host's list, so Harvard appears there (and in `/api/leaderboard`, at 0) with
+no other edit. The app's install count already maps `canvas.harvard.edu` to
+the school id `harvard` (`worker/canvas-hosts.json`).
+
+Read-only checks after deploying (open no `/scan/` or `/r/` link; each is a
+real count):
+
+1. `GET /api/stats`: from today's live site (62 rows) the count becomes 104:
+   the 62 old rows, each with a total no lower than before and in their old
+   relative order; 25 rows for the five generic designs (five per older
+   school, after that school's old rows, at 0); and 17 rows for school
+   `harvard`, last, at 0.
+2. `GET /?school=harvard` loads and the select offers Harvard; the old
+   options are where they were.
+3. `GET /posters/harvard/ib.jpg` answers 200 `image/jpeg` (look at it, and
+   scan it with a phone camera without opening the link: it should name
+   `/scan/harvard/ib`); `GET /posters/harvard/jester.jpg` is 404.
+4. Create the Harvard ambassador on the founder page: the code starts
+   `harvard-`, and `plan.json` lists posters whose images all answer 200.
+5. Compare the totals of the five older schools with the backup: identical.

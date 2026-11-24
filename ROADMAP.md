@@ -48,6 +48,24 @@ These block shipping, or would make shipping risky. The launch-prep
 work of 2026-10-09/10 is summarised, with the order to take these in,
 in `docs/LAUNCH_PREP_HANDOFF.md`.
 
+- **Deploy the eighth ambassador site zip: Harvard, plus everything in the
+  seventh** (2026-11-24, `claude/new-session-b3ylkg`, one commit on `v11`
+  `141ac20`). Olisa wants to onboard ambassadors at Case Western and Harvard.
+  Case Western is already a school and needs nothing. Harvard was not, so
+  `build-sites.mjs` now adds a catalog school the host lacks (the `schools`
+  Map, one dashboard option, one `schoolNames` entry) and makes its poster
+  pictures: a generic design is copied, an older design is another school's
+  edition with the QR square redrawn and decoded again to prove it. Built
+  against the real Sites export here (the step the item below was waiting
+  for, so `add-posters.mjs` did read the real `imageData` right): 73 of 73
+  built-file tests, the backup rehearsal 23 PASS / 0 FAIL, all 62 original
+  pictures and rows intact, a second run a no-op. The live site, read the
+  same day, has none of the seventh's posters, `links`, `guidance` or
+  `contacts`, so this zip is what makes the 3.5.0 app's group-chat link and
+  example replies tracked links. Olisa hands the zip to the ChatGPT session;
+  `sites/CHANGES_FOR_DEPLOYMENT.md` → "Update, 2026-11-24: Harvard" has the
+  checks. `FOUNDER_CONTACTS` is still Marco's to supply. Then Olisa adds both
+  ambassadors on the founder page. Not merged into `v11`: Marco's branch.
 - **Ambassador posters: finish the seventh zip** (2026-11-22,
   `claude/ambassador-posters-f068d6`). Needs the current Sites export from
   Olisa's ChatGPT session (not on the Mac), then `docs/deploy.md` steps 2
@@ -1177,6 +1195,12 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-24.** Harvard added as an ambassador school
+  (`smooth-ambassadors/`: `scripts/lib/add-school.mjs`,
+  `scripts/lib/school-edition.mjs`, `worker/catalog.js`). Server side only,
+  built and tested against the real Sites export, not deployed. The same day
+  Marco's `v11` ambassador mode was reviewed read-only: nothing blocking;
+  what was found is in `CLAUDE.md` → Known gaps.
 - **3.5.0 test-pass fixes** (2026-11-22, `claude/confident-davinci-73aa68`,
   filtered suites green, Mac only; `docs/TEST_RELEASE_3.5.0_2026-11-22.md` →
   Decisions): the ambassador's anonymous post ticks only once logged, so a

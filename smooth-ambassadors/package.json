@@ -19,9 +19,11 @@
     "rehearse": "node scripts/rehearse-backup.mjs"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
+    "jpeg-js": "^0.4.4",
+    "jsqr": "^1.4.0",
     "miniflare": "^4.0.0",
-    "wrangler": "^4.0.0",
-    "esbuild": "^0.28.2"
+    "wrangler": "^4.0.0"
   },
   "dependencies": {
     "qrcode-generator": "^2.0.4"
