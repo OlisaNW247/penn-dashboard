@@ -5782,10 +5782,15 @@ none is a ship line.
   on the live site and the Penn default for who may invite have all worked
   once, for a school that already existed. Not seen from here, because
   nothing public shows it: the row itself and the new person's sign-in.
-  Still untried anywhere: an invite that creates a brand-new school (he
-  said he would try the University of Chicago next, which is in the app's
-  catalog as `canvas.uchicago.edu`, so its downloads would count). Checked
-  before the deploy: the Swift compiled on the GitHub
+  Later the same day he reported having "sent out a bunch of invites" from
+  the phone. He had said he would try a brand-new school next (first the
+  University of Chicago, then Tufts instead; both are in the app's catalog,
+  so their downloads would count), but did not say which schools the bunch
+  went to, so **whether an invite has created a new school on the live site
+  is still not recorded**: ask him what a new school's code started with
+  and whether that person's page showed the five generic posters. Limits he
+  can now meet in ordinary use: 20 invites per inviter per UTC day, 10 new
+  schools a day across everyone. Checked before the deploy: the Swift compiled on the GitHub
   runner at the first attempt and the unsigned iOS build succeeded (Test
   baseline); the Worker's suite, the built file beside the original site and
   the rehearsal on the real scan backup all pass, with the legacy part of
