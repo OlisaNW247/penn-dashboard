@@ -57,6 +57,20 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   he says neither `life-is-so-smooth` nor `brutal-russian-beheading` is
   one; ask him for the files, then catalog key, name, preview, same path.
 
+- **Decide the agent connection's future, and whether its backend stays up**
+  (audit of 2026-11-24, `docs/AGENT_AUDIT_2026-11-24.md`, for Olisa and
+  Marco; nothing changed). 3.5.0 is live (2026-11-23) with the feature off,
+  but `agent-auth`, `mcp` and `agent-snapshot` still answer (checked live)
+  and have no server-side off switch; Marco's snapshot is still on the
+  server. Recommendation: ship it later as a read-only connector, retire
+  drafts and the phone's Canvas submit, and undeploy (or switch off) the
+  backend until then. Before any version ships: a consent screen that meets
+  Apple 5.1.2(i) (today's says only "connect claude?" and links a
+  `PRIVACY.md` with no agent section), an opt-out that retries, server-side
+  expiry, a verified host on the approve sheet. On personal AI accounts:
+  Smooth may not run on a student's Claude plan (Anthropic's terms) and
+  ChatGPT plan use is partner-only; the connector is the sanctioned form.
+
 - **3.5.0 (21) ships without the agent connection** (Marco, 2026-11-17: "we're not going to actually go with the agent stuff from V11 ... V12 will be solely the ambassador stuff and just some of the other stuff"). `FeatureFlags.agentConnection = false` on `claude/v12-isolate-ab8b22` with the two leaks closed (the cached draft chip, prev's "submitted by" line), the agent tests skipping while off, and the review notes, listing and privacy text without it (`docs/V12_ISOLATION_2026-11-17.md`: route A, flag off, over route B, a branch that deletes the code, which would cost two days and make `v11` unmergeable). Marco settled the rest the same day: "keep all but agent" (the Sweeper page and header button, the scroll fix, swipe both ways, the squircle header, the wordmark backflip, the hovering shapes, the Atkinson class code, the truthful in-class label, the held course-material sync, the assignment-PDF pass, the update-wall changes list, the ambassador header all ship). Left for Marco: merging the branch into the release line, the phone check of the off state, the stamp, archive and upload. The agent-connection item below is now `v11`'s, not this release's.
 - **Ship 3.5.0 (21), the v11 release, now with ambassador mode** (`origin/v12`
   merged into `v11` on 2026-11-12, degree progress off; `docs/V11_RETURN_2026-11-11.md` is
