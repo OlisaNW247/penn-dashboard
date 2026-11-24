@@ -61,6 +61,34 @@ extension AppState {
         }
     }
 
+    nonisolated static let agentOffCleanupDoneKey = "agentOffSwitchCleanupDoneV1"
+
+    /// One-shot, foreground: with the feature off in this build and the
+    /// persisted opt-in still on, delete the server's snapshot (which also
+    /// revokes every connection) and remember it. A failure retries at the
+    /// next foreground. Deliberately not gated by `agentSurfacesAllowed`.
+    func agentOffSwitchCleanupPass() async {
+        let defaults = UserDefaults.lhf
+        let backend = BackendServices.client
+        guard AgentPassRules.shouldRunOffSwitchCleanup(
+            flagOn: FeatureFlags.agentConnection,
+            optedIn: defaults.bool(forKey: SharedDefaults.agentConnectionEnabledKey),
+            alreadyDone: defaults.bool(forKey: Self.agentOffCleanupDoneKey),
+            hasBackend: backend != nil,
+            isFixtureData: isUsingFixtureData
+        ), let backend else { return }
+        do {
+            _ = try await AgentConnectionClient(client: backend).deleteSnapshot()
+        } catch {
+            return
+        }
+        defaults.set(true, forKey: Self.agentOffCleanupDoneKey)
+        defaults.set(false, forKey: SharedDefaults.agentConnectionEnabledKey)
+        agentConnectionEnabled = false
+        hasAgentConnections = false
+        clearAgentDraftsLocally()
+    }
+
     // MARK: Approving
 
     func pendingAgentLink(from url: URL) -> AgentLinkRequest? {
@@ -204,6 +232,14 @@ extension AppState {
 /// throttle. A clock that moved back (`now < lastRun`) does not freeze the
 /// pass until it catches up.
 enum AgentPassRules {
+    /// R-I3: a phone that ran a build with the agent connection and its
+    /// opt-in on keeps a live server snapshot and live connections once a
+    /// later build ships the feature switched off. Run the delete once.
+    nonisolated static func shouldRunOffSwitchCleanup(flagOn: Bool, optedIn: Bool, alreadyDone: Bool,
+                                                      hasBackend: Bool, isFixtureData: Bool) -> Bool {
+        !flagOn && optedIn && !alreadyDone && hasBackend && !isFixtureData
+    }
+
     nonisolated static func shouldStart(isAvailable: Bool, isEnabled: Bool, isFixtureData: Bool,
                                         isBackground: Bool, isRunning: Bool, lastRun: Date?,
                                         now: Date, throttle: TimeInterval, force: Bool) -> Bool {

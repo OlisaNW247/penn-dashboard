@@ -106,6 +106,8 @@ struct DoneCardView: View {
     @State private var didUndo = false
     /// Held for one drag; see `CompletionSwipe.Axis`.
     @State private var swipeAxis: CompletionSwipe.Axis = .undecided
+    /// Resets on a cancelled drag too; its change clears `swipeAxis` (R-I1).
+    @GestureState private var dragIsLive = false
     private let corner: CGFloat = 18
 
     var body: some View {
@@ -124,6 +126,7 @@ struct DoneCardView: View {
         // scrolls; the axis is decided once per drag (CompletionSwipe.Axis).
         .simultaneousGesture(
             DragGesture(minimumDistance: 18)
+                .updating($dragIsLive) { _, live, _ in live = true }
                 .onChanged { value in
                     if swipeAxis == .undecided {
                         swipeAxis = CompletionSwipe.axis(
@@ -150,6 +153,9 @@ struct DoneCardView: View {
                     }
                 }
         )
+        .onChange(of: dragIsLive) { _, live in
+            if !live { swipeAxis = .undecided }
+        }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(item.canMarkActive ? .isButton : [])
         .accessibilityHint(item.canMarkActive ? "Tap or swipe left to mark incomplete" : "turned in on canvas")

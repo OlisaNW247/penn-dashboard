@@ -76,8 +76,11 @@ struct OverdueSwipeLessonTests {
     func wiring() throws {
         let content = try source("ContentView.swift")
         #expect(content.contains("OverdueSwipeLesson.shouldShow("))
-        #expect(content.contains("store.markShown()"))
         let cover = try #require(content.range(of: "private func overdueLessonCover"))
+        // R-I2: the key is written when the cover appears, never at decision.
+        #expect(!content[..<cover.lowerBound].contains("store.markShown()"))
+        #expect(content[cover.upperBound...].contains(".onAppear"))
+        #expect(content[cover.upperBound...].contains("OverdueSwipeLessonStore().markShown()"))
         #expect(content[cover.upperBound...].contains("vm.commitCompletion(item)"))
         #expect(try source("OnboardingView.swift").contains("OverdueSwipeLessonStore().markShown()"))
         let lesson = try source("OverdueSwipeLesson.swift")

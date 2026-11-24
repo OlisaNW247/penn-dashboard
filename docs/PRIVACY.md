@@ -427,8 +427,10 @@ nothing until you pair it with your phone.
 ## Connecting an AI assistant (optional, Penn, off by default)
 
 - **Not in this build.** The feature below is switched off in the app since
-  2026-11-17 and has no screen, switch or network call in it; nothing here
-  happens until a later release turns it back on. The section stays so the
+  2026-11-17 and has no screen or switch in it; nothing here happens until a
+  later release turns it back on. The one network call it keeps: a phone that
+  had this turned on in an earlier build asks the server once to delete its
+  work list and disconnect every assistant, then never again. The section stays so the
   promise is on record for that release.
 
 - **What it is.** From Profile → connected agent, you can let an

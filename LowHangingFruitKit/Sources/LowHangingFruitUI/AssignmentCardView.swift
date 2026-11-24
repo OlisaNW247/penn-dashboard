@@ -99,6 +99,9 @@ struct AssignmentCardView: View {
     @State private var isArmed = false
     /// Held for one drag; see `CompletionSwipe.Axis`.
     @State private var swipeAxis: CompletionSwipe.Axis = .undecided
+    /// True while a drag is live; a cancelled drag never calls `onEnded`, but
+    /// this resets, and its change clears `swipeAxis` (R-I1).
+    @GestureState private var dragIsLive = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -184,6 +187,9 @@ struct AssignmentCardView: View {
         // Simultaneous, not `.gesture`: the ScrollView must always get the
         // touch too, or a scroll that starts on a card dies (CompletionSwipe.Axis).
         .simultaneousGesture(completeDrag(state: state))
+        .onChange(of: dragIsLive) { _, live in
+            if !live { swipeAxis = .undecided }
+        }
         // Swipe is invisible to VoiceOver, so completing needs a spoken action
         // of its own. Without this the feature would simply not exist for
         // anyone navigating by rotor.
@@ -545,6 +551,7 @@ struct AssignmentCardView: View {
 
     private func completeDrag(state: DueState) -> some Gesture {
         DragGesture(minimumDistance: 18, coordinateSpace: .local)
+            .updating($dragIsLive) { _, live, _ in live = true }
             .onChanged { value in
                 // Vertical intent belongs to the ScrollView, for the whole
                 // drag: decided once, so a scroll that drifts sideways never

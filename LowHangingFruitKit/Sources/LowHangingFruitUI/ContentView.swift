@@ -559,7 +559,8 @@ struct ContentView: View {
     }
 
     /// Decided once per process on the first non-empty item list; the key is
-    /// written at presentation so a kill mid-screen never shows it twice.
+    /// written when the cover appears so a kill mid-screen never shows it
+    /// twice and a cover that failed to present costs nothing.
     private func decideOverdueLesson() {
         guard isDashboardBound, !overdueLessonDecided, !vm.items.isEmpty else { return }
         let store = OverdueSwipeLessonStore()
@@ -578,8 +579,9 @@ struct ContentView: View {
             if store.hasShown || state.isUsingFixtureData || candidate == nil { overdueLessonDecided = true }
             return
         }
+        // The key is written by the cover's `onAppear`, not here: if another
+        // sheet is up, the cover never presents and the lesson must survive.
         overdueLessonDecided = true
-        store.markShown()
         overdueLesson = candidate
     }
 
@@ -603,6 +605,12 @@ struct ContentView: View {
         #if os(macOS)
         .frame(minWidth: 480, minHeight: 600)
         #endif
+        .onAppear {
+            #if DEBUG
+            if OverdueSwipeLesson.isForced { return }
+            #endif
+            OverdueSwipeLessonStore().markShown()
+        }
     }
 
     private func openDuoSignInIfAsked() {
@@ -1137,6 +1145,7 @@ struct ContentView: View {
         // the lists and the reminders in this same pass. A no-op without a
         // key, throttled to once per two minutes, never a banner.
         await state.deviceSyncPass()
+        await state.agentOffSwitchCleanupPass()
         await state.agentSnapshotPass()
         // Before the reload in `settleAfterFetch`, so a new draft's chip is on
         // its card in this same pass.
