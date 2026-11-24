@@ -1203,6 +1203,12 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-24, `v13`** (the line after 3.5.0 (21); green on the runner,
+  4536 / 479 at `a9384e4`, iOS build green, not on a phone): the McGraw Hill
+  groundwork (Next → McGraw Hill), the extension's 0.1.3 / 0.1.4 fixes from
+  `v8`, and the five 3.5.0 test-pass findings deferred on 2026-11-22 (R-M1
+  ambassador day index, R-M2 group-chat resend, R-I1 swipe axis, R-I2 lesson
+  key, R-I3 the agent off-switch cleanup).
 - **3.5.0 test-pass fixes** (2026-11-22, `claude/confident-davinci-73aa68`,
   filtered suites green, Mac only; `docs/TEST_RELEASE_3.5.0_2026-11-22.md` →
   Decisions): the ambassador's anonymous post ticks only once logged, so a
