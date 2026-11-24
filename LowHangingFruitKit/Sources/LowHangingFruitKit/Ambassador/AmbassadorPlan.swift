@@ -375,6 +375,49 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
     /// The founders' lines for the foot of the page (2026-11-22); the server
     /// reads them from a deploy variable, so the repo never holds a number.
     public var contacts: [Contact]?
+    /// Present only for an ambassador the founders let invite others
+    /// (2026-11-24); nil from an older server and for everyone else.
+    public var invite: Invite?
+
+    /// What the server says about inviting: whether this ambassador may, how
+    /// many invitations are left today when it counts, and the schools that
+    /// already exist. Decoded strictly for `allowed` (a malformed `invite`
+    /// reads as nil, so the button never shows on a guess) and leniently for
+    /// the rest.
+    public struct Invite: Codable, Equatable, Sendable {
+        public struct School: Codable, Equatable, Sendable, Identifiable {
+            public var id: String
+            public var name: String
+
+            public init(id: String, name: String) {
+                self.id = id
+                self.name = name
+            }
+        }
+
+        public var allowed: Bool
+        public var left: Int?
+        public var schools: [School]
+
+        public init(allowed: Bool, left: Int? = nil, schools: [School] = []) {
+            self.allowed = allowed
+            self.left = left
+            self.schools = schools
+        }
+
+        private enum CodingKeys: String, CodingKey { case allowed, left, schools }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            allowed = try c.decode(Bool.self, forKey: .allowed)
+            left = (try? c.decodeIfPresent(Int.self, forKey: .left)) ?? nil
+            if let boxes = try? c.decodeIfPresent([LossyElement<School>].self, forKey: .schools) {
+                schools = boxes.compactMap(\.value)
+            } else {
+                schools = []
+            }
+        }
+    }
 
     public struct Contact: Codable, Equatable, Sendable, Identifiable {
         public var name: String
@@ -413,7 +456,8 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
                 posters: [Poster]? = nil, dashboard: String? = nil, ideas: Ideas? = nil,
                 playbook: Playbook? = nil, suggested: [Suggestion]? = nil, captures: Captures? = nil,
                 links: [String: String]? = nil, guidance: Guidance? = nil,
-                contacts: [Contact]? = nil) {
+                contacts: [Contact]? = nil, invite: Invite? = nil) {
+        self.invite = invite
         self.contacts = contacts
         self.guidance = guidance
         self.links = links
@@ -478,6 +522,7 @@ public struct AmbassadorPlan: Codable, Equatable, Sendable {
         captures = (try? c.decodeIfPresent(Captures.self, forKey: .captures)) ?? nil
         links = (try? c.decodeIfPresent([String: String].self, forKey: .links)) ?? nil
         guidance = (try? c.decodeIfPresent(Guidance.self, forKey: .guidance)) ?? nil
+        invite = (try? c.decodeIfPresent(Invite.self, forKey: .invite)) ?? nil
         if let boxes = try? c.decodeIfPresent([LossyElement<Contact>].self, forKey: .contacts) {
             contacts = boxes.compactMap(\.value).enumerated().map { index, contact in
                 var numbered = contact

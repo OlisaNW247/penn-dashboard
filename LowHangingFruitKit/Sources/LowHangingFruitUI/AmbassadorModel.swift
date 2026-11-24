@@ -551,6 +551,45 @@ final class AmbassadorModel: ObservableObject {
         return true
     }
 
+    /// Whether the server's plan says this ambassador may add others.
+    var canInvite: Bool { plan?.invite?.allowed == true }
+
+    /// Adds a new ambassador. The new person's code is handed back to the
+    /// sheet to show once and is kept nowhere: not in defaults, not in the
+    /// Keychain, not in a log. On success the plan is fetched again so the
+    /// number left today and the school list move.
+    func invite(name: String, schoolID: String?, schoolName: String?,
+                schoolHost: String?, contact: String?) async -> AmbassadorInviteResult? {
+        guard let code else { return nil }
+        guard let fields = AmbassadorInvite.body(name: name, schoolID: schoolID, schoolName: schoolName,
+                                                 schoolHost: schoolHost, contact: contact) else {
+            lastError = "check the name and school"
+            return nil
+        }
+        isWorking = true
+        defer { isWorking = false }
+        lastError = nil
+        let result: AmbassadorInviteResult
+        do {
+            result = try await client.invite(code: code, fields: fields)
+        } catch AmbassadorClientError.limitReached {
+            lastError = "limit reached for today"
+            return nil
+        } catch AmbassadorClientError.notAllowed {
+            lastError = "not allowed"
+            return nil
+        } catch AmbassadorClientError.badResponse(400) {
+            lastError = "check the name and school"
+            return nil
+        } catch {
+            lastError = "couldn\u{2019}t reach smooth"
+            return nil
+        }
+        await refresh()
+        lastError = nil
+        return result
+    }
+
     /// Clears a line left by an earlier action, for a sheet that opens fresh.
     func clearError() {
         lastError = nil

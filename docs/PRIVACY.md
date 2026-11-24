@@ -1,6 +1,6 @@
 # Privacy Policy — Low Hanging Fruit (LHF)
 
-_Last updated: 2026-11-22_
+_Last updated: 2026-11-24_
 
 Low Hanging Fruit ("LHF", "the app") is a personal academic dashboard that shows
 your Canvas assignments and deadlines in one place. This policy explains what
@@ -571,7 +571,7 @@ the phone, not a push from a server. "Sign out" removes the code from the
 Keychain, the cached page from the phone, and the reminders. The server
 keeps the ambassador's roster row, their link-open counts, their logged
 posts, their poster ideas, their feed stills, their post results and
-their feedback until the founders remove them. Students who are
+their feedback until the founders remove them. An ambassador the founders have allowed to invite others can add a new ambassador from the app. That sends the new person's name, their school and, if typed, a phone number to the ambassador server, the same things the founders' own web page stores in the roster. The new person's code is shown once, on the screen of the ambassador who made it, and is not kept on that phone. Students who are
 not ambassadors never trigger any of this; the row in Profile does
 nothing until a code is entered.
 

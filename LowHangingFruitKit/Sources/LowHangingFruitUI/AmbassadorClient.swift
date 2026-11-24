@@ -25,6 +25,9 @@ protocol AmbassadorService: Sendable {
     /// result screenshot, as the string fields `feedFrameBody` and
     /// `resultBody` build.
     func sendCapture(code: String, fields: [String: String]) async throws
+    /// `POST /a/{code}/invite`: adds a new ambassador. Only for a code the
+    /// server's plan said may invite; the answer carries the new code.
+    func invite(code: String, fields: [String: String]) async throws -> AmbassadorInviteResult
 }
 
 enum AmbassadorClientError: Error, Equatable {
@@ -37,6 +40,8 @@ enum AmbassadorClientError: Error, Equatable {
     case tooLarge
     /// 429: the daily or the total idea limit is used up.
     case limitReached
+    /// 403: the server does not let this ambassador invite.
+    case notAllowed
 }
 
 struct AmbassadorClient: AmbassadorService {
@@ -99,6 +104,28 @@ struct AmbassadorClient: AmbassadorService {
         request.timeoutInterval = 60
         request.httpBody = try JSONEncoder().encode(fields)
         try await deliver(request)
+    }
+
+    func invite(code: String, fields: [String: String]) async throws -> AmbassadorInviteResult {
+        var request = URLRequest(url: baseURL.appendingPathComponent("a/\(code)/invite"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 20
+        request.httpBody = try JSONEncoder().encode(fields)
+        let (data, response) = try await perform(request)
+        guard let http = response as? HTTPURLResponse else { throw AmbassadorClientError.network }
+        switch http.statusCode {
+        case 200:
+            guard let result = try? JSONDecoder().decode(AmbassadorInviteResult.self, from: data) else {
+                throw AmbassadorClientError.badResponse(200)
+            }
+            return result
+        case 403: throw AmbassadorClientError.notAllowed
+        case 404: throw AmbassadorClientError.unknownCode
+        case 429: throw AmbassadorClientError.limitReached
+        default: throw AmbassadorClientError.badResponse(http.statusCode)
+        }
     }
 
     /// One feed still's JSON: `kind`, the recording's `batch` id, the frame's

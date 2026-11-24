@@ -113,6 +113,16 @@ Instructure (Canvas), Turnitin (Gradescope), Ed Discussion, or any university.
 
 _Description: 3,373 characters including line breaks, within the 4,000 limit (the 3.5.0 assistant paragraph came out on 2026-11-17 with the feature)._
 
+## What's New in 3.5.1 (release notes, ≤4000)
+
+Ambassadors the founders choose can now add a new ambassador, at any school,
+from the app.
+
+• Campus ambassadors the founders allow can make a code for a new person at
+  any school, with no update needed per school
+
+_Drafted 2026-11-24, the follow-up to 3.5.0 (build 22)._
+
 ## What's New in 3.5.0 (release notes, ≤4000)
 
 The Sweeper gets its own page, and rings only when it should.

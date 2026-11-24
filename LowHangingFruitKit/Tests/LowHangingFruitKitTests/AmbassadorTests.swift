@@ -280,6 +280,18 @@ final class FakeAmbassadorService: AmbassadorService, @unchecked Sendable {
     /// Thrown by `sendCapture` once `failCapturesAfter` have been accepted.
     var captureError: AmbassadorClientError?
     var failCapturesAfter = 0
+    var invites: [(code: String, fields: [String: String])] = []
+    var inviteError: AmbassadorClientError?
+    var inviteResult = AmbassadorInviteResult(code: "harvard-7k3m9x2p4q8w2a", welcome: "hey sam!",
+                                              schoolID: "harvard", schoolName: "Harvard", isNewSchool: true)
+
+    func invite(code: String, fields: [String: String]) async throws -> AmbassadorInviteResult {
+        if offline { throw AmbassadorClientError.network }
+        if let inviteError { throw inviteError }
+        guard plans[code] != nil else { throw AmbassadorClientError.unknownCode }
+        invites.append((code, fields))
+        return inviteResult
+    }
 
     func sendCapture(code: String, fields: [String: String]) async throws {
         if offline { throw AmbassadorClientError.network }
@@ -1493,5 +1505,263 @@ struct AmbassadorGuidancePlanTests {
         let decoded = try JSONDecoder().decode(AmbassadorPlan.Guidance.self, from: data)
         #expect(decoded == AmbassadorGuidance.bundled)
         #expect(decoded.kinds.map(\.key) == ["plug", "sneak"])
+    }
+}
+
+
+// MARK: - Inviting a new ambassador (2026-11-24)
+
+@Suite("Ambassador invite: plan, body and result")
+struct AmbassadorInviteKitTests {
+    static let base = #"{"name":"Maya","school":"uva""#
+
+    @Test("invite decodes with its schools, and a malformed school is dropped")
+    func present() throws {
+        let json = Self.base + #"""
+        ,"invite":{"allowed":true,"left":18,"schools":[{"id":"upenn","name":"UPenn"},{"id":7},{"name":"no id"},{"id":"uva","name":"UVA"}]}}
+        """#
+        let plan = try AmbassadorPlan.decode(Data(json.utf8))
+        let invite = try #require(plan.invite)
+        #expect(invite.allowed == true)
+        #expect(invite.left == 18)
+        #expect(invite.schools.map(\.id) == ["upenn", "uva"])
+        #expect(try AmbassadorPlan.decode(plan.encoded()) == plan)
+    }
+
+    @Test("absent invite reads nil; a malformed invite reads nil and the plan survives")
+    func absentAndMalformed() throws {
+        #expect(try AmbassadorPlan.decode(Data((Self.base + "}").utf8)).invite == nil)
+        let bad = try AmbassadorPlan.decode(Data((Self.base + #","invite":"yes"}"#).utf8))
+        #expect(bad.invite == nil)
+        #expect(bad.name == "Maya")
+        let noAllowed = try AmbassadorPlan.decode(Data((Self.base + #","invite":{"left":3}}"#).utf8))
+        #expect(noAllowed.invite == nil)
+        let noSchools = try AmbassadorPlan.decode(Data((Self.base + #","invite":{"allowed":true}}"#).utf8))
+        #expect(noSchools.invite?.schools == [])
+        #expect(noSchools.invite?.left == nil)
+    }
+
+    @Test("the body trims, omits empty optionals and never sends both school keys")
+    func body() {
+        #expect(AmbassadorInvite.body(name: "  Sam  ", schoolID: " harvard ", schoolName: nil, schoolHost: nil, contact: nil)
+                == ["name": "Sam", "school": "harvard"])
+        #expect(AmbassadorInvite.body(name: "Sam", schoolID: nil, schoolName: " Harvard ", schoolHost: " Canvas.Harvard.edu ", contact: " 555 ")
+                == ["name": "Sam", "schoolName": "Harvard", "schoolHost": "canvas.harvard.edu", "contact": "555"])
+        let both = AmbassadorInvite.body(name: "Sam", schoolID: "harvard", schoolName: "Harvard", schoolHost: "", contact: "  ")
+        #expect(both == ["name": "Sam", "school": "harvard"])
+        #expect(both?["schoolName"] == nil)
+    }
+
+    @Test("an empty name, no school, or an unusable new school name gives nothing")
+    func bodyRefusals() {
+        #expect(AmbassadorInvite.body(name: "  ", schoolID: "harvard", schoolName: nil, schoolHost: nil, contact: nil) == nil)
+        #expect(AmbassadorInvite.body(name: "Sam", schoolID: nil, schoolName: nil, schoolHost: nil, contact: nil) == nil)
+        #expect(AmbassadorInvite.body(name: "Sam", schoolID: " ", schoolName: "H", schoolHost: nil, contact: nil) == nil)
+        #expect(AmbassadorInvite.body(name: "Sam", schoolID: nil, schoolName: String(repeating: "a", count: 61), schoolHost: nil, contact: nil) == nil)
+    }
+
+    @Test("the result decodes in full, from a code alone, and not without a code")
+    func result() throws {
+        let full = #"{"ok":true,"code":"harvard-7k3m9x2p4q8w2a","page":"https://example.test/a/harvard-7k3m9x2p4q8w2a","welcome":"hey sam!","school":{"id":"harvard","name":"Harvard","isNew":true}}"#
+        let a = try JSONDecoder().decode(AmbassadorInviteResult.self, from: Data(full.utf8))
+        #expect(a.code == "harvard-7k3m9x2p4q8w2a")
+        #expect(a.welcome == "hey sam!")
+        #expect(a.schoolID == "harvard")
+        #expect(a.schoolName == "Harvard")
+        #expect(a.isNewSchool == true)
+        let b = try JSONDecoder().decode(AmbassadorInviteResult.self, from: Data(#"{"code":"abc"}"#.utf8))
+        #expect(b == AmbassadorInviteResult(code: "abc"))
+        #expect(throws: (any Error).self) {
+            try JSONDecoder().decode(AmbassadorInviteResult.self, from: Data(#"{"ok":true}"#.utf8))
+        }
+    }
+}
+
+@Suite("Ambassador school search")
+struct AmbassadorSchoolSearchTests {
+    static let existing = [AmbassadorPlan.Invite.School(id: "upenn", name: "UPenn"),
+                           AmbassadorPlan.Invite.School(id: "harvard", name: "Harvard University")]
+
+    @Test("an existing school comes first and its catalog twin is not listed again")
+    func existingFirst() {
+        let found = AmbassadorSchoolSearch.matches(query: "harvard", existing: Self.existing)
+        #expect(found.first?.existingID == "harvard")
+        #expect(found.filter { $0.name == "Harvard University" }.count == 1)
+    }
+
+    @Test("a catalog school is found with its Canvas host")
+    func catalog() {
+        let found = AmbassadorSchoolSearch.matches(query: "harvard", existing: [])
+        let harvard = found.first { $0.name == "Harvard University" }
+        #expect(harvard?.host == "canvas.harvard.edu")
+        #expect(harvard?.existingID == nil)
+        #expect(harvard?.shortName == "Harvard")
+    }
+
+    @Test("a short query finds nothing and the limit holds")
+    func limits() {
+        #expect(AmbassadorSchoolSearch.matches(query: "h", existing: Self.existing).isEmpty)
+        #expect(AmbassadorSchoolSearch.matches(query: "  ", existing: Self.existing).isEmpty)
+        #expect(AmbassadorSchoolSearch.matches(query: "university", existing: [], limit: 3).count <= 3)
+        #expect(AmbassadorSchoolSearch.matches(query: "university", existing: []).count <= 6)
+    }
+}
+
+@Suite("Ambassador client: invite", .serialized)
+struct AmbassadorInviteClientTests {
+    private func client() -> AmbassadorClient {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [IdeaStubProtocol.self]
+        return AmbassadorClient(baseURL: URL(string: "https://example.test")!, session: URLSession(configuration: config))
+    }
+
+    @Test("a POST to /a/{code}/invite with the fields as JSON; the 200 body decodes")
+    func request() async throws {
+        IdeaStubProtocol.status = 200
+        // The stub's canned body has no code, so the 200 path is a bad response here.
+        do {
+            _ = try await client().invite(code: "abc123code", fields: ["name": "Sam", "school": "harvard"])
+            Issue.record("a body with no code decoded")
+        } catch {
+            #expect(error as? AmbassadorClientError == .badResponse(200))
+        }
+        let request = try #require(IdeaStubProtocol.lastRequest)
+        #expect(request.httpMethod == "POST")
+        #expect(request.url?.path == "/a/abc123code/invite")
+        #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json")
+        let body = try #require(IdeaStubProtocol.lastBody)
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: String])
+        #expect(json == ["name": "Sam", "school": "harvard"])
+    }
+
+    @Test("403, 429 and 404 each have their own error; another status is a bad response")
+    func statuses() async {
+        let cases: [(Int, AmbassadorClientError)] = [(403, .notAllowed), (429, .limitReached),
+                                                     (404, .unknownCode), (400, .badResponse(400))]
+        for (status, expected) in cases {
+            IdeaStubProtocol.status = status
+            do {
+                _ = try await client().invite(code: "abc123code", fields: ["name": "Sam"])
+                Issue.record("status \(status) did not throw")
+            } catch {
+                #expect(error as? AmbassadorClientError == expected, "\(status)")
+            }
+        }
+    }
+}
+
+@MainActor
+@Suite("Ambassador invite model", .serialized)
+struct AmbassadorInviteModelTests {
+    private func withModel(allowed: Bool,
+                           _ body: @MainActor (AmbassadorModel, FakeAmbassadorService) async throws -> Void) async rethrows {
+        let before = NotificationScheduler.reservedForeignSlots
+        defer { NotificationScheduler.reservedForeignSlots = before }
+        let suite = "ambassador-invite-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let service = FakeAmbassadorService()
+        var plan = AmbassadorModelTests.plan()
+        if allowed { plan.invite = .init(allowed: true, left: 3, schools: [.init(id: "uva", name: "UVA")]) }
+        service.plans[AmbassadorModelTests.code] = plan
+        final class Box: @unchecked Sendable { var code: String?; init(_ c: String?) { code = c } }
+        let box = Box(AmbassadorModelTests.code)
+        let model = AmbassadorModel(defaults: defaults, client: service, center: FakeAmbassadorCenter(),
+                                    loadCode: { box.code }, saveCode: { box.code = $0 }, removeCode: { box.code = nil },
+                                    timeZone: TimeZone(secondsFromGMT: -5 * 3600)!)
+        try await body(model, service)
+    }
+
+    @Test("canInvite follows the plan's key")
+    func canInvite() async {
+        await withModel(allowed: false) { model, _ in
+            await model.refresh()
+            #expect(model.canInvite == false)
+        }
+        await withModel(allowed: true) { model, _ in
+            await model.refresh()
+            #expect(model.canInvite == true)
+        }
+    }
+
+    @Test("a good invite returns the result, clears the error and fetches the plan again")
+    func success() async {
+        await withModel(allowed: true) { model, service in
+            await model.refresh()
+            let before = service.planRequests.count
+            let result = await model.invite(name: " Sam ", schoolID: nil, schoolName: "Harvard",
+                                            schoolHost: "canvas.harvard.edu", contact: nil)
+            #expect(result?.code == "harvard-7k3m9x2p4q8w2a")
+            #expect(model.lastError == nil)
+            #expect(service.invites.count == 1)
+            #expect(service.invites.first?.fields == ["name": "Sam", "schoolName": "Harvard", "schoolHost": "canvas.harvard.edu"])
+            #expect(service.planRequests.count == before + 1)
+        }
+    }
+
+    @Test("a limit, a refusal, a bad request and no connection each say so in words")
+    func errors() async {
+        await withModel(allowed: true) { model, service in
+            service.inviteError = .limitReached
+            #expect(await model.invite(name: "Sam", schoolID: "uva", schoolName: nil, schoolHost: nil, contact: nil) == nil)
+            #expect(model.lastError == "limit reached for today")
+            service.inviteError = .notAllowed
+            _ = await model.invite(name: "Sam", schoolID: "uva", schoolName: nil, schoolHost: nil, contact: nil)
+            #expect(model.lastError == "not allowed")
+            service.inviteError = .badResponse(400)
+            _ = await model.invite(name: "Sam", schoolID: "uva", schoolName: nil, schoolHost: nil, contact: nil)
+            #expect(model.lastError == "check the name and school")
+            service.inviteError = .network
+            _ = await model.invite(name: "Sam", schoolID: "uva", schoolName: nil, schoolHost: nil, contact: nil)
+            #expect(model.lastError == "couldn\u{2019}t reach smooth")
+            // Nothing usable to send never reaches the server.
+            let count = service.invites.count
+            #expect(await model.invite(name: "", schoolID: "uva", schoolName: nil, schoolHost: nil, contact: nil) == nil)
+            #expect(model.lastError == "check the name and school")
+            #expect(service.invites.count == count)
+        }
+    }
+}
+
+@Suite("Ambassador invite wiring")
+struct AmbassadorInviteWiringTests {
+    private func uiSource(_ filename: String) throws -> String {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/LowHangingFruitUI/\(filename)")
+        try #require(FileManager.default.fileExists(atPath: url.path), "\(url.path) is not there")
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    @Test("the page draws the invite section only under model.canInvite")
+    func gated() throws {
+        let page = try uiSource("AmbassadorPage.swift")
+        let section = try #require(page.range(of: "private var inviteSection"))
+        let tail = String(page[section.upperBound...])
+        let gate = try #require(tail.range(of: "if model.canInvite"))
+        let row = try #require(tail.range(of: "add an ambassador"))
+        #expect(gate.lowerBound < row.lowerBound)
+        #expect(page.contains("AmbassadorInviteSheet()"))
+    }
+
+    @Test("the invite sheet never talks of ratings, reviews or stars")
+    func noReviews() throws {
+        let source = try uiSource("AmbassadorInviteSheet.swift").lowercased()
+        #expect(!source.contains("rating") && !source.contains("review") && !source.contains("stars"))
+    }
+
+    @Test("the new code is held in view state only, never stored")
+    func notStored() throws {
+        let sheet = try uiSource("AmbassadorInviteSheet.swift")
+        for word in ["UserDefaults", "defaults.set", "saveCode", "Keychain"] {
+            #expect(!sheet.contains(word), "\(word)")
+        }
+        let model = try uiSource("AmbassadorModel.swift")
+        let start = try #require(model.range(of: "func invite(name:"))
+        let end = try #require(model.range(of: "func clearError", range: start.upperBound..<model.endIndex))
+        let body = String(model[start.lowerBound..<end.lowerBound])
+        for word in ["defaults.set", "saveCode", "print(", "NSLog"] {
+            #expect(!body.contains(word), "\(word)")
+        }
     }
 }

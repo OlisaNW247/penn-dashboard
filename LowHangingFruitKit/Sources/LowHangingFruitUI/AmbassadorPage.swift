@@ -27,6 +27,7 @@ struct AmbassadorPage: View {
 
     @State private var codeField = ""
     @State private var openTask: AmbassadorTask?
+    @State private var showInvite = false
 
     var body: some View {
         Form {
@@ -40,6 +41,7 @@ struct AmbassadorPage: View {
             if model.isSignedIn {
                 goalSection
                 tasksSection
+                inviteSection
                 numbersSection
                 remindersSection
                 accountSection
@@ -65,6 +67,9 @@ struct AmbassadorPage: View {
         .refreshable { await model.refresh() }
         .sheet(item: $openTask) { task in
             AmbassadorTaskSheet(task: task)
+        }
+        .sheet(isPresented: $showInvite) {
+            AmbassadorInviteSheet()
         }
         .sheet(isPresented: Binding(
             get: { model.introPending },
@@ -161,6 +166,31 @@ struct AmbassadorPage: View {
             model.clearError()
             openTask = task
         }
+    }
+
+    // MARK: Invite
+
+    /// Only when the server's plan says this ambassador may add others; an
+    /// older server and every other ambassador see nothing at all.
+    @ViewBuilder
+    private var inviteSection: some View {
+        if model.canInvite {
+            Section {
+                AmbassadorRow(label: "add an ambassador", symbol: "person.badge.plus",
+                              trailing: inviteTrailing, leaves: false, done: false) {
+                    model.clearError()
+                    showInvite = true
+                }
+            } header: {
+                SmoothSectionHeader("invite", accent: .smoothCobalt)
+            }
+            .smoothSectionBackground(.smoothMarigold)
+        }
+    }
+
+    private var inviteTrailing: String? {
+        guard let left = model.plan?.invite?.left, left < 5 else { return nil }
+        return "\(max(0, left)) left today"
     }
 
     // MARK: Numbers
