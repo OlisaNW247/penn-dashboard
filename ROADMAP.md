@@ -854,6 +854,32 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   (off unless turned on), on-device only, recon by Marco before any
   client, and compiling through the GitHub runner on a draft PR.
 
+  **Decision, 2026-11-02 (Olisa, owner): build the direct reader**, having
+  read that McGraw Hill's terms appear to bar "robots, scrapers and
+  automatic devices" without written permission and that Apple 5.2.2 asks
+  for permission under a service's terms. Settled; not to be argued again.
+  The conditions: a remote switch in `lhf-update.json`,
+  `"readers": {"mcgrawHill": true}`, **off unless on** (any other value, a
+  missing key, a failed fetch on a fresh install or a last good fetch over
+  seven days old is off; only Olisa turns it on); a compile-time
+  `FeatureFlags.mcgrawHillReader`; on the phone only, never pooled, never in
+  the ask context document, no analytics; `docs/PRIVACY.md` in the same
+  commit as the reader; never on preview or demo data.
+
+  **2026-11-24, on `v13`** (the new line, cut from the 3.5.0 (21) source):
+  the groundwork from `feature/mcgraw-hill-reader` (green there 3458/340 on
+  `v8`) is ported: the switch and its store, `ReaderGate`, the launch-host
+  recognition and its id cache, `McGrawHillEnricher` (done-state, the
+  student's own date and "in connect" onto recognised Canvas rows; no second
+  card), `McGrawHillRow` (the `mh-` home Olisa agreed for items Canvas does
+  not list, filtered out of ask), the Keychain service and
+  `McGrawHillReauthRule`. Dropped in the port: the Sweeper exemption, because
+  Marco's buzz-only rule of 2026-11-18 already gives every `external_tool`
+  assignment three buzzes instead of the alarm and he ruled out silencing
+  work by accident. Next: recon, now runnable because Olisa has a Mac and a
+  friend with a Connect class (brief 1, `docs/mcgraw-hill/MARCO_BRIEFS.md`,
+  writes `docs/mcgraw-hill/RECON.md`); then the client, behind the flag.
+
 - **Improve the tree (ask)** (owner's request, 2026-10-24; the research
   is done, nothing implemented). `docs/TREE_IMPROVEMENT_PLAN.md` has the
   30-question set with verdicts (19 answerable today, 6 not in the pool,

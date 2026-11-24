@@ -5635,6 +5635,8 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
+| `v13` | **The line after 3.5.0 (21), from 2026-11-24.** Cut from `v11` `141ac20` (the 3.5.0 (21) archive commit `0615d3a` plus two docs commits). Carries the McGraw Hill reader's groundwork ported from `feature/mcgraw-hill-reader` (no Sweeper exemption: the buzz-only rule covers Connect), the Chrome extension's 0.1.3 and 0.1.4 fixes and the harness from `v8` (`v8`'s four commits not in `v11`), and the 3.5.0 test-pass leftovers. Not stamped: the version is chosen at release. Olisa works it from his own Mac. |
+| `feature/mcgraw-hill-reader` | 2026-11-02, off `v8`, draft PR #20 into `v8`; superseded by `v13`, which carries its code. Do not merge it. |
 | `claude/sweeper-build-0a4dd0` | **2026-11-18, off `claude/ambassador-header` `65d3558` with `claude/server-sweeper-3dea9b` merged in, local, not pushed; fast-forwarded into `claude/ambassador-header` the same day at Marco's word (equal to it at `b1a6aa8`).** The Sweeper accuracy work for 3.5.0, both releases of `docs/SWEEPER_ACCURACY_PLAN_2026-11-16.md` in the order of `docs/SWEEPER_BUILD_PLAN_2026-11-18.md`: the pure rules (`0233970`), cancel at observation and the last-hour poll (`ac4c6d1`), the `sweeper-wake` backend (`0916393`, hardened after review in `d612ed5`), the phone's registration and push wake (`2b846bc`). 4254/421 Swift, Deno 942, both iOS builds green; nothing deployed, nothing on a phone, no `aps-environment` entitlement until Olisa enables Push Notifications on the App ID. Merges into the release line at Marco's word. |
 | `sweeper/force-quit-check` | **2026-11-21, off `claude/ambassador-header` `4bd49bc`, local, not pushed; merges into the release line at Marco's word.** The force-quit check built at Marco's "build it": the alert push (not deployed), the `LHFSweeperCheck` notification extension, the manifest and cookie copy, `excused`. 4352/439 green, unsigned iOS and macOS builds green, never on a phone. The other session on `claude/ambassador-header` was editing `AppState.swift`, `ContentView.swift` and the notification files uncommitted at the time, so this branch touches none of them; expect `project.pbxproj` to conflict with any hand edit there (regenerate, then restore `Smooth.app`). |
 | `research/sweeper-force-quit` | **2026-11-21, off `claude/ambassador-header` `279b14f`, local; committed `48eea48` and cherry-picked onto `sweeper/force-quit-check`.** Research only: `docs/SWEEPER_FORCE_QUIT_RESEARCH_2026-11-21.md` (an alert push and a Notification Service Extension as the force-quit-proof cancel; AlarmKit-from-an-extension evidence and the two-hour device test that settles it; the planner `excused` gap) and its `ROADMAP.md` → Next entry. No code. |
@@ -5688,6 +5690,12 @@ none is a ship line.
 
 ## Known gaps
 
+- **Nothing about McGraw Hill has been seen** (2026-11-24, `v13`). The
+  host list in `McGrawHillTool` (`mheducation.com`, `aleks.com`,
+  `mcgraw-hill.com`, `mhcampus.com`) is the research's guess, no reader
+  client exists, and whether Canvas ever records `submitted_at` for
+  finished Connect work is unknown. Brief 1 (`docs/mcgraw-hill/MARCO_BRIEFS.md`)
+  is ready: Olisa runs it on his Mac with a friend who has a Connect class.
 - **Two 3.5.0 test-pass findings left for a phone** (2026-11-22,
   `docs/TEST_RELEASE_3.5.0_2026-11-22.md` → Decisions). R-I1: a card drag
   that SwiftUI cancels never runs `onEnded`, so `swipeAxis` can stay

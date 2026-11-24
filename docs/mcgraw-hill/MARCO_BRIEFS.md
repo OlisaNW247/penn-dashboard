@@ -1,24 +1,25 @@
-# McGraw Hill reader: briefs for Marco
+# McGraw Hill reader: briefs for the Mac
 
 Each brief is a job that needs a Mac, a real browser or a phone on a cable.
-Olisa relays them; Marco's own Claude session reads them. Each one stands
-alone: it says what to do, the exact commands, and what to paste back.
+Since 2026-11-24 Olisa has a MacBook and runs them himself (they were written
+for Marco, who is still named below where it reads that way); a Claude
+session on that Mac can follow them as written. Each one stands alone: it
+says what to do, the exact commands, and what to paste back.
 
 Context for every brief: the owners decided on 2026-11-02 to build a reader
 of a student's own McGraw Hill Connect (later ALEKS) assignments, on the
 phone only, behind a remote kill switch that is off (`ROADMAP.md` → Next →
-McGraw Hill; `reports/McGraw Hill access for Smooth.md`). The work is on the
-branch `feature/mcgraw-hill-reader`, draft PR into `v8`. Never merge it,
-never push to `v8`, never touch the `update-manifest` branch.
+McGraw Hill; `reports/McGraw Hill access for Smooth.md`). Since 2026-11-24 the work is on
+`v13` (cut from the 3.5.0 (21) source); `feature/mcgraw-hill-reader` (draft
+PR #20 into `v8`) is superseded. Never touch the `update-manifest` branch
+except to flip the switch on purpose.
 
 ---
 
 ## Brief 1 (2026-11-02): record what McGraw Hill Connect actually serves
 
-**Status: waiting for an account.** On 2026-11-02 Olisa said neither he nor
-Marco has a McGraw Hill class this term. He is asking a friend who does.
-This brief runs once that friend agrees to sit with Marco (or to run it
-themselves on their own Mac with this repo).
+**Status (2026-11-24): ready to run.** Neither Olisa nor Marco has a McGraw
+Hill class, but a friend who does has agreed to sign in on Olisa's Mac.
 
 ### Why
 
@@ -170,22 +171,22 @@ Create `docs/mcgraw-hill/RECON.md` on the branch with this shape, filled in
 ### Commands (on the Mac, in the repo)
 
 ```bash
-git fetch origin feature/mcgraw-hill-reader
-git checkout feature/mcgraw-hill-reader
-git pull origin feature/mcgraw-hill-reader
+git fetch origin v13
+git checkout v13
+git pull origin v13
 # write docs/mcgraw-hill/RECON.md, then check it holds nothing it must not:
 grep -nE 'eyJ[A-Za-z0-9_-]{10,}|[0-9]{6,}|@[A-Za-z0-9-]+\.|ERIGHTS=|Bearer [A-Za-z0-9]' docs/mcgraw-hill/RECON.md \
   && echo "STOP: something above looks like a token, an id or an email" || echo "clean"
 git add docs/mcgraw-hill/RECON.md
 git commit -m "Record McGraw Hill Connect recon (names and types only)"
-git push -u origin feature/mcgraw-hill-reader
+git push -u origin v13
 ```
 
 Only push when the grep prints `clean` (or every line it prints has been
 checked by eye and is not a secret, for example a field *named*
 `personXid`).
 
-### What to paste back to Olisa
+### What to paste back into the cloud session
 
 One line: "RECON.md pushed at <commit>", plus the answers to three
 questions, which decide the reader's road:
