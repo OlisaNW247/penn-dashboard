@@ -219,6 +219,29 @@ enum FeatureFlags {
     /// defaults keys it keeps are left alone.
     static let installCount = true
 
+    /// **The McGraw Hill reader is compiled out: off until it exists.**
+    /// Owners' decision of 2026-11-02 (`ROADMAP.md`): build a reader of the
+    /// student's own Connect (later ALEKS) assignments, on the phone only,
+    /// although McGraw Hill's terms appear to bar automated access without
+    /// written permission. This flag is the release's hard off; the live,
+    /// no-release switch is the update manifest's `readers.mcgrawHill`
+    /// (`ReaderSwitches`), which is off unless the manifest says `true`. The
+    /// reader runs only when both say on, and never on preview or demo data
+    /// (`ReaderGate.mcgrawHill`).
+    ///
+    /// False today because there is no reader yet: only the pieces that need
+    /// no McGraw Hill endpoint are built (the switch, the host recognition,
+    /// the enrichment pass, the session store and reauth rule). Flip it to
+    /// true in the commit that lands the client, once `docs/mcgraw-hill/
+    /// RECON.md` exists; the manifest then decides, and Olisa turns it on.
+    ///
+    /// The Sweeper needs nothing from this flag: a Connect assignment is
+    /// `external_tool`, which the buzz-only rule of 2026-11-18
+    /// (`SweeperSettings.isBuzzOnly`) already gives three buzzes instead of
+    /// the alarm, because no Canvas read can confirm it. When the reader
+    /// can confirm it, that is the place to let it ring again.
+    static let mcgrawHillReader = false
+
     /// Evaluates a token-store read only while the experiment is enabled.
     /// Keeping the guard around the closure (rather than around its result)
     /// is load-bearing: Keychain reads are synchronous and must not happen at

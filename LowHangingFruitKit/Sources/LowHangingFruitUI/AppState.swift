@@ -379,6 +379,17 @@ final class AppState: ObservableObject {
     /// confirmed submitted, so it gets the three buzzes, not an alarm.
     @Published private(set) var externalToolCanvasAssignmentIDs: Set<String> = []
 
+    /// Canvas assignment ids Grade Watcher has seen launch McGraw Hill
+    /// Connect or ALEKS (`GradeItem.externalToolHost`, recognised by
+    /// `McGrawHillTool`), cached and persisted exactly as
+    /// `noSubmissionCanvasAssignmentIDs` just above is, for the same reason:
+    /// the enrichment pass (`McGrawHillEnricher`) matches McGraw Hill items
+    /// only to these rows, so a Connect "Homework 3" can never mark an
+    /// unrelated Canvas "Homework 3" done. Updated per item by
+    /// `Self.updatedMcGrawHillToolIDs`; cleared with the Canvas session.
+    /// Device-local, never mirrored to iCloud, never sent anywhere.
+    @Published private(set) var mcgrawHillToolCanvasAssignmentIDs: Set<String> = []
+
     /// Settings → "ai assist". Default
     /// **true**, absent-key-means-on, same idiom as
     /// on: it runs under LHF's own
@@ -994,6 +1005,9 @@ final class AppState: ObservableObject {
     private static let onPaperCanvasAssignmentIDsKey = "onPaperCanvasAssignmentIDsV1"
     /// Backs `externalToolCanvasAssignmentIDs`. Device-local, as the two above.
     private static let externalToolCanvasAssignmentIDsKey = "externalToolCanvasAssignmentIDsV1"
+    /// Backs `mcgrawHillToolCanvasAssignmentIDs`. Device-local, never
+    /// mirrored, for `noSubmissionCanvasAssignmentIDsKey`'s reasons.
+    private static let mcgrawHillToolCanvasAssignmentIDsKey = "mcgrawHillToolCanvasAssignmentIDsV1"
     private static let announcementWatcherEnabledKey = "announcementWatcherEnabledV1"
     /// Backs `announcementAIEnabled`. Default-**on** now — see that
     /// property's doc comment — so, like `announcementWatcherEnabledKey`
@@ -1291,6 +1305,12 @@ final class AppState: ObservableObject {
         )
         self.externalToolCanvasAssignmentIDs = Set(
             UserDefaults.lhf.stringArray(forKey: Self.externalToolCanvasAssignmentIDsKey) ?? []
+
+        )
+        // Seeded for the same first-frame reason: the Sweeper is planned
+        // before any grade refresh has run.
+        self.mcgrawHillToolCanvasAssignmentIDs = Set(
+            UserDefaults.lhf.stringArray(forKey: Self.mcgrawHillToolCanvasAssignmentIDsKey) ?? []
         )
         // Both default to true (absent-key-means-on, per each property's doc
         // comment) but MUST be read back from UserDefaults.lhf rather than
@@ -5574,6 +5594,12 @@ final class AppState: ObservableObject {
         UserDefaults.lhf.removeObject(forKey: Self.onPaperCanvasAssignmentIDsKey)
         externalToolCanvasAssignmentIDs = []
         UserDefaults.lhf.removeObject(forKey: Self.externalToolCanvasAssignmentIDsKey)
+        mcgrawHillToolCanvasAssignmentIDs = []
+        UserDefaults.lhf.removeObject(forKey: Self.mcgrawHillToolCanvasAssignmentIDsKey)
+        // McGraw Hill's session exists only beside a Canvas login (the reader
+        // enriches Canvas rows), so it goes with Canvas, as Ed's does.
+        SessionCookieStore.remove(service: .mcgrawHill)
+        McGrawHillReauthStore.reset()
         gradeWatcher.clearAll(keepingHistory: keepingStudentWork)
         // Drop the durable ledger's Canvas rows too, or a disconnected
         // account's unfinished work survives in the store and reappears on
@@ -10017,6 +10043,15 @@ final class AppState: ObservableObject {
             UserDefaults.lhf.set(
                 Array(externalToolCanvasAssignmentIDs).sorted(),
                 forKey: Self.externalToolCanvasAssignmentIDsKey
+
+            )
+            mcgrawHillToolCanvasAssignmentIDs = Self.updatedMcGrawHillToolIDs(
+                cached: mcgrawHillToolCanvasAssignmentIDs,
+                snapshots: Array(gradeWatcher.snapshots.values)
+            )
+            UserDefaults.lhf.set(
+                Array(mcgrawHillToolCanvasAssignmentIDs).sorted(),
+                forKey: Self.mcgrawHillToolCanvasAssignmentIDsKey
             )
         }
 
@@ -10177,6 +10212,52 @@ final class AppState: ObservableObject {
             }
         }
         return next
+    }
+
+    /// The update rule for `mcgrawHillToolCanvasAssignmentIDs`: the same
+    /// per-item replace as `updatedNoSubmissionIDs`. Every item a refresh
+    /// observed enters the set when its launch host is McGraw Hill's and
+    /// leaves it otherwise; a course the refresh never touched keeps what the
+    /// cache had. Pure, so it is tested without a network or defaults, and
+    /// `nonisolated` so a test (or any caller) need not be on the main actor
+    /// for a function that touches no state (`CLAUDE.md`, the `decidedText` trap).
+    nonisolated static func updatedMcGrawHillToolIDs(
+        cached: Set<String>,
+        snapshots: [CourseGradeSnapshot]
+    ) -> Set<String> {
+        var next = cached
+        for snapshot in snapshots {
+            for category in snapshot.categories {
+                for item in category.items {
+                    if McGrawHillTool.isMcGrawHill(host: item.externalToolHost) {
+                        next.insert(item.id)
+                    } else {
+                        next.remove(item.id)
+                    }
+                }
+            }
+        }
+        return next
+    }
+
+    /// Whether the McGraw Hill reader may run right now (`ReaderGate`): the
+    /// compile-time flag, the manifest's last-known `readers.mcgrawHill`
+    /// (`ReaderSwitchStore`), never on preview or demo data, and in a DEBUG
+    /// build `-LHFForceMcGrawHillReader` in place of the manifest, so a
+    /// developer's phone can run it while the live switch stays off. No
+    /// reader reads it yet (2026-11-02); the client lands after recon.
+    var isMcGrawHillReaderOn: Bool {
+        #if DEBUG
+        let forced = ProcessInfo.processInfo.arguments.contains("-LHFForceMcGrawHillReader")
+        #else
+        let forced = false
+        #endif
+        return ReaderGate.mcgrawHill(
+            compiledIn: FeatureFlags.mcgrawHillReader,
+            switches: ReaderSwitchStore().load(),
+            debugForced: forced,
+            isUsingFixtureData: isUsingFixtureData
+        )
     }
 
     /// Pure planning for "Turned in ✓" notifications — mirrors

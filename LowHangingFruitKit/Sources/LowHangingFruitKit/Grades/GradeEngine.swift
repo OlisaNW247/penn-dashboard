@@ -461,7 +461,8 @@ public enum GradeEngine {
                 isExcused: item.isExcused,
                 omitFromFinalGrade: item.omitFromFinalGrade,
                 dueAt: item.dueAt,
-                submissionTypes: item.submissionTypes
+                submissionTypes: item.submissionTypes,
+                externalToolHost: item.externalToolHost
             )
         }
 

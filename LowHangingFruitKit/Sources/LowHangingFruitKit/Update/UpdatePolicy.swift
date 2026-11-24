@@ -56,6 +56,11 @@ public struct UpdatePolicy: Codable, Sendable, Equatable {
     /// agent"). Already sanitized (`sanitizedChanges`); empty means no list.
     /// Nothing in the version verdict reads it.
     public var changes: [String]
+    /// The optional remote reader switches (`ReaderSwitches`, the McGraw Hill
+    /// kill switch). Nothing in the version verdict reads it. Nil when the
+    /// manifest has no `readers` object or one that could not be read, which
+    /// every reader treats as off.
+    public var readers: ReaderSwitches?
 
     public init(
         minimumVersion: AppVersion? = nil,
@@ -63,7 +68,8 @@ public struct UpdatePolicy: Codable, Sendable, Equatable {
         message: String? = nil,
         appStoreURL: URL? = nil,
         feedback: FeedbackNotice? = nil,
-        changes: [String] = []
+        changes: [String] = [],
+        readers: ReaderSwitches? = nil
     ) {
         self.minimumVersion = minimumVersion
         self.latestVersion = latestVersion
@@ -71,10 +77,11 @@ public struct UpdatePolicy: Codable, Sendable, Equatable {
         self.appStoreURL = appStoreURL
         self.feedback = feedback
         self.changes = Self.sanitizedChanges(changes)
+        self.readers = readers
     }
 
     private enum CodingKeys: String, CodingKey {
-        case minimumVersion, latestVersion, message, appStoreURL, feedback, changes
+        case minimumVersion, latestVersion, message, appStoreURL, feedback, changes, readers
     }
 
     public init(from decoder: Decoder) throws {
@@ -106,6 +113,11 @@ public struct UpdatePolicy: Codable, Sendable, Equatable {
         changes = Self.sanitizedChanges(
             (try? container.decodeIfPresent(LossyStrings.self, forKey: .changes))?.values ?? []
         )
+        // The same `try?`, for the same reason: `readers` is a kill switch
+        // that fails closed (`ReaderSwitches`), and nothing about it may ever
+        // fail the floor open. `ReaderSwitches.init(from:)` already reads any
+        // bad shape as all off; this `try?` is the second wall.
+        readers = try? container.decodeIfPresent(ReaderSwitches.self, forKey: .readers)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -118,6 +130,7 @@ public struct UpdatePolicy: Codable, Sendable, Equatable {
         if !changes.isEmpty {
             try container.encode(changes, forKey: .changes)
         }
+        try container.encodeIfPresent(readers, forKey: .readers)
     }
 
     // MARK: Sanitizers
