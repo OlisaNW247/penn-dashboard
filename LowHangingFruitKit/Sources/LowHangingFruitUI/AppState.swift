@@ -5545,6 +5545,9 @@ final class AppState: ObservableObject {
         // when a list was ever sent.
         Task { @MainActor [weak self] in await self?.withdrawSweeperWakeIfSent() }
         UserDefaults.lhf.removeObject(forKey: SharedDefaults.agentConnectionEnabledKey)
+        // The off-switch cleanup's one-shot marker goes too: with the opt-in
+        // gone it can never fire again, and a new Canvas account starts clean.
+        UserDefaults.lhf.removeObject(forKey: Self.agentOffCleanupDoneKey)
         agentConnectionEnabled = false
         hasAgentConnections = false
         // The server deletes the drafts with the snapshot; the phone's copies,

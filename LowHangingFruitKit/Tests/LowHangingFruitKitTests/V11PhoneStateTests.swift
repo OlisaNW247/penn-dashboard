@@ -172,7 +172,8 @@ struct V11PhoneStateTests {
                      "LowHangingFruitUI/AgentDraftReviewSheet.swift", "LowHangingFruitUI/ProfileAgentRows.swift",
                      "LowHangingFruitUI/AgentLinkApproveSheet.swift"]
         let known: Set<String> = ["agentDraftsCacheV1", "agentDraftsNotifiedV1", "agentKnownConnectionIDsV1",
-                                  "attachmentAttemptsV1", "lastAttachmentSyncSummaryV1"]
+                                  "attachmentAttemptsV1", "lastAttachmentSyncSummaryV1",
+                                  "agentOffSwitchCleanupDoneV1"]
         let pattern = try NSRegularExpression(pattern: #"(?:Key|key) = "([A-Za-z0-9_.]+)""#)
         for file in files {
             guard let text = try? Self.source(file) else { continue }
