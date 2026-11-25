@@ -45,6 +45,10 @@ contains the fourth plus the playbook, posts to try from the founders, and
 the feed and post-result uploads, so it is the only one to deploy. Its
 `CHANGES_FOR_DEPLOYMENT.md` has the checks to run afterwards.
 
+**Tenth zip, 2026-11-25:** the ninth (live since 2026-11-24) plus the
+per-channel share links on the founder and ambassador pages. Page changes
+only. Not deployed when this was written.
+
 **Seventh zip, 2026-11-22:** two designs retired, five generic designs
 added. The first zip that changes the Maps and `imageData` (see
 `sites/CHANGES_FOR_DEPLOYMENT.md`). The Sites archive it is built from was

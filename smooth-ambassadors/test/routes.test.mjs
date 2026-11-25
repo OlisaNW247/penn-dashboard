@@ -390,7 +390,7 @@ test("the token is nowhere in posts, messages or stickers; only the ref is", asy
   // The two posts carry no link, so the page keeps one "copy my link" button
   // on the public ref: without it the tracked share links would be nowhere.
   assert.match(page, new RegExp(`/r/${ref}/s/dm"`));
-  assert.match(page, /copy my link/);
+  assert.match(page, /my links/);
   assert.doesNotMatch(page, /opens: \d+ total/);
 });
 
@@ -628,4 +628,46 @@ test("plan.json: contacts come from FOUNDER_CONTACTS, leniently, and the key is 
   assert.deepEqual(parseContacts({ FOUNDER_CONTACTS: JSON.stringify([{ name: "x" }, { name: "", phone: "1" }, 4, null]) }), []);
   const five = JSON.stringify([1, 2, 3, 4, 5].map((i) => ({ name: "n" + i, phone: "+1 555 010 010" + i })));
   assert.equal(parseContacts({ FOUNDER_CONTACTS: five }).length, 4);
+});
+
+test("founder links row and ambassador my-links show per-channel opens, ref only", async () => {
+  const mk = async (name) => {
+    const r = await post(`/f/${FOUNDER}/add`, { name, school: "uva", contact: "", notes: "" });
+    const tok = new URL(r.headers.get("location"), "https://x").searchParams.get("created");
+    const ex = await (await get(`/f/${FOUNDER}/export.json`)).json();
+    return { tok, ref: ex.ambassadors.find((a) => a.name === name).ref };
+  };
+  const A = await mk("Links Alpha");
+  const B = await mk("Links Beta");
+  for (const ch of ["fizz", "fizz", "fizz", "gc"]) assert.equal((await get(`/r/${A.ref}/s/${ch}`)).status, 302);
+  const ex = await (await get(`/f/${FOUNDER}/export.json`)).json();
+  const a = ex.ambassadors.find((x) => x.name === "Links Alpha");
+  assert.equal(a.linkOpens, 4);
+  const founder = await (await get(`/f/${FOUNDER}`)).text();
+  const row = (name) => {
+    const i = founder.indexOf(`<summary>${name}`);
+    const j = founder.indexOf("<td>links</td>", i);
+    return founder.slice(j, founder.indexOf("</tr>", j));
+  };
+  const ra = row("Links Alpha");
+  assert.match(ra, new RegExp(`data-copy="[^"]*/r/${A.ref}/s/fizz"`));
+  assert.match(ra, /fizz 3 · 3 in/);
+  assert.match(ra, /group chat 1 · 1 in/);
+  assert.match(ra, /instagram story 0 · 0 in/);
+  assert.ok(!ra.includes(A.tok));
+  const rb = row("Links Beta");
+  assert.match(rb, new RegExp(`/r/${B.ref}/s/fizz"`));
+  assert.ok(!rb.includes(A.ref));
+  assert.doesNotMatch(rb, /[1-9] · \d+ in/);
+  const page = await (await get(`/a/${A.tok}`)).text();
+  assert.match(page, new RegExp(`data-copy="[^"]*/r/${A.ref}/s/fizz"`));
+  assert.match(page, /fizz <span class="muted mono">3 opens · 3 in/);
+  for (const m of page.matchAll(/data-copy="([^"]*)"/g)) assert.ok(!m[1].includes(A.tok), m[1]);
+  const pb = await (await get(`/a/${B.tok}`)).text();
+  assert.ok(!pb.includes(`/r/${A.ref}/`));
+  const db = await mf.getD1Database("DB");
+  const n = async () => (await db.prepare("SELECT COUNT(*) n FROM amb_hits WHERE kind='link' AND key='other' AND ambassador_id=(SELECT id FROM ambassadors WHERE ref=?1)").bind(A.ref).first()).n;
+  const o = await n();
+  assert.equal((await get(`/r/${A.ref}/s/zzz`)).status, 302);
+  assert.equal(await n(), o + 1);
 });

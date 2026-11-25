@@ -506,3 +506,31 @@ count):
    the roster shows an "invites" line per ambassador.
 4. `POST /a/{unknown code}/invite` answers 404; `GET /a/{code}/invite` is 404.
 5. `GET /api/leaderboard` lists the same schools as before.
+
+## Update, 2026-11-25 (tenth, small): share links per channel
+
+This archive is the ninth plus two page changes. **The live site is the
+ninth** (read on 2026-11-24, GETs only). No new route, table, column, plan
+key or runtime variable.
+
+Why: a founder wanted to hand one ambassador his Fizz link and see how often
+it is opened. The link has existed since the first deploy
+(`/r/{ref}/s/{channel}`), but the founder page showed only a total and had no
+way to copy one, and the ambassador page offered the dm link alone.
+
+- **Founder page**: each roster entry gains a `links` row: for every channel
+  (group chat, fizz, sidechat, yik yak, instagram story, dm, other) the opens
+  (all time and recent) and a `copy` button for that ambassador's link.
+  `founderStats` reads one more grouped statement over `amb_hits`.
+- **Ambassador page**: the single "copy my link" line becomes a "my links"
+  list, one row per channel with its opens and a `copy` button.
+- The links hold the public `ref`, never the private code.
+
+What does not change: every legacy route, every existing row and total,
+`plan.json`, the `/r/` handler and what it counts.
+
+Read-only checks after deploying (open no `/scan/` or `/r/` link):
+
+1. `GET /api/stats`: the same rows as before, no total lower.
+2. `GET /a/{a real code}`: the page has "my links" with seven `copy` buttons.
+3. `GET /f/{FOUNDER_TOKEN}`: each roster entry has a `links` line.

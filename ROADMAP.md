@@ -48,6 +48,15 @@ These block shipping, or would make shipping risky. The launch-prep
 work of 2026-10-09/10 is summarised, with the order to take these in,
 in `docs/LAUNCH_PREP_HANDOFF.md`.
 
+- **Tenth site zip: share links per channel on the founder page and the
+  ambassador page** (2026-11-25, `claude/new-session-b3ylkg`; built and
+  tested, in Olisa's hands, **not deployed**). It is the ninth plus two page
+  changes and nothing else: no route, table, plan key or variable. Olisa
+  gives the zip to the ChatGPT session; the checks are at the foot of
+  `smooth-ambassadors/sites/CHANGES_FOR_DEPLOYMENT.md`. Open afterwards:
+  whether Fizz fetches a link preview (it would count as an open), and
+  whether to set `APPLE_PROVIDER_TOKEN` so Apple reports page views and
+  downloads per link (`CLAUDE.md` → Known gaps, top).
 - **3.5.1 (22) and the ninth site zip: a new school needs no deploy and no
   app update** (2026-11-24, `claude/new-session-b3ylkg`, on `v11` `141ac20`).
   Olisa: "there should be a button that generates a new code for a new

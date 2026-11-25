@@ -747,7 +747,7 @@ export async function schoolLeaderboard(env, days = 14, S = defaultSchools()) {
 // Founder-only: performance by school, design and ambassador.
 export async function founderStats(env, days = 14, S = defaultSchools()) {
   const since = sinceIso(days);
-  const [ambs, hits, acts, fb, rems, designRecent, designTotals, checks] =
+  const [ambs, hits, acts, fb, rems, designRecent, designTotals, checks, linkHits] =
     await env.DB.batch([
       env.DB.prepare("SELECT * FROM ambassadors ORDER BY school, name"),
       env.DB.prepare(
@@ -767,7 +767,15 @@ export async function founderStats(env, days = 14, S = defaultSchools()) {
       ).bind(since),
       env.DB.prepare("SELECT poster, total FROM scans"),
       env.DB.prepare("SELECT ambassador_id, COUNT(*) n FROM checklist GROUP BY ambassador_id"),
+      env.DB.prepare(
+        "SELECT ambassador_id, key, SUM(CASE WHEN ts >= ?1 THEN 1 ELSE 0 END) recent, COUNT(*) total FROM amb_hits WHERE kind = 'link' GROUP BY ambassador_id, key",
+      ).bind(since),
     ]);
+  const channelMap = {};
+  for (const h of linkHits.results) {
+    channelMap[h.ambassador_id] ??= {};
+    channelMap[h.ambassador_id][h.key] = { total: h.total, recent: h.recent };
+  }
   const hitMap = {};
   for (const h of hits.results) {
     hitMap[h.ambassador_id] ??= {};
@@ -797,6 +805,7 @@ export async function founderStats(env, days = 14, S = defaultSchools()) {
       posterOpensRecent: h.poster?.recent ?? 0,
       linkOpens: h.link?.total ?? 0,
       linkOpensRecent: h.link?.recent ?? 0,
+      opensByChannel: channelMap[a.id] || {},
       drops: myActs.filter((x) => x.kind === "drop").reduce((s, x) => s + x.copies, 0),
       posts: myActs.filter((x) => x.kind === "post").length,
       lastActivity: myActs[0]?.ts ?? null,

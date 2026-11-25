@@ -319,7 +319,12 @@ export function ambassadorPage({
         <div class="stat t-grape"><b>${stats.posts}</b><span>posts you've logged</span></div>
       </div>
       <p class="small muted">opens are taps, repeats included, not people. downloads are students who connected canvas, counted since the app update that added the count. ${S.isDynamic(amb.school) ? "" : `<a href="${attr(dashboardHref)}" target="_blank" rel="noopener">${esc(schoolLower)} scan dashboard (new tab)</a>`}</p>
-      <p class="small muted">for dms and group chats: <button class="small" data-copy="${attr(links.share("dm"))}">copy my link</button></p>
+      <div class="small"><b>my links</b>${Object.entries(CHANNELS)
+        .map(
+          ([ch, label]) =>
+            `<div class="row" style="justify-content:space-between"><span>${esc(label)} <span class="muted mono">${allByKey[`link:${ch}`] ?? 0} opens · ${recentByKey[`link:${ch}`] ?? 0} in ${stats.days}d</span></span><button class="small" data-copy="${attr(links.share(ch))}">copy</button></div>`,
+        )
+        .join("")}</div>
     </section>
 
     <section class="sec t-tomato"><h2 id="posters">${esc(schoolLower)} posters</h2>
@@ -482,6 +487,12 @@ export function founderPage({ stats, origin, secret, flash, created, schools = n
           <tr><td>contact</td><td>${esc(a.contact || "—")}</td></tr>
           <tr><td>page</td><td><a href="${attr(ambassadorLinks(origin, a).page)}">open</a> · <button class="small ghost" data-copy="${attr(ambassadorLinks(origin, a).page)}">copy link</button></td></tr>
           <tr><td>opens</td><td>${a.linkOpens} links · ${a.posterOpens} stickers (${a.linkOpensRecent + a.posterOpensRecent} in ${stats.days}d)</td></tr>
+          <tr><td>links</td><td>${Object.entries(CHANNELS)
+            .map(([ch, label]) => {
+              const o = a.opensByChannel?.[ch] ?? { total: 0, recent: 0 };
+              return `<span style="white-space:nowrap">${esc(label)} ${o.total} · ${o.recent} in ${stats.days}d <button class="small ghost" data-copy="${attr(ambassadorLinks(origin, a).share(ch))}">copy</button></span>`;
+            })
+            .join(" &nbsp; ")}</td></tr>
           <tr><td>did</td><td>${a.drops} posters · ${a.posts} posts · last ${esc(ago(a.lastActivity))}</td></tr>
           <tr><td>invites</td><td>${canInvite(a) ? "may invite" : "may not invite"}${a.can_invite == null ? " (default)" : ""}${a.invited_by ? ` · invited by ${esc(nameById.get(a.invited_by) ?? "someone")}` : ""}</td></tr>
           <tr><td>last reminder</td><td>${a.lastReminder ? `${esc(a.lastReminder.kind)} ${esc(ago(a.lastReminder.ts))}${a.lastReminder.replied ? " · replied" : ""}` : "none"}</td></tr>

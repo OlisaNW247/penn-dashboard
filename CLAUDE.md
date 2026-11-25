@@ -1816,7 +1816,7 @@ Keep this current. It is the fastest way for a new session to know what exists.
      `tabard` and `these-two`, five generic designs) and reach phones only
      through Olisa's deploy. Unseen on a phone: everything in this round.
      **Inviting from the app (2026-11-24, 3.5.1, compiled on the runner,
-     never on a phone; the ninth site zip that serves it went live the same day,
+     on Olisa's phone since the same day, Known gaps; the ninth site zip that serves it went live the same day,
      so the row shows on a 3.5.1 build for anyone the server lets invite).**
      Olisa: "a button that generates a new code for a new person at a new
      school", for the founders, with no app update per school. When the
@@ -5746,9 +5746,36 @@ none is a ship line.
 
 ## Known gaps
 
+- **A tracked link per ambassador per channel has existed since the first
+  deploy; a tenth site zip (2026-11-25, not deployed) lets a founder copy one
+  and read its opens.** Olisa asked for "a special link to smooth on the app
+  store" for the Case Western ambassador's Fizz posts, counted. It was already
+  there: `/r/{ref}/s/fizz` redirects to the App Store and writes one
+  `amb_hits` row, and the 3.5.0 app fills it into the example replies of the
+  anonymous-chats task (`plan.links.fizz`, `plan.guidance`). What was missing
+  was a way to see it: the founder page showed one total per ambassador and
+  no link, and the ambassador web page offered the dm link alone, with
+  per-channel counts only under messages that hold a link, which the
+  two-post bank does not. The tenth zip adds a `links` row to each roster
+  entry (every channel, its opens, a copy button) and a "my links" list on
+  the ambassador page. Worker suite 129 pass / 90 skipped without the Sites
+  export and 219 of 219 with it; the rehearsal on the real scan backup 28
+  PASS, 0 FAIL; both pages driven in Chromium at 390 points, light and dark,
+  no sideways overflow. Until it is deployed, the link is the ambassador's dm
+  link from his web page with `dm` changed to `fizz`, or the link in his
+  app's anonymous-chats sheet with Fizz picked, and the count is "links" in
+  his founder-page roster entry (all channels together). What the number is:
+  requests to the link, repeats included, and **nothing filters a link
+  preview or a bot**, so an app that fetches a preview when the link is
+  pasted counts once per fetch; it is not App Store page views or downloads.
+  Apple's own campaign report would give those: `appStoreRedirect` already
+  adds `pt`, `ct` and `mt` once the `APPLE_PROVIDER_TOKEN` variable is set on
+  the Sites project (`docs/conversion-reporting.md`); whether it is set was
+  not read. The first column of the founder roster table wraps letter by
+  letter at phone width, as it did before.
 - **Inviting from the app and schools without a deploy (2026-11-24): the
-  site half is live, the app half is in no released build, and no invite has
-  been made on the live site.** The ChatGPT session deployed the ninth zip
+  site half is live, the app half is in no released build but on Olisa's
+  phone, and real invites have gone out from it.** The ChatGPT session deployed the ninth zip
   the same day (its report: Harvard, the five generic posters, invitations
   and new-school creation, the founders' contact numbers, two gallery
   designs retired with their printed codes kept; local and live checks
