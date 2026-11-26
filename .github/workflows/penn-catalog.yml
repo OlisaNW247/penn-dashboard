@@ -59,7 +59,10 @@ jobs:
   # Fetches Penn's public requirement template for every undergraduate
   # program and replaces the orphan branch penn-data-raw with them, so the
   # pack parser can be built and reviewed against the real templates.
+  # Runs only for a commit whose message contains "[programs]", so an edit to
+  # another script here does not ask Penn for 400 templates again.
   programs:
+    if: contains(github.event.head_commit.message, '[programs]')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

@@ -40,8 +40,10 @@ for (const block of rulesText.split(/\n(?=\*\*[A-Z]+-\d+[a-z]?\. )/)) {
   const head = block.match(/^\*\*([A-Z]+-\d+[a-z]?)\. ([^*]*)\*\*/);
   if (!head) continue;
   const statuses = [...block.matchAll(/Status:\s*([A-Z]+(?: \([^)]*\))?)/g)].map((m) => m[1]);
-  const status = statuses.at(-1) ?? "NONE";
-  if (status.startsWith("VERIFIED")) continue;
+  const status = statuses.join(" / ") || "NONE";
+  // Checked: anything the first pass only heard about (REPORTED), read in
+  // someone's code (CODE), or found in two versions (CONFLICTING).
+  if (!/REPORTED|CONFLICTING|CODE|NONE/.test(status)) continue;
   const body = block.split(/\n---\n|\n## /)[0];
   const quotes = [];
   for (const m of body.matchAll(/"([^"]{12,})"/g)) {
@@ -63,15 +65,21 @@ console.log(`rules to check: ${rules.length}; quoted fragments: ${rules.reduce((
 const scopes = [
   {
     name: "wharton-ug",
-    seeds: ["https://undergrad-inside.wharton.upenn.edu/"],
+    seeds: [
+      "https://undergrad-inside.wharton.upenn.edu/",
+      "https://undergrad-inside.wharton.upenn.edu/wp-content/uploads/2025/06/2025-26_Handbook.pdf",
+    ],
     sitemaps: [
       "https://undergrad-inside.wharton.upenn.edu/wp-sitemap.xml",
       "https://undergrad-inside.wharton.upenn.edu/sitemap_index.xml",
       "https://undergrad-inside.wharton.upenn.edu/page-sitemap.xml",
     ],
-    follow: (u) => u.host === "undergrad-inside.wharton.upenn.edu" && !/\/(news|events?|people|tag|category|author|feed)\//.test(u.pathname),
+    // The sitemap lists every page; following links as well only queues
+    // a thousand student stories ahead of the policy pages.
+    follow: (u, from) => from === "sitemap" && u.host === "undergrad-inside.wharton.upenn.edu" &&
+      !/internship|blog|award|webinar|story|stories|spotlight|profile|\/(news|events?|people|tag|category|author|feed)\//.test(u.pathname),
     pdf: (u) => /handbook/i.test(u.pathname),
-    max: 320,
+    max: 420,
   },
   {
     name: "seas-handbook",
@@ -106,7 +114,10 @@ const scopes = [
     follow: (u) => u.host === "www.college.upenn.edu" &&
       /polic|double|count|courseload|course-load|dual|credit|requirement|sector|foundation|language|major|minor|pass-fail|retak|repeat|residen|submat|curriculum|academic-options|graduat|transfer|placement|grade/i.test(u.pathname),
     pdf: (u) => /polic|handbook|C\d\d/i.test(u.pathname),
-    max: 320,
+    // The College's site answers a runner 403; the archive's copy is read
+    // instead and every verdict from it says so.
+    archiveFallback: true,
+    max: 110,
   },
   {
     name: "nursing-bsn",
@@ -226,17 +237,17 @@ async function crawl(scope) {
       if (/sitemap.*\.xml/i.test(loc)) {
         const sub = await get(loc);
         if (sub.body) {
-          for (const m of sub.body.toString("utf8").matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/g)) enqueue(m[1]);
+          for (const m of sub.body.toString("utf8").matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/g)) enqueue(m[1], "sitemap");
         }
         await sleep(200);
-      } else enqueue(loc);
+      } else enqueue(loc, "sitemap");
     }
     console.log(`[${scope.name}] sitemap ${map}: ${locs.length} entries`);
   }
-  function enqueue(raw) {
+  function enqueue(raw, from = "link") {
     let u; try { u = new URL(raw); } catch { return; }
     const isPdf = /\.pdf$/i.test(u.pathname);
-    if (isPdf ? !(scope.pdf?.(u) && pdfs < 14) : !scope.follow(u)) return;
+    if (isPdf ? !(scope.pdf?.(u) && pdfs < 14) : !scope.follow(u, from)) return;
     if (/\.(jpg|jpeg|png|gif|svg|css|js|zip|docx?|xlsx?|pptx?|ics|mp4)$/i.test(u.pathname)) return;
     const key = norm(u.href);
     if (seen.has(key)) return;
@@ -345,31 +356,36 @@ console.log(`\ntally: ${JSON.stringify(tally)}`);
 // rule can be read in its context and not only matched as a fragment.
 console.log("\n================ FULL TEXT OF KEY PAGES ================");
 const KEY = [
-  /undergrad-inside\.wharton\.upenn\.edu\/double-counting-courses\/?$/,
-  /undergrad-inside\.wharton\.upenn\.edu\/course-load\/?$/,
-  /undergrad-inside\.wharton\.upenn\.edu\/dual-degree-wharton\/?$/,
-  /undergrad-inside\.wharton\.upenn\.edu\/senior-capstone\/?$/,
-  /undergrad-inside\.wharton\.upenn\.edu\/business-breadth\/?$/,
-  /undergrad-inside\.wharton\.upenn\.edu\/.*global-economy[^/]*\/?$/,
-  /undergrad-inside\.wharton\.upenn\.edu\/.*cross-cultural[^/]*\/?$/,
-  /undergrad-inside\.wharton\.upenn\.edu\/.*foreign-language[^/]*\/?$/,
-  /undergrad-inside\.wharton\.upenn\.edu\/pass-fail\/?$/,
-  /undergrad-inside\.wharton\.upenn\.edu\/.*summer[^/]*\/?$/,
-  /academics\.engineering\.upenn\.edu\/.*dual-degrees-and-special-programs\/?$/,
-  /academics\.engineering\.upenn\.edu\/.*dual-majors[^/]*\/?$/,
-  /academics\.engineering\.upenn\.edu\/.*academic-policies\/enrollment\/?$/,
-  /academics\.engineering\.upenn\.edu\/.*course-load[^/]*\/?$/,
-  /academics\.engineering\.upenn\.edu\/.*summer[^/]*\/?$/,
-  /academics\.engineering\.upenn\.edu\/.*social-science-and-humanities-courses\/?$/,
-  /academics\.engineering\.upenn\.edu\/.*free-electives\/?$/,
-  /academics\.engineering\.upenn\.edu\/.*pass-fail[^/]*\/?$/,
+  /academics\.engineering\.upenn\.edu\/.*(dual-degrees-and-special-programs|dual-majors|enrollment|course-load|summer|social-science-and-humanities|free-electives|pass-fail|transfer-academic-opportunities|advanced-placement|submatriculation|no-credit|technical-electives|second-major|minor|standing-grading|graduation|courses-at-other|course-categories)[^/]*\/?$/,
   /www\.seas\.upenn\.edu\/dual-degrees\/?$/,
-  /www\.college\.upenn\.edu\/dual-degree\/?$/,
-  /www\.college\.upenn\.edu\/.*double-count[^/]*\/?$/,
+  /www\.college\.upenn\.edu\/.*(dual-degree|double-count|courseload|pass-fail|equivalent-credit|degree-requirements|sectors|foundational|language|polic)[^/]*\/?$/,
 ];
+const WHARTON_KEY = /curriculum|requirement|concentration|elective|technology|cross-cultural|humanities|flex|liberal|fundamental|unrestricted|minor|retak|failing|abroad|transfer|credit|advanced-placement|language|capstone|breadth|double|course-load|dual|pass-fail|graduation|polic|leadership-journey|first-year|las-course|incompatible|natural-science|social-science|summer-courses|registration/;
+const WHARTON_SKIP = /internship|blog|award|webinar|story|stories|news|event|form|faq-|research|scholar|career|club|housing|wellness|award/;
+let whole = 0;
 for (const [url, d] of corpus) {
-  if (!KEY.some((re) => re.test(url))) continue;
-  console.log(`\n----- ${url} [${d.via}] (${d.text.length} chars)\n${d.text.slice(0, 9000)}`);
+  const path = new URL(url).pathname;
+  const wharton = url.includes("undergrad-inside.wharton.upenn.edu") && !/\.pdf$/i.test(path) &&
+    WHARTON_KEY.test(path) && !WHARTON_SKIP.test(path);
+  if (!wharton && !KEY.some((re) => re.test(url))) continue;
+  if (whole++ >= 140) break;
+  // Menus and footers repeat on every page: keep the lines that say something.
+  const body = d.text.split("\n").map((l) => l.trim()).filter((l) => l.length > 45).join("\n");
+  console.log(`\n----- ${url} [${d.via}] (${d.text.length} chars)\n${body.slice(0, 7000)}`);
+}
+
+// The Wharton handbook is one PDF: print the pages that state counting rules.
+console.log("\n================ HANDBOOK PASSAGES ================");
+for (const [url, d] of corpus) {
+  if (!/handbook.*\.pdf$/i.test(url)) continue;
+  console.log(`handbook: ${url} (${d.text.length} chars)`);
+  const seenAt = new Set();
+  for (const m of d.text.matchAll(/double[- ]count|dual[- ]degree|course load|summer|capstone|Global Economy|Technology, Innovation|unrestricted elective|placement|pass\/fail|46|second concentration/gi)) {
+    const bucket = Math.floor(m.index / 900);
+    if (seenAt.has(bucket) || seenAt.size >= 70) continue;
+    seenAt.add(bucket);
+    console.log(`  [${m[0]}] ${d.text.slice(Math.max(m.index - 350, 0), m.index + 650).replace(/\s+/g, " ")}`);
+  }
 }
 
 // Sentences about the numbers the planner hard-codes, wherever they are.
