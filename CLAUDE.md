@@ -3135,7 +3135,17 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `degree-progress` (2026-11-26, the plan drawn where the planner
+**Current on `degree-progress` (2026-11-26, after the merge of `v13`): 4717
+tests / 486 suites, all green, `swift test --no-parallel` on the GitHub macOS
+runner in 108 s, with the unsigned iOS `xcodebuild`, Deno (1140 passed, 0
+failed) and the extension suite green in the same run (manual run 45907745896
+at `78b5e7b`), compiled at the first attempt.** `v13` alone was 4536 / 479 and
+this branch 4075 / 387 before the merge; the sum over their common base is
+not a simple one (both sides carried `CourseKnowledgeHeldSyncTests` and
+`CanvasOwnSectionsTests`), so the runner's count is the baseline. Not on a
+phone at the time of writing.
+
+Before the merge, **on `degree-progress` (2026-11-26, the plan drawn where the planner
 put it): 4075 tests / 387 suites, all green, `swift test --no-parallel` on the
 GitHub macOS runner in 117 s, with the unsigned iOS `xcodebuild`, Deno (908
 passed, 0 failed) and the extension suite green in the same run (manual run
