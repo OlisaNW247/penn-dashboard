@@ -1,0 +1,2265 @@
+{
+ "code": "MKCM-BS",
+ "title": "Marketing & Communication BS",
+ "goals": {
+  "college": "WU",
+  "program": "WU_BS",
+  "major": "MKCM",
+  "degree": "BS"
+ },
+ "goalNames": {
+  "COLLEGE": "Wharton Undergraduate WU",
+  "PROGRAM": "Wharton - BS",
+  "MAJOR": "Marketing & Communication",
+  "DEGREE": "Bachelor of Sci in Economics"
+ },
+ "provenance": {
+  "source": "https://courses.upenn.edu/api/?page=fose&route=programs-v2-info",
+  "srcdb": "202630",
+  "fetched": "2026-11-26"
+ },
+ "blocks": [
+  {
+   "reqId": "RA002124",
+   "type": "DEGREE",
+   "code": "BS",
+   "title": "Degree in Bachelor of Science in Economics",
+   "catalogYears": {
+    "start": "2026",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCLASS",
+     "max": 1,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "COLL",
+       "number": "0@"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 1 in COLL 0@",
+     "tag": "1001"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "MSCI",
+       "number": "@"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in MSCI @",
+     "tag": "1002"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "NSCI",
+       "number": "@"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in NSCI @",
+     "tag": "1003"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 3,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "5000",
+       "numberEnd": "9999"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 3 in @ 5000:9999",
+     "tag": "1004"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 1,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "BEPP",
+       "number": "2500"
+      },
+      {
+       "subject": "BEPP",
+       "number": "2508"
+      },
+      {
+       "subject": "ECON",
+       "number": "2100"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 1 in BEPP 2500, 2508, ECON 2100",
+     "tag": "1005"
+    }
+   ],
+   "overlays": [],
+   "other": [
+    {
+     "name": "HEADERTAG",
+     "text": "HeaderTag MaxReason=You exceeded the max 3 credits of grad course work, please see advisor for assistance"
+    },
+    {
+     "name": "CHECKELECTIVES",
+     "text": "CHECK-ELECTIVE-CREDITS-ALLOWED"
+    }
+   ],
+   "rules": [
+    {
+     "id": "1-1",
+     "label": "There are no I, NR, or PR grades in this Degree Audit",
+     "type": "complete",
+     "labelTag": "KFSOEL",
+     "branch": "else"
+    },
+    {
+     "id": "2-1-0",
+     "label": "Cumulative GPA Requirement ",
+     "type": "incomplete",
+     "labelTag": "12",
+     "branch": "if"
+    },
+    {
+     "id": "3-0",
+     "label": "First-Year Foundations",
+     "type": "block",
+     "labelTag": "14",
+     "branch": "if",
+     "ref": {
+      "type": "OTHER",
+      "code": "U-WFYF",
+      "blockId": "RA002079"
+     }
+    },
+    {
+     "id": "4",
+     "label": "Business Fundamentals",
+     "type": "block",
+     "labelTag": "16",
+     "ref": {
+      "type": "OTHER",
+      "code": "U-WBUS",
+      "blockId": "RA000456"
+     }
+    },
+    {
+     "id": "5-0",
+     "label": "Liberal Arts and Sciences",
+     "type": "block",
+     "labelTag": "15",
+     "branch": "if",
+     "ref": {
+      "type": "OTHER",
+      "code": "U-WLAS",
+      "blockId": "RA000453"
+     }
+    },
+    {
+     "id": "6-0-1",
+     "label": "Business Breadth",
+     "type": "block",
+     "labelTag": "171",
+     "branch": "else",
+     "ref": {
+      "type": "OTHER",
+      "code": "U-WBBR2",
+      "blockId": "RA001329"
+     }
+    },
+    {
+     "id": "9-0",
+     "label": "Concentration Requirement(s)",
+     "type": "blocktype",
+     "labelTag": "21",
+     "branch": "if",
+     "ref": {
+      "type": "MAJOR"
+     }
+    }
+   ],
+   "minCredits": 37,
+   "minResidency": 19
+  },
+  {
+   "reqId": "RA002079",
+   "type": "OTHER",
+   "code": "U-WFYF",
+   "title": "First-Year Foundations",
+   "catalogYears": {
+    "start": "2026",
+    "stop": "9999"
+   },
+   "share": [
+    {
+     "scope": "block",
+     "type": "OTHER",
+     "code": "U-SCHOLARS"
+    }
+   ],
+   "standalone": false,
+   "limits": [],
+   "overlays": [],
+   "other": [
+    {
+     "name": "HEADERTAG",
+     "text": "HeaderTag DWCredits=DWRuleSum"
+    }
+   ],
+   "rules": [
+    {
+     "id": "1-1-1-1-1-1-1-1",
+     "label": "Introductory Economics",
+     "type": "course",
+     "labelTag": "WHEWV5",
+     "branch": "else",
+     "need": {
+      "credits": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "BEPP",
+       "number": "1000"
+      },
+      {
+       "subject": "ECON",
+       "number": "0110"
+      },
+      {
+       "subject": "ECON",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2022"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWCOURSENUMBER",
+         "op": "=",
+         "values": [
+          "010"
+         ]
+        }
+       ],
+       "historic": true
+      }
+     ]
+    },
+    {
+     "id": "2-1",
+     "label": "Mathematics",
+     "type": "course",
+     "labelTag": "WFYFMATH2",
+     "branch": "else",
+     "need": {
+      "credits": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "MATH",
+       "number": "1070"
+      },
+      {
+       "subject": "MATH",
+       "number": "1400"
+      },
+      {
+       "subject": "MATH",
+       "number": "1100"
+      }
+     ]
+    },
+    {
+     "id": "2-2",
+     "label": "Critical Writing Seminar",
+     "type": "course",
+     "labelTag": "WFYFCRITWR",
+     "branch": "else",
+     "need": {
+      "credits": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "WRIT",
+       "number": "0020"
+      },
+      {
+       "subject": "WRIT",
+       "number": "0021"
+      },
+      {
+       "subject": "WRIT",
+       "number": "0100"
+      },
+      {
+       "subject": "WRIT",
+       "number": "0110"
+      },
+      {
+       "subject": "WRIT",
+       "number": "0120",
+       "numberEnd": "0990"
+      }
+     ],
+     "except": [
+      {
+       "subject": "WRIT",
+       "number": "135@"
+      },
+      {
+       "subject": "WRIT",
+       "number": "138@"
+      }
+     ]
+    }
+   ],
+   "minCredits": 3
+  },
+  {
+   "reqId": "RA000456",
+   "type": "OTHER",
+   "code": "U-WBUS",
+   "title": "Business Fundamentals",
+   "catalogYears": {
+    "start": "0000",
+    "stop": "9999"
+   },
+   "share": [
+    {
+     "scope": "type",
+     "type": "MINOR"
+    },
+    {
+     "scope": "block",
+     "type": "OTHER",
+     "code": "U-SCHOLARS"
+    }
+   ],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [
+      {
+       "subject": "WH",
+       "number": "1010"
+      }
+     ],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110) Except WH 1010",
+     "tag": "MXPFCOVID"
+    },
+    {
+     "kind": "SPMAXCREDIT",
+     "max": 0.5,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "FNCE",
+       "number": "4010"
+      }
+     ],
+     "except": [],
+     "text": "SPMAXCREDITS 0.5 in FNCE 4010",
+     "tag": "SPFNCE4"
+    },
+    {
+     "kind": "SPMAXCREDIT",
+     "max": 0.5,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "FNCE",
+       "number": "4020"
+      }
+     ],
+     "except": [],
+     "text": "SPMAXCREDITS 0.5 in FNCE 4020",
+     "tag": "SPFNCE5"
+    },
+    {
+     "kind": "SPMAXCREDIT",
+     "max": 0.5,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "FNCE",
+       "number": "4030"
+      }
+     ],
+     "except": [],
+     "text": "SPMAXCREDITS 0.5 in FNCE 4030",
+     "tag": "SPFNCE6"
+    }
+   ],
+   "overlays": [],
+   "other": [
+    {
+     "name": "HEADERTAG",
+     "text": "HeaderTag DWCredits=DWRuleSum"
+    }
+   ],
+   "rules": [
+    {
+     "id": "5-0",
+     "label": "LEADERSHIP JOURNEY",
+     "type": "subset",
+     "labelTag": "WUBSOTHLJ",
+     "branch": "if",
+     "children": [
+      {
+       "id": "5-0-0",
+       "label": "Business and You",
+       "type": "course",
+       "labelTag": "WHBS1010",
+       "need": {
+        "credits": 0.5,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "WH",
+         "number": "1010"
+        }
+       ]
+      },
+      {
+       "id": "5-0-1",
+       "label": "Business Communication Course",
+       "type": "course",
+       "labelTag": "WH2010B",
+       "need": {
+        "classes": 1,
+        "credits": 0.5,
+        "creditsEnd": 1,
+        "op": "AND"
+       },
+       "courses": [
+        {
+         "subject": "WH",
+         "number": "2010"
+        },
+        {
+         "subject": "WH",
+         "number": "2011"
+        }
+       ]
+      },
+      {
+       "id": "5-0-2",
+       "label": "Teamwork and Interpersonal Influence",
+       "type": "course",
+       "labelTag": "WUBSTEAMWORK",
+       "need": {
+        "credits": 0.5,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "MGMT",
+         "number": "3010"
+        },
+        {
+         "subject": "WH",
+         "number": "3010"
+        }
+       ]
+      },
+      {
+       "id": "5-0-3-1",
+       "label": "Senior Capstone",
+       "type": "course",
+       "labelTag": "WUBSCAP",
+       "branch": "else",
+       "need": {
+        "credits": 0.5,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "@",
+         "number": "@",
+         "attributes": [
+          "WUCP"
+         ]
+        },
+        {
+         "subject": "WH",
+         "number": "3991"
+        },
+        {
+         "subject": "WH",
+         "number": "2991"
+        },
+        {
+         "subject": "FNCE",
+         "number": "4010"
+        },
+        {
+         "subject": "FNCE",
+         "number": "4020"
+        },
+        {
+         "subject": "FNCE",
+         "number": "4030"
+        }
+       ],
+       "except": [
+        {
+         "subject": "STAT",
+         "number": "001@"
+        }
+       ],
+       "priority": "high"
+      }
+     ]
+    },
+    {
+     "id": "5-1",
+     "label": "FUNDAMENTALS",
+     "type": "subset",
+     "labelTag": "WUBSOTHBF",
+     "branch": "if",
+     "children": [
+      {
+       "id": "5-1-0",
+       "label": "Acct & Financial Report",
+       "type": "course",
+       "labelTag": "ACCT1010",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "ACCT",
+         "number": "1010"
+        }
+       ]
+      },
+      {
+       "id": "5-1-1",
+       "label": "Strategic Cost Analysis",
+       "type": "course",
+       "labelTag": "ACCT1020",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "ACCT",
+         "number": "1020"
+        }
+       ]
+      },
+      {
+       "id": "5-1-2",
+       "label": "Managerial Economics",
+       "type": "course",
+       "labelTag": "BEPP2500",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "BEPP",
+         "number": "2500"
+        },
+        {
+         "subject": "BEPP",
+         "number": "2508"
+        },
+        {
+         "subject": "ECON",
+         "number": "2100"
+        }
+       ]
+      },
+      {
+       "id": "5-1-3-1-1",
+       "label": "Intro Business Stat I",
+       "type": "course",
+       "labelTag": "STAT10102",
+       "branch": "else",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "decide": "ORDER",
+       "courses": [
+        {
+         "subject": "STAT",
+         "number": "1010"
+        },
+        {
+         "subject": "STAT",
+         "number": "1018"
+        },
+        {
+         "subject": "STAT",
+         "number": "4300"
+        },
+        {
+         "subject": "ESE",
+         "number": "3010"
+        }
+       ]
+      },
+      {
+       "id": "5-1-4",
+       "label": "Intro Business Stat II",
+       "type": "course",
+       "labelTag": "STAT1020",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "decide": "ORDER",
+       "courses": [
+        {
+         "subject": "STAT",
+         "number": "1020"
+        },
+        {
+         "subject": "STAT",
+         "number": "1028"
+        },
+        {
+         "subject": "STAT",
+         "number": "4310"
+        },
+        {
+         "subject": "ESE",
+         "number": "4020"
+        }
+       ]
+      },
+      {
+       "id": "5-1-5",
+       "label": "Corporate Finance",
+       "type": "course",
+       "labelTag": "FNCE1000",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "FNCE",
+         "number": "1000"
+        },
+        {
+         "subject": "FNCE",
+         "number": "1008"
+        }
+       ]
+      },
+      {
+       "id": "5-1-6",
+       "label": "Monetary Economics and the Global Economy",
+       "type": "course",
+       "labelTag": "FNCE1010",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "FNCE",
+         "number": "1010"
+        },
+        {
+         "subject": "FNCE",
+         "number": "1018"
+        }
+       ]
+      },
+      {
+       "id": "5-1-7",
+       "label": "Social Values",
+       "type": "course",
+       "labelTag": "WUBSSOCVAL",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "LGST",
+         "number": "1000"
+        },
+        {
+         "subject": "LGST",
+         "number": "1008"
+        },
+        {
+         "subject": "LGST",
+         "number": "1010"
+        },
+        {
+         "subject": "LGST",
+         "number": "1018"
+        }
+       ]
+      },
+      {
+       "id": "5-1-8",
+       "label": "Intro To Management",
+       "type": "course",
+       "labelTag": "MGMT1010",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "MGMT",
+         "number": "1010"
+        }
+       ]
+      },
+      {
+       "id": "5-1-9",
+       "label": "Intro To Marketing",
+       "type": "course",
+       "labelTag": "MKTG1010",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "MKTG",
+         "number": "1010"
+        },
+        {
+         "subject": "MKTG",
+         "number": "1018"
+        }
+       ]
+      },
+      {
+       "id": "5-1-10-1",
+       "label": "Introduction To Oidd",
+       "type": "course",
+       "labelTag": "OIDD10102",
+       "branch": "else",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "OIDD",
+         "number": "1010"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "5-2",
+     "label": "FLEX FUNDAMENTALS",
+     "type": "subset",
+     "labelTag": "WUBSOTHAFX",
+     "branch": "if",
+     "children": [
+      {
+       "id": "5-2-0",
+       "label": "Global Economy, Business and Society",
+       "type": "course",
+       "labelTag": "WUBSGEBS",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "@",
+         "number": "@",
+         "attributes": [
+          "WUGE"
+         ]
+        },
+        {
+         "subject": "FNCE",
+         "number": "2190"
+        },
+        {
+         "subject": "HCMG",
+         "number": "2040"
+        }
+       ]
+      },
+      {
+       "id": "5-2-1",
+       "label": "Technology, Innovation, and Analytics",
+       "type": "course",
+       "labelTag": "WUBSTIAMANT",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "@",
+         "number": "@",
+         "attributes": [
+          "WUTI"
+         ]
+        },
+        {
+         "subject": "OIDD",
+         "number": "4770"
+        },
+        {
+         "subject": "STAT",
+         "number": "4770"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "minCredits": 15
+  },
+  {
+   "reqId": "RA000453",
+   "type": "OTHER",
+   "code": "U-WLAS",
+   "title": "Liberal Arts and Sciences",
+   "catalogYears": {
+    "start": "0000",
+    "stop": "9999"
+   },
+   "share": [
+    {
+     "scope": "type",
+     "type": "MINOR"
+    },
+    {
+     "scope": "block",
+     "type": "OTHER",
+     "code": "U-SCHOLARS"
+    }
+   ],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "FRSM",
+       "number": "097@",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "202220"
+         ]
+        }
+       ],
+       "historic": true
+      },
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWTRANSFERSCHOOLID",
+         "op": "=",
+         "values": [
+          "EQIVAP",
+          "EQIVIB",
+          "EQIVEX",
+          "EQIVAS"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in FRSM 097@ (With DWTERM < 202220), @ @ (With DWTRANSFERSCHOOLID = EQIVAP, EQIVIB, EQIVEX, EQIVAS)",
+     "tag": "NOAPCRSE"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "COLL",
+       "number": "0@"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in COLL 0@",
+     "tag": "1001"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "4-0",
+     "label": "Humanities",
+     "type": "course",
+     "labelTag": "WUBSHUM1",
+     "branch": "if",
+     "need": {
+      "credits": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "WUHM"
+       ]
+      }
+     ],
+     "priority": "high"
+    },
+    {
+     "id": "4-1",
+     "label": "Natural Science, Math, Engineering",
+     "type": "course",
+     "labelTag": "WATSCI2",
+     "branch": "if",
+     "need": {
+      "credits": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "WUNM"
+       ]
+      }
+     ],
+     "priority": "high"
+    },
+    {
+     "id": "4-2-1-1",
+     "label": "Social Science",
+     "type": "course",
+     "labelTag": "WSCIFF3",
+     "branch": "else",
+     "need": {
+      "credits": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "WUSS"
+       ]
+      }
+     ],
+     "priority": "high"
+    },
+    {
+     "id": "4-3",
+     "label": "Flexible Gen Eds",
+     "type": "course",
+     "labelTag": "WUBEN4",
+     "branch": "if",
+     "need": {
+      "credits": 3,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "0000",
+       "numberEnd": "4999",
+       "attributes": [
+        "WUHM",
+        "WUNM",
+        "WUSS",
+        "WUFG"
+       ]
+      },
+      {
+       "subject": "@",
+       "number": "0000",
+       "numberEnd": "4999"
+      }
+     ],
+     "except": [
+      {
+       "subject": "ACCT",
+       "number": "@"
+      },
+      {
+       "subject": "BEPP",
+       "number": "@"
+      },
+      {
+       "subject": "FNCE",
+       "number": "@"
+      },
+      {
+       "subject": "HCMG",
+       "number": "@"
+      },
+      {
+       "subject": "INTS",
+       "number": "@"
+      },
+      {
+       "subject": "LGST",
+       "number": "@"
+      },
+      {
+       "subject": "LSMP",
+       "number": "@"
+      },
+      {
+       "subject": "MGEC",
+       "number": "@"
+      },
+      {
+       "subject": "MGMT",
+       "number": "@"
+      },
+      {
+       "subject": "MKTG",
+       "number": "@"
+      },
+      {
+       "subject": "OIDD",
+       "number": "@"
+      },
+      {
+       "subject": "REAL",
+       "number": "@"
+      },
+      {
+       "subject": "STAT",
+       "number": "@"
+      },
+      {
+       "subject": "WH",
+       "number": "@"
+      },
+      {
+       "subject": "WHCP",
+       "number": "@"
+      },
+      {
+       "subject": "WHG",
+       "number": "@"
+      },
+      {
+       "subject": "TFXR",
+       "number": "@"
+      },
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWTRANSFERSCHOOLID",
+         "op": "=",
+         "values": [
+          "EQIVAP",
+          "EQIVIB",
+          "EQIVEX",
+          "EQIVAS"
+         ]
+        }
+       ]
+      },
+      {
+       "subject": "ECON",
+       "number": "0110"
+      },
+      {
+       "subject": "ECON",
+       "number": "0100"
+      },
+      {
+       "subject": "BEPP",
+       "number": "1000"
+      },
+      {
+       "subject": "INTL",
+       "number": "2980"
+      },
+      {
+       "subject": "MUSC",
+       "number": "0050"
+      },
+      {
+       "subject": "MUSC",
+       "number": "0070"
+      },
+      {
+       "subject": "ECON",
+       "number": "010@",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2022"
+         ]
+        }
+       ],
+       "historic": true
+      },
+      {
+       "subject": "EAS",
+       "number": "028@",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2022"
+         ]
+        }
+       ],
+       "historic": true
+      },
+      {
+       "subject": "MATH",
+       "number": "100@",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2022"
+         ]
+        }
+       ],
+       "historic": true
+      },
+      {
+       "subject": "MED",
+       "number": "598@",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2022"
+         ]
+        }
+       ],
+       "historic": true
+      },
+      {
+       "subject": "MUSC",
+       "number": "005@",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2022"
+         ]
+        }
+       ],
+       "historic": true
+      },
+      {
+       "subject": "MUSC",
+       "number": "007@",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2022"
+         ]
+        }
+       ],
+       "historic": true
+      },
+      {
+       "subject": "INSP",
+       "number": "101",
+       "numberEnd": "101",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2022"
+         ]
+        }
+       ],
+       "historic": true
+      }
+     ],
+     "priority": "lowest"
+    },
+    {
+     "id": "4-4",
+     "label": "Cross-Cultural Non-U.S. or U.S.",
+     "type": "course",
+     "labelTag": "GLSSDP",
+     "branch": "if",
+     "need": {
+      "credits": 3,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "WUCN",
+        "WUCU"
+       ]
+      }
+     ],
+     "share": [
+      {
+       "scope": "thisBlock",
+       "maxCredits": 2
+      }
+     ],
+     "limits": [
+      {
+       "kind": "MAXPASSFAIL",
+       "max": 0,
+       "unit": "courses",
+       "courses": [],
+       "except": [],
+       "text": "MAXPASSFAIL 0 CLASSES"
+      }
+     ],
+     "overlays": [
+      {
+       "kind": "MINCLASS",
+       "need": 2,
+       "unit": "courses",
+       "courses": [
+        {
+         "subject": "@",
+         "number": "@",
+         "attributes": [
+          "WUCN"
+         ]
+        }
+       ],
+       "except": [],
+       "text": "MinClasses 2 in @ @ (With ATTRIBUTE = WUCN)"
+      }
+     ]
+    },
+    {
+     "id": "4-5-1",
+     "label": "Foreign Language Proficiency",
+     "type": "course",
+     "labelTag": "OUTOQQ",
+     "branch": "else",
+     "need": {
+      "credits": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "WUFL"
+       ]
+      }
+     ],
+     "share": [
+      {
+       "scope": "thisBlock"
+      }
+     ]
+    }
+   ],
+   "minCredits": 7
+  },
+  {
+   "reqId": "RA001329",
+   "type": "OTHER",
+   "code": "U-WBBR2",
+   "title": "Business Breadth",
+   "catalogYears": {
+    "start": "0000",
+    "stop": "9999"
+   },
+   "share": [
+    {
+     "scope": "block",
+     "type": "OTHER",
+     "code": "U-MT",
+     "maxCredits": 1
+    },
+    {
+     "scope": "block",
+     "type": "OTHER",
+     "code": "U-SCHOLARS",
+     "maxCredits": 1
+    },
+    {
+     "scope": "type",
+     "type": "MINOR"
+    }
+   ],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "0001",
+       "numberEnd": "1899",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": ">",
+         "values": [
+          "202221"
+         ]
+        }
+       ]
+      },
+      {
+       "subject": "@",
+       "number": "5000",
+       "numberEnd": "9999",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": ">",
+         "values": [
+          "202221"
+         ]
+        }
+       ]
+      },
+      {
+       "subject": "@",
+       "number": "001",
+       "numberEnd": "189",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<=",
+         "values": [
+          "202221"
+         ]
+        }
+       ],
+       "historic": true
+      },
+      {
+       "subject": "@",
+       "number": "500",
+       "numberEnd": "999",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<=",
+         "values": [
+          "202221"
+         ]
+        }
+       ],
+       "historic": true
+      },
+      {
+       "subject": "MGMT",
+       "number": "3910"
+      },
+      {
+       "subject": "MGMT",
+       "number": "3980"
+      }
+     ],
+     "except": [
+      {
+       "subject": "HCMG",
+       "number": "1010"
+      },
+      {
+       "subject": "MGMT",
+       "number": "1110"
+      },
+      {
+       "subject": "MGMT",
+       "number": "1170"
+      },
+      {
+       "subject": "OIDD",
+       "number": "1050"
+      },
+      {
+       "subject": "LGST",
+       "number": "1000"
+      },
+      {
+       "subject": "LGST",
+       "number": "1010"
+      },
+      {
+       "subject": "WH",
+       "number": "1500"
+      },
+      {
+       "subject": "MGMT",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWCOURSENUMBER",
+         "op": "=",
+         "values": [
+          "110",
+          "117"
+         ]
+        }
+       ]
+      }
+     ],
+     "text": "MaxCredits 0 in @ 0001:1899 (With DWTERM > 202221), 5000:9999 (With DWTERM > 202221), 001:189 (With DWTERM <= 202221), 500:999 (With DWTERM <= 202221), MGMT 3910, 3980 Except HCMG 1010, MGMT 1110, 1170, OIDD 1050, LGST 1000, 1010, WH 1500, MGMT @ (With DWCOURSENUMBER = 110, 117)",
+     "tag": "SJIEWL"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "WH",
+       "number": "1010"
+      },
+      {
+       "subject": "WH",
+       "number": "2010"
+      },
+      {
+       "subject": "WH",
+       "number": "2011"
+      },
+      {
+       "subject": "WH",
+       "number": "3010"
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in WH 1010, 2010, 2011, 3010"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 1,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "ACCT",
+       "number": "@"
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 1 in ACCT @",
+     "tag": "MAHJKS"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 1,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "HCMG",
+       "number": "@"
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 1 in HCMG @",
+     "tag": "MJFRIK"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 1,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "MKTG",
+       "number": "@"
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 1 in MKTG @",
+     "tag": "MKLDSO"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 1,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "STAT",
+       "number": "@"
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 1 in STAT @",
+     "tag": "MLDOGY"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 1,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "BEPP",
+       "number": "@"
+      }
+     ],
+     "except": [
+      {
+       "subject": "BEPP",
+       "number": "2080"
+      },
+      {
+       "subject": "BEPP",
+       "number": "2300"
+      },
+      {
+       "subject": "BEPP",
+       "number": "2360"
+      }
+     ],
+     "text": "MaxCredits 1 in BEPP @ Except BEPP 2080, 2300, 2360",
+     "tag": "MHGFJK"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 1,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "FNCE",
+       "number": "@"
+      }
+     ],
+     "except": [
+      {
+       "subject": "FNCE",
+       "number": "2090"
+      },
+      {
+       "subject": "FNCE",
+       "number": "2300"
+      }
+     ],
+     "text": "MaxCredits 1 in FNCE @ Except FNCE 2090, 2300",
+     "tag": "MUEIPW"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 1,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "LGST",
+       "number": "@"
+      }
+     ],
+     "except": [
+      {
+       "subject": "LGST",
+       "number": "2040"
+      },
+      {
+       "subject": "LGST",
+       "number": "2910"
+      },
+      {
+       "subject": "LGST",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWCOURSENUMBER",
+         "op": "=",
+         "values": [
+          "291"
+         ]
+        }
+       ]
+      }
+     ],
+     "text": "MaxCredits 1 in LGST @ Except LGST 2040, 2910, @ (With DWCOURSENUMBER = 291)",
+     "tag": "MFJHWL"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 1,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "MGMT",
+       "number": "@"
+      }
+     ],
+     "except": [
+      {
+       "subject": "MGMT",
+       "number": "2910"
+      },
+      {
+       "subject": "MGMT",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWCOURSENUMBER",
+         "op": "=",
+         "values": [
+          "291"
+         ]
+        }
+       ]
+      }
+     ],
+     "text": "MaxCredits 1 in MGMT @ Except MGMT 2910, @ (With DWCOURSENUMBER = 291)",
+     "tag": "MUOLP"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 1,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "OIDD",
+       "number": "@"
+      }
+     ],
+     "except": [
+      {
+       "subject": "OIDD",
+       "number": "2910"
+      },
+      {
+       "subject": "OIDD",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWCOURSENUMBER",
+         "op": "=",
+         "values": [
+          "291"
+         ]
+        }
+       ]
+      }
+     ],
+     "text": "MaxCredits 1 in OIDD @ Except OIDD 2910, @ (With DWCOURSENUMBER = 291)",
+     "tag": "MJFUWP"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 1,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "REAL",
+       "number": "@"
+      }
+     ],
+     "except": [
+      {
+       "subject": "REAL",
+       "number": "2040"
+      },
+      {
+       "subject": "REAL",
+       "number": "2080"
+      },
+      {
+       "subject": "REAL",
+       "number": "2090"
+      },
+      {
+       "subject": "REAL",
+       "number": "2300"
+      },
+      {
+       "subject": "REAL",
+       "number": "2360"
+      }
+     ],
+     "text": "MaxCredits 1 in REAL @ Except REAL 2040, 2080, 2090, 2300, 2360",
+     "tag": "MFJWUI"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "MKTG",
+       "number": "@"
+      },
+      {
+       "subject": "COMM",
+       "number": "@"
+      },
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "WUMK"
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in MKTG @, COMM @, @ @ (With ATTRIBUTE = WUMK)",
+     "tag": "MXMKCM0"
+    }
+   ],
+   "overlays": [],
+   "other": [
+    {
+     "name": "HEADERTAG",
+     "text": "HeaderTag DWCredits=DWRuleSum"
+    }
+   ],
+   "rules": [
+    {
+     "id": "1-1-1-1",
+     "label": "Business Breadth (1 concentration)",
+     "type": "course",
+     "labelTag": "ONEDEGREE2",
+     "branch": "else",
+     "need": {
+      "credits": 3,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "ACCT",
+       "number": "@"
+      },
+      {
+       "subject": "BEPP",
+       "number": "@"
+      },
+      {
+       "subject": "FNCE",
+       "number": "@"
+      },
+      {
+       "subject": "HCMG",
+       "number": "@"
+      },
+      {
+       "subject": "LGST",
+       "number": "@"
+      },
+      {
+       "subject": "MGMT",
+       "number": "@"
+      },
+      {
+       "subject": "MKTG",
+       "number": "@"
+      },
+      {
+       "subject": "OIDD",
+       "number": "@"
+      },
+      {
+       "subject": "REAL",
+       "number": "@"
+      },
+      {
+       "subject": "STAT",
+       "number": "@"
+      },
+      {
+       "subject": "WH",
+       "number": "@"
+      }
+     ],
+     "priority": "low"
+    }
+   ],
+   "minCredits": 3
+  },
+  {
+   "reqId": "RA001708",
+   "type": "MAJOR",
+   "code": "MKCM",
+   "title": "Conc in Marketing and Communication (MKCM)",
+   "catalogYears": {
+    "start": "2025",
+    "stop": "9999"
+   },
+   "share": [
+    {
+     "scope": "type",
+     "type": "MINOR"
+    },
+    {
+     "scope": "type",
+     "type": "CONC"
+    },
+    {
+     "scope": "block",
+     "type": "OTHER",
+     "code": "U-SCHOLARS"
+    }
+   ],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWAGE",
+         "op": ">",
+         "values": [
+          "8"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWAGE > 8)",
+     "tag": "MXCLH"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 1,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "MKTG",
+       "number": "2270"
+      },
+      {
+       "subject": "MKTG",
+       "number": "2700"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 1 in MKTG 2270, 2700",
+     "tag": "MXCLH1"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 1,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "MKTG",
+       "number": "2540"
+      },
+      {
+       "subject": "MKTG",
+       "number": "2880"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 1 in MKTG 2540, 2880",
+     "tag": "MXCLH2"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1",
+     "label": "Consumer Behavior",
+     "type": "course",
+     "labelTag": "MKTG2110",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "MKTG",
+       "number": "2110"
+      }
+     ]
+    },
+    {
+     "id": "2",
+     "label": "MARKETING CORE ELECTIVE",
+     "type": "group",
+     "labelTag": "MKTGRESANSTRAT",
+     "pick": {
+      "groups": 1,
+      "of": 6
+     },
+     "children": [
+      {
+       "id": "2-0",
+       "label": "Data Analysis for Marketing Decisions",
+       "type": "course",
+       "labelTag": "MKTG2120",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "MKTG",
+         "number": "2120"
+        }
+       ]
+      },
+      {
+       "id": "2-1",
+       "label": "Models for Marketing Strategy",
+       "type": "course",
+       "labelTag": "MKTG2710",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "MKTG",
+         "number": "2710"
+        }
+       ]
+      },
+      {
+       "id": "2-2",
+       "label": "Special Topics: Experiments for Business Decision Making",
+       "type": "course",
+       "labelTag": "MKTG3090",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "MKTG",
+         "number": "3090"
+        }
+       ]
+      },
+      {
+       "id": "2-3",
+       "label": "Applied Probability Models in Marketing",
+       "type": "course",
+       "labelTag": "MKTG4760",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "MKTG",
+         "number": "4760"
+        }
+       ]
+      },
+      {
+       "id": "2-4",
+       "label": "Measurement and Data Analysis in Marketing",
+       "type": "course",
+       "labelTag": "MKTGDATAMEAS",
+       "need": {
+        "classes": 2,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "MKTG",
+         "number": "9400"
+        },
+        {
+         "subject": "MKTG",
+         "number": "9410"
+        }
+       ]
+      },
+      {
+       "id": "2-5",
+       "label": "Research Methods in Marketing",
+       "type": "course",
+       "labelTag": "MKTGRSCH",
+       "need": {
+        "classes": 2,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "MKTG",
+         "number": "9420"
+        },
+        {
+         "subject": "MKTG",
+         "number": "9430"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "3",
+     "label": "Marketing Electives",
+     "type": "course",
+     "labelTag": "MKTGREQ",
+     "need": {
+      "credits": 2,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "MKTG",
+       "number": "@",
+       "attributes": [
+        "WUMK"
+       ]
+      },
+      {
+       "subject": "MKTG",
+       "number": "239@",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2022"
+         ]
+        }
+       ],
+       "historic": true
+      },
+      {
+       "subject": "MKTG",
+       "number": "237@",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2022"
+         ]
+        }
+       ],
+       "historic": true
+      },
+      {
+       "subject": "MKTG",
+       "number": "2370"
+      },
+      {
+       "subject": "MKTG",
+       "number": "2390"
+      }
+     ]
+    },
+    {
+     "id": "4",
+     "label": "Introductory Communication Electives",
+     "type": "course",
+     "labelTag": "MKCMINTROCOMM",
+     "need": {
+      "classes": 2,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "COMM",
+       "number": "1230"
+      },
+      {
+       "subject": "COMM",
+       "number": "1250"
+      },
+      {
+       "subject": "COMM",
+       "number": "1300"
+      }
+     ]
+    },
+    {
+     "id": "5",
+     "label": "Communication Electives",
+     "type": "course",
+     "labelTag": "MKCMCOMMREQ",
+     "need": {
+      "credits": 2,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "COMM",
+       "number": "0000",
+       "numberEnd": "4999"
+      }
+     ],
+     "except": [
+      {
+       "subject": "COMM",
+       "number": "3091"
+      },
+      {
+       "subject": "COMM",
+       "number": "3999"
+      },
+      {
+       "subject": "COMM",
+       "number": "4797"
+      },
+      {
+       "subject": "COMM",
+       "number": "4897"
+      },
+      {
+       "subject": "COMM",
+       "number": "4997"
+      }
+     ]
+    }
+   ],
+   "minCredits": 8,
+   "minGpa": 2.5
+  }
+ ]
+}

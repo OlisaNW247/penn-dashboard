@@ -1,0 +1,1246 @@
+{
+ "code": "ESCI-BA",
+ "title": "Electrical Science BA - College 2nd Major ONLY",
+ "goals": {
+  "college": "AU",
+  "program": "AU_BA",
+  "major": "ESCI",
+  "degree": "BA"
+ },
+ "goalNames": {
+  "COLLEGE": "College of Arts & Sciences AU",
+  "PROGRAM": "Arts & Sciences - BA",
+  "MAJOR": "Electrical Science",
+  "DEGREE": "Bachelor of Arts"
+ },
+ "provenance": {
+  "source": "https://courses.upenn.edu/api/?page=fose&route=programs-v2-info",
+  "srcdb": "202630",
+  "fetched": "2026-11-26"
+ },
+ "blocks": [
+  {
+   "reqId": "RA002258",
+   "type": "DEGREE",
+   "code": "BA",
+   "title": "Degree in Bachelor of Arts",
+   "catalogYears": {
+    "start": "2027",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "MSCI",
+       "number": "@"
+      },
+      {
+       "subject": "NSCI",
+       "number": "@"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in MSCI @, NSCI @",
+     "tag": "MXCLH_ROTC"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 8,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 8 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    }
+   ],
+   "overlays": [],
+   "other": [
+    {
+     "name": "CHECKELECTIVES",
+     "text": "CHECK-ELECTIVE-CREDITS-ALLOWED"
+    }
+   ],
+   "rules": [
+    {
+     "id": "1-1",
+     "label": "There are no I, NR, or PR grades in this Degree Audit",
+     "type": "complete",
+     "labelTag": "KFSOEL",
+     "branch": "else"
+    },
+    {
+     "id": "2-1-1-0",
+     "label": "Cumulative GPA Requirement",
+     "type": "incomplete",
+     "labelTag": "NOGPA",
+     "branch": "if"
+    },
+    {
+     "id": "3",
+     "label": "General Education - Foundations",
+     "type": "block",
+     "labelTag": "GENED_FND_BLK",
+     "ref": {
+      "type": "OTHER",
+      "code": "U-GE-FND",
+      "blockId": "RA000521"
+     }
+    },
+    {
+     "id": "4",
+     "label": "General Education - Sectors",
+     "type": "block",
+     "labelTag": "GENED_SCT_BLK",
+     "ref": {
+      "type": "OTHER",
+      "code": "U-GE-SCTR",
+      "blockId": "RA001031"
+     }
+    },
+    {
+     "id": "7",
+     "label": "Major Requirements",
+     "type": "blocktype",
+     "labelTag": "MAJR_BLK",
+     "ref": {
+      "type": "MAJOR"
+     }
+    }
+   ],
+   "lastResidency": {
+    "classes": 5
+   }
+  },
+  {
+   "reqId": "RA000521",
+   "type": "OTHER",
+   "code": "U-GE-FND",
+   "title": "General Education, Foundations",
+   "catalogYears": {
+    "start": "0000",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": true,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWTRANSFERSCHOOLID",
+         "op": "=",
+         "values": [
+          "EQIVAP",
+          "EQIVIB",
+          "EQIVEX",
+          "EQIVAS"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWTRANSFERSCHOOLID = EQIVAP, EQIVIB, EQIVEX, EQIVAS)"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWGRADELETTER",
+         "op": "=",
+         "values": [
+          "S"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWGRADELETTER = S)"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1-1",
+     "label": "Foreign Language",
+     "type": "course",
+     "labelTag": "AUFL",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AULL"
+       ]
+      }
+     ],
+     "minGrade": "1.0"
+    },
+    {
+     "id": "2",
+     "label": "Quantitative Data Analysis",
+     "type": "course",
+     "labelTag": "AUQD",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUQD"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "3",
+     "label": "Formal Reasoning and Analysis",
+     "type": "course",
+     "labelTag": "AUFR",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUFR"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "4",
+     "label": "Cross Cultural Analysis",
+     "type": "course",
+     "labelTag": "AUCC",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUCC"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "5",
+     "label": "Cultural Diversity in the U.S.",
+     "type": "course",
+     "labelTag": "AUCD",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUCD"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "6",
+     "label": "Writing Course",
+     "type": "course",
+     "labelTag": "AUWR",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "WRIT",
+       "number": "0000",
+       "numberEnd": "0991"
+      },
+      {
+       "subject": "WRIT",
+       "number": "0998"
+      }
+     ],
+     "except": [
+      {
+       "subject": "WRIT",
+       "number": "135@"
+      },
+      {
+       "subject": "WRIT",
+       "number": "138@"
+      }
+     ]
+    }
+   ],
+   "minClasses": 6
+  },
+  {
+   "reqId": "RA001031",
+   "type": "OTHER",
+   "code": "U-GE-SCTR",
+   "title": "General Education, Sectors",
+   "catalogYears": {
+    "start": "2022",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWTRANSFERSCHOOLID",
+         "op": "=",
+         "values": [
+          "EQIVAP",
+          "EQIVIB",
+          "EQIVEX",
+          "EQIVAS"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWTRANSFERSCHOOLID = EQIVAP, EQIVIB, EQIVEX, EQIVAS)"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "2-1",
+     "label": "Sector 1: Society",
+     "type": "course",
+     "labelTag": "AUSO",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUSO"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "3-1",
+     "label": "Sector 2: History and Tradition",
+     "type": "course",
+     "labelTag": "AUHT",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUHT"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "4-1",
+     "label": "Sector 3: Arts and Letters",
+     "type": "course",
+     "labelTag": "AUAL",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUAL"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "5-1",
+     "label": "Sector 4: Humanities and Social Sciences",
+     "type": "course",
+     "labelTag": "AUHS",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUHS"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "6-1",
+     "label": "Sector 5: The Living World",
+     "type": "course",
+     "labelTag": "AULW",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AULW"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "7-1",
+     "label": "Sector 6: The Physical World",
+     "type": "course",
+     "labelTag": "AUPW",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUPW"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "8-1-1",
+     "label": "Sector 7: Natural Science Across Disciplines",
+     "type": "course",
+     "labelTag": "AUW_SHW",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUNM"
+       ]
+      }
+     ]
+    }
+   ],
+   "minClasses": 6
+  },
+  {
+   "reqId": "RA002247",
+   "type": "MAJOR",
+   "code": "ESCI",
+   "title": "Major in Electrical Science",
+   "catalogYears": {
+    "start": "2027",
+    "stop": "9999"
+   },
+   "share": [
+    {
+     "scope": "block",
+     "type": "OTHER",
+     "code": "U-GE-SCTR",
+     "maxClasses": 1
+    },
+    {
+     "scope": "type",
+     "type": "MINOR"
+    },
+    {
+     "scope": "type",
+     "type": "CONC"
+    },
+    {
+     "scope": "type",
+     "type": "MAJOR"
+    }
+   ],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1",
+     "label": "Engineering Courses",
+     "type": "subset",
+     "labelTag": "SSFFNN",
+     "children": [
+      {
+       "id": "1-0",
+       "label": "CIS 1100 or ENGR 1050",
+       "type": "course",
+       "labelTag": "BNFGST",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "1100"
+        },
+        {
+         "subject": "ENGR",
+         "number": "1050"
+        }
+       ]
+      },
+      {
+       "id": "1-1",
+       "label": "CIS 1200 or CIS 2400",
+       "type": "course",
+       "labelTag": "BBFFS",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "1200"
+        },
+        {
+         "subject": "CIS",
+         "number": "2400"
+        }
+       ]
+      },
+      {
+       "id": "1-2",
+       "label": "Elec Circuits & Sys",
+       "type": "course",
+       "labelTag": "NNBBHD",
+       "need": {
+        "credits": 1.5,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "ESE",
+         "number": "2150"
+        }
+       ]
+      },
+      {
+       "id": "1-3",
+       "label": "Elec Phot Electr Dev",
+       "type": "course",
+       "labelTag": "NNBBHK",
+       "need": {
+        "credits": 1.5,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "ESE",
+         "number": "2180"
+        }
+       ]
+      },
+      {
+       "id": "1-4",
+       "label": "Signal & Inf Processing",
+       "type": "course",
+       "labelTag": "NNBBHS",
+       "need": {
+        "credits": 1.5,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "ESE",
+         "number": "2240"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "2",
+     "label": "Area Electives",
+     "type": "course",
+     "labelTag": "SXFX20",
+     "need": {
+      "credits": 3,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "ESE",
+       "number": "3190"
+      },
+      {
+       "subject": "ESE",
+       "number": "3400"
+      },
+      {
+       "subject": "ESE",
+       "number": "3500"
+      },
+      {
+       "subject": "ESE",
+       "number": "3600"
+      },
+      {
+       "subject": "ESE",
+       "number": "3700"
+      },
+      {
+       "subject": "ESE",
+       "number": "4190"
+      },
+      {
+       "subject": "ESE",
+       "number": "5720"
+      },
+      {
+       "subject": "ESE",
+       "number": "4730"
+      },
+      {
+       "subject": "ESE",
+       "number": "5730"
+      },
+      {
+       "subject": "ESE",
+       "number": "4750"
+      },
+      {
+       "subject": "ESE",
+       "number": "5750"
+      },
+      {
+       "subject": "ESE",
+       "number": "5150"
+      },
+      {
+       "subject": "ESE",
+       "number": "5160"
+      },
+      {
+       "subject": "ESE",
+       "number": "5180"
+      },
+      {
+       "subject": "ESE",
+       "number": "5190"
+      },
+      {
+       "subject": "ESE",
+       "number": "5320"
+      },
+      {
+       "subject": "ESE",
+       "number": "5370"
+      },
+      {
+       "subject": "ESE",
+       "number": "5390"
+      },
+      {
+       "subject": "ESE",
+       "number": "5700"
+      },
+      {
+       "subject": "ESE",
+       "number": "5780"
+      },
+      {
+       "subject": "ESE",
+       "number": "5800"
+      },
+      {
+       "subject": "ESE",
+       "number": "6650"
+      },
+      {
+       "subject": "ESE",
+       "number": "6710"
+      },
+      {
+       "subject": "ESE",
+       "number": "6720"
+      },
+      {
+       "subject": "ESE",
+       "number": "3200"
+      },
+      {
+       "subject": "ESE",
+       "number": "3300"
+      },
+      {
+       "subject": "ESE",
+       "number": "3360"
+      },
+      {
+       "subject": "ESE",
+       "number": "5090"
+      },
+      {
+       "subject": "ESE",
+       "number": "5100"
+      },
+      {
+       "subject": "ESE",
+       "number": "5210"
+      },
+      {
+       "subject": "ESE",
+       "number": "5230"
+      },
+      {
+       "subject": "ESE",
+       "number": "5290"
+      },
+      {
+       "subject": "ESE",
+       "number": "5360"
+      },
+      {
+       "subject": "ESE",
+       "number": "6210"
+      },
+      {
+       "subject": "ESE",
+       "number": "6250"
+      },
+      {
+       "subject": "ESE",
+       "number": "6730"
+      },
+      {
+       "subject": "ESE",
+       "number": "3030"
+      },
+      {
+       "subject": "ESE",
+       "number": "3040"
+      },
+      {
+       "subject": "ESE",
+       "number": "3050"
+      },
+      {
+       "subject": "ESE",
+       "number": "3060"
+      },
+      {
+       "subject": "ESE",
+       "number": "3250"
+      },
+      {
+       "subject": "ESE",
+       "number": "4040"
+      },
+      {
+       "subject": "ESE",
+       "number": "4070"
+      },
+      {
+       "subject": "ESE",
+       "number": "5070"
+      },
+      {
+       "subject": "ESE",
+       "number": "4380"
+      },
+      {
+       "subject": "ESE",
+       "number": "5380"
+      },
+      {
+       "subject": "ESE",
+       "number": "5000"
+      },
+      {
+       "subject": "ESE",
+       "number": "5050"
+      },
+      {
+       "subject": "ESE",
+       "number": "5060"
+      },
+      {
+       "subject": "ESE",
+       "number": "5120"
+      },
+      {
+       "subject": "ESE",
+       "number": "5140"
+      },
+      {
+       "subject": "ESE",
+       "number": "5280"
+      },
+      {
+       "subject": "ESE",
+       "number": "5310"
+      },
+      {
+       "subject": "ESE",
+       "number": "5460"
+      },
+      {
+       "subject": "ESE",
+       "number": "5480"
+      },
+      {
+       "subject": "ESE",
+       "number": "5500"
+      },
+      {
+       "subject": "ESE",
+       "number": "6050"
+      },
+      {
+       "subject": "ESE",
+       "number": "6060"
+      },
+      {
+       "subject": "ESE",
+       "number": "6150"
+      },
+      {
+       "subject": "ESE",
+       "number": "6180"
+      },
+      {
+       "subject": "ESE",
+       "number": "6190"
+      },
+      {
+       "subject": "ESE",
+       "number": "6500"
+      },
+      {
+       "subject": "ESE",
+       "number": "6740"
+      },
+      {
+       "subject": "CIS",
+       "number": "4710"
+      },
+      {
+       "subject": "CIS",
+       "number": "5200"
+      },
+      {
+       "subject": "BE",
+       "number": "5210"
+      }
+     ]
+    },
+    {
+     "id": "3",
+     "label": "Lab Elective",
+     "type": "group",
+     "labelTag": "BBRR22",
+     "pick": {
+      "groups": 1,
+      "of": 2
+     },
+     "children": [
+      {
+       "id": "3-0",
+       "label": "ESE 2900 & ESE 2910",
+       "type": "course",
+       "labelTag": "ESE2900+2910",
+       "need": {
+        "credits": 1.5,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "ESE",
+         "number": "2900"
+        },
+        {
+         "subject": "ESE",
+         "number": "2910"
+        }
+       ]
+      },
+      {
+       "id": "3-1",
+       "label": "Design and Project Course-ESE Lab",
+       "type": "course",
+       "labelTag": "AREAC_DES",
+       "need": {
+        "credits": 1,
+        "creditsEnd": 1.5,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "ESE",
+         "number": "3190"
+        },
+        {
+         "subject": "ESE",
+         "number": "3360"
+        },
+        {
+         "subject": "ESE",
+         "number": "3500"
+        },
+        {
+         "subject": "ESE",
+         "number": "4210"
+        },
+        {
+         "subject": "BE",
+         "number": "4700"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "4",
+     "label": "Specialization Elective",
+     "type": "course",
+     "labelTag": "IOPTTF",
+     "need": {
+      "credits": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "ESE",
+       "number": "2000",
+       "numberEnd": "5999"
+      }
+     ],
+     "except": [
+      {
+       "subject": "ESE",
+       "number": "2030"
+      },
+      {
+       "subject": "ESE",
+       "number": "3010"
+      },
+      {
+       "subject": "ESE",
+       "number": "4020"
+      },
+      {
+       "subject": "ESE",
+       "number": "5420"
+      }
+     ]
+    },
+    {
+     "id": "5",
+     "label": "Math and Natural Science Courses",
+     "type": "subset",
+     "labelTag": "SSNFUG",
+     "children": [
+      {
+       "id": "5-0",
+       "label": "Physics I",
+       "type": "course",
+       "labelTag": "NNBBFF",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "PHYS",
+         "number": "0140"
+        },
+        {
+         "subject": "PHYS",
+         "number": "0150"
+        },
+        {
+         "subject": "PHYS",
+         "number": "0170"
+        }
+       ]
+      },
+      {
+       "id": "5-1",
+       "label": "Physics II",
+       "type": "course",
+       "labelTag": "BBVVCC",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "PHYS",
+         "number": "0141"
+        },
+        {
+         "subject": "PHYS",
+         "number": "0151"
+        },
+        {
+         "subject": "PHYS",
+         "number": "0171"
+        }
+       ]
+      },
+      {
+       "id": "5-2",
+       "label": "Calculus I",
+       "type": "course",
+       "labelTag": "OOIIJJ",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "MATH",
+         "number": "1400"
+        }
+       ]
+      },
+      {
+       "id": "5-3",
+       "label": "Calculus II",
+       "type": "course",
+       "labelTag": "HHGGBB",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "MATH",
+         "number": "1410"
+        }
+       ]
+      },
+      {
+       "id": "5-4",
+       "label": "Linear Algebra with Appl",
+       "type": "course",
+       "labelTag": "BVCBVC",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "ENM",
+         "number": "2030"
+        },
+        {
+         "subject": "ESE",
+         "number": "2030"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "minCredits": 16.5,
+   "minGpa": 2,
+   "minResidency": 6
+  }
+ ]
+}

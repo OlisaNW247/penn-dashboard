@@ -1,0 +1,156 @@
+{
+ "code": "PALL-MINOR",
+ "title": "Minor in Palliative Care",
+ "goals": {
+  "college": "ND",
+  "program": "ND_DNP",
+  "minor": "PALL",
+  "degree": "DNP"
+ },
+ "goalNames": {
+  "COLLEGE": "Nursing Doctorate ND",
+  "PROGRAM": "Nursing - Doctor of Nursing Practice",
+  "MINOR": "Palliative Care",
+  "DEGREE": "Doctor of Nursing Practice"
+ },
+ "provenance": {
+  "source": "https://courses.upenn.edu/api/?page=fose&route=programs-v2-info",
+  "srcdb": "202630",
+  "fetched": "2026-11-26"
+ },
+ "blocks": [
+  {
+   "reqId": "RA002210",
+   "type": "DEGREE",
+   "code": "DNP",
+   "title": "Degree in Doctor of Nursing Practice",
+   "catalogYears": {
+    "start": "2027",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXPASSFAIL",
+     "max": 0,
+     "unit": "cu",
+     "courses": [],
+     "except": [],
+     "text": "MAXPASSFAIL 0 Credits",
+     "tag": "MXPFH"
+    }
+   ],
+   "overlays": [],
+   "other": [
+    {
+     "name": "CHECKELECTIVES",
+     "text": "CHECK-ELECTIVE-CREDITS-ALLOWED"
+    }
+   ],
+   "rules": [
+    {
+     "id": "1-1-0",
+     "label": "Cumulative GPA Requirement ",
+     "type": "incomplete",
+     "labelTag": "MNGPR2",
+     "branch": "if"
+    },
+    {
+     "id": "2-1",
+     "label": "There are no I, NR, or PR grades in this Degree Audit",
+     "type": "complete",
+     "labelTag": "KFSOEL",
+     "branch": "else"
+    },
+    {
+     "id": "3",
+     "label": "Major Requirements",
+     "type": "blocktype",
+     "labelTag": "MAJBLOCK",
+     "ref": {
+      "type": "MAJOR"
+     }
+    }
+   ]
+  },
+  {
+   "reqId": "RA000127",
+   "type": "MINOR",
+   "code": "PALL",
+   "title": "Minor in Palliative Care",
+   "catalogYears": {
+    "start": "0000",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": true,
+   "limits": [],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1",
+     "label": "Princ of Palliative Care",
+     "type": "course",
+     "labelTag": "MINNURS5570",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "NURS",
+       "number": "5570"
+      }
+     ]
+    },
+    {
+     "id": "2",
+     "label": "Ebp Mgmt Symp Adv Illnes",
+     "type": "course",
+     "labelTag": "MINNURS5670",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "NURS",
+       "number": "5670"
+      }
+     ]
+    },
+    {
+     "id": "3",
+     "label": "Elective",
+     "type": "course",
+     "labelTag": "MINNURSELECT",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "NURS",
+       "number": "5110"
+      },
+      {
+       "subject": "NURS",
+       "number": "5250"
+      },
+      {
+       "subject": "NURS",
+       "number": "5400"
+      },
+      {
+       "subject": "NURS",
+       "number": "6360"
+      }
+     ]
+    }
+   ],
+   "minCredits": 3
+  }
+ ]
+}

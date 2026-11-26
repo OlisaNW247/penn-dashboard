@@ -1,0 +1,1295 @@
+{
+ "code": "HIST-BSE-PLH",
+ "title": "History BSE (Political History)",
+ "goals": {
+  "college": "EU",
+  "program": "EU_BSE",
+  "major": "HIST",
+  "conc": "PLH",
+  "degree": "BSE"
+ },
+ "goalNames": {
+  "COLLEGE": "SEAS Undergraduate EU",
+  "PROGRAM": "SEAS - BSE",
+  "MAJOR": "History",
+  "CONC": "Political History",
+  "DEGREE": "Bachelor of Sci in Engineering"
+ },
+ "provenance": {
+  "source": "https://courses.upenn.edu/api/?page=fose&route=programs-v2-info",
+  "srcdb": "202630",
+  "fetched": "2026-11-26"
+ },
+ "blocks": [
+  {
+   "reqId": "RA002196",
+   "type": "DEGREE",
+   "code": "BSE",
+   "title": "Degree in Bachelor of Science in Engineering",
+   "catalogYears": {
+    "start": "2027",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWAGE",
+         "op": ">",
+         "values": [
+          "8"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWAGE > 8)",
+     "tag": "MXCLHDW"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "COLL",
+       "number": "0@"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in COLL 0@",
+     "tag": "MXCLHCOLL"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "MSCI",
+       "number": "@"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in MSCI @",
+     "tag": "MXCLHMSCI"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "NSCI",
+       "number": "@"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in NSCI @",
+     "tag": "MXCLHNSCI"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "ASTR",
+       "number": "0001"
+      },
+      {
+       "subject": "EAS",
+       "number": "5030"
+      },
+      {
+       "subject": "EAS",
+       "number": "5050"
+      },
+      {
+       "subject": "CIT",
+       "number": "@"
+      },
+      {
+       "subject": "DYNM",
+       "number": "@"
+      },
+      {
+       "subject": "FNCE",
+       "number": "0001"
+      },
+      {
+       "subject": "FNCE",
+       "number": "0002"
+      },
+      {
+       "subject": "HCMG",
+       "number": "0001"
+      },
+      {
+       "subject": "MATH",
+       "number": "1300"
+      },
+      {
+       "subject": "MATH",
+       "number": "1510"
+      },
+      {
+       "subject": "MATH",
+       "number": "1700"
+      },
+      {
+       "subject": "MGMT",
+       "number": "0004"
+      },
+      {
+       "subject": "MKTG",
+       "number": "0001"
+      },
+      {
+       "subject": "MED",
+       "number": "0000",
+       "numberEnd": "9999"
+      },
+      {
+       "subject": "MSCI",
+       "number": "0000",
+       "numberEnd": "9999"
+      },
+      {
+       "subject": "NSCI",
+       "number": "0000",
+       "numberEnd": "1019"
+      },
+      {
+       "subject": "NSCI",
+       "number": "1021",
+       "numberEnd": "2009"
+      },
+      {
+       "subject": "NSCI",
+       "number": "2011",
+       "numberEnd": "2019"
+      },
+      {
+       "subject": "NSCI",
+       "number": "2021",
+       "numberEnd": "3009"
+      },
+      {
+       "subject": "NSCI",
+       "number": "3111",
+       "numberEnd": "4009"
+      },
+      {
+       "subject": "NSCI",
+       "number": "4011",
+       "numberEnd": "4019"
+      },
+      {
+       "subject": "NSCI",
+       "number": "4021",
+       "numberEnd": "9999"
+      },
+      {
+       "subject": "OIDD",
+       "number": "0001"
+      },
+      {
+       "subject": "PHYS",
+       "number": "0000",
+       "numberEnd": "0049"
+      },
+      {
+       "subject": "PHYS",
+       "number": "0052",
+       "numberEnd": "0139"
+      },
+      {
+       "subject": "STAT",
+       "number": "0000",
+       "numberEnd": "4049"
+      },
+      {
+       "subject": "STAT",
+       "number": "4051",
+       "numberEnd": "4219"
+      },
+      {
+       "subject": "STAT",
+       "number": "4221",
+       "numberEnd": "4290"
+      },
+      {
+       "subject": "CHEM",
+       "number": "001",
+       "numberEnd": "001",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "202220"
+         ]
+        }
+       ],
+       "historic": true
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in ASTR 0001, EAS 5030, 5050, CIT @, DYNM @, FNCE 0001, 0002, HCMG 0001, MATH 1300, 1510, 1700, MGMT 0004, MKTG 0001, MED 0000:9999, MSCI 0000:9999, NSCI 0000:1019, 1021:2009, 2011:2019, 2021:3009, 3111:4009, 4011:4019, 4021:9999, OIDD 0001, PHYS 0000:0049, 0052:0139, STAT 0000:4049, 4051:4219, 4221:4290, CHEM 001:001 (With DWTERM < 202220)",
+     "tag": "ALDCED"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 4,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 4 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    }
+   ],
+   "overlays": [],
+   "other": [
+    {
+     "name": "CHECKELECTIVES",
+     "text": "CHECK-ELECTIVE-CREDITS-ALLOWED"
+    }
+   ],
+   "rules": [
+    {
+     "id": "1-1",
+     "label": "There are no I, NR, or PR grades in this Degree Audit",
+     "type": "complete",
+     "labelTag": "KFSOEL",
+     "branch": "else"
+    },
+    {
+     "id": "2-1-0",
+     "label": "Cumulative GPA Requirement ",
+     "type": "incomplete",
+     "labelTag": "MNGPHREQ",
+     "branch": "if"
+    },
+    {
+     "id": "3",
+     "label": "Major Requirements",
+     "type": "blocktype",
+     "labelTag": "MAJORBLOCK",
+     "ref": {
+      "type": "MAJOR"
+     }
+    },
+    {
+     "id": "5",
+     "label": "General Electives",
+     "type": "block",
+     "labelTag": "SSHBLOCK",
+     "ref": {
+      "type": "OTHER",
+      "code": "U-SEAS-SSH",
+      "blockId": "RA002195"
+     }
+    }
+   ]
+  },
+  {
+   "reqId": "RA000554",
+   "type": "MAJOR",
+   "code": "HIST",
+   "title": "Major in History, BA",
+   "catalogYears": {
+    "start": "0000",
+    "stop": "9999"
+   },
+   "share": [
+    {
+     "scope": "type",
+     "type": "MAJOR"
+    },
+    {
+     "scope": "type",
+     "type": "CONC"
+    }
+   ],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1",
+     "label": "GEOGRAPHIC DISTRIBUTION",
+     "type": "block",
+     "labelTag": "KWUSKS",
+     "ref": {
+      "type": "OTHER",
+      "code": "U-HIST-GEO",
+      "blockId": "RA000812"
+     }
+    },
+    {
+     "id": "2",
+     "label": "CHRONOLOGICAL DISTRIBUTION",
+     "type": "course",
+     "labelTag": "FJSIWL",
+     "need": {
+      "classes": 2,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AH18"
+       ]
+      }
+     ],
+     "share": [
+      {
+       "scope": "thisBlock"
+      }
+     ]
+    },
+    {
+     "id": "3",
+     "label": "SEMINAR",
+     "type": "course",
+     "labelTag": "SEMREQ",
+     "need": {
+      "classes": 2,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "HIST",
+       "number": "2000",
+       "numberEnd": "3799"
+      },
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AHEM"
+       ]
+      }
+     ],
+     "share": [
+      {
+       "scope": "thisBlock"
+      }
+     ]
+    },
+    {
+     "id": "4",
+     "label": "RESEARCH REQUIREMENT",
+     "type": "course",
+     "labelTag": "RESEAREQ",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "HIST",
+       "number": "3000",
+       "numberEnd": "3799"
+      },
+      {
+       "subject": "HIST",
+       "number": "4998"
+      }
+     ],
+     "share": [
+      {
+       "scope": "thisBlock"
+      }
+     ]
+    },
+    {
+     "id": "13-0",
+     "label": "POLITICAL HISTORY CONCENTRATION",
+     "type": "subset",
+     "labelTag": "POLHIS_CONCREQ",
+     "branch": "if",
+     "children": [
+      {
+       "id": "13-0-0",
+       "label": "Political History Seminar",
+       "type": "course",
+       "labelTag": "POLHIS",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "HIST",
+         "number": "2000",
+         "numberEnd": "3799",
+         "attributes": [
+          "AHPO"
+         ]
+        }
+       ]
+      },
+      {
+       "id": "13-0-1",
+       "label": "Political History Core Courses",
+       "type": "course",
+       "labelTag": "POLHIS_CORE",
+       "need": {
+        "classes": 3,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "@",
+         "number": "@",
+         "attributes": [
+          "AHPO"
+         ]
+        }
+       ]
+      },
+      {
+       "id": "13-0-2",
+       "label": "Political History or Related Electives",
+       "type": "course",
+       "labelTag": "POLHIS_ELEC",
+       "need": {
+        "classes": 2,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "@",
+         "number": "@",
+         "attributes": [
+          "AHPO",
+          "AHPR"
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "14-0",
+     "label": "HISTORY ELECTIVES",
+     "type": "course",
+     "labelTag": "HISELECT",
+     "branch": "if",
+     "need": {
+      "credits": 0,
+      "creditsEnd": 4,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "ANCH",
+       "number": "0000",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "HIST",
+       "number": "0000",
+       "numberEnd": "4990"
+      }
+     ],
+     "exclusive": true
+    }
+   ],
+   "minCredits": 12,
+   "minGpa": 2,
+   "minResidency": 8
+  },
+  {
+   "reqId": "RA000812",
+   "type": "OTHER",
+   "code": "U-HIST-GEO",
+   "title": "History Geographic Distribution Courses",
+   "catalogYears": {
+    "start": "0000",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": true,
+   "limits": [],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1",
+     "label": "GEOGRAPHIC DISTRIBUTION",
+     "type": "group",
+     "labelTag": "GEODIS",
+     "pick": {
+      "groups": 4,
+      "of": 6
+     },
+     "children": [
+      {
+       "id": "1-0",
+       "label": "HIST United States and Canada",
+       "type": "course",
+       "labelTag": "AHUC",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "@",
+         "number": "@",
+         "attributes": [
+          "AHUC"
+         ]
+        }
+       ]
+      },
+      {
+       "id": "1-1",
+       "label": "HIST Europe and Australia",
+       "type": "course",
+       "labelTag": "AHEA",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "@",
+         "number": "@",
+         "attributes": [
+          "AHEA"
+         ]
+        }
+       ]
+      },
+      {
+       "id": "1-2",
+       "label": "HIST Africa and Middle East",
+       "type": "course",
+       "labelTag": "AHAF",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "@",
+         "number": "@",
+         "attributes": [
+          "AHAF"
+         ]
+        }
+       ]
+      },
+      {
+       "id": "1-3",
+       "label": "HIST Latin America and Caribbean",
+       "type": "course",
+       "labelTag": "AHLA",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "@",
+         "number": "@",
+         "attributes": [
+          "AHLA"
+         ]
+        }
+       ]
+      },
+      {
+       "id": "1-4",
+       "label": "HIST East Asia and South Asia",
+       "type": "course",
+       "labelTag": "AHES",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "@",
+         "number": "@",
+         "attributes": [
+          "AHES"
+         ]
+        }
+       ]
+      },
+      {
+       "id": "1-5",
+       "label": "HIST Global Issues",
+       "type": "course",
+       "labelTag": "AHGI",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "@",
+         "number": "@",
+         "attributes": [
+          "AHGI"
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "minCredits": 4
+  },
+  {
+   "reqId": "RA002195",
+   "type": "OTHER",
+   "code": "U-SEAS-SSH",
+   "title": "General Electives",
+   "catalogYears": {
+    "start": "2027",
+    "stop": "9999"
+   },
+   "share": [
+    {
+     "scope": "block",
+     "type": "OTHER",
+     "code": "U-SEAS-WREE"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "AFRC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ANCH"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ANTH"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ARCH"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ARTH"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "BCHE"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "BIOL"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "BIOP"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "BSCI"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "CBSC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "CHEM"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "CIMS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "CLST"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "CMPL"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "COGS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "COMM"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "CRIM"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "DSGN"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "EALC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "EASC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ECOQ"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ENGL"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ENVS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ESCI"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "FNAR"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "FRFS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "GRMN"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "GSWS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "HIST"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "HSOC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "HSPN"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "INDM"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "INTR"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ITST"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "JWST"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "LALX"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "LING"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "LOGC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "MAEC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "MATH"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "MESC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "MMES"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "MSCI"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "MUSC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "NELC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "NRSC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "NTSC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "PHIL"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "PHYS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "PPE"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "PSCI"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "PSYC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "REES"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "RELS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ROML"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "SAST"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "SOCI"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "STSC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "SYSC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "THAR"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "URBS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "VLST"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "MELC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "FIGS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "LAWS"
+    },
+    {
+     "scope": "type",
+     "type": "CONC"
+    }
+   ],
+   "standalone": false,
+   "limits": [],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1",
+     "label": "GENERAL ELECTIVES (7 CU)",
+     "type": "subset",
+     "labelTag": "SEAS_SSH_REQ"
+    },
+    {
+     "id": "2-0",
+     "label": "WRITING REQUIREMENT",
+     "type": "subset",
+     "branch": "if",
+     "children": [
+      {
+       "id": "2-0-0",
+       "label": "Writing Course",
+       "type": "group",
+       "labelTag": "NMBKJH",
+       "pick": {
+        "groups": 1,
+        "of": 3
+       },
+       "share": [
+        {
+         "scope": "thisBlock"
+        }
+       ],
+       "children": [
+        {
+         "id": "2-0-0-0",
+         "label": "Social Sciences Writing Course",
+         "type": "course",
+         "labelTag": "BNVMJS",
+         "need": {
+          "credits": 1,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "WRIT",
+           "number": "0160"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0170"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0021"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0280"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0340"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0370"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0380"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0480"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0500"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0550"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0590"
+          }
+         ]
+        },
+        {
+         "id": "2-0-0-1",
+         "label": "Humanities Writing Course",
+         "type": "course",
+         "labelTag": "BNVMJK",
+         "need": {
+          "credits": 1,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "WRIT",
+           "number": "0020"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0100"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0110"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0120"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0130"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0140"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0150"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0230"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0250"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0260"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0270"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0300"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0330"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0390"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0410"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0490"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0570"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0580"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0670"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0680"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0730"
+          }
+         ]
+        },
+        {
+         "id": "2-0-0-2",
+         "label": "Tech, Business, and Society Writing Course",
+         "type": "course",
+         "labelTag": "BNVMJD",
+         "need": {
+          "credits": 1,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "WRIT",
+           "number": "0210"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0220"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0310"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0400"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0650"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0740"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "minCredits": 7
+  }
+ ]
+}

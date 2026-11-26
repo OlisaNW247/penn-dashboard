@@ -1,0 +1,1638 @@
+{
+ "code": "VLST-BA-APC",
+ "title": "Visual Studies BA (Architecture Practice & Tech)",
+ "goals": {
+  "college": "AU",
+  "program": "AU_BA",
+  "major": "VLST",
+  "conc": "APC",
+  "degree": "BA"
+ },
+ "goalNames": {
+  "COLLEGE": "College of Arts & Sciences AU",
+  "PROGRAM": "Arts & Sciences - BA",
+  "MAJOR": "Visual Studies",
+  "CONC": "Architecture Practice & Tech",
+  "DEGREE": "Bachelor of Arts"
+ },
+ "provenance": {
+  "source": "https://courses.upenn.edu/api/?page=fose&route=programs-v2-info",
+  "srcdb": "202630",
+  "fetched": "2026-11-26"
+ },
+ "blocks": [
+  {
+   "reqId": "RA002258",
+   "type": "DEGREE",
+   "code": "BA",
+   "title": "Degree in Bachelor of Arts",
+   "catalogYears": {
+    "start": "2027",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "MSCI",
+       "number": "@"
+      },
+      {
+       "subject": "NSCI",
+       "number": "@"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in MSCI @, NSCI @",
+     "tag": "MXCLH_ROTC"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 8,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 8 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    }
+   ],
+   "overlays": [
+    {
+     "kind": "MINCREDIT",
+     "need": 26,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "AAMW",
+       "number": "@"
+      },
+      {
+       "subject": "AFRC",
+       "number": "@"
+      },
+      {
+       "subject": "AFST",
+       "number": "@"
+      },
+      {
+       "subject": "ALAN",
+       "number": "@"
+      },
+      {
+       "subject": "AMCS",
+       "number": "@"
+      },
+      {
+       "subject": "AMEL",
+       "number": "@"
+      },
+      {
+       "subject": "AMHR",
+       "number": "@"
+      },
+      {
+       "subject": "ANCH",
+       "number": "@"
+      },
+      {
+       "subject": "ANEL",
+       "number": "@"
+      },
+      {
+       "subject": "ANTH",
+       "number": "@"
+      },
+      {
+       "subject": "ARAB",
+       "number": "@"
+      },
+      {
+       "subject": "ARTH",
+       "number": "@"
+      },
+      {
+       "subject": "ASAM",
+       "number": "@"
+      },
+      {
+       "subject": "ASLD",
+       "number": "@"
+      },
+      {
+       "subject": "ASTR",
+       "number": "@"
+      },
+      {
+       "subject": "BCHE",
+       "number": "@"
+      },
+      {
+       "subject": "BCS",
+       "number": "@"
+      },
+      {
+       "subject": "BDS",
+       "number": "@"
+      },
+      {
+       "subject": "BENF",
+       "number": "@"
+      },
+      {
+       "subject": "BENG",
+       "number": "@"
+      },
+      {
+       "subject": "BIBB",
+       "number": "@"
+      },
+      {
+       "subject": "BIOL",
+       "number": "@"
+      },
+      {
+       "subject": "CHEM",
+       "number": "@"
+      },
+      {
+       "subject": "CHIC",
+       "number": "@"
+      },
+      {
+       "subject": "CHIN",
+       "number": "@"
+      },
+      {
+       "subject": "CIMS",
+       "number": "@"
+      },
+      {
+       "subject": "CLST",
+       "number": "@"
+      },
+      {
+       "subject": "COGS",
+       "number": "@"
+      },
+      {
+       "subject": "COLL",
+       "number": "@"
+      },
+      {
+       "subject": "COML",
+       "number": "@"
+      },
+      {
+       "subject": "COMM",
+       "number": "@"
+      },
+      {
+       "subject": "CRIM",
+       "number": "@"
+      },
+      {
+       "subject": "CZCH",
+       "number": "@"
+      },
+      {
+       "subject": "DEMG",
+       "number": "@"
+      },
+      {
+       "subject": "DYNM",
+       "number": "@"
+      },
+      {
+       "subject": "DTCH",
+       "number": "@"
+      },
+      {
+       "subject": "EALC",
+       "number": "@"
+      },
+      {
+       "subject": "ECON",
+       "number": "@"
+      },
+      {
+       "subject": "EESC",
+       "number": "@"
+      },
+      {
+       "subject": "ENGL",
+       "number": "@"
+      },
+      {
+       "subject": "FIGS",
+       "number": "@"
+      },
+      {
+       "subject": "FILP",
+       "number": "@"
+      },
+      {
+       "subject": "FOLK",
+       "number": "@"
+      },
+      {
+       "subject": "FREN",
+       "number": "@"
+      },
+      {
+       "subject": "FRSM",
+       "number": "@"
+      },
+      {
+       "subject": "GAFL",
+       "number": "@"
+      },
+      {
+       "subject": "GREK",
+       "number": "@"
+      },
+      {
+       "subject": "GRMN",
+       "number": "@"
+      },
+      {
+       "subject": "GSWS",
+       "number": "@"
+      },
+      {
+       "subject": "GUJR",
+       "number": "@"
+      },
+      {
+       "subject": "HEBR",
+       "number": "@"
+      },
+      {
+       "subject": "HIND",
+       "number": "@"
+      },
+      {
+       "subject": "HIST",
+       "number": "@"
+      },
+      {
+       "subject": "HSOC",
+       "number": "@"
+      },
+      {
+       "subject": "HSSC",
+       "number": "@"
+      },
+      {
+       "subject": "HUNG",
+       "number": "@"
+      },
+      {
+       "subject": "IGBO",
+       "number": "@"
+      },
+      {
+       "subject": "INDO",
+       "number": "@"
+      },
+      {
+       "subject": "INSP",
+       "number": "@"
+      },
+      {
+       "subject": "INTG",
+       "number": "@"
+      },
+      {
+       "subject": "INTR",
+       "number": "@"
+      },
+      {
+       "subject": "IRIS",
+       "number": "@"
+      },
+      {
+       "subject": "ITAL",
+       "number": "@"
+      },
+      {
+       "subject": "JPAN",
+       "number": "@"
+      },
+      {
+       "subject": "JWST",
+       "number": "@"
+      },
+      {
+       "subject": "KAND",
+       "number": "@"
+      },
+      {
+       "subject": "KORN",
+       "number": "@"
+      },
+      {
+       "subject": "LALS",
+       "number": "@"
+      },
+      {
+       "subject": "LATN",
+       "number": "@"
+      },
+      {
+       "subject": "LGIC",
+       "number": "@"
+      },
+      {
+       "subject": "LING",
+       "number": "@"
+      },
+      {
+       "subject": "LSMP",
+       "number": "@"
+      },
+      {
+       "subject": "MALG",
+       "number": "@"
+      },
+      {
+       "subject": "MATH",
+       "number": "@"
+      },
+      {
+       "subject": "MELC",
+       "number": "@"
+      },
+      {
+       "subject": "MLYM",
+       "number": "@"
+      },
+      {
+       "subject": "MMES",
+       "number": "@"
+      },
+      {
+       "subject": "MRTI",
+       "number": "@"
+      },
+      {
+       "subject": "MUSC",
+       "number": "@"
+      },
+      {
+       "subject": "NELC",
+       "number": "@"
+      },
+      {
+       "subject": "NRSC",
+       "number": "@"
+      },
+      {
+       "subject": "PASH",
+       "number": "@"
+      },
+      {
+       "subject": "PERS",
+       "number": "@"
+      },
+      {
+       "subject": "PHIL",
+       "number": "@"
+      },
+      {
+       "subject": "PHYS",
+       "number": "@"
+      },
+      {
+       "subject": "PLSH",
+       "number": "@"
+      },
+      {
+       "subject": "PPE",
+       "number": "@"
+      },
+      {
+       "subject": "PRTG",
+       "number": "@"
+      },
+      {
+       "subject": "PSCI",
+       "number": "@"
+      },
+      {
+       "subject": "PSYC",
+       "number": "@"
+      },
+      {
+       "subject": "PUNJ",
+       "number": "@"
+      },
+      {
+       "subject": "QUEC",
+       "number": "@"
+      },
+      {
+       "subject": "REES",
+       "number": "@"
+      },
+      {
+       "subject": "RELS",
+       "number": "@"
+      },
+      {
+       "subject": "ROML",
+       "number": "@"
+      },
+      {
+       "subject": "RUSS",
+       "number": "@"
+      },
+      {
+       "subject": "SARB",
+       "number": "@"
+      },
+      {
+       "subject": "SAST",
+       "number": "@"
+      },
+      {
+       "subject": "SKRT",
+       "number": "@"
+      },
+      {
+       "subject": "SOCI",
+       "number": "@"
+      },
+      {
+       "subject": "SPAN",
+       "number": "@"
+      },
+      {
+       "subject": "STSC",
+       "number": "@"
+      },
+      {
+       "subject": "SWAH",
+       "number": "@"
+      },
+      {
+       "subject": "SWED",
+       "number": "@"
+      },
+      {
+       "subject": "TAML",
+       "number": "@"
+      },
+      {
+       "subject": "TELU",
+       "number": "@"
+      },
+      {
+       "subject": "THAI",
+       "number": "@"
+      },
+      {
+       "subject": "THAR",
+       "number": "@"
+      },
+      {
+       "subject": "TIBT",
+       "number": "@"
+      },
+      {
+       "subject": "TIGR",
+       "number": "@"
+      },
+      {
+       "subject": "TURK",
+       "number": "@"
+      },
+      {
+       "subject": "TWI",
+       "number": "@"
+      },
+      {
+       "subject": "UKRN",
+       "number": "@"
+      },
+      {
+       "subject": "URBS",
+       "number": "@"
+      },
+      {
+       "subject": "URDU",
+       "number": "@"
+      },
+      {
+       "subject": "VIET",
+       "number": "@"
+      },
+      {
+       "subject": "VIPR",
+       "number": "@"
+      },
+      {
+       "subject": "VLST",
+       "number": "@"
+      },
+      {
+       "subject": "WOLF",
+       "number": "@"
+      },
+      {
+       "subject": "WRIT",
+       "number": "@"
+      },
+      {
+       "subject": "YDSH",
+       "number": "@"
+      },
+      {
+       "subject": "YORB",
+       "number": "@"
+      },
+      {
+       "subject": "ZULU",
+       "number": "@"
+      },
+      {
+       "subject": "GEOL",
+       "number": "@"
+      },
+      {
+       "subject": "ENVS",
+       "number": "@"
+      },
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AU16"
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MinCredits 26 in AAMW @, AFRC @, AFST @, ALAN @, AMCS @, AMEL @, AMHR @, ANCH @, ANEL @, ANTH @, ARAB @, ARTH @, ASAM @, ASLD @, ASTR @, BCHE @, BCS @, BDS @, BENF @, BENG @, BIBB @, BIOL @, CHEM @, CHIC @, CHIN @, CIMS @, CLST @, COGS @, COLL @, COML @, COMM @, CRIM @, CZCH @, DEMG @, DYNM @, DTCH @, EALC @, ECON @, EESC @, ENGL @, FIGS @, FILP @, FOLK @, FREN @, FRSM @, GAFL @, GREK @, GRMN @, GSWS @, GUJR @, HEBR @, HIND @, HIST @, HSOC @, HSSC @, HUNG @, IGBO @, INDO @, INSP @, INTG @, INTR @, IRIS @, ITAL @, JPAN @, JWST @, KAND @, KORN @, LALS @, LATN @, LGIC @, LING @, LSMP @, MALG @, MATH @, MELC @, MLYM @, MMES @, MRTI @, MUSC @, NELC @, NRSC @, PASH @, PERS @, PHIL @, PHYS @, PLSH @, PPE @, PRTG @, PSCI @, PSYC @, PUNJ @, QUEC @, REES @, RELS @, ROML @, RUSS @, SARB @, SAST @, SKRT @, SOCI @, SPAN @, STSC @, SWAH @, SWED @, TAML @, TELU @, THAI @, THAR @, TIBT @, TIGR @, TURK @, TWI @, UKRN @, URBS @, URDU @, VIET @, VIPR @, VLST @, WOLF @, WRIT @, YDSH @, YORB @, ZULU @, GEOL @, ENVS @, @ @ (With ATTRIBUTE = AU16)",
+     "label": "Arts and Sciences 26 CU Requirement",
+     "labelTag": "UWHW34"
+    }
+   ],
+   "other": [
+    {
+     "name": "CHECKELECTIVES",
+     "text": "CHECK-ELECTIVE-CREDITS-ALLOWED"
+    }
+   ],
+   "rules": [
+    {
+     "id": "1-1",
+     "label": "There are no I, NR, or PR grades in this Degree Audit",
+     "type": "complete",
+     "labelTag": "KFSOEL",
+     "branch": "else"
+    },
+    {
+     "id": "2-1-1-0",
+     "label": "Cumulative GPA Requirement",
+     "type": "incomplete",
+     "labelTag": "NOGPA",
+     "branch": "if"
+    },
+    {
+     "id": "3",
+     "label": "General Education - Foundations",
+     "type": "block",
+     "labelTag": "GENED_FND_BLK",
+     "ref": {
+      "type": "OTHER",
+      "code": "U-GE-FND",
+      "blockId": "RA000521"
+     }
+    },
+    {
+     "id": "4",
+     "label": "General Education - Sectors",
+     "type": "block",
+     "labelTag": "GENED_SCT_BLK",
+     "ref": {
+      "type": "OTHER",
+      "code": "U-GE-SCTR",
+      "blockId": "RA001031"
+     }
+    },
+    {
+     "id": "7",
+     "label": "Major Requirements",
+     "type": "blocktype",
+     "labelTag": "MAJR_BLK",
+     "ref": {
+      "type": "MAJOR"
+     }
+    }
+   ],
+   "minCredits": 36,
+   "minResidency": 18,
+   "lastResidency": {
+    "classes": 5
+   }
+  },
+  {
+   "reqId": "RA000521",
+   "type": "OTHER",
+   "code": "U-GE-FND",
+   "title": "General Education, Foundations",
+   "catalogYears": {
+    "start": "0000",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": true,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWTRANSFERSCHOOLID",
+         "op": "=",
+         "values": [
+          "EQIVAP",
+          "EQIVIB",
+          "EQIVEX",
+          "EQIVAS"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWTRANSFERSCHOOLID = EQIVAP, EQIVIB, EQIVEX, EQIVAS)"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWGRADELETTER",
+         "op": "=",
+         "values": [
+          "S"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWGRADELETTER = S)"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1-1",
+     "label": "Foreign Language",
+     "type": "course",
+     "labelTag": "AUFL",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AULL"
+       ]
+      }
+     ],
+     "minGrade": "1.0"
+    },
+    {
+     "id": "2",
+     "label": "Quantitative Data Analysis",
+     "type": "course",
+     "labelTag": "AUQD",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUQD"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "3",
+     "label": "Formal Reasoning and Analysis",
+     "type": "course",
+     "labelTag": "AUFR",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUFR"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "4",
+     "label": "Cross Cultural Analysis",
+     "type": "course",
+     "labelTag": "AUCC",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUCC"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "5",
+     "label": "Cultural Diversity in the U.S.",
+     "type": "course",
+     "labelTag": "AUCD",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUCD"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "6",
+     "label": "Writing Course",
+     "type": "course",
+     "labelTag": "AUWR",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "WRIT",
+       "number": "0000",
+       "numberEnd": "0991"
+      },
+      {
+       "subject": "WRIT",
+       "number": "0998"
+      }
+     ],
+     "except": [
+      {
+       "subject": "WRIT",
+       "number": "135@"
+      },
+      {
+       "subject": "WRIT",
+       "number": "138@"
+      }
+     ]
+    }
+   ],
+   "minClasses": 6
+  },
+  {
+   "reqId": "RA001031",
+   "type": "OTHER",
+   "code": "U-GE-SCTR",
+   "title": "General Education, Sectors",
+   "catalogYears": {
+    "start": "2022",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWTRANSFERSCHOOLID",
+         "op": "=",
+         "values": [
+          "EQIVAP",
+          "EQIVIB",
+          "EQIVEX",
+          "EQIVAS"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWTRANSFERSCHOOLID = EQIVAP, EQIVIB, EQIVEX, EQIVAS)"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "2-1",
+     "label": "Sector 1: Society",
+     "type": "course",
+     "labelTag": "AUSO",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUSO"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "3-1",
+     "label": "Sector 2: History and Tradition",
+     "type": "course",
+     "labelTag": "AUHT",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUHT"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "4-1",
+     "label": "Sector 3: Arts and Letters",
+     "type": "course",
+     "labelTag": "AUAL",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUAL"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "5-1",
+     "label": "Sector 4: Humanities and Social Sciences",
+     "type": "course",
+     "labelTag": "AUHS",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUHS"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "6-1",
+     "label": "Sector 5: The Living World",
+     "type": "course",
+     "labelTag": "AULW",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AULW"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "7-1",
+     "label": "Sector 6: The Physical World",
+     "type": "course",
+     "labelTag": "AUPW",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUPW"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "8-0",
+     "label": "Sector 7: Natural Science and Math Fulfilled by Major Course",
+     "type": "complete",
+     "labelTag": "JSUELS",
+     "branch": "if"
+    }
+   ],
+   "minClasses": 6
+  },
+  {
+   "reqId": "RA000580",
+   "type": "MAJOR",
+   "code": "VLST",
+   "title": "Major in Visual Studies",
+   "catalogYears": {
+    "start": "0000",
+    "stop": "9999"
+   },
+   "share": [
+    {
+     "scope": "type",
+     "type": "MAJOR"
+    },
+    {
+     "scope": "type",
+     "type": "CONC"
+    }
+   ],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1",
+     "label": "STAGE 1 - CORE COURSES",
+     "type": "subset",
+     "labelTag": "CORE_S1",
+     "children": [
+      {
+       "id": "1-0",
+       "label": "Eye, Mind and Image",
+       "type": "course",
+       "labelTag": "CORE1",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "VLST",
+         "number": "1010"
+        }
+       ]
+      },
+      {
+       "id": "1-1",
+       "label": "Form and Meaning or 3 Dimensions: Time and Space",
+       "type": "course",
+       "labelTag": "CORE2",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "VLST",
+         "number": "1020"
+        },
+        {
+         "subject": "VLST",
+         "number": "1030"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "2",
+     "label": "STAGE 2 - CORE COURSES",
+     "type": "subset",
+     "labelTag": "STAGE2",
+     "children": [
+      {
+       "id": "2-0",
+       "label": "SECTOR A: PHILOSOPHY AND SCIENCE OF SEEING",
+       "type": "group",
+       "labelTag": "S2_SECA",
+       "pick": {
+        "groups": 2,
+        "of": 3
+       },
+       "children": [
+        {
+         "id": "2-0-0",
+         "label": "Perception or Visual Neuroscience",
+         "type": "course",
+         "labelTag": "SA_OPT1",
+         "need": {
+          "classes": 1,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "VLST",
+           "number": "2110"
+          },
+          {
+           "subject": "VLST",
+           "number": "2170"
+          },
+          {
+           "subject": "BIBB",
+           "number": "2217"
+          },
+          {
+           "subject": "PSYC",
+           "number": "1340"
+          },
+          {
+           "subject": "PSYC",
+           "number": "2240"
+          },
+          {
+           "subject": "NRSC",
+           "number": "2217"
+          }
+         ]
+        },
+        {
+         "id": "2-0-1",
+         "label": "Research Experience in Perception or What is an Image?",
+         "type": "course",
+         "labelTag": "SA_OPT2",
+         "need": {
+          "classes": 1,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "VLST",
+           "number": "2120"
+          },
+          {
+           "subject": "VLST",
+           "number": "3050"
+          },
+          {
+           "subject": "PSYC",
+           "number": "4340"
+          }
+         ]
+        },
+        {
+         "id": "2-0-2",
+         "label": "Philosophy of Perception",
+         "type": "course",
+         "labelTag": "SA_OPT3",
+         "need": {
+          "classes": 1,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "VLST",
+           "number": "2210"
+          },
+          {
+           "subject": "VLST",
+           "number": "2230"
+          },
+          {
+           "subject": "VLST",
+           "number": "2220"
+          },
+          {
+           "subject": "PHIL",
+           "number": "1380"
+          },
+          {
+           "subject": "PHIL",
+           "number": "2640"
+          },
+          {
+           "subject": "PHIL",
+           "number": "2843"
+          },
+          {
+           "subject": "PHIL",
+           "number": "3623"
+          },
+          {
+           "subject": "PHIL",
+           "number": "4843"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "2-1",
+       "label": "SECTOR B: ART AND THE CULTURE OF SEEING",
+       "type": "group",
+       "labelTag": "S2_SECB",
+       "pick": {
+        "groups": 2,
+        "of": 3
+       },
+       "children": [
+        {
+         "id": "2-1-0",
+         "label": "Western Art and Civilization",
+         "type": "course",
+         "labelTag": "SB_OPT1",
+         "need": {
+          "classes": 1,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "ARTH",
+           "number": "1020"
+          },
+          {
+           "subject": "ARTH",
+           "number": "2780"
+          },
+          {
+           "subject": "ARTH",
+           "number": "2860"
+          },
+          {
+           "subject": "VLST",
+           "number": "2320"
+          },
+          {
+           "subject": "ARTH",
+           "number": "2781",
+           "conditions": [
+            {
+             "code": "DWTERM",
+             "op": "<",
+             "values": [
+              "Fall 2022"
+             ]
+            }
+           ],
+           "historic": true
+          },
+          {
+           "subject": "ARTH",
+           "number": "2730"
+          }
+         ]
+        },
+        {
+         "id": "2-1-1",
+         "label": "Art Now or The Rise of Image Culture: History and Theories",
+         "type": "course",
+         "labelTag": "SB_OPT3",
+         "need": {
+          "classes": 1,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "VLST",
+           "number": "3030"
+          },
+          {
+           "subject": "ARTH",
+           "number": "2940",
+           "conditions": [
+            {
+             "code": "DWTERM",
+             "op": ">",
+             "values": [
+              "Spring 2025"
+             ]
+            }
+           ]
+          },
+          {
+           "subject": "ENGL",
+           "number": "2639"
+          },
+          {
+           "subject": "GSWS",
+           "number": "2940"
+          },
+          {
+           "subject": "VLST",
+           "number": "2360"
+          }
+         ]
+        },
+        {
+         "id": "2-1-2",
+         "label": "Non-Western Art and Civilization",
+         "type": "course",
+         "labelTag": "SB_OPT2",
+         "need": {
+          "classes": 1,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "VLST",
+           "number": "2330"
+          },
+          {
+           "subject": "VLST",
+           "number": "2340"
+          },
+          {
+           "subject": "VLST",
+           "number": "2350"
+          },
+          {
+           "subject": "ARTH",
+           "number": "1030"
+          },
+          {
+           "subject": "ARTH",
+           "number": "1040"
+          },
+          {
+           "subject": "ARTH",
+           "number": "2350"
+          },
+          {
+           "subject": "EALC",
+           "number": "0100"
+          },
+          {
+           "subject": "NELC",
+           "number": "2350@"
+          },
+          {
+           "subject": "ARTH",
+           "number": "1040",
+           "conditions": [
+            {
+             "code": "DWTERM",
+             "op": "<",
+             "values": [
+              "Fall 2022"
+             ]
+            }
+           ],
+           "historic": true
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "2-2",
+       "label": "What is Visual Studies?",
+       "type": "course",
+       "labelTag": "VLST3",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "VLST",
+         "number": "3010"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "3-0",
+     "label": "ARCHITECTURE PRACTICE AND TECHNOLOGY CONCENTRATION",
+     "type": "subset",
+     "labelTag": "CONC_APC",
+     "branch": "if",
+     "children": [
+      {
+       "id": "3-0-0",
+       "label": "SECTOR C: ART PRACTICE AND TECHNOLOGY",
+       "type": "group",
+       "labelTag": "S2_APC",
+       "pick": {
+        "groups": 2,
+        "of": 2
+       },
+       "children": [
+        {
+         "id": "3-0-0-0",
+         "label": "Introduction to Architecture",
+         "type": "course",
+         "labelTag": "APC_SECC1",
+         "need": {
+          "classes": 1,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "ARCH",
+           "number": "1020"
+          }
+         ]
+        },
+        {
+         "id": "3-0-0-1",
+         "label": "Design Fundamentals I",
+         "type": "course",
+         "labelTag": "APC_SECC2",
+         "need": {
+          "classes": 1,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "ARCH",
+           "number": "2010"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "3-0-1",
+       "label": "Design Fundamentals II",
+       "type": "course",
+       "labelTag": "APC_ARCH1",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "ARCH",
+         "number": "2020"
+        }
+       ]
+      },
+      {
+       "id": "3-0-2",
+       "label": "Architecture Practice and Technology Electives",
+       "type": "course",
+       "labelTag": "APC_AVAP",
+       "need": {
+        "credits": 3,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "@",
+         "number": "0000",
+         "numberEnd": "4999",
+         "attributes": [
+          "AVAP"
+         ]
+        }
+       ]
+      },
+      {
+       "id": "3-0-3",
+       "label": "Art and Culture of Seeing or Philosophy and Science of Seeing Elective",
+       "type": "course",
+       "labelTag": "APC_AVAC",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "@",
+         "number": "0000",
+         "numberEnd": "4999",
+         "attributes": [
+          "AVAC",
+          "AVPS"
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "8-1",
+     "label": "Senior Project",
+     "type": "course",
+     "labelTag": "CAPS",
+     "branch": "else",
+     "need": {
+      "classes": 2,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "VLST",
+       "number": "3950A"
+      },
+      {
+       "subject": "VLST",
+       "number": "3950B"
+      }
+     ]
+    }
+   ],
+   "minCredits": 16,
+   "minGpa": 2,
+   "minResidency": 8
+  }
+ ]
+}

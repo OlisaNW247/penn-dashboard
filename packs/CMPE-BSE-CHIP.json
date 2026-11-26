@@ -1,0 +1,1854 @@
+{
+ "code": "CMPE-BSE-CHIP",
+ "title": "Computer Engineering BSE (CHIPs)",
+ "goals": {
+  "college": "EU",
+  "program": "EU_BSE",
+  "major": "CMPE",
+  "conc": "CHIP",
+  "degree": "BSE"
+ },
+ "goalNames": {
+  "COLLEGE": "SEAS Undergraduate EU",
+  "PROGRAM": "SEAS - BSE",
+  "MAJOR": "Computer Engineering",
+  "CONC": "CHIPs",
+  "DEGREE": "Bachelor of Sci in Engineering"
+ },
+ "provenance": {
+  "source": "https://courses.upenn.edu/api/?page=fose&route=programs-v2-info",
+  "srcdb": "202630",
+  "fetched": "2026-11-26"
+ },
+ "blocks": [
+  {
+   "reqId": "RA002196",
+   "type": "DEGREE",
+   "code": "BSE",
+   "title": "Degree in Bachelor of Science in Engineering",
+   "catalogYears": {
+    "start": "2027",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWAGE",
+         "op": ">",
+         "values": [
+          "8"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWAGE > 8)",
+     "tag": "MXCLHDW"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "COLL",
+       "number": "0@"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in COLL 0@",
+     "tag": "MXCLHCOLL"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "MSCI",
+       "number": "@"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in MSCI @",
+     "tag": "MXCLHMSCI"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "NSCI",
+       "number": "@"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in NSCI @",
+     "tag": "MXCLHNSCI"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "ASTR",
+       "number": "0001"
+      },
+      {
+       "subject": "EAS",
+       "number": "5030"
+      },
+      {
+       "subject": "EAS",
+       "number": "5050"
+      },
+      {
+       "subject": "CIT",
+       "number": "@"
+      },
+      {
+       "subject": "DYNM",
+       "number": "@"
+      },
+      {
+       "subject": "FNCE",
+       "number": "0001"
+      },
+      {
+       "subject": "FNCE",
+       "number": "0002"
+      },
+      {
+       "subject": "HCMG",
+       "number": "0001"
+      },
+      {
+       "subject": "MATH",
+       "number": "1300"
+      },
+      {
+       "subject": "MATH",
+       "number": "1510"
+      },
+      {
+       "subject": "MATH",
+       "number": "1700"
+      },
+      {
+       "subject": "MGMT",
+       "number": "0004"
+      },
+      {
+       "subject": "MKTG",
+       "number": "0001"
+      },
+      {
+       "subject": "MED",
+       "number": "0000",
+       "numberEnd": "9999"
+      },
+      {
+       "subject": "MSCI",
+       "number": "0000",
+       "numberEnd": "9999"
+      },
+      {
+       "subject": "NSCI",
+       "number": "0000",
+       "numberEnd": "1019"
+      },
+      {
+       "subject": "NSCI",
+       "number": "1021",
+       "numberEnd": "2009"
+      },
+      {
+       "subject": "NSCI",
+       "number": "2011",
+       "numberEnd": "2019"
+      },
+      {
+       "subject": "NSCI",
+       "number": "2021",
+       "numberEnd": "3009"
+      },
+      {
+       "subject": "NSCI",
+       "number": "3111",
+       "numberEnd": "4009"
+      },
+      {
+       "subject": "NSCI",
+       "number": "4011",
+       "numberEnd": "4019"
+      },
+      {
+       "subject": "NSCI",
+       "number": "4021",
+       "numberEnd": "9999"
+      },
+      {
+       "subject": "OIDD",
+       "number": "0001"
+      },
+      {
+       "subject": "PHYS",
+       "number": "0000",
+       "numberEnd": "0049"
+      },
+      {
+       "subject": "PHYS",
+       "number": "0052",
+       "numberEnd": "0139"
+      },
+      {
+       "subject": "STAT",
+       "number": "0000",
+       "numberEnd": "4049"
+      },
+      {
+       "subject": "STAT",
+       "number": "4051",
+       "numberEnd": "4219"
+      },
+      {
+       "subject": "STAT",
+       "number": "4221",
+       "numberEnd": "4290"
+      },
+      {
+       "subject": "CHEM",
+       "number": "001",
+       "numberEnd": "001",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "202220"
+         ]
+        }
+       ],
+       "historic": true
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in ASTR 0001, EAS 5030, 5050, CIT @, DYNM @, FNCE 0001, 0002, HCMG 0001, MATH 1300, 1510, 1700, MGMT 0004, MKTG 0001, MED 0000:9999, MSCI 0000:9999, NSCI 0000:1019, 1021:2009, 2011:2019, 2021:3009, 3111:4009, 4011:4019, 4021:9999, OIDD 0001, PHYS 0000:0049, 0052:0139, STAT 0000:4049, 4051:4219, 4221:4290, CHEM 001:001 (With DWTERM < 202220)",
+     "tag": "ALDCED"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 4,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 4 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    }
+   ],
+   "overlays": [],
+   "other": [
+    {
+     "name": "CHECKELECTIVES",
+     "text": "CHECK-ELECTIVE-CREDITS-ALLOWED"
+    }
+   ],
+   "rules": [
+    {
+     "id": "1-1",
+     "label": "There are no I, NR, or PR grades in this Degree Audit",
+     "type": "complete",
+     "labelTag": "KFSOEL",
+     "branch": "else"
+    },
+    {
+     "id": "2-1-0",
+     "label": "Cumulative GPA Requirement ",
+     "type": "incomplete",
+     "labelTag": "MNGPHREQ",
+     "branch": "if"
+    },
+    {
+     "id": "3",
+     "label": "Major Requirements",
+     "type": "blocktype",
+     "labelTag": "MAJORBLOCK",
+     "ref": {
+      "type": "MAJOR"
+     }
+    },
+    {
+     "id": "4-0",
+     "label": "Concentration Requirements",
+     "type": "blocktype",
+     "labelTag": "CONCBLOCK",
+     "branch": "if",
+     "ref": {
+      "type": "CONC"
+     }
+    },
+    {
+     "id": "5",
+     "label": "General Electives",
+     "type": "block",
+     "labelTag": "SSHBLOCK",
+     "ref": {
+      "type": "OTHER",
+      "code": "U-SEAS-SSH",
+      "blockId": "RA002195"
+     }
+    }
+   ],
+   "minCredits": 37,
+   "minResidency": 18.5
+  },
+  {
+   "reqId": "RA002190",
+   "type": "MAJOR",
+   "code": "CMPE",
+   "title": "Major in Computer Engineering",
+   "catalogYears": {
+    "start": "2027",
+    "stop": "9999"
+   },
+   "share": [
+    {
+     "scope": "type",
+     "type": "MAJOR"
+    },
+    {
+     "scope": "type",
+     "type": "MINOR"
+    },
+    {
+     "scope": "type",
+     "type": "CONC"
+    }
+   ],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1",
+     "label": "MATH AND NATURAL SCIENCE",
+     "type": "subset",
+     "labelTag": "MATHNATSCIREQ",
+     "children": [
+      {
+       "id": "1-0",
+       "label": "Calculus I",
+       "type": "course",
+       "labelTag": "MAJCALC1",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "MATH",
+         "number": "1400"
+        }
+       ]
+      },
+      {
+       "id": "1-1",
+       "label": "Calculus II",
+       "type": "course",
+       "labelTag": "MAJCALC2",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "MATH",
+         "number": "1410"
+        },
+        {
+         "subject": "MATH",
+         "number": "1610"
+        }
+       ]
+      },
+      {
+       "id": "1-2",
+       "label": "Calculus III",
+       "type": "course",
+       "labelTag": "MAJCALC3",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "MATH",
+         "number": "2400"
+        },
+        {
+         "subject": "MATH",
+         "number": "2600"
+        },
+        {
+         "subject": "ESE",
+         "number": "2030"
+        }
+       ]
+      },
+      {
+       "id": "1-3",
+       "label": "Probability/Statistics Course",
+       "type": "course",
+       "labelTag": "MAJPROBORSTATS",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "2610"
+        },
+        {
+         "subject": "ESE",
+         "number": "3010"
+        },
+        {
+         "subject": "STAT",
+         "number": "4300"
+        }
+       ]
+      },
+      {
+       "id": "1-4",
+       "label": "Math Found Comp Sci",
+       "type": "course",
+       "labelTag": "MAJDISCPROB",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "1600"
+        }
+       ]
+      },
+      {
+       "id": "1-5",
+       "label": "Principles of Physics I or Intro to Mechanics",
+       "type": "course",
+       "labelTag": "MAJPHYSORMECH",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "MEAM",
+         "number": "1100"
+        },
+        {
+         "subject": "PHYS",
+         "number": "0140"
+        },
+        {
+         "subject": "PHYS",
+         "number": "0150"
+        },
+        {
+         "subject": "PHYS",
+         "number": "0170"
+        }
+       ]
+      },
+      {
+       "id": "1-6",
+       "label": "Engineering Electromagnetics",
+       "type": "course",
+       "labelTag": "SCFLLP",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "ESE",
+         "number": "1120"
+        }
+       ]
+      },
+      {
+       "id": "1-7",
+       "label": "Chemistry, Biology, or Physics Course",
+       "type": "course",
+       "labelTag": "BJNFDD",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "BIOL",
+         "number": "1101"
+        },
+        {
+         "subject": "BIOL",
+         "number": "1121"
+        },
+        {
+         "subject": "CHEM",
+         "number": "1012"
+        },
+        {
+         "subject": "EAS",
+         "number": "0091"
+        },
+        {
+         "subject": "PHYS",
+         "number": "1240"
+        }
+       ]
+      },
+      {
+       "id": "1-8",
+       "label": "Math or Natural Science Elective",
+       "type": "course",
+       "labelTag": "MAJMATHORNATSCI",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "@",
+         "number": "@",
+         "attributes": [
+          "EUMA",
+          "EUNS"
+         ]
+        }
+       ]
+      },
+      {
+       "id": "1-9-1",
+       "label": "Natural Science Lab",
+       "type": "course",
+       "labelTag": "MAJSCILAB",
+       "branch": "else",
+       "need": {
+        "credits": 0.5,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "BIOL",
+         "number": "1124"
+        },
+        {
+         "subject": "CHEM",
+         "number": "1101"
+        },
+        {
+         "subject": "MEAM",
+         "number": "1470"
+        },
+        {
+         "subject": "PHYS",
+         "number": "0050"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "2",
+     "label": "ENGINEERING",
+     "type": "subset",
+     "labelTag": "MAJENGREQ",
+     "children": [
+      {
+       "id": "2-0",
+       "label": "ESE 1110 or ESE 3600",
+       "type": "course",
+       "labelTag": "ANUYTB",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "ESE",
+         "number": "1110"
+        },
+        {
+         "subject": "ESE",
+         "number": "3600"
+        }
+       ]
+      },
+      {
+       "id": "2-1",
+       "label": "CIS 1100 or CIS Elective",
+       "type": "course",
+       "labelTag": "AUNBSA",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "decide": "ORDER",
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "1100"
+        },
+        {
+         "subject": "CIS",
+         "number": "2000",
+         "numberEnd": "5999"
+        },
+        {
+         "subject": "NETS",
+         "number": "2000",
+         "numberEnd": "5999"
+        },
+        {
+         "subject": "CIS",
+         "number": "6000",
+         "numberEnd": "9999"
+        },
+        {
+         "subject": "NETS",
+         "number": "6000",
+         "numberEnd": "9999"
+        }
+       ],
+       "except": [
+        {
+         "subject": "CIS",
+         "number": "2610"
+        },
+        {
+         "subject": "CIS",
+         "number": "3333"
+        },
+        {
+         "subject": "CIS",
+         "number": "4230"
+        },
+        {
+         "subject": "CIS",
+         "number": "5230"
+        },
+        {
+         "subject": "CIS",
+         "number": "7980"
+        },
+        {
+         "subject": "@",
+         "number": "2960"
+        },
+        {
+         "subject": "@",
+         "number": "2970"
+        }
+       ],
+       "priority": "low"
+      },
+      {
+       "id": "2-2",
+       "label": "Prog Lang & Tech I",
+       "type": "course",
+       "labelTag": "MAJPROGLANG1",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "1200"
+        }
+       ]
+      },
+      {
+       "id": "2-3",
+       "label": "Prog Lang and Tech II",
+       "type": "course",
+       "labelTag": "MAJPROGLANG2",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "1210"
+        }
+       ]
+      },
+      {
+       "id": "2-4",
+       "label": "Elec Circuits & Sys",
+       "type": "course",
+       "labelTag": "MAJELECTCIRCUITS",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "ESE",
+         "number": "2150"
+        }
+       ]
+      },
+      {
+       "id": "2-5",
+       "label": "Intro To Comp Systems",
+       "type": "course",
+       "labelTag": "MAJINTROCOMPSYST",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "2400"
+        }
+       ]
+      },
+      {
+       "id": "2-6",
+       "label": "Embed Sys/Microcont Lab",
+       "type": "course",
+       "labelTag": "MAJEMBEDSYST",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "ESE",
+         "number": "3500"
+        }
+       ]
+      },
+      {
+       "id": "2-7",
+       "label": "Circuit-Level Modeling",
+       "type": "course",
+       "labelTag": "MAJCIRCUITLEV",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "ESE",
+         "number": "3700"
+        }
+       ]
+      },
+      {
+       "id": "2-8",
+       "label": "Operating Systems",
+       "type": "course",
+       "labelTag": "MAJCOMPOPSYST",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "4480"
+        },
+        {
+         "subject": "CIS",
+         "number": "5480"
+        }
+       ]
+      },
+      {
+       "id": "2-9",
+       "label": "Comp Org and Design",
+       "type": "course",
+       "labelTag": "CIS4710",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "4710"
+        },
+        {
+         "subject": "CIS",
+         "number": "5710"
+        }
+       ]
+      },
+      {
+       "id": "2-10",
+       "label": "Intermediate CIS or ESE Elective",
+       "type": "course",
+       "labelTag": "ANUTNSB",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "2000",
+         "numberEnd": "5999"
+        },
+        {
+         "subject": "ESE",
+         "number": "2000",
+         "numberEnd": "5999"
+        }
+       ],
+       "except": [
+        {
+         "subject": "ESE",
+         "number": "4020"
+        },
+        {
+         "subject": "ESE",
+         "number": "5420"
+        }
+       ]
+      },
+      {
+       "id": "2-11",
+       "label": "Advanced CIS or ESE Electives",
+       "type": "course",
+       "labelTag": "IOUBHH",
+       "need": {
+        "credits": 2,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "3000",
+         "numberEnd": "5999"
+        },
+        {
+         "subject": "ESE",
+         "number": "3000",
+         "numberEnd": "5999"
+        }
+       ],
+       "except": [
+        {
+         "subject": "ESE",
+         "number": "4020"
+        },
+        {
+         "subject": "ESE",
+         "number": "5420"
+        }
+       ]
+      },
+      {
+       "id": "2-12",
+       "label": "Senior Project/Senior Design Project I",
+       "type": "course",
+       "labelTag": "MAJSENPROJ1",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "4000"
+        },
+        {
+         "subject": "ESE",
+         "number": "4500"
+        }
+       ]
+      },
+      {
+       "id": "2-13",
+       "label": "Senior Project/Senior Design Project II",
+       "type": "course",
+       "labelTag": "MAJSENPROJ2",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "4010"
+        },
+        {
+         "subject": "ESE",
+         "number": "4510"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "3",
+     "label": "PROFESSIONAL ELECTIVES",
+     "type": "subset",
+     "labelTag": "MAJTECHELECTREQ",
+     "children": [
+      {
+       "id": "3-0",
+       "label": "Math, Natural Science, or Engineering Electives",
+       "type": "course",
+       "labelTag": "MAJMATHSCIENGELECT",
+       "need": {
+        "credits": 2,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "@",
+         "number": "@",
+         "attributes": [
+          "EUNS",
+          "EUMA",
+          "EUNG"
+         ]
+        }
+       ]
+      },
+      {
+       "id": "3-1",
+       "label": "Professional Elective Course",
+       "type": "course",
+       "labelTag": "MAJTECHELECT",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "ENGR",
+         "number": "5400"
+        },
+        {
+         "subject": "EAS",
+         "number": "5450"
+        },
+        {
+         "subject": "EAS",
+         "number": "5950"
+        },
+        {
+         "subject": "MGMT",
+         "number": "2370"
+        },
+        {
+         "subject": "OIDD",
+         "number": "2360"
+        },
+        {
+         "subject": "@",
+         "number": "@",
+         "attributes": [
+          "EUNS",
+          "EUMA",
+          "EUNG"
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "minCredits": 29,
+   "minGpa": 2,
+   "minResidency": 15
+  },
+  {
+   "reqId": "RA002083",
+   "type": "CONC",
+   "code": "CHIP",
+   "title": "CHIPs Concentration",
+   "catalogYears": {
+    "start": "2026",
+    "stop": "9999"
+   },
+   "share": [
+    {
+     "scope": "type",
+     "type": "MINOR"
+    },
+    {
+     "scope": "type",
+     "type": "CONC",
+     "maxClasses": 2
+    }
+   ],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1",
+     "label": "CHIPs Requirements",
+     "type": "course",
+     "labelTag": "UUGGBB",
+     "need": {
+      "credits": 4,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "ESE",
+       "number": "3190"
+      },
+      {
+       "subject": "ESE",
+       "number": "4190"
+      },
+      {
+       "subject": "ESE",
+       "number": "5720"
+      },
+      {
+       "subject": "ESE",
+       "number": "4730"
+      },
+      {
+       "subject": "ESE",
+       "number": "5730"
+      },
+      {
+       "subject": "ESE",
+       "number": "4750"
+      },
+      {
+       "subject": "ESE",
+       "number": "5750"
+      },
+      {
+       "subject": "ESE",
+       "number": "5320"
+      },
+      {
+       "subject": "ESE",
+       "number": "5780"
+      },
+      {
+       "subject": "ESE",
+       "number": "5800"
+      },
+      {
+       "subject": "ESE",
+       "number": "6680"
+      },
+      {
+       "subject": "CIS",
+       "number": "6010"
+      }
+     ]
+    }
+   ],
+   "minCredits": 4
+  },
+  {
+   "reqId": "RA002195",
+   "type": "OTHER",
+   "code": "U-SEAS-SSH",
+   "title": "General Electives",
+   "catalogYears": {
+    "start": "2027",
+    "stop": "9999"
+   },
+   "share": [
+    {
+     "scope": "block",
+     "type": "OTHER",
+     "code": "U-SEAS-WREE"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "AFRC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ANCH"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ANTH"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ARCH"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ARTH"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "BCHE"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "BIOL"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "BIOP"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "BSCI"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "CBSC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "CHEM"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "CIMS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "CLST"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "CMPL"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "COGS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "COMM"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "CRIM"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "DSGN"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "EALC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "EASC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ECOQ"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ENGL"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ENVS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ESCI"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "FNAR"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "FRFS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "GRMN"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "GSWS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "HIST"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "HSOC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "HSPN"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "INDM"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "INTR"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ITST"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "JWST"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "LALX"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "LING"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "LOGC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "MAEC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "MATH"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "MESC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "MMES"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "MSCI"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "MUSC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "NELC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "NRSC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "NTSC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "PHIL"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "PHYS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "PPE"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "PSCI"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "PSYC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "REES"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "RELS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ROML"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "SAST"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "SOCI"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "STSC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "SYSC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "THAR"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "URBS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "VLST"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "MELC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "FIGS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "LAWS"
+    },
+    {
+     "scope": "type",
+     "type": "CONC"
+    }
+   ],
+   "standalone": false,
+   "limits": [],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1",
+     "label": "GENERAL ELECTIVES (7 CU)",
+     "type": "subset",
+     "labelTag": "SEAS_SSH_REQ",
+     "children": [
+      {
+       "id": "1-0-4-5-3-5-3-0",
+       "label": "Engineering Ethics",
+       "type": "group",
+       "labelTag": "UYTBFE",
+       "branch": "if",
+       "pick": {
+        "groups": 1,
+        "of": 2
+       },
+       "priority": "high",
+       "children": [
+        {
+         "id": "1-0-4-5-3-5-3-0-0",
+         "label": "Engineering Ethics (LAWM 5060 sections titled Technology Law and Ethics only)",
+         "type": "course",
+         "labelTag": "SVNPDP",
+         "need": {
+          "credits": 1,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "CIS",
+           "number": "4230"
+          },
+          {
+           "subject": "CIS",
+           "number": "5230"
+          },
+          {
+           "subject": "EAS",
+           "number": "2030"
+          },
+          {
+           "subject": "LAWM",
+           "number": "5060"
+          }
+         ]
+        },
+        {
+         "id": "1-0-4-5-3-5-3-0-1",
+         "label": "VIPR 1200 and 1210",
+         "type": "course",
+         "labelTag": "AANNFE",
+         "need": {
+          "credits": 1,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "VIPR",
+           "number": "1200"
+          },
+          {
+           "subject": "VIPR",
+           "number": "1210"
+          }
+         ],
+         "hidden": true
+        }
+       ]
+      },
+      {
+       "id": "1-0-4-5-3-5-3-1",
+       "label": "Humanities or Social Science",
+       "type": "course",
+       "labelTag": "KNPNZZ",
+       "branch": "if",
+       "need": {
+        "credits": 4,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "@",
+         "number": "@",
+         "attributes": [
+          "EUHS",
+          "EUSS"
+         ]
+        }
+       ]
+      },
+      {
+       "id": "1-0-4-5-3-5-3-2",
+       "label": "Humanities, Social Science, or Technology in Business and Society",
+       "type": "course",
+       "labelTag": "DGLPSV",
+       "branch": "if",
+       "need": {
+        "credits": 2,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "@",
+         "number": "@",
+         "attributes": [
+          "EUHS",
+          "EUSS",
+          "EUTB"
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "2-0",
+     "label": "WRITING REQUIREMENT",
+     "type": "subset",
+     "branch": "if",
+     "children": [
+      {
+       "id": "2-0-0",
+       "label": "Writing Course",
+       "type": "group",
+       "labelTag": "NMBKJH",
+       "pick": {
+        "groups": 1,
+        "of": 3
+       },
+       "share": [
+        {
+         "scope": "thisBlock"
+        }
+       ],
+       "children": [
+        {
+         "id": "2-0-0-0",
+         "label": "Social Sciences Writing Course",
+         "type": "course",
+         "labelTag": "BNVMJS",
+         "need": {
+          "credits": 1,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "WRIT",
+           "number": "0160"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0170"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0021"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0280"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0340"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0370"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0380"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0480"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0500"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0550"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0590"
+          }
+         ]
+        },
+        {
+         "id": "2-0-0-1",
+         "label": "Humanities Writing Course",
+         "type": "course",
+         "labelTag": "BNVMJK",
+         "need": {
+          "credits": 1,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "WRIT",
+           "number": "0020"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0100"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0110"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0120"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0130"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0140"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0150"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0230"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0250"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0260"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0270"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0300"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0330"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0390"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0410"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0490"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0570"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0580"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0670"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0680"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0730"
+          }
+         ]
+        },
+        {
+         "id": "2-0-0-2",
+         "label": "Tech, Business, and Society Writing Course",
+         "type": "course",
+         "labelTag": "BNVMJD",
+         "need": {
+          "credits": 1,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "WRIT",
+           "number": "0210"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0220"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0310"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0400"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0650"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0740"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "minCredits": 7
+  }
+ ]
+}

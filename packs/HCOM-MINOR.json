@@ -1,0 +1,1468 @@
+{
+ "code": "HCOM-MINOR",
+ "title": "Minor in Health Communication",
+ "goals": {
+  "college": "NU",
+  "program": "NU_BSN",
+  "minor": "HCOM",
+  "degree": "BSN"
+ },
+ "goalNames": {
+  "COLLEGE": "Nursing Undergraduate NU",
+  "PROGRAM": "Nursing - BSN",
+  "MINOR": "Health Communications",
+  "DEGREE": "Bachelor of Science in Nursing"
+ },
+ "provenance": {
+  "source": "https://courses.upenn.edu/api/?page=fose&route=programs-v2-info",
+  "srcdb": "202630",
+  "fetched": "2026-11-26"
+ },
+ "blocks": [
+  {
+   "reqId": "RA002122",
+   "type": "DEGREE",
+   "code": "BSN",
+   "title": "Degree in Bachelor of Science in Nursing",
+   "catalogYears": {
+    "start": "2026",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 2,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 2 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "COLL",
+       "number": "@"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in COLL @",
+     "tag": "MXCLH1"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "MSCI",
+       "number": "@"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in MSCI @",
+     "tag": "MAXCLH2"
+    }
+   ],
+   "overlays": [],
+   "other": [
+    {
+     "name": "CHECKELECTIVES",
+     "text": "CHECK-ELECTIVE-CREDITS-ALLOWED"
+    }
+   ],
+   "rules": [
+    {
+     "id": "1-1-0",
+     "label": "Cumulative GPA Requirement ",
+     "type": "incomplete",
+     "labelTag": "MNGPR2",
+     "branch": "if"
+    },
+    {
+     "id": "2-1",
+     "label": "There are no I, NR, or PR grades in this Degree Audit",
+     "type": "complete",
+     "labelTag": "KFSOEL",
+     "branch": "else"
+    },
+    {
+     "id": "3-1",
+     "label": "General Education Requirements",
+     "type": "block",
+     "labelTag": "GENEDBLOCK2",
+     "branch": "else",
+     "ref": {
+      "type": "OTHER",
+      "code": "U-GE-SN",
+      "blockId": "RA002047"
+     }
+    },
+    {
+     "id": "4",
+     "label": "Major Requirements",
+     "type": "blocktype",
+     "labelTag": "GENEDMAJBLOCK",
+     "ref": {
+      "type": "MAJOR"
+     }
+    },
+    {
+     "id": "5-0",
+     "label": "Minor Requirements",
+     "type": "blocktype",
+     "labelTag": "MINORBLOCK",
+     "branch": "if",
+     "ref": {
+      "type": "MINOR"
+     }
+    }
+   ],
+   "minCredits": 36,
+   "minResidency": 18
+  },
+  {
+   "reqId": "RA002047",
+   "type": "OTHER",
+   "code": "U-GE-SN",
+   "title": "General Education, School of Nursing",
+   "catalogYears": {
+    "start": "2026",
+    "stop": "9999"
+   },
+   "share": [
+    {
+     "scope": "type",
+     "type": "MINOR"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "NTSC"
+    }
+   ],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 2,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 2 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 1,
+     "unit": "cu",
+     "courses": [],
+     "except": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "text": "MaxCredits 1 in @ @ (With DWPASSFAIL = Y AND DWTERM =) Except @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFSEM",
+     "unparsed": true
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "2-0",
+     "label": "Writing Intensive Course",
+     "type": "course",
+     "labelTag": "GENUWRIT",
+     "branch": "if",
+     "need": {
+      "credits": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUWR"
+       ]
+      },
+      {
+       "subject": "WRIT",
+       "number": "0000",
+       "numberEnd": "0991"
+      }
+     ],
+     "except": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "Spring 2020",
+          "Summer 2020",
+          "Fall 2020",
+          "Spring 2021"
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "2-1-1",
+     "label": "Foreign Language Proficiency",
+     "type": "course",
+     "labelTag": "WUBSSLFLREQ",
+     "branch": "else",
+     "need": {
+      "credits": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "WUFL"
+       ]
+      },
+      {
+       "subject": "SPAN",
+       "number": "0205"
+      }
+     ],
+     "priority": "high"
+    },
+    {
+     "id": "2-2",
+     "label": "The Planet & Our Climate",
+     "type": "course",
+     "labelTag": "BKNJF",
+     "branch": "if",
+     "need": {
+      "credits": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "ASTR",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "BIOL",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "EESC",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "ENVS",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "NURS",
+       "number": "3520"
+      }
+     ],
+     "except": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "Spring 2020",
+          "Summer 2020",
+          "Fall 2020",
+          "Spring 2021"
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "2-3",
+     "label": "Societies, Histories, and Traditions",
+     "type": "course",
+     "labelTag": "DRKFLL",
+     "branch": "if",
+     "need": {
+      "credits": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "ANCH",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "ANEL",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "ANTH",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "ARTH",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "CLST",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "COMM",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "CRIM",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "EALC",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "ECON",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "EDUC",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "HIST",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "MMES",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "NELC",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "NURS",
+       "number": "3060"
+      },
+      {
+       "subject": "NURS",
+       "number": "3130"
+      },
+      {
+       "subject": "PPE",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "PSCI",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "PSYC",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "SOCI",
+       "number": "0001",
+       "numberEnd": "4999"
+      }
+     ],
+     "except": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "Spring 2020",
+          "Summer 2020",
+          "Fall 2020",
+          "Spring 2021"
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "2-4",
+     "label": "Global Arts, Letters, & Cultures",
+     "type": "course",
+     "labelTag": "UNGKLL",
+     "branch": "if",
+     "need": {
+      "credits": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "ASLD",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "AMHR",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "ARAB",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "ARCH",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "ARTH",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "ALAN",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "BENG",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "BCS",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "CHIC",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "CHIN",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "CIMS",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "COML",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "CZCH",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "DSGN",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "DTCH",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "ENGL",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "FILP",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "FNAR",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "FREN",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "GRMN",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "GREK",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "GUJR",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "HEBR",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "HIND",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "HUNG",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "IGBO",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "INDO",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "IRIS",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "ITAL",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "JPAN",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "KAND",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "KORN",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "LATN",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "LING",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "MALG",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "MLYM",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "MRTI",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "MUSC",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "NURS",
+       "number": "3050"
+      },
+      {
+       "subject": "NURS",
+       "number": "3160"
+      },
+      {
+       "subject": "PASH",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "PERS",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "PHIL",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "PLSH",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "PRTG",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "PUNJ",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "QUEC",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "RUSS",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "SKRT",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "SPAN",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "SARB",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "SWAH",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "SWED",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "TAML",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "TELU",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "THAI",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "THAR",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "TIBT",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "TIGR",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "TURK",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "TWI",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "UKRN",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "URDU",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "VIET",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "VLST",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "WOLF",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "YDSH",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "YORB",
+       "number": "0100",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "ZULU",
+       "number": "0100",
+       "numberEnd": "4999"
+      }
+     ],
+     "except": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "Spring 2020",
+          "Summer 2020",
+          "Fall 2020",
+          "Spring 2021"
+         ]
+        }
+       ]
+      }
+     ],
+     "priority": "high"
+    },
+    {
+     "id": "2-5",
+     "label": "Universality in Thought and Action",
+     "type": "course",
+     "labelTag": "VBNKXK",
+     "branch": "if",
+     "need": {
+      "credits": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "AFRC",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "ASAM",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "GSWS",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "JWST",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "LALS",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "NURS",
+       "number": "3160"
+      },
+      {
+       "subject": "RELS",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "REES",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "SAST",
+       "number": "0001",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "URBS",
+       "number": "0001",
+       "numberEnd": "4999"
+      }
+     ],
+     "except": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "Spring 2020",
+          "Summer 2020",
+          "Fall 2020",
+          "Spring 2021"
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "2-6-1",
+     "label": "Language or Free Elective Courses",
+     "type": "course",
+     "labelTag": "STUNZK",
+     "branch": "else",
+     "need": {
+      "credits": 1,
+      "op": "OR"
+     },
+     "decide": "ORDER",
+     "courses": [
+      {
+       "subject": "AMHR",
+       "number": "@"
+      },
+      {
+       "subject": "ARAB",
+       "number": "@"
+      },
+      {
+       "subject": "ASLD",
+       "number": "@"
+      },
+      {
+       "subject": "CHIC",
+       "number": "@"
+      },
+      {
+       "subject": "CHIN",
+       "number": "@"
+      },
+      {
+       "subject": "FREN",
+       "number": "@"
+      },
+      {
+       "subject": "GREK",
+       "number": "@"
+      },
+      {
+       "subject": "GRMN",
+       "number": "@"
+      },
+      {
+       "subject": "GUJR",
+       "number": "@"
+      },
+      {
+       "subject": "HEBR",
+       "number": "@"
+      },
+      {
+       "subject": "HIND",
+       "number": "@"
+      },
+      {
+       "subject": "HUNG",
+       "number": "@"
+      },
+      {
+       "subject": "IGBO",
+       "number": "@"
+      },
+      {
+       "subject": "INDO",
+       "number": "@"
+      },
+      {
+       "subject": "ITAL",
+       "number": "@"
+      },
+      {
+       "subject": "JPAN",
+       "number": "@"
+      },
+      {
+       "subject": "JWST",
+       "number": "@"
+      },
+      {
+       "subject": "KAND",
+       "number": "@"
+      },
+      {
+       "subject": "KORN",
+       "number": "@"
+      },
+      {
+       "subject": "LATN",
+       "number": "@"
+      },
+      {
+       "subject": "MALG",
+       "number": "@"
+      },
+      {
+       "subject": "MLYM",
+       "number": "@"
+      },
+      {
+       "subject": "MRTI",
+       "number": "@"
+      },
+      {
+       "subject": "PASH",
+       "number": "@"
+      },
+      {
+       "subject": "PERS",
+       "number": "@"
+      },
+      {
+       "subject": "PLSH",
+       "number": "@"
+      },
+      {
+       "subject": "PRTG",
+       "number": "@"
+      },
+      {
+       "subject": "RUSS",
+       "number": "@"
+      },
+      {
+       "subject": "SKRT",
+       "number": "@"
+      },
+      {
+       "subject": "SPAN",
+       "number": "@"
+      },
+      {
+       "subject": "SWAH",
+       "number": "@"
+      },
+      {
+       "subject": "TAML",
+       "number": "@"
+      },
+      {
+       "subject": "TELU",
+       "number": "@"
+      },
+      {
+       "subject": "THAI",
+       "number": "@"
+      },
+      {
+       "subject": "TIGR",
+       "number": "@"
+      },
+      {
+       "subject": "TURK",
+       "number": "@"
+      },
+      {
+       "subject": "UKRN",
+       "number": "@"
+      },
+      {
+       "subject": "VIET",
+       "number": "@"
+      },
+      {
+       "subject": "WOLF",
+       "number": "@"
+      },
+      {
+       "subject": "YDSH",
+       "number": "@"
+      },
+      {
+       "subject": "YORB",
+       "number": "@"
+      },
+      {
+       "subject": "ZULU",
+       "number": "@"
+      },
+      {
+       "subject": "@",
+       "number": "@"
+      }
+     ],
+     "except": [
+      {
+       "subject": "NURS",
+       "number": "0061"
+      },
+      {
+       "subject": "NURS",
+       "number": "0065"
+      },
+      {
+       "subject": "NURS",
+       "number": "0068"
+      },
+      {
+       "subject": "NURS",
+       "number": "1030"
+      },
+      {
+       "subject": "NURS",
+       "number": "1630"
+      },
+      {
+       "subject": "NURS",
+       "number": "1650"
+      },
+      {
+       "subject": "NURS",
+       "number": "2350"
+      },
+      {
+       "subject": "NURS",
+       "number": "3820"
+      }
+     ],
+     "priority": "low"
+    },
+    {
+     "id": "2-7",
+     "label": "Exploration Course Requirement",
+     "type": "course",
+     "labelTag": "DDFNGL",
+     "branch": "if",
+     "need": {
+      "credits": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@"
+      }
+     ],
+     "except": [
+      {
+       "subject": "NURS",
+       "number": "@"
+      }
+     ],
+     "priority": "lowest"
+    }
+   ],
+   "minCredits": 8
+  },
+  {
+   "reqId": "RA001283",
+   "type": "MINOR",
+   "code": "HCOM",
+   "title": "Minor in Health Communications",
+   "catalogYears": {
+    "start": "2023",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": true,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1",
+     "label": "Pscyh&Soc Diversity",
+     "type": "course",
+     "labelTag": "SRJKNF",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "NURS",
+       "number": "1030"
+      }
+     ]
+    },
+    {
+     "id": "2",
+     "label": "Psychiatric, Behavioral, Menta",
+     "type": "course",
+     "labelTag": "BLJNFR",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "NURS",
+       "number": "2350"
+      }
+     ]
+    },
+    {
+     "id": "3",
+     "label": "Nursing Elective",
+     "type": "course",
+     "labelTag": "ABGZND",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "NURS",
+       "number": "3200"
+      },
+      {
+       "subject": "NURS",
+       "number": "3530"
+      },
+      {
+       "subject": "COMM",
+       "number": "2760",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2025"
+         ]
+        }
+       ]
+      },
+      {
+       "subject": "COMM",
+       "number": "2760",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2025"
+         ]
+        }
+       ]
+      },
+      {
+       "subject": "PSYC",
+       "number": "2760",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2025"
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "4",
+     "label": "Communications Courses",
+     "type": "course",
+     "labelTag": "GZNBTV",
+     "need": {
+      "classes": 3,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "COMM",
+       "number": "2100"
+      },
+      {
+       "subject": "COMM",
+       "number": "2250"
+      },
+      {
+       "subject": "COMM",
+       "number": "3450"
+      },
+      {
+       "subject": "COMM",
+       "number": "4070"
+      },
+      {
+       "subject": "COMM",
+       "number": "4320"
+      },
+      {
+       "subject": "COMM",
+       "number": "1250",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2026"
+         ]
+        }
+       ]
+      },
+      {
+       "subject": "COMM",
+       "number": "1300",
+       "conditions": [
+        {
+         "code": "DWTERMM",
+         "op": "<",
+         "values": [
+          "202620"
+         ]
+        }
+       ]
+      },
+      {
+       "subject": "COMM",
+       "number": "2750",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2025"
+         ]
+        }
+       ]
+      },
+      {
+       "subject": "COMM",
+       "number": "3100",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2026"
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "minCredits": 6.5
+  }
+ ]
+}

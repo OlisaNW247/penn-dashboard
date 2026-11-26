@@ -1,0 +1,2018 @@
+{
+ "code": "VIC-BSE",
+ "title": "Visual and Interactive Comp BSE",
+ "goals": {
+  "college": "EU",
+  "program": "EU_BSE",
+  "major": "VIC",
+  "degree": "BSE"
+ },
+ "goalNames": {
+  "COLLEGE": "SEAS Undergraduate EU",
+  "PROGRAM": "SEAS - BSE",
+  "MAJOR": "Visual and Interactive Computing",
+  "DEGREE": "Bachelor of Sci in Engineering"
+ },
+ "provenance": {
+  "source": "https://courses.upenn.edu/api/?page=fose&route=programs-v2-info",
+  "srcdb": "202630",
+  "fetched": "2026-11-26"
+ },
+ "blocks": [
+  {
+   "reqId": "RA002196",
+   "type": "DEGREE",
+   "code": "BSE",
+   "title": "Degree in Bachelor of Science in Engineering",
+   "catalogYears": {
+    "start": "2027",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWAGE",
+         "op": ">",
+         "values": [
+          "8"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWAGE > 8)",
+     "tag": "MXCLHDW"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "COLL",
+       "number": "0@"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in COLL 0@",
+     "tag": "MXCLHCOLL"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "MSCI",
+       "number": "@"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in MSCI @",
+     "tag": "MXCLHMSCI"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "NSCI",
+       "number": "@"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in NSCI @",
+     "tag": "MXCLHNSCI"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "ASTR",
+       "number": "0001"
+      },
+      {
+       "subject": "EAS",
+       "number": "5030"
+      },
+      {
+       "subject": "EAS",
+       "number": "5050"
+      },
+      {
+       "subject": "CIT",
+       "number": "@"
+      },
+      {
+       "subject": "DYNM",
+       "number": "@"
+      },
+      {
+       "subject": "FNCE",
+       "number": "0001"
+      },
+      {
+       "subject": "FNCE",
+       "number": "0002"
+      },
+      {
+       "subject": "HCMG",
+       "number": "0001"
+      },
+      {
+       "subject": "MATH",
+       "number": "1300"
+      },
+      {
+       "subject": "MATH",
+       "number": "1510"
+      },
+      {
+       "subject": "MATH",
+       "number": "1700"
+      },
+      {
+       "subject": "MGMT",
+       "number": "0004"
+      },
+      {
+       "subject": "MKTG",
+       "number": "0001"
+      },
+      {
+       "subject": "MED",
+       "number": "0000",
+       "numberEnd": "9999"
+      },
+      {
+       "subject": "MSCI",
+       "number": "0000",
+       "numberEnd": "9999"
+      },
+      {
+       "subject": "NSCI",
+       "number": "0000",
+       "numberEnd": "1019"
+      },
+      {
+       "subject": "NSCI",
+       "number": "1021",
+       "numberEnd": "2009"
+      },
+      {
+       "subject": "NSCI",
+       "number": "2011",
+       "numberEnd": "2019"
+      },
+      {
+       "subject": "NSCI",
+       "number": "2021",
+       "numberEnd": "3009"
+      },
+      {
+       "subject": "NSCI",
+       "number": "3111",
+       "numberEnd": "4009"
+      },
+      {
+       "subject": "NSCI",
+       "number": "4011",
+       "numberEnd": "4019"
+      },
+      {
+       "subject": "NSCI",
+       "number": "4021",
+       "numberEnd": "9999"
+      },
+      {
+       "subject": "OIDD",
+       "number": "0001"
+      },
+      {
+       "subject": "PHYS",
+       "number": "0000",
+       "numberEnd": "0049"
+      },
+      {
+       "subject": "PHYS",
+       "number": "0052",
+       "numberEnd": "0139"
+      },
+      {
+       "subject": "STAT",
+       "number": "0000",
+       "numberEnd": "4049"
+      },
+      {
+       "subject": "STAT",
+       "number": "4051",
+       "numberEnd": "4219"
+      },
+      {
+       "subject": "STAT",
+       "number": "4221",
+       "numberEnd": "4290"
+      },
+      {
+       "subject": "CHEM",
+       "number": "001",
+       "numberEnd": "001",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "202220"
+         ]
+        }
+       ],
+       "historic": true
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in ASTR 0001, EAS 5030, 5050, CIT @, DYNM @, FNCE 0001, 0002, HCMG 0001, MATH 1300, 1510, 1700, MGMT 0004, MKTG 0001, MED 0000:9999, MSCI 0000:9999, NSCI 0000:1019, 1021:2009, 2011:2019, 2021:3009, 3111:4009, 4011:4019, 4021:9999, OIDD 0001, PHYS 0000:0049, 0052:0139, STAT 0000:4049, 4051:4219, 4221:4290, CHEM 001:001 (With DWTERM < 202220)",
+     "tag": "ALDCED"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 4,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 4 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    }
+   ],
+   "overlays": [],
+   "other": [
+    {
+     "name": "CHECKELECTIVES",
+     "text": "CHECK-ELECTIVE-CREDITS-ALLOWED"
+    }
+   ],
+   "rules": [
+    {
+     "id": "1-1",
+     "label": "There are no I, NR, or PR grades in this Degree Audit",
+     "type": "complete",
+     "labelTag": "KFSOEL",
+     "branch": "else"
+    },
+    {
+     "id": "2-1-0",
+     "label": "Cumulative GPA Requirement ",
+     "type": "incomplete",
+     "labelTag": "MNGPHREQ",
+     "branch": "if"
+    },
+    {
+     "id": "3",
+     "label": "Major Requirements",
+     "type": "blocktype",
+     "labelTag": "MAJORBLOCK",
+     "ref": {
+      "type": "MAJOR"
+     }
+    },
+    {
+     "id": "5",
+     "label": "General Electives",
+     "type": "block",
+     "labelTag": "SSHBLOCK",
+     "ref": {
+      "type": "OTHER",
+      "code": "U-SEAS-SSH",
+      "blockId": "RA002195"
+     }
+    }
+   ],
+   "minCredits": 37,
+   "minResidency": 18.5
+  },
+  {
+   "reqId": "RA002268",
+   "type": "MAJOR",
+   "code": "VIC",
+   "title": "Major in Visual and Interactive Computing, BSE",
+   "catalogYears": {
+    "start": "2027",
+    "stop": "9999"
+   },
+   "share": [
+    {
+     "scope": "type",
+     "type": "MINOR"
+    }
+   ],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y)",
+     "tag": "MXPFCOVID"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 1,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "CIS",
+       "number": "1000",
+       "numberEnd": "1999"
+      }
+     ],
+     "except": [
+      {
+       "subject": "CIS",
+       "number": "1100"
+      },
+      {
+       "subject": "CIS",
+       "number": "1200"
+      },
+      {
+       "subject": "CIS",
+       "number": "1210"
+      },
+      {
+       "subject": "CIS",
+       "number": "1600"
+      }
+     ],
+     "text": "MaxClasses 1 in CIS 1000:1999 Except CIS 1100, 1200, 1210, 1600",
+     "tag": "ABCD"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1",
+     "label": "ENGINEERING",
+     "type": "subset",
+     "labelTag": "ANGLTVJ",
+     "children": [
+      {
+       "id": "1-0",
+       "label": "CIS 1100 or CIS Elective",
+       "type": "course",
+       "labelTag": "AUNBSA",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "decide": "ORDER",
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "1100"
+        },
+        {
+         "subject": "CIS",
+         "number": "1000",
+         "numberEnd": "5999"
+        },
+        {
+         "subject": "NETS",
+         "number": "1000",
+         "numberEnd": "5999"
+        },
+        {
+         "subject": "ESE",
+         "number": "3030"
+        },
+        {
+         "subject": "ESE",
+         "number": "3600"
+        },
+        {
+         "subject": "ESE",
+         "number": "5390"
+        },
+        {
+         "subject": "ESE",
+         "number": "5460"
+        },
+        {
+         "subject": "BMIN",
+         "number": "5010"
+        },
+        {
+         "subject": "CIS",
+         "number": "6000",
+         "numberEnd": "9999"
+        },
+        {
+         "subject": "NETS",
+         "number": "6000",
+         "numberEnd": "9999"
+        }
+       ],
+       "except": [
+        {
+         "subject": "CIS",
+         "number": "1050"
+        },
+        {
+         "subject": "CIS",
+         "number": "1060"
+        },
+        {
+         "subject": "CIS",
+         "number": "1070"
+        },
+        {
+         "subject": "CIS",
+         "number": "1250"
+        },
+        {
+         "subject": "CIS",
+         "number": "1600"
+        },
+        {
+         "subject": "CIS",
+         "number": "2610"
+        },
+        {
+         "subject": "CIS",
+         "number": "3333"
+        },
+        {
+         "subject": "CIS",
+         "number": "4230"
+        },
+        {
+         "subject": "CIS",
+         "number": "5230"
+        },
+        {
+         "subject": "CIS",
+         "number": "7980"
+        },
+        {
+         "subject": "@",
+         "number": "2960"
+        },
+        {
+         "subject": "@",
+         "number": "2970"
+        }
+       ],
+       "priority": "high"
+      },
+      {
+       "id": "1-1",
+       "label": "Prog Lang & Tech I",
+       "type": "course",
+       "labelTag": "AUNBSB",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "1200"
+        }
+       ]
+      },
+      {
+       "id": "1-2",
+       "label": "Prog Lang and Tech II",
+       "type": "course",
+       "labelTag": "AUNBSC",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "1210"
+        }
+       ]
+      },
+      {
+       "id": "1-3",
+       "label": "Intro To Comp Systems",
+       "type": "course",
+       "labelTag": "AUNBSD",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "2400"
+        }
+       ]
+      },
+      {
+       "id": "1-4",
+       "label": "Intro Artificial Intelligence",
+       "type": "course",
+       "labelTag": "AUNBSE",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "2210"
+        }
+       ]
+      },
+      {
+       "id": "1-5",
+       "label": "Intro To Algorithms",
+       "type": "course",
+       "labelTag": "AUNBSF",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "3200"
+        }
+       ]
+      },
+      {
+       "id": "1-6",
+       "label": "Interactve Comp Graphics",
+       "type": "course",
+       "labelTag": "AUNBSG",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "4600"
+        },
+        {
+         "subject": "CIS",
+         "number": "5600"
+        }
+       ]
+      },
+      {
+       "id": "1-7",
+       "label": "Intermediate VIC Courses",
+       "type": "course",
+       "labelTag": "NVTLGA",
+       "need": {
+        "credits": 2,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "4610"
+        },
+        {
+         "subject": "CIS",
+         "number": "5610"
+        },
+        {
+         "subject": "CIS",
+         "number": "4620"
+        },
+        {
+         "subject": "CIS",
+         "number": "5620"
+        },
+        {
+         "subject": "CIS",
+         "number": "3500"
+        },
+        {
+         "subject": "CIS",
+         "number": "4710"
+        },
+        {
+         "subject": "CIS",
+         "number": "5710"
+        },
+        {
+         "subject": "CIS",
+         "number": "4120"
+        },
+        {
+         "subject": "CIS",
+         "number": "5120"
+        }
+       ]
+      },
+      {
+       "id": "1-8",
+       "label": "Dmd Senior Project",
+       "type": "course",
+       "labelTag": "AUNBSH",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "4970"
+        }
+       ]
+      },
+      {
+       "id": "1-9",
+       "label": "CIS Elective: 1000-Level or above",
+       "type": "course",
+       "labelTag": "AUNBSI",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "1000",
+         "numberEnd": "5999"
+        },
+        {
+         "subject": "NETS",
+         "number": "1000",
+         "numberEnd": "5999"
+        },
+        {
+         "subject": "ESE",
+         "number": "3030"
+        },
+        {
+         "subject": "ESE",
+         "number": "3600"
+        },
+        {
+         "subject": "ESE",
+         "number": "5390"
+        },
+        {
+         "subject": "ESE",
+         "number": "5460"
+        },
+        {
+         "subject": "BMIN",
+         "number": "5010"
+        },
+        {
+         "subject": "CIS",
+         "number": "6000",
+         "numberEnd": "9999"
+        },
+        {
+         "subject": "NETS",
+         "number": "6000",
+         "numberEnd": "9999"
+        }
+       ],
+       "except": [
+        {
+         "subject": "CIS",
+         "number": "1050"
+        },
+        {
+         "subject": "CIS",
+         "number": "1060"
+        },
+        {
+         "subject": "CIS",
+         "number": "1070"
+        },
+        {
+         "subject": "CIS",
+         "number": "1250"
+        },
+        {
+         "subject": "CIS",
+         "number": "1600"
+        },
+        {
+         "subject": "CIS",
+         "number": "2610"
+        },
+        {
+         "subject": "CIS",
+         "number": "3333"
+        },
+        {
+         "subject": "CIS",
+         "number": "4230"
+        },
+        {
+         "subject": "CIS",
+         "number": "5230"
+        },
+        {
+         "subject": "CIS",
+         "number": "7980"
+        },
+        {
+         "subject": "@",
+         "number": "2960"
+        },
+        {
+         "subject": "@",
+         "number": "2970"
+        }
+       ]
+      },
+      {
+       "id": "1-10",
+       "label": "CIS Electives: 2000-level or above",
+       "type": "course",
+       "labelTag": "AUNBSZ",
+       "need": {
+        "credits": 3,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "2000",
+         "numberEnd": "5999"
+        },
+        {
+         "subject": "NETS",
+         "number": "2000",
+         "numberEnd": "5999"
+        },
+        {
+         "subject": "ESE",
+         "number": "3030"
+        },
+        {
+         "subject": "ESE",
+         "number": "3600"
+        },
+        {
+         "subject": "ESE",
+         "number": "5390"
+        },
+        {
+         "subject": "ESE",
+         "number": "5460"
+        },
+        {
+         "subject": "BMIN",
+         "number": "5010"
+        },
+        {
+         "subject": "CIS",
+         "number": "6000",
+         "numberEnd": "9999"
+        },
+        {
+         "subject": "NETS",
+         "number": "6000",
+         "numberEnd": "9999"
+        }
+       ],
+       "except": [
+        {
+         "subject": "CIS",
+         "number": "2610"
+        },
+        {
+         "subject": "CIS",
+         "number": "3333"
+        },
+        {
+         "subject": "CIS",
+         "number": "4230"
+        },
+        {
+         "subject": "CIS",
+         "number": "5230"
+        },
+        {
+         "subject": "CIS",
+         "number": "7980"
+        },
+        {
+         "subject": "@",
+         "number": "2960"
+        },
+        {
+         "subject": "@",
+         "number": "2970"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "2",
+     "label": "MATH AND NATURAL SCIENCE",
+     "type": "subset",
+     "labelTag": "POKNBV",
+     "children": [
+      {
+       "id": "2-0",
+       "label": "Calculus I",
+       "type": "course",
+       "labelTag": "AUNBSK",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "MATH",
+         "number": "1400"
+        }
+       ]
+      },
+      {
+       "id": "2-1",
+       "label": "Calculus II",
+       "type": "course",
+       "labelTag": "AUNBSL",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "MATH",
+         "number": "1410"
+        },
+        {
+         "subject": "MATH",
+         "number": "1610"
+        }
+       ]
+      },
+      {
+       "id": "2-2",
+       "label": "Linear Algebra with Appl",
+       "type": "course",
+       "labelTag": "AUNBSM",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "ESE",
+         "number": "2030"
+        },
+        {
+         "subject": "ENM",
+         "number": "2030"
+        },
+        {
+         "subject": "ENM",
+         "number": "2400"
+        }
+       ]
+      },
+      {
+       "id": "2-3",
+       "label": "Math Found Comp Sci",
+       "type": "course",
+       "labelTag": "AUNBSN",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CIS",
+         "number": "1600"
+        }
+       ]
+      },
+      {
+       "id": "2-4",
+       "label": "Probability Course",
+       "type": "course",
+       "labelTag": "AUNBSO",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "ESE",
+         "number": "3010"
+        },
+        {
+         "subject": "STAT",
+         "number": "4300"
+        }
+       ]
+      },
+      {
+       "id": "2-5",
+       "label": "Physics I",
+       "type": "group",
+       "labelTag": "INHJFF",
+       "pick": {
+        "groups": 1,
+        "of": 2
+       },
+       "children": [
+        {
+         "id": "2-5-0",
+         "label": "Intro To Mechanics",
+         "type": "course",
+         "labelTag": "AUNBSP",
+         "need": {
+          "credits": 1.5,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "MEAM",
+           "number": "1100"
+          },
+          {
+           "subject": "MEAM",
+           "number": "1470"
+          }
+         ]
+        },
+        {
+         "id": "2-5-1",
+         "label": "Principles I",
+         "type": "course",
+         "labelTag": "AUNBSQ",
+         "need": {
+          "credits": 1.5,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "PHYS",
+           "number": "0150"
+          },
+          {
+           "subject": "PHYS",
+           "number": "0170"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "2-6",
+       "label": "Natural Science Course",
+       "type": "group",
+       "labelTag": "UBFFSSW",
+       "pick": {
+        "groups": 1,
+        "of": 5
+       },
+       "children": [
+        {
+         "id": "2-6-0",
+         "label": "Intro Biology A",
+         "type": "course",
+         "labelTag": "AUNBSR",
+         "need": {
+          "credits": 1.5,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "BIOL",
+           "number": "1101"
+          }
+         ]
+        },
+        {
+         "id": "2-6-1",
+         "label": "Intro Bio-Molec Bio Life",
+         "type": "course",
+         "labelTag": "AUNBST",
+         "need": {
+          "credits": 1.5,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "BIOL",
+           "number": "1121"
+          },
+          {
+           "subject": "BIOL",
+           "number": "1123"
+          }
+         ]
+        },
+        {
+         "id": "2-6-2",
+         "label": "General Chemistry I",
+         "type": "course",
+         "labelTag": "AUNBSU",
+         "need": {
+          "credits": 1.5,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "CHEM",
+           "number": "1012"
+          },
+          {
+           "subject": "CHEM",
+           "number": "1101"
+          }
+         ]
+        },
+        {
+         "id": "2-6-3",
+         "label": "Eng Electromagnetics",
+         "type": "course",
+         "labelTag": "AUNBSV",
+         "need": {
+          "credits": 1.5,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "ESE",
+           "number": "1120"
+          }
+         ]
+        },
+        {
+         "id": "2-6-4",
+         "label": "Principles II",
+         "type": "course",
+         "labelTag": "AUNBS",
+         "need": {
+          "credits": 1.5,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "PHYS",
+           "number": "0151"
+          },
+          {
+           "subject": "PHYS",
+           "number": "0171"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "2-7",
+       "label": "Math or Natural Science Course",
+       "type": "course",
+       "labelTag": "AUNBSX",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "@",
+         "number": "@",
+         "attributes": [
+          "EUMA",
+          "EUNS"
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "3",
+     "label": "FINE ARTS AND DESIGN ELECTIVES",
+     "type": "subset",
+     "labelTag": "POLIUY",
+     "children": [
+      {
+       "id": "3-0",
+       "label": "Drawing Course",
+       "type": "course",
+       "labelTag": "NVBFFG",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "FNAR",
+         "number": "0010"
+        },
+        {
+         "subject": "FNAR",
+         "number": "2090"
+        },
+        {
+         "subject": "FNAR",
+         "number": "2200"
+        },
+        {
+         "subject": "FNAR",
+         "number": "1080"
+        }
+       ]
+      },
+      {
+       "id": "3-1",
+       "label": "Computer Visualization Course",
+       "type": "course",
+       "labelTag": "KKNNHH",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "DSGN",
+         "number": "1030"
+        },
+        {
+         "subject": "DSGN",
+         "number": "2220"
+        }
+       ]
+      },
+      {
+       "id": "3-2",
+       "label": "Animation Course",
+       "type": "course",
+       "labelTag": "OOKKMM",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "DSGN",
+         "number": "2040"
+        },
+        {
+         "subject": "FNAR",
+         "number": "1050"
+        },
+        {
+         "subject": "FNAR",
+         "number": "2100"
+        }
+       ]
+      },
+      {
+       "id": "3-3",
+       "label": "Fine Arts & Design Electives",
+       "type": "course",
+       "labelTag": "OMNGHJ",
+       "need": {
+        "credits": 3,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "DSGN",
+         "number": "0010"
+        },
+        {
+         "subject": "DSGN",
+         "number": "0020"
+        },
+        {
+         "subject": "DSGN",
+         "number": "1020"
+        },
+        {
+         "subject": "DSGN",
+         "number": "1030"
+        },
+        {
+         "subject": "DSGN",
+         "number": "1050"
+        },
+        {
+         "subject": "DSGN",
+         "number": "1070"
+        },
+        {
+         "subject": "DSGN",
+         "number": "1200"
+        },
+        {
+         "subject": "DSGN",
+         "number": "2010"
+        },
+        {
+         "subject": "DSGN",
+         "number": "2060"
+        },
+        {
+         "subject": "DSGN",
+         "number": "2220"
+        },
+        {
+         "subject": "DSGN",
+         "number": "2230"
+        },
+        {
+         "subject": "DSGN",
+         "number": "2260"
+        },
+        {
+         "subject": "DSGN",
+         "number": "2500"
+        },
+        {
+         "subject": "DSGN",
+         "number": "2550"
+        },
+        {
+         "subject": "DSGN",
+         "number": "2540"
+        },
+        {
+         "subject": "DSGN",
+         "number": "2570"
+        },
+        {
+         "subject": "DSGN",
+         "number": "2580"
+        },
+        {
+         "subject": "DSGN",
+         "number": "3030"
+        },
+        {
+         "subject": "DSGN",
+         "number": "3060"
+        },
+        {
+         "subject": "DSGN",
+         "number": "3070"
+        },
+        {
+         "subject": "FNAR",
+         "number": "0010"
+        },
+        {
+         "subject": "FNAR",
+         "number": "1010"
+        },
+        {
+         "subject": "FNAR",
+         "number": "1040"
+        },
+        {
+         "subject": "FNAR",
+         "number": "1050"
+        },
+        {
+         "subject": "FNAR",
+         "number": "1060"
+        },
+        {
+         "subject": "FNAR",
+         "number": "1070"
+        },
+        {
+         "subject": "FNAR",
+         "number": "1080"
+        },
+        {
+         "subject": "FNAR",
+         "number": "1090"
+        },
+        {
+         "subject": "FNAR",
+         "number": "1100"
+        },
+        {
+         "subject": "FNAR",
+         "number": "2010"
+        },
+        {
+         "subject": "FNAR",
+         "number": "2030"
+        },
+        {
+         "subject": "FNAR",
+         "number": "2040"
+        },
+        {
+         "subject": "FNAR",
+         "number": "2090"
+        },
+        {
+         "subject": "FNAR",
+         "number": "2100"
+        },
+        {
+         "subject": "FNAR",
+         "number": "2110"
+        },
+        {
+         "subject": "FNAR",
+         "number": "2200"
+        },
+        {
+         "subject": "FNAR",
+         "number": "2210"
+        },
+        {
+         "subject": "FNAR",
+         "number": "3180"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "minCredits": 29,
+   "minGpa": 2,
+   "minResidency": 15
+  },
+  {
+   "reqId": "RA002195",
+   "type": "OTHER",
+   "code": "U-SEAS-SSH",
+   "title": "General Electives",
+   "catalogYears": {
+    "start": "2027",
+    "stop": "9999"
+   },
+   "share": [
+    {
+     "scope": "block",
+     "type": "OTHER",
+     "code": "U-SEAS-WREE"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "AFRC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ANCH"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ANTH"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ARCH"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ARTH"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "BCHE"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "BIOL"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "BIOP"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "BSCI"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "CBSC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "CHEM"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "CIMS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "CLST"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "CMPL"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "COGS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "COMM"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "CRIM"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "DSGN"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "EALC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "EASC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ECOQ"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ENGL"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ENVS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ESCI"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "FNAR"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "FRFS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "GRMN"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "GSWS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "HIST"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "HSOC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "HSPN"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "INDM"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "INTR"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ITST"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "JWST"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "LALX"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "LING"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "LOGC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "MAEC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "MATH"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "MESC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "MMES"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "MSCI"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "MUSC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "NELC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "NRSC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "NTSC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "PHIL"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "PHYS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "PPE"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "PSCI"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "PSYC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "REES"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "RELS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "ROML"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "SAST"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "SOCI"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "STSC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "SYSC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "THAR"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "URBS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "VLST"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "MELC"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "FIGS"
+    },
+    {
+     "scope": "block",
+     "type": "MAJOR",
+     "code": "LAWS"
+    },
+    {
+     "scope": "type",
+     "type": "CONC"
+    }
+   ],
+   "standalone": false,
+   "limits": [],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1",
+     "label": "GENERAL ELECTIVES (7 CU)",
+     "type": "subset",
+     "labelTag": "SEAS_SSH_REQ",
+     "children": [
+      {
+       "id": "1-0-4-5-3-5-3-3-3-2-3-5-3-0",
+       "label": "Humanities or Social Science",
+       "type": "course",
+       "labelTag": "KNPNAB",
+       "branch": "if",
+       "need": {
+        "credits": 5,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "@",
+         "number": "@",
+         "attributes": [
+          "EUHS",
+          "EUSS"
+         ]
+        }
+       ]
+      },
+      {
+       "id": "1-0-4-5-3-5-3-3-3-2-3-5-3-1",
+       "label": "Humanities, Social Science, or Technology in Business and Society",
+       "type": "course",
+       "labelTag": "DGLPCD",
+       "branch": "if",
+       "need": {
+        "credits": 2,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "@",
+         "number": "@",
+         "attributes": [
+          "EUHS",
+          "EUSS",
+          "EUTB"
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "2-0",
+     "label": "WRITING REQUIREMENT",
+     "type": "subset",
+     "branch": "if",
+     "children": [
+      {
+       "id": "2-0-0",
+       "label": "Writing Course",
+       "type": "group",
+       "labelTag": "NMBKJH",
+       "pick": {
+        "groups": 1,
+        "of": 3
+       },
+       "share": [
+        {
+         "scope": "thisBlock"
+        }
+       ],
+       "children": [
+        {
+         "id": "2-0-0-0",
+         "label": "Social Sciences Writing Course",
+         "type": "course",
+         "labelTag": "BNVMJS",
+         "need": {
+          "credits": 1,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "WRIT",
+           "number": "0160"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0170"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0021"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0280"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0340"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0370"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0380"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0480"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0500"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0550"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0590"
+          }
+         ]
+        },
+        {
+         "id": "2-0-0-1",
+         "label": "Humanities Writing Course",
+         "type": "course",
+         "labelTag": "BNVMJK",
+         "need": {
+          "credits": 1,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "WRIT",
+           "number": "0020"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0100"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0110"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0120"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0130"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0140"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0150"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0230"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0250"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0260"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0270"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0300"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0330"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0390"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0410"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0490"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0570"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0580"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0670"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0680"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0730"
+          }
+         ]
+        },
+        {
+         "id": "2-0-0-2",
+         "label": "Tech, Business, and Society Writing Course",
+         "type": "course",
+         "labelTag": "BNVMJD",
+         "need": {
+          "credits": 1,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "WRIT",
+           "number": "0210"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0220"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0310"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0400"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0650"
+          },
+          {
+           "subject": "WRIT",
+           "number": "0740"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "minCredits": 7
+  }
+ ]
+}

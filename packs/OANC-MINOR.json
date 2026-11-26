@@ -1,0 +1,144 @@
+{
+ "code": "OANC-MINOR",
+ "title": "Minor in Adult Oncology Specialty",
+ "goals": {
+  "college": "ND",
+  "program": "ND_DNP",
+  "minor": "OANC",
+  "degree": "DNP"
+ },
+ "goalNames": {
+  "COLLEGE": "Nursing Doctorate ND",
+  "PROGRAM": "Nursing - Doctor of Nursing Practice",
+  "MINOR": "Adult Oncology Spec",
+  "DEGREE": "Doctor of Nursing Practice"
+ },
+ "provenance": {
+  "source": "https://courses.upenn.edu/api/?page=fose&route=programs-v2-info",
+  "srcdb": "202630",
+  "fetched": "2026-11-26"
+ },
+ "blocks": [
+  {
+   "reqId": "RA002210",
+   "type": "DEGREE",
+   "code": "DNP",
+   "title": "Degree in Doctor of Nursing Practice",
+   "catalogYears": {
+    "start": "2027",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXPASSFAIL",
+     "max": 0,
+     "unit": "cu",
+     "courses": [],
+     "except": [],
+     "text": "MAXPASSFAIL 0 Credits",
+     "tag": "MXPFH"
+    }
+   ],
+   "overlays": [],
+   "other": [
+    {
+     "name": "CHECKELECTIVES",
+     "text": "CHECK-ELECTIVE-CREDITS-ALLOWED"
+    }
+   ],
+   "rules": [
+    {
+     "id": "1-1-0",
+     "label": "Cumulative GPA Requirement ",
+     "type": "incomplete",
+     "labelTag": "MNGPR2",
+     "branch": "if"
+    },
+    {
+     "id": "2-1",
+     "label": "There are no I, NR, or PR grades in this Degree Audit",
+     "type": "complete",
+     "labelTag": "KFSOEL",
+     "branch": "else"
+    },
+    {
+     "id": "3",
+     "label": "Major Requirements",
+     "type": "blocktype",
+     "labelTag": "MAJBLOCK",
+     "ref": {
+      "type": "MAJOR"
+     }
+    }
+   ]
+  },
+  {
+   "reqId": "RA001869",
+   "type": "MINOR",
+   "code": "OANC",
+   "title": "Minor in Adult Oncology Specialty",
+   "catalogYears": {
+    "start": "2025",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": true,
+   "limits": [],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1",
+     "label": "Adv Prac -Oncology",
+     "type": "course",
+     "labelTag": "MINNURS6640",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "NURS",
+       "number": "6640"
+      }
+     ]
+    },
+    {
+     "id": "2",
+     "label": "Eff Cancer/Cancer Therap",
+     "type": "course",
+     "labelTag": "MINNURS6660",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "NURS",
+       "number": "6660"
+      }
+     ]
+    },
+    {
+     "id": "3",
+     "label": "Onc: Cancer Assm, Diag, Mgt",
+     "type": "course",
+     "labelTag": "MINNURS6670",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "NURS",
+       "number": "6670"
+      }
+     ]
+    }
+   ],
+   "minCredits": 3
+  }
+ ]
+}

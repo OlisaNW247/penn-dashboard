@@ -1,0 +1,1556 @@
+{
+ "code": "BCHE-BA",
+ "title": "Biochemistry BA",
+ "goals": {
+  "college": "AU",
+  "program": "AU_BA",
+  "major": "BCHE",
+  "degree": "BA"
+ },
+ "goalNames": {
+  "COLLEGE": "College of Arts & Sciences AU",
+  "PROGRAM": "Arts & Sciences - BA",
+  "MAJOR": "Biochemistry",
+  "DEGREE": "Bachelor of Arts"
+ },
+ "provenance": {
+  "source": "https://courses.upenn.edu/api/?page=fose&route=programs-v2-info",
+  "srcdb": "202630",
+  "fetched": "2026-11-26"
+ },
+ "blocks": [
+  {
+   "reqId": "RA002258",
+   "type": "DEGREE",
+   "code": "BA",
+   "title": "Degree in Bachelor of Arts",
+   "catalogYears": {
+    "start": "2027",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "MSCI",
+       "number": "@"
+      },
+      {
+       "subject": "NSCI",
+       "number": "@"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in MSCI @, NSCI @",
+     "tag": "MXCLH_ROTC"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 8,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 8 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    }
+   ],
+   "overlays": [
+    {
+     "kind": "MINCREDIT",
+     "need": 34,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "AAMW",
+       "number": "@"
+      },
+      {
+       "subject": "AFRC",
+       "number": "@"
+      },
+      {
+       "subject": "AFST",
+       "number": "@"
+      },
+      {
+       "subject": "ALAN",
+       "number": "@"
+      },
+      {
+       "subject": "AMCS",
+       "number": "@"
+      },
+      {
+       "subject": "AMEL",
+       "number": "@"
+      },
+      {
+       "subject": "AMHR",
+       "number": "@"
+      },
+      {
+       "subject": "ANCH",
+       "number": "@"
+      },
+      {
+       "subject": "ANEL",
+       "number": "@"
+      },
+      {
+       "subject": "ANTH",
+       "number": "@"
+      },
+      {
+       "subject": "ARAB",
+       "number": "@"
+      },
+      {
+       "subject": "ARTH",
+       "number": "@"
+      },
+      {
+       "subject": "ASAM",
+       "number": "@"
+      },
+      {
+       "subject": "ASLD",
+       "number": "@"
+      },
+      {
+       "subject": "ASTR",
+       "number": "@"
+      },
+      {
+       "subject": "BCHE",
+       "number": "@"
+      },
+      {
+       "subject": "BCS",
+       "number": "@"
+      },
+      {
+       "subject": "BDS",
+       "number": "@"
+      },
+      {
+       "subject": "BENF",
+       "number": "@"
+      },
+      {
+       "subject": "BENG",
+       "number": "@"
+      },
+      {
+       "subject": "BIBB",
+       "number": "@"
+      },
+      {
+       "subject": "BIOL",
+       "number": "@"
+      },
+      {
+       "subject": "CHEM",
+       "number": "@"
+      },
+      {
+       "subject": "CHIC",
+       "number": "@"
+      },
+      {
+       "subject": "CHIN",
+       "number": "@"
+      },
+      {
+       "subject": "CIMS",
+       "number": "@"
+      },
+      {
+       "subject": "CLST",
+       "number": "@"
+      },
+      {
+       "subject": "COGS",
+       "number": "@"
+      },
+      {
+       "subject": "COLL",
+       "number": "@"
+      },
+      {
+       "subject": "COML",
+       "number": "@"
+      },
+      {
+       "subject": "COMM",
+       "number": "@"
+      },
+      {
+       "subject": "CRIM",
+       "number": "@"
+      },
+      {
+       "subject": "CZCH",
+       "number": "@"
+      },
+      {
+       "subject": "DEMG",
+       "number": "@"
+      },
+      {
+       "subject": "DYNM",
+       "number": "@"
+      },
+      {
+       "subject": "DTCH",
+       "number": "@"
+      },
+      {
+       "subject": "EALC",
+       "number": "@"
+      },
+      {
+       "subject": "ECON",
+       "number": "@"
+      },
+      {
+       "subject": "EESC",
+       "number": "@"
+      },
+      {
+       "subject": "ENGL",
+       "number": "@"
+      },
+      {
+       "subject": "FIGS",
+       "number": "@"
+      },
+      {
+       "subject": "FILP",
+       "number": "@"
+      },
+      {
+       "subject": "FOLK",
+       "number": "@"
+      },
+      {
+       "subject": "FREN",
+       "number": "@"
+      },
+      {
+       "subject": "FRSM",
+       "number": "@"
+      },
+      {
+       "subject": "GAFL",
+       "number": "@"
+      },
+      {
+       "subject": "GREK",
+       "number": "@"
+      },
+      {
+       "subject": "GRMN",
+       "number": "@"
+      },
+      {
+       "subject": "GSWS",
+       "number": "@"
+      },
+      {
+       "subject": "GUJR",
+       "number": "@"
+      },
+      {
+       "subject": "HEBR",
+       "number": "@"
+      },
+      {
+       "subject": "HIND",
+       "number": "@"
+      },
+      {
+       "subject": "HIST",
+       "number": "@"
+      },
+      {
+       "subject": "HSOC",
+       "number": "@"
+      },
+      {
+       "subject": "HSSC",
+       "number": "@"
+      },
+      {
+       "subject": "HUNG",
+       "number": "@"
+      },
+      {
+       "subject": "IGBO",
+       "number": "@"
+      },
+      {
+       "subject": "INDO",
+       "number": "@"
+      },
+      {
+       "subject": "INSP",
+       "number": "@"
+      },
+      {
+       "subject": "INTG",
+       "number": "@"
+      },
+      {
+       "subject": "INTR",
+       "number": "@"
+      },
+      {
+       "subject": "IRIS",
+       "number": "@"
+      },
+      {
+       "subject": "ITAL",
+       "number": "@"
+      },
+      {
+       "subject": "JPAN",
+       "number": "@"
+      },
+      {
+       "subject": "JWST",
+       "number": "@"
+      },
+      {
+       "subject": "KAND",
+       "number": "@"
+      },
+      {
+       "subject": "KORN",
+       "number": "@"
+      },
+      {
+       "subject": "LALS",
+       "number": "@"
+      },
+      {
+       "subject": "LATN",
+       "number": "@"
+      },
+      {
+       "subject": "LGIC",
+       "number": "@"
+      },
+      {
+       "subject": "LING",
+       "number": "@"
+      },
+      {
+       "subject": "LSMP",
+       "number": "@"
+      },
+      {
+       "subject": "MALG",
+       "number": "@"
+      },
+      {
+       "subject": "MATH",
+       "number": "@"
+      },
+      {
+       "subject": "MELC",
+       "number": "@"
+      },
+      {
+       "subject": "MLYM",
+       "number": "@"
+      },
+      {
+       "subject": "MMES",
+       "number": "@"
+      },
+      {
+       "subject": "MRTI",
+       "number": "@"
+      },
+      {
+       "subject": "MUSC",
+       "number": "@"
+      },
+      {
+       "subject": "NELC",
+       "number": "@"
+      },
+      {
+       "subject": "NRSC",
+       "number": "@"
+      },
+      {
+       "subject": "PASH",
+       "number": "@"
+      },
+      {
+       "subject": "PERS",
+       "number": "@"
+      },
+      {
+       "subject": "PHIL",
+       "number": "@"
+      },
+      {
+       "subject": "PHYS",
+       "number": "@"
+      },
+      {
+       "subject": "PLSH",
+       "number": "@"
+      },
+      {
+       "subject": "PPE",
+       "number": "@"
+      },
+      {
+       "subject": "PRTG",
+       "number": "@"
+      },
+      {
+       "subject": "PSCI",
+       "number": "@"
+      },
+      {
+       "subject": "PSYC",
+       "number": "@"
+      },
+      {
+       "subject": "PUNJ",
+       "number": "@"
+      },
+      {
+       "subject": "QUEC",
+       "number": "@"
+      },
+      {
+       "subject": "REES",
+       "number": "@"
+      },
+      {
+       "subject": "RELS",
+       "number": "@"
+      },
+      {
+       "subject": "ROML",
+       "number": "@"
+      },
+      {
+       "subject": "RUSS",
+       "number": "@"
+      },
+      {
+       "subject": "SARB",
+       "number": "@"
+      },
+      {
+       "subject": "SAST",
+       "number": "@"
+      },
+      {
+       "subject": "SKRT",
+       "number": "@"
+      },
+      {
+       "subject": "SOCI",
+       "number": "@"
+      },
+      {
+       "subject": "SPAN",
+       "number": "@"
+      },
+      {
+       "subject": "STSC",
+       "number": "@"
+      },
+      {
+       "subject": "SWAH",
+       "number": "@"
+      },
+      {
+       "subject": "SWED",
+       "number": "@"
+      },
+      {
+       "subject": "TAML",
+       "number": "@"
+      },
+      {
+       "subject": "TELU",
+       "number": "@"
+      },
+      {
+       "subject": "THAI",
+       "number": "@"
+      },
+      {
+       "subject": "THAR",
+       "number": "@"
+      },
+      {
+       "subject": "TIBT",
+       "number": "@"
+      },
+      {
+       "subject": "TIGR",
+       "number": "@"
+      },
+      {
+       "subject": "TURK",
+       "number": "@"
+      },
+      {
+       "subject": "TWI",
+       "number": "@"
+      },
+      {
+       "subject": "UKRN",
+       "number": "@"
+      },
+      {
+       "subject": "URBS",
+       "number": "@"
+      },
+      {
+       "subject": "URDU",
+       "number": "@"
+      },
+      {
+       "subject": "VIET",
+       "number": "@"
+      },
+      {
+       "subject": "VIPR",
+       "number": "@"
+      },
+      {
+       "subject": "VLST",
+       "number": "@"
+      },
+      {
+       "subject": "WOLF",
+       "number": "@"
+      },
+      {
+       "subject": "WRIT",
+       "number": "@"
+      },
+      {
+       "subject": "YDSH",
+       "number": "@"
+      },
+      {
+       "subject": "YORB",
+       "number": "@"
+      },
+      {
+       "subject": "ZULU",
+       "number": "@"
+      },
+      {
+       "subject": "GEOL",
+       "number": "@"
+      },
+      {
+       "subject": "ENVS",
+       "number": "@"
+      },
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AU16"
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MinCredits 34 in AAMW @, AFRC @, AFST @, ALAN @, AMCS @, AMEL @, AMHR @, ANCH @, ANEL @, ANTH @, ARAB @, ARTH @, ASAM @, ASLD @, ASTR @, BCHE @, BCS @, BDS @, BENF @, BENG @, BIBB @, BIOL @, CHEM @, CHIC @, CHIN @, CIMS @, CLST @, COGS @, COLL @, COML @, COMM @, CRIM @, CZCH @, DEMG @, DYNM @, DTCH @, EALC @, ECON @, EESC @, ENGL @, FIGS @, FILP @, FOLK @, FREN @, FRSM @, GAFL @, GREK @, GRMN @, GSWS @, GUJR @, HEBR @, HIND @, HIST @, HSOC @, HSSC @, HUNG @, IGBO @, INDO @, INSP @, INTG @, INTR @, IRIS @, ITAL @, JPAN @, JWST @, KAND @, KORN @, LALS @, LATN @, LGIC @, LING @, LSMP @, MALG @, MATH @, MELC @, MLYM @, MMES @, MRTI @, MUSC @, NELC @, NRSC @, PASH @, PERS @, PHIL @, PHYS @, PLSH @, PPE @, PRTG @, PSCI @, PSYC @, PUNJ @, QUEC @, REES @, RELS @, ROML @, RUSS @, SARB @, SAST @, SKRT @, SOCI @, SPAN @, STSC @, SWAH @, SWED @, TAML @, TELU @, THAI @, THAR @, TIBT @, TIGR @, TURK @, TWI @, UKRN @, URBS @, URDU @, VIET @, VIPR @, VLST @, WOLF @, WRIT @, YDSH @, YORB @, ZULU @, GEOL @, ENVS @, @ @ (With ATTRIBUTE = AU16)",
+     "label": "Arts and Sciences 34 CU Requirement",
+     "labelTag": "UWWE34"
+    }
+   ],
+   "other": [
+    {
+     "name": "CHECKELECTIVES",
+     "text": "CHECK-ELECTIVE-CREDITS-ALLOWED"
+    }
+   ],
+   "rules": [
+    {
+     "id": "1-1",
+     "label": "There are no I, NR, or PR grades in this Degree Audit",
+     "type": "complete",
+     "labelTag": "KFSOEL",
+     "branch": "else"
+    },
+    {
+     "id": "2-1-1-0",
+     "label": "Cumulative GPA Requirement",
+     "type": "incomplete",
+     "labelTag": "NOGPA",
+     "branch": "if"
+    },
+    {
+     "id": "3",
+     "label": "General Education - Foundations",
+     "type": "block",
+     "labelTag": "GENED_FND_BLK",
+     "ref": {
+      "type": "OTHER",
+      "code": "U-GE-FND",
+      "blockId": "RA000521"
+     }
+    },
+    {
+     "id": "4",
+     "label": "General Education - Sectors",
+     "type": "block",
+     "labelTag": "GENED_SCT_BLK",
+     "ref": {
+      "type": "OTHER",
+      "code": "U-GE-SCTR",
+      "blockId": "RA001031"
+     }
+    },
+    {
+     "id": "7",
+     "label": "Major Requirements",
+     "type": "blocktype",
+     "labelTag": "MAJR_BLK",
+     "ref": {
+      "type": "MAJOR"
+     }
+    }
+   ],
+   "minCredits": 36,
+   "minResidency": 18,
+   "lastResidency": {
+    "classes": 5
+   }
+  },
+  {
+   "reqId": "RA000521",
+   "type": "OTHER",
+   "code": "U-GE-FND",
+   "title": "General Education, Foundations",
+   "catalogYears": {
+    "start": "0000",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": true,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWTRANSFERSCHOOLID",
+         "op": "=",
+         "values": [
+          "EQIVAP",
+          "EQIVIB",
+          "EQIVEX",
+          "EQIVAS"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWTRANSFERSCHOOLID = EQIVAP, EQIVIB, EQIVEX, EQIVAS)"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWGRADELETTER",
+         "op": "=",
+         "values": [
+          "S"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWGRADELETTER = S)"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1-1",
+     "label": "Foreign Language",
+     "type": "course",
+     "labelTag": "AUFL",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AULL"
+       ]
+      }
+     ],
+     "minGrade": "1.0"
+    },
+    {
+     "id": "2",
+     "label": "Quantitative Data Analysis",
+     "type": "course",
+     "labelTag": "AUQD",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUQD"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "3",
+     "label": "Formal Reasoning and Analysis",
+     "type": "course",
+     "labelTag": "AUFR",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUFR"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "4",
+     "label": "Cross Cultural Analysis",
+     "type": "course",
+     "labelTag": "AUCC",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUCC"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "5",
+     "label": "Cultural Diversity in the U.S.",
+     "type": "course",
+     "labelTag": "AUCD",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUCD"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "6",
+     "label": "Writing Course",
+     "type": "course",
+     "labelTag": "AUWR",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "WRIT",
+       "number": "0000",
+       "numberEnd": "0991"
+      },
+      {
+       "subject": "WRIT",
+       "number": "0998"
+      }
+     ],
+     "except": [
+      {
+       "subject": "WRIT",
+       "number": "135@"
+      },
+      {
+       "subject": "WRIT",
+       "number": "138@"
+      }
+     ]
+    }
+   ],
+   "minClasses": 6
+  },
+  {
+   "reqId": "RA001031",
+   "type": "OTHER",
+   "code": "U-GE-SCTR",
+   "title": "General Education, Sectors",
+   "catalogYears": {
+    "start": "2022",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWTRANSFERSCHOOLID",
+         "op": "=",
+         "values": [
+          "EQIVAP",
+          "EQIVIB",
+          "EQIVEX",
+          "EQIVAS"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWTRANSFERSCHOOLID = EQIVAP, EQIVIB, EQIVEX, EQIVAS)"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "2-1",
+     "label": "Sector 1: Society",
+     "type": "course",
+     "labelTag": "AUSO",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUSO"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "3-1",
+     "label": "Sector 2: History and Tradition",
+     "type": "course",
+     "labelTag": "AUHT",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUHT"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "4-1",
+     "label": "Sector 3: Arts and Letters",
+     "type": "course",
+     "labelTag": "AUAL",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUAL"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "5-1",
+     "label": "Sector 4: Humanities and Social Sciences",
+     "type": "course",
+     "labelTag": "AUHS",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUHS"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "6-1",
+     "label": "Sector 5: The Living World",
+     "type": "course",
+     "labelTag": "AULW",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AULW"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "7-0",
+     "label": "Sector 6: The Physical World Fulfilled by Major Course",
+     "type": "complete",
+     "labelTag": "JSUTRS",
+     "branch": "if"
+    },
+    {
+     "id": "8-1-1",
+     "label": "Sector 7: Natural Science Across Disciplines",
+     "type": "course",
+     "labelTag": "AUW_SHW",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUNM"
+       ]
+      }
+     ]
+    }
+   ],
+   "minClasses": 6
+  },
+  {
+   "reqId": "RA001773",
+   "type": "MAJOR",
+   "code": "BCHE",
+   "title": "Major in Biochemistry",
+   "catalogYears": {
+    "start": "2025",
+    "stop": "9999"
+   },
+   "share": [
+    {
+     "scope": "type",
+     "type": "MAJOR"
+    },
+    {
+     "scope": "type",
+     "type": "CONC"
+    }
+   ],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1",
+     "label": "CALCULUS",
+     "type": "subset",
+     "labelTag": "CALC",
+     "children": [
+      {
+       "id": "1-0",
+       "label": "Calculus I",
+       "type": "course",
+       "labelTag": "CALC1",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "MATH",
+         "number": "1400"
+        },
+        {
+         "subject": "MATH",
+         "number": "1610"
+        },
+        {
+         "subject": "MATH",
+         "number": "2200"
+        },
+        {
+         "subject": "MATH",
+         "number": "2400",
+         "conditions": [
+          {
+           "code": "DWTERM",
+           "op": "<",
+           "values": [
+            "Summer 2026"
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "1-1",
+       "label": "Calculus, Part II, or Calculus, Part II with Probability and Matrices",
+       "type": "course",
+       "labelTag": "CALC2",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "MATH",
+         "number": "1410"
+        },
+        {
+         "subject": "MATH",
+         "number": "2300"
+        },
+        {
+         "subject": "MATH",
+         "number": "3000"
+        },
+        {
+         "subject": "MATH",
+         "number": "2410",
+         "conditions": [
+          {
+           "code": "DWTERM",
+           "op": "<",
+           "values": [
+            "Summer 2026"
+           ]
+          }
+         ]
+        },
+        {
+         "subject": "MATH",
+         "number": "2600",
+         "conditions": [
+          {
+           "code": "DWTERM",
+           "op": "<",
+           "values": [
+            "Summer 2026"
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "2",
+     "label": "GENERAL CHEMISTRY",
+     "type": "subset",
+     "labelTag": "SUWOSL",
+     "children": [
+      {
+       "id": "2-0",
+       "label": "Intro to Gen Chem I or Honors Chemistry I",
+       "type": "course",
+       "labelTag": "CHEM1",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CHEM",
+         "number": "1011"
+        },
+        {
+         "subject": "CHEM",
+         "number": "1012"
+        },
+        {
+         "subject": "CHEM",
+         "number": "1151"
+        }
+       ]
+      },
+      {
+       "id": "2-1",
+       "label": "Intro to Gen Chem II or Honors Chemistry II",
+       "type": "course",
+       "labelTag": "CHEM2",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CHEM",
+         "number": "1021"
+        },
+        {
+         "subject": "CHEM",
+         "number": "1022"
+        },
+        {
+         "subject": "CHEM",
+         "number": "1161"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "3",
+     "label": "GENERAL CHEMISTRY LABS",
+     "type": "subset",
+     "labelTag": "FIWOSL",
+     "children": [
+      {
+       "id": "3-0",
+       "label": "Gen Chem Lab I",
+       "type": "course",
+       "labelTag": "FUWLSK",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CHEM",
+         "number": "1101"
+        }
+       ]
+      },
+      {
+       "id": "3-1",
+       "label": "Gen Chem Lab II",
+       "type": "course",
+       "labelTag": "IGOSLD",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CHEM",
+         "number": "1102"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "4",
+     "label": "ORGANIC CHEMISTRY",
+     "type": "subset",
+     "labelTag": "OFWLSS",
+     "children": [
+      {
+       "id": "4-0",
+       "label": "Organic Chemistry I w/ lab",
+       "type": "course",
+       "labelTag": "IFOWSL",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CHEM",
+         "number": "2411"
+        }
+       ]
+      },
+      {
+       "id": "4-1",
+       "label": "Organic Chemistry II w/ Lab.",
+       "type": "course",
+       "labelTag": "OWIDLS",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CHEM",
+         "number": "2421"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "5",
+     "label": "PHYSICAL CHEMISTRY",
+     "type": "subset",
+     "labelTag": "WYEUSL",
+     "children": [
+      {
+       "id": "5-0",
+       "label": "Physical Chemistry I",
+       "type": "course",
+       "labelTag": "IFWLSK",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CHEM",
+         "number": "2210"
+        }
+       ]
+      },
+      {
+       "id": "5-1",
+       "label": "Physical Chemistry II",
+       "type": "course",
+       "labelTag": "WUEYSL",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CHEM",
+         "number": "2220"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "6",
+     "label": "BIOLOGICAL CHEMISTRY",
+     "type": "subset",
+     "labelTag": "OFAADL",
+     "children": [
+      {
+       "id": "6-0",
+       "label": "Princ Biological Chem",
+       "type": "course",
+       "labelTag": "OWKSLD",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CHEM",
+         "number": "2510"
+        }
+       ]
+      },
+      {
+       "id": "6-1",
+       "label": "Biological Chemistry I",
+       "type": "course",
+       "labelTag": "WIDOSL",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CHEM",
+         "number": "5510"
+        }
+       ]
+      },
+      {
+       "id": "6-2",
+       "label": "Biological Chemistry II",
+       "type": "course",
+       "labelTag": "HVNSLD",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "CHEM",
+         "number": "5520"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "7",
+     "label": "PHYSICS",
+     "type": "subset",
+     "labelTag": "PHYS",
+     "children": [
+      {
+       "id": "7-0",
+       "label": "Principles I",
+       "type": "course",
+       "labelTag": "PHYS1",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "PHYS",
+         "number": "0150"
+        },
+        {
+         "subject": "PHYS",
+         "number": "0170"
+        }
+       ]
+      },
+      {
+       "id": "7-1",
+       "label": "Principles II",
+       "type": "course",
+       "labelTag": "PHYS2",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "PHYS",
+         "number": "0151"
+        },
+        {
+         "subject": "PHYS",
+         "number": "0171"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "8-1",
+     "label": "RESEARCH REQUIREMENT",
+     "type": "course",
+     "labelTag": "RESEARCH",
+     "branch": "else",
+     "need": {
+      "classes": 2,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "BCHE",
+       "number": "4597"
+      }
+     ]
+    }
+   ],
+   "minCredits": 18,
+   "minGpa": 2,
+   "minResidency": 9
+  }
+ ]
+}

@@ -1,0 +1,1001 @@
+{
+ "code": "CSCI-BA",
+ "title": "Computer Science BA - College 2nd Major ONLY",
+ "goals": {
+  "college": "AU",
+  "program": "AU_BA",
+  "major": "CSCI",
+  "degree": "BA"
+ },
+ "goalNames": {
+  "COLLEGE": "College of Arts & Sciences AU",
+  "PROGRAM": "Arts & Sciences - BA",
+  "MAJOR": "Computer Science",
+  "DEGREE": "Bachelor of Arts"
+ },
+ "provenance": {
+  "source": "https://courses.upenn.edu/api/?page=fose&route=programs-v2-info",
+  "srcdb": "202630",
+  "fetched": "2026-11-26"
+ },
+ "blocks": [
+  {
+   "reqId": "RA002258",
+   "type": "DEGREE",
+   "code": "BA",
+   "title": "Degree in Bachelor of Arts",
+   "catalogYears": {
+    "start": "2027",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "MSCI",
+       "number": "@"
+      },
+      {
+       "subject": "NSCI",
+       "number": "@"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in MSCI @, NSCI @",
+     "tag": "MXCLH_ROTC"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 8,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 8 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    }
+   ],
+   "overlays": [],
+   "other": [
+    {
+     "name": "CHECKELECTIVES",
+     "text": "CHECK-ELECTIVE-CREDITS-ALLOWED"
+    }
+   ],
+   "rules": [
+    {
+     "id": "1-1",
+     "label": "There are no I, NR, or PR grades in this Degree Audit",
+     "type": "complete",
+     "labelTag": "KFSOEL",
+     "branch": "else"
+    },
+    {
+     "id": "2-1-1-0",
+     "label": "Cumulative GPA Requirement",
+     "type": "incomplete",
+     "labelTag": "NOGPA",
+     "branch": "if"
+    },
+    {
+     "id": "3",
+     "label": "General Education - Foundations",
+     "type": "block",
+     "labelTag": "GENED_FND_BLK",
+     "ref": {
+      "type": "OTHER",
+      "code": "U-GE-FND",
+      "blockId": "RA000521"
+     }
+    },
+    {
+     "id": "4",
+     "label": "General Education - Sectors",
+     "type": "block",
+     "labelTag": "GENED_SCT_BLK",
+     "ref": {
+      "type": "OTHER",
+      "code": "U-GE-SCTR",
+      "blockId": "RA001031"
+     }
+    },
+    {
+     "id": "7",
+     "label": "Major Requirements",
+     "type": "blocktype",
+     "labelTag": "MAJR_BLK",
+     "ref": {
+      "type": "MAJOR"
+     }
+    }
+   ],
+   "lastResidency": {
+    "classes": 5
+   }
+  },
+  {
+   "reqId": "RA000521",
+   "type": "OTHER",
+   "code": "U-GE-FND",
+   "title": "General Education, Foundations",
+   "catalogYears": {
+    "start": "0000",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": true,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWTRANSFERSCHOOLID",
+         "op": "=",
+         "values": [
+          "EQIVAP",
+          "EQIVIB",
+          "EQIVEX",
+          "EQIVAS"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWTRANSFERSCHOOLID = EQIVAP, EQIVIB, EQIVEX, EQIVAS)"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWGRADELETTER",
+         "op": "=",
+         "values": [
+          "S"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWGRADELETTER = S)"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1-1",
+     "label": "Foreign Language",
+     "type": "course",
+     "labelTag": "AUFL",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AULL"
+       ]
+      }
+     ],
+     "minGrade": "1.0"
+    },
+    {
+     "id": "2",
+     "label": "Quantitative Data Analysis",
+     "type": "course",
+     "labelTag": "AUQD",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUQD"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "3",
+     "label": "Formal Reasoning and Analysis",
+     "type": "course",
+     "labelTag": "AUFR",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUFR"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "4",
+     "label": "Cross Cultural Analysis",
+     "type": "course",
+     "labelTag": "AUCC",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUCC"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "5",
+     "label": "Cultural Diversity in the U.S.",
+     "type": "course",
+     "labelTag": "AUCD",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUCD"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "6",
+     "label": "Writing Course",
+     "type": "course",
+     "labelTag": "AUWR",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "WRIT",
+       "number": "0000",
+       "numberEnd": "0991"
+      },
+      {
+       "subject": "WRIT",
+       "number": "0998"
+      }
+     ],
+     "except": [
+      {
+       "subject": "WRIT",
+       "number": "135@"
+      },
+      {
+       "subject": "WRIT",
+       "number": "138@"
+      }
+     ]
+    }
+   ],
+   "minClasses": 6
+  },
+  {
+   "reqId": "RA001031",
+   "type": "OTHER",
+   "code": "U-GE-SCTR",
+   "title": "General Education, Sectors",
+   "catalogYears": {
+    "start": "2022",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWTRANSFERSCHOOLID",
+         "op": "=",
+         "values": [
+          "EQIVAP",
+          "EQIVIB",
+          "EQIVEX",
+          "EQIVAS"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWTRANSFERSCHOOLID = EQIVAP, EQIVIB, EQIVEX, EQIVAS)"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "2-1",
+     "label": "Sector 1: Society",
+     "type": "course",
+     "labelTag": "AUSO",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUSO"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "3-1",
+     "label": "Sector 2: History and Tradition",
+     "type": "course",
+     "labelTag": "AUHT",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUHT"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "4-1",
+     "label": "Sector 3: Arts and Letters",
+     "type": "course",
+     "labelTag": "AUAL",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUAL"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "5-1",
+     "label": "Sector 4: Humanities and Social Sciences",
+     "type": "course",
+     "labelTag": "AUHS",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUHS"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "6-1",
+     "label": "Sector 5: The Living World",
+     "type": "course",
+     "labelTag": "AULW",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AULW"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "7-1",
+     "label": "Sector 6: The Physical World",
+     "type": "course",
+     "labelTag": "AUPW",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUPW"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "8-1-1",
+     "label": "Sector 7: Natural Science Across Disciplines",
+     "type": "course",
+     "labelTag": "AUW_SHW",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUNM"
+       ]
+      }
+     ]
+    }
+   ],
+   "minClasses": 6
+  },
+  {
+   "reqId": "RA000950",
+   "type": "MAJOR",
+   "code": "CSCI",
+   "title": "Major in Computer Science",
+   "catalogYears": {
+    "start": "0000",
+    "stop": "9999"
+   },
+   "share": [
+    {
+     "scope": "type",
+     "type": "CONC"
+    },
+    {
+     "scope": "type",
+     "type": "MAJOR"
+    }
+   ],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1",
+     "label": "Intro To Comp Prog",
+     "type": "course",
+     "labelTag": "CIS_1100_1",
+     "need": {
+      "credits": 1,
+      "op": "OR"
+     },
+     "decide": "ORDER",
+     "courses": [
+      {
+       "subject": "CIS",
+       "number": "1100"
+      },
+      {
+       "subject": "CIS",
+       "number": "0000",
+       "numberEnd": "5999"
+      },
+      {
+       "subject": "NETS",
+       "number": "0000",
+       "numberEnd": "5999"
+      }
+     ],
+     "except": [
+      {
+       "subject": "CIS",
+       "number": "1050"
+      },
+      {
+       "subject": "CIS",
+       "number": "1060"
+      },
+      {
+       "subject": "CIS",
+       "number": "1070"
+      },
+      {
+       "subject": "CIS",
+       "number": "1250"
+      },
+      {
+       "subject": "CIS",
+       "number": "1600"
+      },
+      {
+       "subject": "CIS",
+       "number": "2610"
+      },
+      {
+       "subject": "CIS",
+       "number": "3333"
+      },
+      {
+       "subject": "CIS",
+       "number": "4230"
+      },
+      {
+       "subject": "CIS",
+       "number": "5230"
+      }
+     ],
+     "priority": "high"
+    },
+    {
+     "id": "2",
+     "label": "Prog Lang & Tech I",
+     "type": "course",
+     "labelTag": "CIS_1200",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "CIS",
+       "number": "1200"
+      }
+     ],
+     "minGrade": "3.0"
+    },
+    {
+     "id": "3",
+     "label": "Prog Lang and Tech II",
+     "type": "course",
+     "labelTag": "CIS_1210",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "CIS",
+       "number": "1210"
+      }
+     ]
+    },
+    {
+     "id": "4",
+     "label": "Math Found Comp Sci",
+     "type": "course",
+     "labelTag": "CIS_1600",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "CIS",
+       "number": "1600"
+      }
+     ]
+    },
+    {
+     "id": "5",
+     "label": "Intro To Comp Systems",
+     "type": "course",
+     "labelTag": "CIS_2400",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "CIS",
+       "number": "2400"
+      }
+     ]
+    },
+    {
+     "id": "6",
+     "label": "Automata,Comput.& Complx",
+     "type": "course",
+     "labelTag": "CIS_2620",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "CIS",
+       "number": "2620"
+      }
+     ]
+    },
+    {
+     "id": "7",
+     "label": "Intro To Algorithms",
+     "type": "course",
+     "labelTag": "CIS_3200",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "CIS",
+       "number": "3200"
+      }
+     ]
+    },
+    {
+     "id": "8",
+     "label": "Project Electives",
+     "type": "course",
+     "labelTag": "PROJ_ELECT_REQ",
+     "need": {
+      "classes": 2,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "CIS",
+       "number": "3500"
+      },
+      {
+       "subject": "CIS",
+       "number": "4120"
+      },
+      {
+       "subject": "CIS",
+       "number": "4410"
+      },
+      {
+       "subject": "CIS",
+       "number": "4480"
+      },
+      {
+       "subject": "CIS",
+       "number": "4500"
+      },
+      {
+       "subject": "CIS",
+       "number": "4550"
+      },
+      {
+       "subject": "CIS",
+       "number": "4521"
+      },
+      {
+       "subject": "CIS",
+       "number": "4600"
+      },
+      {
+       "subject": "CIS",
+       "number": "4710"
+      },
+      {
+       "subject": "CIS",
+       "number": "5050"
+      },
+      {
+       "subject": "CIS",
+       "number": "5120"
+      },
+      {
+       "subject": "CIS",
+       "number": "5410"
+      },
+      {
+       "subject": "CIS",
+       "number": "5480"
+      },
+      {
+       "subject": "CIS",
+       "number": "5500"
+      },
+      {
+       "subject": "CIS",
+       "number": "5521"
+      },
+      {
+       "subject": "CIS",
+       "number": "5530"
+      },
+      {
+       "subject": "CIS",
+       "number": "5550"
+      },
+      {
+       "subject": "CIS",
+       "number": "5600"
+      },
+      {
+       "subject": "CIS",
+       "number": "5710"
+      },
+      {
+       "subject": "ESE",
+       "number": "3500"
+      },
+      {
+       "subject": "NETS",
+       "number": "2120"
+      }
+     ]
+    },
+    {
+     "id": "9",
+     "label": "CIS Elective",
+     "type": "course",
+     "labelTag": "MAJCISELECT1",
+     "need": {
+      "credits": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "CIS",
+       "number": "0099",
+       "numberEnd": "9999"
+      },
+      {
+       "subject": "NETS",
+       "number": "1000",
+       "numberEnd": "5999"
+      },
+      {
+       "subject": "ESE",
+       "number": "3500"
+      }
+     ],
+     "except": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "EUNE"
+       ]
+      },
+      {
+       "subject": "CIS",
+       "number": "4230"
+      },
+      {
+       "subject": "CIS",
+       "number": "5230"
+      }
+     ]
+    },
+    {
+     "id": "10",
+     "label": "CIS Elective at the 2000 Level or Above",
+     "type": "course",
+     "labelTag": "MAJCISELECT2",
+     "need": {
+      "credits": 2,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "CIS",
+       "number": "2000",
+       "numberEnd": "9999"
+      },
+      {
+       "subject": "NETS",
+       "number": "2000",
+       "numberEnd": "5999"
+      },
+      {
+       "subject": "ESE",
+       "number": "3500"
+      }
+     ],
+     "except": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "EUNE"
+       ]
+      },
+      {
+       "subject": "CIS",
+       "number": "4230"
+      },
+      {
+       "subject": "CIS",
+       "number": "5230"
+      }
+     ]
+    }
+   ],
+   "minCredits": 12,
+   "minGpa": 2,
+   "minResidency": 6
+  }
+ ]
+}

@@ -1,0 +1,867 @@
+{
+ "code": "MATH-MINOR",
+ "title": "Minor in Mathematics",
+ "goals": {
+  "college": "AU",
+  "program": "AU_BA_CMPC_U",
+  "minor": "MATH",
+  "degree": "BA"
+ },
+ "goalNames": {
+  "COLLEGE": "College of Arts & Sciences AU",
+  "PROGRAM": "Dual Degree - Computer & Cog Sci - BA - Pre-Major",
+  "MINOR": "Mathematics",
+  "DEGREE": "Bachelor of Arts"
+ },
+ "provenance": {
+  "source": "https://courses.upenn.edu/api/?page=fose&route=programs-v2-info",
+  "srcdb": "202630",
+  "fetched": "2026-11-26"
+ },
+ "blocks": [
+  {
+   "reqId": "RA002258",
+   "type": "DEGREE",
+   "code": "BA",
+   "title": "Degree in Bachelor of Arts",
+   "catalogYears": {
+    "start": "2027",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "MSCI",
+       "number": "@"
+      },
+      {
+       "subject": "NSCI",
+       "number": "@"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in MSCI @, NSCI @",
+     "tag": "MXCLH_ROTC"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 8,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 8 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    }
+   ],
+   "overlays": [],
+   "other": [
+    {
+     "name": "CHECKELECTIVES",
+     "text": "CHECK-ELECTIVE-CREDITS-ALLOWED"
+    }
+   ],
+   "rules": [
+    {
+     "id": "1-1",
+     "label": "There are no I, NR, or PR grades in this Degree Audit",
+     "type": "complete",
+     "labelTag": "KFSOEL",
+     "branch": "else"
+    },
+    {
+     "id": "2-1-1-0",
+     "label": "Cumulative GPA Requirement",
+     "type": "incomplete",
+     "labelTag": "NOGPA",
+     "branch": "if"
+    },
+    {
+     "id": "3",
+     "label": "General Education - Foundations",
+     "type": "block",
+     "labelTag": "GENED_FND_BLK",
+     "ref": {
+      "type": "OTHER",
+      "code": "U-GE-FND",
+      "blockId": "RA000521"
+     }
+    },
+    {
+     "id": "4",
+     "label": "General Education - Sectors",
+     "type": "block",
+     "labelTag": "GENED_SCT_BLK",
+     "ref": {
+      "type": "OTHER",
+      "code": "U-GE-SCTR",
+      "blockId": "RA001031"
+     }
+    },
+    {
+     "id": "7",
+     "label": "Major Requirements",
+     "type": "blocktype",
+     "labelTag": "MAJR_BLK",
+     "ref": {
+      "type": "MAJOR"
+     }
+    },
+    {
+     "id": "9-0",
+     "label": "Minor Requirements",
+     "type": "blocktype",
+     "labelTag": "MINR_BLK",
+     "branch": "if",
+     "ref": {
+      "type": "MINOR"
+     }
+    }
+   ],
+   "lastResidency": {
+    "classes": 5
+   }
+  },
+  {
+   "reqId": "RA000521",
+   "type": "OTHER",
+   "code": "U-GE-FND",
+   "title": "General Education, Foundations",
+   "catalogYears": {
+    "start": "0000",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": true,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWTRANSFERSCHOOLID",
+         "op": "=",
+         "values": [
+          "EQIVAP",
+          "EQIVIB",
+          "EQIVEX",
+          "EQIVAS"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWTRANSFERSCHOOLID = EQIVAP, EQIVIB, EQIVEX, EQIVAS)"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWGRADELETTER",
+         "op": "=",
+         "values": [
+          "S"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWGRADELETTER = S)"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1-1",
+     "label": "Foreign Language",
+     "type": "course",
+     "labelTag": "AUFL",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AULL"
+       ]
+      }
+     ],
+     "minGrade": "1.0"
+    },
+    {
+     "id": "2",
+     "label": "Quantitative Data Analysis",
+     "type": "course",
+     "labelTag": "AUQD",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUQD"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "3",
+     "label": "Formal Reasoning and Analysis",
+     "type": "course",
+     "labelTag": "AUFR",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUFR"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "4",
+     "label": "Cross Cultural Analysis",
+     "type": "course",
+     "labelTag": "AUCC",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUCC"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "5",
+     "label": "Cultural Diversity in the U.S.",
+     "type": "course",
+     "labelTag": "AUCD",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUCD"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "6",
+     "label": "Writing Course",
+     "type": "course",
+     "labelTag": "AUWR",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "WRIT",
+       "number": "0000",
+       "numberEnd": "0991"
+      },
+      {
+       "subject": "WRIT",
+       "number": "0998"
+      }
+     ],
+     "except": [
+      {
+       "subject": "WRIT",
+       "number": "135@"
+      },
+      {
+       "subject": "WRIT",
+       "number": "138@"
+      }
+     ]
+    }
+   ],
+   "minClasses": 6
+  },
+  {
+   "reqId": "RA001031",
+   "type": "OTHER",
+   "code": "U-GE-SCTR",
+   "title": "General Education, Sectors",
+   "catalogYears": {
+    "start": "2022",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWTRANSFERSCHOOLID",
+         "op": "=",
+         "values": [
+          "EQIVAP",
+          "EQIVIB",
+          "EQIVEX",
+          "EQIVAS"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWTRANSFERSCHOOLID = EQIVAP, EQIVIB, EQIVEX, EQIVAS)"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "2-1",
+     "label": "Sector 1: Society",
+     "type": "course",
+     "labelTag": "AUSO",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUSO"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "3-1",
+     "label": "Sector 2: History and Tradition",
+     "type": "course",
+     "labelTag": "AUHT",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUHT"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "4-1",
+     "label": "Sector 3: Arts and Letters",
+     "type": "course",
+     "labelTag": "AUAL",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUAL"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "5-1",
+     "label": "Sector 4: Humanities and Social Sciences",
+     "type": "course",
+     "labelTag": "AUHS",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUHS"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "6-1",
+     "label": "Sector 5: The Living World",
+     "type": "course",
+     "labelTag": "AULW",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AULW"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "7-1",
+     "label": "Sector 6: The Physical World",
+     "type": "course",
+     "labelTag": "AUPW",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUPW"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "8-1-1",
+     "label": "Sector 7: Natural Science Across Disciplines",
+     "type": "course",
+     "labelTag": "AUW_SHW",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUNM"
+       ]
+      }
+     ]
+    }
+   ],
+   "minClasses": 6
+  },
+  {
+   "reqId": "RA002172",
+   "type": "MINOR",
+   "code": "MATH",
+   "title": "Minor in Mathematics",
+   "catalogYears": {
+    "start": "2027",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": true,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 1,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AMOR"
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 1 in @ @ (With ATTRIBUTE = AMOR)"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1",
+     "label": "Calculus Requirement",
+     "type": "subset",
+     "labelTag": "BNBESS",
+     "children": [
+      {
+       "id": "1-0",
+       "label": "Calculus I or Mathematics of Change I",
+       "type": "course",
+       "labelTag": "CALC1",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "MATH",
+         "number": "1400"
+        },
+        {
+         "subject": "MATH",
+         "number": "1070"
+        }
+       ]
+      },
+      {
+       "id": "1-1",
+       "label": "Calculus II or Mathematics of Change II",
+       "type": "course",
+       "labelTag": "CALC2",
+       "need": {
+        "classes": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "MATH",
+         "number": "1410"
+        },
+        {
+         "subject": "MATH",
+         "number": "1080"
+        },
+        {
+         "subject": "MATH",
+         "number": "1610"
+        },
+        {
+         "subject": "MATH",
+         "number": "1510",
+         "conditions": [
+          {
+           "code": "DWTERM",
+           "op": "<",
+           "values": [
+            "Summer 2026"
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "2",
+     "label": "LINEAR ALGEBRA & INTRO TO PROOFS",
+     "type": "group",
+     "labelTag": "AQWESD",
+     "pick": {
+      "groups": 1,
+      "of": 2
+     },
+     "children": [
+      {
+       "id": "2-0",
+       "label": "Option 1: Intro to Proofs and Linear Alg",
+       "type": "course",
+       "labelTag": "FDUSI",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "MATH",
+         "number": "3000"
+        }
+       ]
+      },
+      {
+       "id": "2-1",
+       "label": "Option 2: Alternative Algebra & Intro to Proofs",
+       "type": "group",
+       "labelTag": "THGYUD",
+       "pick": {
+        "groups": 2,
+        "of": 2
+       },
+       "children": [
+        {
+         "id": "2-1-0",
+         "label": "Linear Algebra",
+         "type": "course",
+         "labelTag": "DSUFH",
+         "need": {
+          "credits": 1,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "MATH",
+           "number": "2200"
+          },
+          {
+           "subject": "ESE",
+           "number": "2030"
+          },
+          {
+           "subject": "CIS",
+           "number": "1600"
+          }
+         ]
+        },
+        {
+         "id": "2-1-1",
+         "label": "Introduction to Proofs",
+         "type": "course",
+         "labelTag": "DFGYD",
+         "need": {
+          "credits": 1,
+          "op": "OR"
+         },
+         "courses": [
+          {
+           "subject": "MATH",
+           "number": "2030"
+          },
+          {
+           "subject": "MATH",
+           "number": "1610"
+          },
+          {
+           "subject": "CIS",
+           "number": "1600"
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "3",
+     "label": "Proof Based Math",
+     "type": "course",
+     "labelTag": "BBSSFF",
+     "need": {
+      "credits": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "MATH",
+       "number": "3000",
+       "numberEnd": "4999"
+      }
+     ]
+    },
+    {
+     "id": "4",
+     "label": "Math Electives",
+     "type": "course",
+     "labelTag": "OOJJFB",
+     "need": {
+      "credits": 3,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "MATH",
+       "number": "2000",
+       "numberEnd": "4999"
+      },
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AMMR",
+        "AMOR"
+       ]
+      }
+     ]
+    }
+   ],
+   "minCredits": 7,
+   "minGrade": "2.0"
+  }
+ ]
+}

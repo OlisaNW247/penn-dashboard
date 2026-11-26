@@ -1,0 +1,1424 @@
+{
+ "code": "COMM-BA-PPA",
+ "title": "Communication BA (Politics, Policy and Advocacy)",
+ "goals": {
+  "college": "AU",
+  "program": "AU_BA",
+  "major": "COMM",
+  "conc": "PPA",
+  "degree": "BA"
+ },
+ "goalNames": {
+  "COLLEGE": "College of Arts & Sciences AU",
+  "PROGRAM": "Arts & Sciences - BA",
+  "MAJOR": "Communication (COMM)",
+  "CONC": "Politics, Policy, and Advocacy",
+  "DEGREE": "Bachelor of Arts"
+ },
+ "provenance": {
+  "source": "https://courses.upenn.edu/api/?page=fose&route=programs-v2-info",
+  "srcdb": "202630",
+  "fetched": "2026-11-26"
+ },
+ "blocks": [
+  {
+   "reqId": "RA002258",
+   "type": "DEGREE",
+   "code": "BA",
+   "title": "Degree in Bachelor of Arts",
+   "catalogYears": {
+    "start": "2027",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "MSCI",
+       "number": "@"
+      },
+      {
+       "subject": "NSCI",
+       "number": "@"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in MSCI @, NSCI @",
+     "tag": "MXCLH_ROTC"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 8,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 8 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    }
+   ],
+   "overlays": [
+    {
+     "kind": "MINCREDIT",
+     "need": 30,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "AAMW",
+       "number": "@"
+      },
+      {
+       "subject": "AFRC",
+       "number": "@"
+      },
+      {
+       "subject": "AFST",
+       "number": "@"
+      },
+      {
+       "subject": "ALAN",
+       "number": "@"
+      },
+      {
+       "subject": "AMCS",
+       "number": "@"
+      },
+      {
+       "subject": "AMEL",
+       "number": "@"
+      },
+      {
+       "subject": "AMHR",
+       "number": "@"
+      },
+      {
+       "subject": "ANCH",
+       "number": "@"
+      },
+      {
+       "subject": "ANEL",
+       "number": "@"
+      },
+      {
+       "subject": "ANTH",
+       "number": "@"
+      },
+      {
+       "subject": "ARAB",
+       "number": "@"
+      },
+      {
+       "subject": "ARTH",
+       "number": "@"
+      },
+      {
+       "subject": "ASAM",
+       "number": "@"
+      },
+      {
+       "subject": "ASLD",
+       "number": "@"
+      },
+      {
+       "subject": "ASTR",
+       "number": "@"
+      },
+      {
+       "subject": "BCHE",
+       "number": "@"
+      },
+      {
+       "subject": "BCS",
+       "number": "@"
+      },
+      {
+       "subject": "BDS",
+       "number": "@"
+      },
+      {
+       "subject": "BENF",
+       "number": "@"
+      },
+      {
+       "subject": "BENG",
+       "number": "@"
+      },
+      {
+       "subject": "BIBB",
+       "number": "@"
+      },
+      {
+       "subject": "BIOL",
+       "number": "@"
+      },
+      {
+       "subject": "CHEM",
+       "number": "@"
+      },
+      {
+       "subject": "CHIC",
+       "number": "@"
+      },
+      {
+       "subject": "CHIN",
+       "number": "@"
+      },
+      {
+       "subject": "CIMS",
+       "number": "@"
+      },
+      {
+       "subject": "CLST",
+       "number": "@"
+      },
+      {
+       "subject": "COGS",
+       "number": "@"
+      },
+      {
+       "subject": "COLL",
+       "number": "@"
+      },
+      {
+       "subject": "COML",
+       "number": "@"
+      },
+      {
+       "subject": "COMM",
+       "number": "@"
+      },
+      {
+       "subject": "CRIM",
+       "number": "@"
+      },
+      {
+       "subject": "CZCH",
+       "number": "@"
+      },
+      {
+       "subject": "DEMG",
+       "number": "@"
+      },
+      {
+       "subject": "DYNM",
+       "number": "@"
+      },
+      {
+       "subject": "DTCH",
+       "number": "@"
+      },
+      {
+       "subject": "EALC",
+       "number": "@"
+      },
+      {
+       "subject": "ECON",
+       "number": "@"
+      },
+      {
+       "subject": "EESC",
+       "number": "@"
+      },
+      {
+       "subject": "ENGL",
+       "number": "@"
+      },
+      {
+       "subject": "FIGS",
+       "number": "@"
+      },
+      {
+       "subject": "FILP",
+       "number": "@"
+      },
+      {
+       "subject": "FOLK",
+       "number": "@"
+      },
+      {
+       "subject": "FREN",
+       "number": "@"
+      },
+      {
+       "subject": "FRSM",
+       "number": "@"
+      },
+      {
+       "subject": "GAFL",
+       "number": "@"
+      },
+      {
+       "subject": "GREK",
+       "number": "@"
+      },
+      {
+       "subject": "GRMN",
+       "number": "@"
+      },
+      {
+       "subject": "GSWS",
+       "number": "@"
+      },
+      {
+       "subject": "GUJR",
+       "number": "@"
+      },
+      {
+       "subject": "HEBR",
+       "number": "@"
+      },
+      {
+       "subject": "HIND",
+       "number": "@"
+      },
+      {
+       "subject": "HIST",
+       "number": "@"
+      },
+      {
+       "subject": "HSOC",
+       "number": "@"
+      },
+      {
+       "subject": "HSSC",
+       "number": "@"
+      },
+      {
+       "subject": "HUNG",
+       "number": "@"
+      },
+      {
+       "subject": "IGBO",
+       "number": "@"
+      },
+      {
+       "subject": "INDO",
+       "number": "@"
+      },
+      {
+       "subject": "INSP",
+       "number": "@"
+      },
+      {
+       "subject": "INTG",
+       "number": "@"
+      },
+      {
+       "subject": "INTR",
+       "number": "@"
+      },
+      {
+       "subject": "IRIS",
+       "number": "@"
+      },
+      {
+       "subject": "ITAL",
+       "number": "@"
+      },
+      {
+       "subject": "JPAN",
+       "number": "@"
+      },
+      {
+       "subject": "JWST",
+       "number": "@"
+      },
+      {
+       "subject": "KAND",
+       "number": "@"
+      },
+      {
+       "subject": "KORN",
+       "number": "@"
+      },
+      {
+       "subject": "LALS",
+       "number": "@"
+      },
+      {
+       "subject": "LATN",
+       "number": "@"
+      },
+      {
+       "subject": "LGIC",
+       "number": "@"
+      },
+      {
+       "subject": "LING",
+       "number": "@"
+      },
+      {
+       "subject": "LSMP",
+       "number": "@"
+      },
+      {
+       "subject": "MALG",
+       "number": "@"
+      },
+      {
+       "subject": "MATH",
+       "number": "@"
+      },
+      {
+       "subject": "MELC",
+       "number": "@"
+      },
+      {
+       "subject": "MLYM",
+       "number": "@"
+      },
+      {
+       "subject": "MMES",
+       "number": "@"
+      },
+      {
+       "subject": "MRTI",
+       "number": "@"
+      },
+      {
+       "subject": "MUSC",
+       "number": "@"
+      },
+      {
+       "subject": "NELC",
+       "number": "@"
+      },
+      {
+       "subject": "NRSC",
+       "number": "@"
+      },
+      {
+       "subject": "PASH",
+       "number": "@"
+      },
+      {
+       "subject": "PERS",
+       "number": "@"
+      },
+      {
+       "subject": "PHIL",
+       "number": "@"
+      },
+      {
+       "subject": "PHYS",
+       "number": "@"
+      },
+      {
+       "subject": "PLSH",
+       "number": "@"
+      },
+      {
+       "subject": "PPE",
+       "number": "@"
+      },
+      {
+       "subject": "PRTG",
+       "number": "@"
+      },
+      {
+       "subject": "PSCI",
+       "number": "@"
+      },
+      {
+       "subject": "PSYC",
+       "number": "@"
+      },
+      {
+       "subject": "PUNJ",
+       "number": "@"
+      },
+      {
+       "subject": "QUEC",
+       "number": "@"
+      },
+      {
+       "subject": "REES",
+       "number": "@"
+      },
+      {
+       "subject": "RELS",
+       "number": "@"
+      },
+      {
+       "subject": "ROML",
+       "number": "@"
+      },
+      {
+       "subject": "RUSS",
+       "number": "@"
+      },
+      {
+       "subject": "SARB",
+       "number": "@"
+      },
+      {
+       "subject": "SAST",
+       "number": "@"
+      },
+      {
+       "subject": "SKRT",
+       "number": "@"
+      },
+      {
+       "subject": "SOCI",
+       "number": "@"
+      },
+      {
+       "subject": "SPAN",
+       "number": "@"
+      },
+      {
+       "subject": "STSC",
+       "number": "@"
+      },
+      {
+       "subject": "SWAH",
+       "number": "@"
+      },
+      {
+       "subject": "SWED",
+       "number": "@"
+      },
+      {
+       "subject": "TAML",
+       "number": "@"
+      },
+      {
+       "subject": "TELU",
+       "number": "@"
+      },
+      {
+       "subject": "THAI",
+       "number": "@"
+      },
+      {
+       "subject": "THAR",
+       "number": "@"
+      },
+      {
+       "subject": "TIBT",
+       "number": "@"
+      },
+      {
+       "subject": "TIGR",
+       "number": "@"
+      },
+      {
+       "subject": "TURK",
+       "number": "@"
+      },
+      {
+       "subject": "TWI",
+       "number": "@"
+      },
+      {
+       "subject": "UKRN",
+       "number": "@"
+      },
+      {
+       "subject": "URBS",
+       "number": "@"
+      },
+      {
+       "subject": "URDU",
+       "number": "@"
+      },
+      {
+       "subject": "VIET",
+       "number": "@"
+      },
+      {
+       "subject": "VIPR",
+       "number": "@"
+      },
+      {
+       "subject": "VLST",
+       "number": "@"
+      },
+      {
+       "subject": "WOLF",
+       "number": "@"
+      },
+      {
+       "subject": "WRIT",
+       "number": "@"
+      },
+      {
+       "subject": "YDSH",
+       "number": "@"
+      },
+      {
+       "subject": "YORB",
+       "number": "@"
+      },
+      {
+       "subject": "ZULU",
+       "number": "@"
+      },
+      {
+       "subject": "GEOL",
+       "number": "@"
+      },
+      {
+       "subject": "ENVS",
+       "number": "@"
+      },
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AU16"
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MinCredits 30 in AAMW @, AFRC @, AFST @, ALAN @, AMCS @, AMEL @, AMHR @, ANCH @, ANEL @, ANTH @, ARAB @, ARTH @, ASAM @, ASLD @, ASTR @, BCHE @, BCS @, BDS @, BENF @, BENG @, BIBB @, BIOL @, CHEM @, CHIC @, CHIN @, CIMS @, CLST @, COGS @, COLL @, COML @, COMM @, CRIM @, CZCH @, DEMG @, DYNM @, DTCH @, EALC @, ECON @, EESC @, ENGL @, FIGS @, FILP @, FOLK @, FREN @, FRSM @, GAFL @, GREK @, GRMN @, GSWS @, GUJR @, HEBR @, HIND @, HIST @, HSOC @, HSSC @, HUNG @, IGBO @, INDO @, INSP @, INTG @, INTR @, IRIS @, ITAL @, JPAN @, JWST @, KAND @, KORN @, LALS @, LATN @, LGIC @, LING @, LSMP @, MALG @, MATH @, MELC @, MLYM @, MMES @, MRTI @, MUSC @, NELC @, NRSC @, PASH @, PERS @, PHIL @, PHYS @, PLSH @, PPE @, PRTG @, PSCI @, PSYC @, PUNJ @, QUEC @, REES @, RELS @, ROML @, RUSS @, SARB @, SAST @, SKRT @, SOCI @, SPAN @, STSC @, SWAH @, SWED @, TAML @, TELU @, THAI @, THAR @, TIBT @, TIGR @, TURK @, TWI @, UKRN @, URBS @, URDU @, VIET @, VIPR @, VLST @, WOLF @, WRIT @, YDSH @, YORB @, ZULU @, GEOL @, ENVS @, @ @ (With ATTRIBUTE = AU16)",
+     "label": "Arts and Sciences 30 CU Requirement",
+     "labelTag": "UWYYU4"
+    }
+   ],
+   "other": [
+    {
+     "name": "CHECKELECTIVES",
+     "text": "CHECK-ELECTIVE-CREDITS-ALLOWED"
+    }
+   ],
+   "rules": [
+    {
+     "id": "1-1",
+     "label": "There are no I, NR, or PR grades in this Degree Audit",
+     "type": "complete",
+     "labelTag": "KFSOEL",
+     "branch": "else"
+    },
+    {
+     "id": "2-1-1-0",
+     "label": "Cumulative GPA Requirement",
+     "type": "incomplete",
+     "labelTag": "NOGPA",
+     "branch": "if"
+    },
+    {
+     "id": "3",
+     "label": "General Education - Foundations",
+     "type": "block",
+     "labelTag": "GENED_FND_BLK",
+     "ref": {
+      "type": "OTHER",
+      "code": "U-GE-FND",
+      "blockId": "RA000521"
+     }
+    },
+    {
+     "id": "4",
+     "label": "General Education - Sectors",
+     "type": "block",
+     "labelTag": "GENED_SCT_BLK",
+     "ref": {
+      "type": "OTHER",
+      "code": "U-GE-SCTR",
+      "blockId": "RA001031"
+     }
+    },
+    {
+     "id": "7",
+     "label": "Major Requirements",
+     "type": "blocktype",
+     "labelTag": "MAJR_BLK",
+     "ref": {
+      "type": "MAJOR"
+     }
+    }
+   ],
+   "minCredits": 34,
+   "minResidency": 17,
+   "lastResidency": {
+    "classes": 5
+   }
+  },
+  {
+   "reqId": "RA000521",
+   "type": "OTHER",
+   "code": "U-GE-FND",
+   "title": "General Education, Foundations",
+   "catalogYears": {
+    "start": "0000",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": true,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWTRANSFERSCHOOLID",
+         "op": "=",
+         "values": [
+          "EQIVAP",
+          "EQIVIB",
+          "EQIVEX",
+          "EQIVAS"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWTRANSFERSCHOOLID = EQIVAP, EQIVIB, EQIVEX, EQIVAS)"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWGRADELETTER",
+         "op": "=",
+         "values": [
+          "S"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWGRADELETTER = S)"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1-1",
+     "label": "Foreign Language",
+     "type": "course",
+     "labelTag": "AUFL",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AULL"
+       ]
+      }
+     ],
+     "minGrade": "1.0"
+    },
+    {
+     "id": "2",
+     "label": "Quantitative Data Analysis",
+     "type": "course",
+     "labelTag": "AUQD",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUQD"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "3",
+     "label": "Formal Reasoning and Analysis",
+     "type": "course",
+     "labelTag": "AUFR",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUFR"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "4",
+     "label": "Cross Cultural Analysis",
+     "type": "course",
+     "labelTag": "AUCC",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUCC"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "5",
+     "label": "Cultural Diversity in the U.S.",
+     "type": "course",
+     "labelTag": "AUCD",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUCD"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "6",
+     "label": "Writing Course",
+     "type": "course",
+     "labelTag": "AUWR",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "WRIT",
+       "number": "0000",
+       "numberEnd": "0991"
+      },
+      {
+       "subject": "WRIT",
+       "number": "0998"
+      }
+     ],
+     "except": [
+      {
+       "subject": "WRIT",
+       "number": "135@"
+      },
+      {
+       "subject": "WRIT",
+       "number": "138@"
+      }
+     ]
+    }
+   ],
+   "minClasses": 6
+  },
+  {
+   "reqId": "RA001031",
+   "type": "OTHER",
+   "code": "U-GE-SCTR",
+   "title": "General Education, Sectors",
+   "catalogYears": {
+    "start": "2022",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWTRANSFERSCHOOLID",
+         "op": "=",
+         "values": [
+          "EQIVAP",
+          "EQIVIB",
+          "EQIVEX",
+          "EQIVAS"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWTRANSFERSCHOOLID = EQIVAP, EQIVIB, EQIVEX, EQIVAS)"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "2-0",
+     "label": "Sector 1: Society Fulfilled by Major Course",
+     "type": "complete",
+     "labelTag": "JSUHES",
+     "branch": "if"
+    },
+    {
+     "id": "3-1",
+     "label": "Sector 2: History and Tradition",
+     "type": "course",
+     "labelTag": "AUHT",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUHT"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "4-1",
+     "label": "Sector 3: Arts and Letters",
+     "type": "course",
+     "labelTag": "AUAL",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUAL"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "5-1",
+     "label": "Sector 4: Humanities and Social Sciences",
+     "type": "course",
+     "labelTag": "AUHS",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUHS"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "6-1",
+     "label": "Sector 5: The Living World",
+     "type": "course",
+     "labelTag": "AULW",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AULW"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "7-1",
+     "label": "Sector 6: The Physical World",
+     "type": "course",
+     "labelTag": "AUPW",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUPW"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "8-1-1",
+     "label": "Sector 7: Natural Science Across Disciplines",
+     "type": "course",
+     "labelTag": "AUW_SHW",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUNM"
+       ]
+      }
+     ]
+    }
+   ],
+   "minClasses": 6
+  },
+  {
+   "reqId": "RA002174",
+   "type": "MAJOR",
+   "code": "COMM",
+   "title": "Major in Communication",
+   "catalogYears": {
+    "start": "2027",
+    "stop": "9999"
+   },
+   "share": [
+    {
+     "scope": "type",
+     "type": "MAJOR"
+    },
+    {
+     "scope": "type",
+     "type": "CONC"
+    },
+    {
+     "scope": "block",
+     "type": "OTHER",
+     "code": "U-GE-FND"
+    }
+   ],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 3,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "COMM",
+       "number": "1985"
+      },
+      {
+       "subject": "COMM",
+       "number": "1995"
+      },
+      {
+       "subject": "COMM",
+       "number": "2985"
+      },
+      {
+       "subject": "COMM",
+       "number": "2995"
+      },
+      {
+       "subject": "COMM",
+       "number": "3985"
+      },
+      {
+       "subject": "COMM",
+       "number": "3995"
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 3 in COMM 1985, 1995, 2985, 2995, 3985, 3995"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 3,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "COMM",
+       "number": "2995"
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 3 in COMM 2995",
+     "tag": "COMMTR"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1",
+     "label": "COMMUNICATION CORE",
+     "type": "course",
+     "labelTag": "CORE",
+     "need": {
+      "credits": 3,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "COMM",
+       "number": "1220"
+      },
+      {
+       "subject": "COMM",
+       "number": "1240"
+      },
+      {
+       "subject": "COMM",
+       "number": "1260"
+      },
+      {
+       "subject": "COMM",
+       "number": "1280"
+      }
+     ],
+     "priority": "high"
+    },
+    {
+     "id": "2",
+     "label": "RESEARCH METHODS COURSE",
+     "type": "course",
+     "labelTag": "METH",
+     "need": {
+      "credits": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "COMM",
+       "number": "2100"
+      },
+      {
+       "subject": "@",
+       "number": "0000",
+       "numberEnd": "4999",
+       "attributes": [
+        "ACRM"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "7-0",
+     "label": "POLITICS, POLICY, AND ADVOCACY CONCENTRATION",
+     "type": "subset",
+     "labelTag": "CONC_POP",
+     "branch": "if",
+     "children": [
+      {
+       "id": "7-0-0",
+       "label": "COMM-specific Concentration Courses - Intermediate",
+       "type": "course",
+       "labelTag": "GSBDKL",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "COMM",
+         "number": "1000",
+         "numberEnd": "2999",
+         "attributes": [
+          "ACPA"
+         ]
+        }
+       ],
+       "except": [
+        {
+         "subject": "COMM",
+         "number": "2985"
+        },
+        {
+         "subject": "COMM",
+         "number": "2995"
+        }
+       ]
+      },
+      {
+       "id": "7-0-1",
+       "label": "COMM-specific Concentration Courses - Advanced",
+       "type": "course",
+       "labelTag": "AVSVDE",
+       "need": {
+        "credits": 2,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "COMM",
+         "number": "3000",
+         "numberEnd": "4999",
+         "attributes": [
+          "ACPA"
+         ]
+        }
+       ]
+      },
+      {
+       "id": "7-0-2",
+       "label": "COMM Electives - Intermediate",
+       "type": "course",
+       "labelTag": "NSWERF",
+       "need": {
+        "credits": 3,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "COMM",
+         "number": "1000",
+         "numberEnd": "2999"
+        }
+       ],
+       "except": [
+        {
+         "subject": "COMM",
+         "number": "1985"
+        },
+        {
+         "subject": "COMM",
+         "number": "1995"
+        }
+       ],
+       "priority": "low"
+      },
+      {
+       "id": "7-0-3",
+       "label": "COMM Electives - Advanced",
+       "type": "course",
+       "labelTag": "NSDVSD",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "COMM",
+         "number": "3000",
+         "numberEnd": "4999"
+        }
+       ],
+       "except": [
+        {
+         "subject": "COMM",
+         "number": "3985"
+        },
+        {
+         "subject": "COMM",
+         "number": "3995"
+        }
+       ],
+       "priority": "low"
+      },
+      {
+       "id": "7-0-4",
+       "label": "Non-COMM Electives Related to Concentration",
+       "type": "course",
+       "labelTag": "NSDFGR",
+       "need": {
+        "credits": 2,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "@",
+         "number": "@",
+         "attributes": [
+          "ACPE"
+         ]
+        }
+       ]
+      },
+      {
+       "id": "7-0-5",
+       "label": "Non-COMM Elective",
+       "type": "course",
+       "labelTag": "NSDFGZ",
+       "need": {
+        "credits": 1,
+        "op": "OR"
+       },
+       "courses": [
+        {
+         "subject": "@",
+         "number": "@",
+         "attributes": [
+          "ACGE"
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "minCredits": 14,
+   "minGpa": 2,
+   "minResidency": 7
+  }
+ ]
+}

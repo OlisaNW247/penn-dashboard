@@ -1,0 +1,1107 @@
+{
+ "code": "GRMN-MINOR",
+ "title": "Minor in German",
+ "goals": {
+  "college": "AU",
+  "program": "AU_BA_HUNTS",
+  "minor": "GRMN",
+  "degree": "BA"
+ },
+ "goalNames": {
+  "COLLEGE": "College of Arts & Sciences AU",
+  "PROGRAM": "Dual Degree - Huntsman - BA - Arts & Sciences",
+  "MINOR": "German",
+  "DEGREE": "Bachelor of Arts"
+ },
+ "provenance": {
+  "source": "https://courses.upenn.edu/api/?page=fose&route=programs-v2-info",
+  "srcdb": "202630",
+  "fetched": "2026-11-26"
+ },
+ "blocks": [
+  {
+   "reqId": "RA002258",
+   "type": "DEGREE",
+   "code": "BA",
+   "title": "Degree in Bachelor of Arts",
+   "catalogYears": {
+    "start": "2027",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "MSCI",
+       "number": "@"
+      },
+      {
+       "subject": "NSCI",
+       "number": "@"
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in MSCI @, NSCI @",
+     "tag": "MXCLH_ROTC"
+    },
+    {
+     "kind": "MAXCREDIT",
+     "max": 8,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 8 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    }
+   ],
+   "overlays": [],
+   "other": [
+    {
+     "name": "CHECKELECTIVES",
+     "text": "CHECK-ELECTIVE-CREDITS-ALLOWED"
+    }
+   ],
+   "rules": [
+    {
+     "id": "1-1",
+     "label": "There are no I, NR, or PR grades in this Degree Audit",
+     "type": "complete",
+     "labelTag": "KFSOEL",
+     "branch": "else"
+    },
+    {
+     "id": "2-1-1-0",
+     "label": "Cumulative GPA Requirement",
+     "type": "incomplete",
+     "labelTag": "NOGPA",
+     "branch": "if"
+    },
+    {
+     "id": "3",
+     "label": "General Education - Foundations",
+     "type": "block",
+     "labelTag": "GENED_FND_BLK",
+     "ref": {
+      "type": "OTHER",
+      "code": "U-GE-FND",
+      "blockId": "RA000521"
+     }
+    },
+    {
+     "id": "4",
+     "label": "General Education - Sectors",
+     "type": "block",
+     "labelTag": "GENED_SCT_BLK",
+     "ref": {
+      "type": "OTHER",
+      "code": "U-GE-SCTR",
+      "blockId": "RA001031"
+     }
+    },
+    {
+     "id": "7",
+     "label": "Major Requirements",
+     "type": "blocktype",
+     "labelTag": "MAJR_BLK",
+     "ref": {
+      "type": "MAJOR"
+     }
+    },
+    {
+     "id": "9-0",
+     "label": "Minor Requirements",
+     "type": "blocktype",
+     "labelTag": "MINR_BLK",
+     "branch": "if",
+     "ref": {
+      "type": "MINOR"
+     }
+    }
+   ],
+   "minCredits": 40,
+   "minResidency": 20,
+   "lastResidency": {
+    "classes": 5
+   }
+  },
+  {
+   "reqId": "RA000521",
+   "type": "OTHER",
+   "code": "U-GE-FND",
+   "title": "General Education, Foundations",
+   "catalogYears": {
+    "start": "0000",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": true,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWTRANSFERSCHOOLID",
+         "op": "=",
+         "values": [
+          "EQIVAP",
+          "EQIVIB",
+          "EQIVEX",
+          "EQIVAS"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWTRANSFERSCHOOLID = EQIVAP, EQIVIB, EQIVEX, EQIVAS)"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWGRADELETTER",
+         "op": "=",
+         "values": [
+          "S"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWGRADELETTER = S)"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1-1",
+     "label": "Foreign Language",
+     "type": "course",
+     "labelTag": "AUFL",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AULL"
+       ]
+      }
+     ],
+     "minGrade": "1.0"
+    },
+    {
+     "id": "2",
+     "label": "Quantitative Data Analysis",
+     "type": "course",
+     "labelTag": "AUQD",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUQD"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "3",
+     "label": "Formal Reasoning and Analysis",
+     "type": "course",
+     "labelTag": "AUFR",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUFR"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "4",
+     "label": "Cross Cultural Analysis",
+     "type": "course",
+     "labelTag": "AUCC",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUCC"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "5",
+     "label": "Cultural Diversity in the U.S.",
+     "type": "course",
+     "labelTag": "AUCD",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUCD"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "6",
+     "label": "Writing Course",
+     "type": "course",
+     "labelTag": "AUWR",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "WRIT",
+       "number": "0000",
+       "numberEnd": "0991"
+      },
+      {
+       "subject": "WRIT",
+       "number": "0998"
+      }
+     ],
+     "except": [
+      {
+       "subject": "WRIT",
+       "number": "135@"
+      },
+      {
+       "subject": "WRIT",
+       "number": "138@"
+      }
+     ]
+    }
+   ],
+   "minClasses": 6
+  },
+  {
+   "reqId": "RA001031",
+   "type": "OTHER",
+   "code": "U-GE-SCTR",
+   "title": "General Education, Sectors",
+   "catalogYears": {
+    "start": "2022",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": false,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    },
+    {
+     "kind": "MAXCLASS",
+     "max": 0,
+     "unit": "courses",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWTRANSFERSCHOOLID",
+         "op": "=",
+         "values": [
+          "EQIVAP",
+          "EQIVIB",
+          "EQIVEX",
+          "EQIVAS"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxClasses 0 in @ @ (With DWTRANSFERSCHOOLID = EQIVAP, EQIVIB, EQIVEX, EQIVAS)"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "2-1",
+     "label": "Sector 1: Society",
+     "type": "course",
+     "labelTag": "AUSO",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUSO"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "3-1",
+     "label": "Sector 2: History and Tradition",
+     "type": "course",
+     "labelTag": "AUHT",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUHT"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "4-1",
+     "label": "Sector 3: Arts and Letters",
+     "type": "course",
+     "labelTag": "AUAL",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUAL"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "5-1",
+     "label": "Sector 4: Humanities and Social Sciences",
+     "type": "course",
+     "labelTag": "AUHS",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUHS"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "6-1",
+     "label": "Sector 5: The Living World",
+     "type": "course",
+     "labelTag": "AULW",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AULW"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "7-1",
+     "label": "Sector 6: The Physical World",
+     "type": "course",
+     "labelTag": "AUPW",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUPW"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "8-1-1",
+     "label": "Sector 7: Natural Science Across Disciplines",
+     "type": "course",
+     "labelTag": "AUW_SHW",
+     "branch": "else",
+     "need": {
+      "classes": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "attributes": [
+        "AUNM"
+       ]
+      }
+     ]
+    }
+   ],
+   "minClasses": 6
+  },
+  {
+   "reqId": "RA001701",
+   "type": "MINOR",
+   "code": "GRMN",
+   "title": "Minor in German",
+   "catalogYears": {
+    "start": "2025",
+    "stop": "9999"
+   },
+   "share": [],
+   "standalone": true,
+   "limits": [
+    {
+     "kind": "MAXCREDIT",
+     "max": 0,
+     "unit": "cu",
+     "courses": [
+      {
+       "subject": "@",
+       "number": "@",
+       "conditions": [
+        {
+         "code": "DWPASSFAIL",
+         "op": "=",
+         "values": [
+          "Y"
+         ],
+         "connector": "AND"
+        },
+        {
+         "code": "DWTERM",
+         "op": "<>",
+         "values": [
+          "202010",
+          "202020",
+          "202030",
+          "202110"
+         ]
+        }
+       ]
+      }
+     ],
+     "except": [],
+     "text": "MaxCredits 0 in @ @ (With DWPASSFAIL = Y AND DWTERM <> 202010, 202020, 202030, 202110)",
+     "tag": "MXPFCOVID"
+    }
+   ],
+   "overlays": [],
+   "other": [],
+   "rules": [
+    {
+     "id": "1",
+     "label": "Intermediate German II",
+     "type": "course",
+     "labelTag": "REQ1",
+     "need": {
+      "credits": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "GRMN",
+       "number": "0400"
+      }
+     ]
+    },
+    {
+     "id": "2",
+     "label": "Texts and Contexts",
+     "type": "course",
+     "labelTag": "REQ2",
+     "need": {
+      "credits": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "GRMN",
+       "number": "1500"
+      },
+      {
+       "subject": "GRMN",
+       "number": "2100",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2025"
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "3",
+     "label": "Electives",
+     "type": "course",
+     "labelTag": "ELEC1",
+     "need": {
+      "credits": 1,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "GRMN",
+       "number": "1510"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1520"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1530"
+      },
+      {
+       "subject": "GRMN",
+       "number": "2190"
+      },
+      {
+       "subject": "GRMN",
+       "number": "2290"
+      },
+      {
+       "subject": "GRMN",
+       "number": "3110"
+      },
+      {
+       "subject": "GRMN",
+       "number": "3120"
+      },
+      {
+       "subject": "GRMN",
+       "number": "3215"
+      },
+      {
+       "subject": "GRMN",
+       "number": "3240"
+      },
+      {
+       "subject": "GRMN",
+       "number": "3270"
+      },
+      {
+       "subject": "GRMN",
+       "number": "3290"
+      },
+      {
+       "subject": "GRMN",
+       "number": "5570"
+      },
+      {
+       "subject": "GRMN",
+       "number": "5580"
+      },
+      {
+       "subject": "GRMN",
+       "number": "5610"
+      },
+      {
+       "subject": "GRMN",
+       "number": "5620"
+      },
+      {
+       "subject": "GRMN",
+       "number": "3212",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2026"
+         ]
+        }
+       ]
+      },
+      {
+       "subject": "GRMN",
+       "number": "3220",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2026"
+         ]
+        }
+       ]
+      },
+      {
+       "subject": "GRMN",
+       "number": "3260",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2026"
+         ]
+        }
+       ]
+      },
+      {
+       "subject": "GRMN",
+       "number": "3265",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2026"
+         ]
+        }
+       ]
+      },
+      {
+       "subject": "GRMN",
+       "number": "3280",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2026"
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "4",
+     "label": "Additional Electives",
+     "type": "course",
+     "labelTag": "ELEC2",
+     "need": {
+      "credits": 3,
+      "op": "OR"
+     },
+     "courses": [
+      {
+       "subject": "GRMN",
+       "number": "0012"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1010"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1020"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1030"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1040"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1050"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1060"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1065"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1080"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1090"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1100"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1110"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1111"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1120"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1130"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1132"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1140"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1146"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1150"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1151"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1153"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1160"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1170"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1210"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1301"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1303"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1304"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1305"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1306"
+      },
+      {
+       "subject": "GRMN",
+       "number": "1800"
+      },
+      {
+       "subject": "GRMN",
+       "number": "2300"
+      },
+      {
+       "subject": "GRMN",
+       "number": "4201"
+      },
+      {
+       "subject": "GRMN",
+       "number": "5260"
+      },
+      {
+       "subject": "GRMN",
+       "number": "5430"
+      },
+      {
+       "subject": "GRMN",
+       "number": "5440"
+      },
+      {
+       "subject": "GRMN",
+       "number": "5760"
+      },
+      {
+       "subject": "GRMN",
+       "number": "5770"
+      },
+      {
+       "subject": "GRMN",
+       "number": "5800"
+      },
+      {
+       "subject": "GRMN",
+       "number": "0016",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2026"
+         ]
+        }
+       ]
+      },
+      {
+       "subject": "GRMN",
+       "number": "0017",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2026"
+         ]
+        }
+       ]
+      },
+      {
+       "subject": "GRMN",
+       "number": "0018",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2026"
+         ]
+        }
+       ]
+      },
+      {
+       "subject": "GRMN",
+       "number": "1015",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2026"
+         ]
+        }
+       ]
+      },
+      {
+       "subject": "GRMN",
+       "number": "1153",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2026"
+         ]
+        }
+       ]
+      },
+      {
+       "subject": "GRMN",
+       "number": "1235",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2026"
+         ]
+        }
+       ]
+      },
+      {
+       "subject": "GRMN",
+       "number": "1300",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2026"
+         ]
+        }
+       ]
+      },
+      {
+       "subject": "GRMN",
+       "number": "1302",
+       "conditions": [
+        {
+         "code": "DWTERM",
+         "op": "<",
+         "values": [
+          "Summer 2025"
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "minCredits": 6
+  }
+ ]
+}
