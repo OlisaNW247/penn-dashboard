@@ -705,9 +705,13 @@ function runSchedule(
   params: { maxLoad: number; summer: boolean; summerLoad: number },
   policy: Policy,
   variant: 0 | 1,
+  /** Credits already registered in each term (same index as `terms`). A
+   *  term's load is registered plus planned, so these seed the load; a term
+   *  already at or over its cap simply has no room (never negative). */
+  seed: number[],
 ): Run {
   const byCi = new Map(items.map((i) => [i.ci, i]));
-  const load = terms.map(() => 0);
+  const load = terms.map((_, i) => seed[i] ?? 0);
   const placed = new Map<number, number>();
   const failed = new Set<number>();
 
@@ -797,8 +801,11 @@ function runSchedule(
     if (!done) fail(it);
   }
 
+  // A term the student is already registered in is part of the plan's span:
+  // with nothing left to place, the finish is the last registered term.
   let finishIdx = -1;
   for (const t of placed.values()) finishIdx = Math.max(finishIdx, t);
+  seed.forEach((cu, i) => { if (cu > EPS) finishIdx = Math.max(finishIdx, i); });
   const unplaced = items.filter((i) => !placed.has(i.ci)).map((i) => i.ci);
   return { placed, unplaced, finishIdx };
 }
@@ -1010,6 +1017,8 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
     terms.push(t);
   }
 
+  const seed = terms.map((t) => Math.max(0, req.registered?.[t] ?? 0));
+
   const summerOk = req.allowSummer !== false;
   // `summerLoad` is the most one summer may hold in that scenario. The
   // ordinary scenarios use the planner's cautious default (one course per
@@ -1040,8 +1049,8 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
     // "best" schedules its own course set; the others share the main one.
     const A = d.id === "best" ? bestA : mainA;
     // Two list orders; keep the one that finishes sooner (ties: the first).
-    const first = runSchedule(A.items, A.cons, terms, d, policy, 0);
-    const second = A.cons.urgent.size ? runSchedule(A.items, A.cons, terms, d, policy, 1) : first;
+    const first = runSchedule(A.items, A.cons, terms, d, policy, 0, seed);
+    const second = A.cons.urgent.size ? runSchedule(A.items, A.cons, terms, d, policy, 1, seed) : first;
     const score = (r: Run) => [r.unplaced.length, r.finishIdx] as const;
     const [fa, fb] = [score(first), score(second)];
     const run = fb[0] < fa[0] || (fb[0] === fa[0] && fb[1] < fa[1]) ? second : first;
@@ -1099,6 +1108,7 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
       title: it.course.title,
       credits: it.course.credits,
       countsToward: it.slots.map(label),
+      slotIds: it.slots.map((si) => chosenSlots[si].slot.id),
       approval,
     };
     if (approval === "petition") out.note = "counting it twice in one degree needs your advisor's approval";
@@ -1111,11 +1121,14 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
   for (const [ci, t] of chosenRun.run.placed) termOf.set(ci, t);
   for (let t = 0; t < terms.length; t++) {
     const here = items.filter((i) => termOf.get(i.ci) === t);
-    if (!here.length) continue;
+    // A term with registered courses and nothing new still appears, so the
+    // phone and the explanation see its full load.
+    if (!here.length && !(seed[t] > EPS)) continue;
     schedule.push({
       term: terms[t],
       courses: here.map(outFor),
       credits: here.reduce((s, i) => s + i.course.credits, 0),
+      ...(seed[t] > EPS ? { registeredCredits: seed[t] } : {}),
     });
   }
 
@@ -1172,6 +1185,10 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
   if (cons.hasCapstoneRule) {
     notes.push("fundamentals and leadership courses are placed before the Wharton capstone (rule for capstones from fall 2027)");
   }
+  for (const t of schedule) {
+    if (t.registeredCredits === undefined) continue;
+    notes.push(`${termLabel(t.term)} already has ${fmt(t.registeredCredits)} cu registered; the plan adds ${fmt(Math.round(t.credits * 100) / 100)} cu there`);
+  }
   const noData = items.filter((i) => noOfferingData(i.course)).length;
   if (noData) notes.push(`${noData} course${noData === 1 ? " had" : "s had"} no offering data; their terms are a guess`);
   if (chosenRun.run.unplaced.length) {
@@ -1197,7 +1214,7 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
       : `at ${fmt(req.maxLoad)} cu a semester the plan does not fit in ${HORIZON} terms`);
   }
   if (chosen.id === "best") notes.push(`best case assumes ${bestAssumptions().join("; ")}`);
-  const used = schedule.some((t) => seasonOf(t.term) === "summer");
+  const used = schedule.some((t) => t.courses.length > 0 && seasonOf(t.term) === "summer");
   if (used) notes.push("summer terms are used");
 
   // Loads above the standard one are never automatic, whichever scenario was
@@ -1244,7 +1261,7 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
     langNoted.add(c.code);
     notes.push(`${c.code} assumes you place into it with Penn's language placement exam; otherwise start with ${c.subject} 0100 (or the first course in the sequence)`);
   }
-  if (schedule.length === 0 && chosenCredits <= EPS && unfilled.length === 0) {
+  if (!schedule.some((t) => t.courses.length > 0) && chosenCredits <= EPS && unfilled.length === 0) {
     notes.push("nothing is left to plan");
   }
 

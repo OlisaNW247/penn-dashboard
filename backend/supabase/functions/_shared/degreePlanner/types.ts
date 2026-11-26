@@ -183,6 +183,11 @@ export interface PlanRequest {
   taken: string[];
   /** Courses taken per term code, for prerequisite checks and load rules. */
   history: Record<string, string[]>;
+  /** Credits already registered per future term code (term -> cu). A term's
+   *  load is registered plus planned, so the planner seeds each term with
+   *  this and offers only what is left under the cap. Omitted: nothing is
+   *  registered ahead. The wrong fix is capping the phone's table instead. */
+  registered?: Record<string, number>;
   /** The term in progress now, e.g. "202630". */
   currentTerm: string;
   /** The last term the student wants to finish by, if they said. */
@@ -215,6 +220,10 @@ export interface PlannedCourseOut {
   credits: number;
   /** Labels of the slots it fills, "computer science · technical electives". */
   countsToward: string[];
+  /** Ids of the slots it fills, same order and length as `countsToward`:
+   *  `${degreeId}|${blockId}|${ruleId}`, plus `|${courseCode}` for a slot made
+   *  per advised course. */
+  slotIds: string[];
   approval: Approval;
   note?: string;
 }
@@ -223,6 +232,9 @@ export interface PlannedTermOut {
   term: string;
   courses: PlannedCourseOut[];
   credits: number;
+  /** Credits the student is already registered for in this term (omitted
+   *  when none). `credits` is only what the plan adds. */
+  registeredCredits?: number;
 }
 
 export interface Scenario {

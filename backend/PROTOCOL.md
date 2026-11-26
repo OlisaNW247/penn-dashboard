@@ -1259,11 +1259,19 @@ Response for `plan` and `email`: `{ "answer", "actions": [], "whatIf": null,
 `plan` is `{ remainingCredits, remainingCreditsWithoutOverlap, scenarios:
 [{ id: "standard"|"summer"|"approved"|"student"|"best", label, maxLoad, summer,
 finishTerm: string|null, meetsTarget }], chosen, schedule: [{ term, credits,
-courses: [{ code, title, credits, countsToward: [string], approval:
+registeredCredits?, courses: [{ code, title, credits, countsToward: [string],
+slotIds: [string], approval:
 "automatic"|"petition"|"check", note? }] }], unfilled: [{ slotId, degreeLabel,
 label, reason }], petitions: [{ code, slots: [string], savesCredits }], notes:
 [string] }`. When `plan` is present the phone replaces its future semesters with
-`plan.schedule` and ignores `actions`.
+`plan.schedule` and ignores `actions`. `registeredCredits` (omitted when 0) is
+what the student is already registered for in that future term (taken from
+`structured.history`; `credits` is only what the plan adds, and a term's load is
+the two together, capped by the scenario's load). A term with registered courses
+and nothing new still appears, with `courses: []`. `slotIds` has the length and
+order of `countsToward`: the ids of the requirement slots the course fills,
+`degreeId|blockId|ruleId`, or `degreeId|blockId|ruleId|COURSE CODE` for a slot
+made per advised course.
 Scenario `best` (always reported, 6.5 cu semesters, summers of up to 4 cu (Engineering's limit; the other scenarios use 2) unless the student
 said no, every petition pair counted as if the advisor approved it, and the
 `wharton.language` slots treated as met by the placement exam when the student

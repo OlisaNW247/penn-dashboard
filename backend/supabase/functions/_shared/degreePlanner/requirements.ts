@@ -23,6 +23,10 @@ export interface RequirementsResult {
   degrees: Degree[];
   unfilled: Unfilled[];
   taken: string[];
+  /** Credits Penn's audits state per course code (applied courses and the
+   *  audit's own course list). Used to size terms the student is already
+   *  registered for; a course the audits do not price is absent. */
+  courseCredits: Record<string, number>;
 }
 
 // ---------------------------------------------------------------------------
@@ -416,6 +420,7 @@ export function degreesFromAudits(audits: AuditInput[]): RequirementsResult {
   const unfilled: Unfilled[] = [];
   const taken: string[] = [];
   const takenSet = new Set<string>();
+  const courseCredits: Record<string, number> = {};
 
   for (const input of audits) {
     const audit = rec(input.audit) ?? {};
@@ -444,7 +449,10 @@ export function degreesFromAudits(audits: AuditInput[]): RequirementsResult {
       return out;
     };
     const collect = (r: RuleView) => {
-      for (const a of r.applied) noteApplied(a.code);
+      for (const a of r.applied) {
+        noteApplied(a.code);
+        if (a.credits !== undefined && a.credits > 0 && courseCredits[a.code] === undefined) courseCredits[a.code] = a.credits;
+      }
       for (const c of r.children) collect(c);
     };
 
@@ -474,7 +482,12 @@ export function degreesFromAudits(audits: AuditInput[]): RequirementsResult {
       };
       for (const r of rules) walkRule(ctx, r, []);
     }
-    for (const c of arr(audit.courses)) noteApplied(normalizeCode(str(c.code)));
+    for (const c of arr(audit.courses)) {
+      const code = normalizeCode(str(c.code));
+      noteApplied(code);
+      const cr = num(c.credits);
+      if (code && cr !== undefined && cr > 0 && courseCredits[code] === undefined) courseCredits[code] = cr;
+    }
 
     // Business breadth may not use the concentration's own subjects.
     const concSubjects = new Set<string>();
@@ -505,5 +518,5 @@ export function degreesFromAudits(audits: AuditInput[]): RequirementsResult {
     };
     degrees.push({ id: input.degreeId, label: input.label, college, goals: goalsOut, slots, applied, ...(creditsSoFar !== undefined ? { creditsSoFar } : {}) });
   }
-  return { degrees, unfilled, taken };
+  return { degrees, unfilled, taken, courseCredits };
 }

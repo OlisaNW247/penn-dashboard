@@ -265,8 +265,23 @@ export async function runEngine(input: EngineInput): Promise<EngineOutput> {
   }
   if (waive.waivedLabels.length > 0) extraNotes.push(`treated as done: ${waive.waivedLabels.join(", ")}`);
 
+  // Credits already registered in future terms. The history carries those
+  // terms beside the past ones; each course is priced from Penn's audits, then
+  // the catalogue, then 1.0. The planner seeds each term's load with this, so
+  // the plan never stacks new courses onto a full registered term.
+  const registered: Record<string, number> = {};
+  for (const [term, codes] of Object.entries(structured.history)) {
+    if (!(term > structured.currentTerm)) continue;
+    let cu = 0;
+    for (const raw of new Set(codes.map(normCode))) {
+      cu += req.courseCredits[raw] ?? catalog.courses[raw]?.credits ?? 1;
+    }
+    if (cu > 0) registered[term] = cu;
+  }
+
   const request = {
     degrees: req.degrees,
+    ...(Object.keys(registered).length > 0 ? { registered } : {}),
     taken: [...taken].sort(),
     history: structured.history,
     currentTerm: structured.currentTerm,
