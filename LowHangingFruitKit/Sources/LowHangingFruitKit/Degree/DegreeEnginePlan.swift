@@ -113,11 +113,16 @@ public struct DegreeEngineCourse: Codable, Sendable, Equatable {
     /// "automatic", "petition" or "check".
     public let approval: String
     public let note: String?
+    /// `"<degreeId>|<blockId>|<ruleId>"` for each audit rule the engine filled
+    /// with this course, in the order of `countsToward`. Empty from an older
+    /// server. Parsed by `DegreeProjection.resolveSlotID`.
+    public let slotIds: [String]
 
     public init(
         code: String, title: String, credits: Double, countsToward: [String] = [],
-        approval: String = "automatic", note: String? = nil
+        approval: String = "automatic", note: String? = nil, slotIds: [String] = []
     ) {
+        self.slotIds = slotIds
         self.code = code
         self.title = title
         self.credits = credits
@@ -126,7 +131,7 @@ public struct DegreeEngineCourse: Codable, Sendable, Equatable {
         self.note = note
     }
 
-    private enum CodingKeys: String, CodingKey { case code, title, credits, countsToward, approval, note }
+    private enum CodingKeys: String, CodingKey { case code, title, credits, countsToward, approval, note, slotIds }
 
     /// Only the code is required.
     public init(from decoder: Decoder) throws {
@@ -138,6 +143,7 @@ public struct DegreeEngineCourse: Codable, Sendable, Equatable {
         self.countsToward = lossyList(String.self, in: c, forKey: .countsToward)
         self.approval = lenient(String.self, in: c, forKey: .approval) ?? "automatic"
         self.note = lenient(String.self, in: c, forKey: .note)
+        self.slotIds = lossyList(String.self, in: c, forKey: .slotIds)
     }
 }
 
@@ -145,14 +151,18 @@ public struct DegreeEngineTerm: Codable, Sendable, Equatable {
     public let term: String
     public let credits: Double
     public let courses: [DegreeEngineCourse]
+    /// Credits the student is already registered for in this term, when the
+    /// server says (absent from an older one).
+    public let registeredCredits: Double?
 
-    public init(term: String, credits: Double, courses: [DegreeEngineCourse]) {
+    public init(term: String, credits: Double, courses: [DegreeEngineCourse], registeredCredits: Double? = nil) {
         self.term = term
         self.credits = credits
         self.courses = courses
+        self.registeredCredits = registeredCredits
     }
 
-    private enum CodingKeys: String, CodingKey { case term, credits, courses }
+    private enum CodingKeys: String, CodingKey { case term, credits, courses, registeredCredits }
 
     /// Only the term is required; the credits default to the courses' sum.
     public init(from decoder: Decoder) throws {
@@ -161,6 +171,8 @@ public struct DegreeEngineTerm: Codable, Sendable, Equatable {
         let list = lossyList(DegreeEngineCourse.self, in: c, forKey: .courses)
         self.courses = list
         self.credits = lenient(Double.self, in: c, forKey: .credits) ?? list.reduce(0) { $0 + $1.credits }
+        let registered = lenient(Double.self, in: c, forKey: .registeredCredits)
+        self.registeredCredits = registered.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
     }
 }
 
@@ -289,7 +301,7 @@ extension DegreeAdvisor {
     /// semesters that fit under `DegreePlanMath.maxTerms` are kept (the latest
     /// ones fall off first). A schedule with no courses leaves the plan as it is.
     public static func applyEnginePlan(
-        _ plan: DegreeEnginePlan, to existing: DegreePlan, currentTerm: String
+        _ plan: DegreeEnginePlan, to existing: DegreePlan, currentTerm: String, now: Date = Date()
     ) -> DegreeAdvisorOutcome {
         let total = plan.schedule.reduce(0) { $0 + $1.courses.count }
         // A schedule with no course in it changes nothing: replacing the
@@ -332,7 +344,8 @@ extension DegreeAdvisor {
                     code: code, title: title.isEmpty ? nil : String(title.prefix(120)),
                     credits: course.credits,
                     countsToward: course.countsToward.isEmpty ? nil : course.countsToward,
-                    approval: course.approval))
+                    approval: course.approval,
+                    slotIds: course.slotIds.isEmpty ? nil : course.slotIds))
                 if byTerm[parsed.code] == nil { order.append(parsed.code) }
                 byTerm[parsed.code] = list
             }
@@ -356,6 +369,33 @@ extension DegreeAdvisor {
             }
         }
         terms.sort { $0.termCode < $1.termCode }
-        return DegreeAdvisorOutcome(plan: DegreePlan(terms: terms), applied: applied, skipped: skipped)
+        return DegreeAdvisorOutcome(
+            plan: DegreePlan(terms: terms, summary: summary(of: plan, now: now)), applied: applied, skipped: skipped)
+    }
+
+    /// The summary line's facts, from the scenario the engine chose; nil when
+    /// the answer names none (an older server), so such a plan reads as before.
+    /// An approval is needed by the "approved" and "best" scenarios, and by the
+    /// student's own load when it is above the normal 5.5 cu.
+    static func summary(of plan: DegreeEnginePlan, now: Date) -> DegreePlanSummary? {
+        guard let scenario = plan.chosenScenario else { return nil }
+        let needsApproval = scenario.id == "approved" || scenario.id == "best"
+            || (scenario.id == "student" && scenario.maxLoad > 5.5)
+        let finish = scenario.finishTerm.flatMap { $0.isEmpty ? nil : $0 }
+        return DegreePlanSummary(
+            finishTerm: finish, scenarioID: scenario.id, scenarioLabel: scenario.label,
+            remainingCredits: plan.remainingCredits.isFinite ? plan.remainingCredits : nil,
+            needsApproval: needsApproval, createdAt: now)
+    }
+}
+
+extension DegreeAdvisor {
+    /// What `degreeAdvisorAudits` appends to the label of a what-if audit. It
+    /// stays in what the chat and the server see and comes off for display.
+    public static let whatIfLabelSuffix = " (what if, not declared)"
+
+    /// A label as the table shows it: without the what-if suffix.
+    public static func displayLabel(_ label: String) -> String {
+        label.replacingOccurrences(of: whatIfLabelSuffix, with: "")
     }
 }

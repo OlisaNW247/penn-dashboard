@@ -18,6 +18,13 @@ import Foundation
 // planned course consumes some of it, and a course that arrives after the need
 // is spent is kept as overflow that adds nothing.
 //
+// The text "≈ NN% with plan" is the one place an in-progress rule counts as
+// complete (`withPlanShare`): it reads "when everything in progress and planned
+// is done", so a plan that fills every open rule can reach 100. The arc and the
+// bars keep the stricter `ringShare`, which leaves in progress to its own
+// segment. A planned course the planning engine assigned (`slotIds`) is laid
+// where the engine said, not where the options match.
+//
 // A rule Penn already shows as in progress is drawn in progress on the bar. It
 // can still hold planned courses and a fill of its own, but that fill is left
 // out of `openFill` and of a block's share: counting it again would draw the
@@ -79,11 +86,23 @@ public struct DegreeProjection: Sendable, Equatable {
     /// course are absent. The label is the rule's label, or the block's title when the
     /// rule's label is empty (the same choice `DegreePlanMath.openRequirements` makes).
     public let counted: [String: String]
+    /// Normalized code -> labels of EVERY requirement the course was laid against
+    /// with room, first one first. Longer than `counted` only for a course the
+    /// planning engine assigned to more than one rule.
+    public let countedAll: [String: [String]]
+    /// Like `ringShare`, but a rule Penn shows in progress counts as complete:
+    /// "when everything in progress and planned is done". Feeds only the
+    /// "≈ NN% with plan" text, never a bar or the arc, so in progress is not
+    /// drawn twice. 0 when nothing was laid against the audit.
+    public let withPlanShare: Double
 
     init(
         rules: [String: DegreeRuleProjection], placed: [String], unplaced: [String],
-        openFill: Double, ringShare: Double, counted: [String: String]
+        openFill: Double, ringShare: Double, counted: [String: String],
+        countedAll: [String: [String]] = [:], withPlanShare: Double = 0
     ) {
+        self.countedAll = countedAll
+        self.withPlanShare = withPlanShare
         self.counted = counted
         self.rules = rules
         self.placed = placed
@@ -148,6 +167,25 @@ public struct DegreeProjection: Sendable, Equatable {
         return min(room, max(0, room * ringShare))
     }
 
+    /// The gain behind the "≈ NN% with plan" text: `ringGain` with in-progress
+    /// rules counted as complete, so a plan that fills every open rule reads
+    /// about 100%. Clamped to what is left of the ring.
+    public func withPlanGain(base fraction: Double) -> Double {
+        let room = max(0, 1 - fraction)
+        return min(room, max(0, room * withPlanShare))
+    }
+
+    /// Reads one slot id from the planning engine, `degreeId|blockId|ruleId`
+    /// with an optional fourth part (a course code on a rule that advises
+    /// specific courses). The fourth and later parts are ignored on purpose:
+    /// they are not part of the rule id. Fewer than three parts, or an empty
+    /// block or rule, is unresolvable (nil).
+    public static func resolveSlotID(_ id: String) -> (degreeID: String, blockID: String, ruleID: String)? {
+        let parts = id.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count >= 3, !parts[1].isEmpty, !parts[2].isEmpty else { return nil }
+        return (parts[0], parts[1], parts[2])
+    }
+
     // MARK: Making a projection
 
     private struct Slot {
@@ -204,7 +242,8 @@ public struct DegreeProjection: Sendable, Equatable {
                     candidates.append(PlannedCourse(
                         code: code, title: course.title, credits: course.credits,
                         pickRuleKey: course.pickRuleKey, pickLabel: course.pickLabel,
-                        countsToward: course.countsToward, approval: course.approval))
+                        countsToward: course.countsToward, approval: course.approval,
+                        slotIds: course.slotIds))
                 }
             }
         }
@@ -221,7 +260,47 @@ public struct DegreeProjection: Sendable, Equatable {
         var placed: [String] = []
         var unplaced: [String] = []
         var counted: [String: String] = [:]
+        var countedAll: [String: [String]] = [:]
         for course in candidates {
+            // A course the planning engine assigned is laid exactly where it
+            // said, against every rule its slot ids resolve to in this audit
+            // (one course may fill two rules: the engine already applied
+            // Penn's sharing rules and this must not second-guess it). Ids are
+            // matched by block and rule only; the degree part is not checked,
+            // because Penn's block ids are specific to a program and the
+            // single-audit table wraps its audit under a placeholder degree
+            // id. A course none of whose ids resolve here belongs to the
+            // other degree's audit: it adds nothing here and, on purpose, does
+            // not fall back to option matching. The words-only rules the
+            // engine fills (no options, no children) are already requirements
+            // in the layout, with a need of credits, courses or one, so no
+            // rule is added to the denominator for them.
+            if let ids = course.slotIds, !ids.isEmpty {
+                var targets: [Int] = []
+                for id in ids {
+                    guard let slot = Self.resolveSlotID(id),
+                          let index = layout.keyIndex[key(blockID: slot.blockID, ruleID: slot.ruleID)],
+                          !targets.contains(index) else { continue }
+                    targets.append(index)
+                }
+                if targets.isEmpty { continue }
+                var labels: [String] = []
+                for index in targets {
+                    if slots[index].left > 1e-9 {
+                        let used = slots[index].usesCredits ? (course.credits > 0 ? course.credits : 1.0) : 1.0
+                        slots[index].left -= used
+                        slots[index].supplied += used
+                        labels.append(slots[index].label)
+                    }
+                    slots[index].planned.append(course)
+                }
+                if let first = labels.first {
+                    counted[course.code] = first
+                    countedAll[course.code] = labels
+                }
+                placed.append(course.code)
+                continue
+            }
             var listing: [Int]
             if let key = course.pickRuleKey, let index = layout.keyIndex[key] {
                 // Placed by the chat for this requirement: laid here first, and
@@ -282,9 +361,11 @@ public struct DegreeProjection: Sendable, Equatable {
 
         var openFill = 0.0
         var denominator = 0
+        var inProgressCount = 0
         func tally(_ rules: [AuditRule], blockID: String) {
             for rule in rules {
                 if rule.status == .open || rule.status == .inProgress { denominator += 1 }
+                if rule.status == .inProgress { inProgressCount += 1 }
                 if rule.status == .open {
                     openFill += entries[key(blockID: blockID, ruleID: rule.id)]?.fill ?? 0
                 }
@@ -294,7 +375,12 @@ public struct DegreeProjection: Sendable, Equatable {
         for block in audit.blocks { tally(block.rules, blockID: block.id) }
         let share = denominator > 0 ? min(1, max(0, openFill / Double(denominator))) : 0
 
-        return DegreeProjection(rules: entries, placed: placed, unplaced: unplaced, openFill: openFill, ringShare: share, counted: counted)
+        let withPlan = (denominator > 0 && !placed.isEmpty)
+            ? min(1, max(0, (openFill + Double(inProgressCount)) / Double(denominator))) : 0
+
+        return DegreeProjection(
+            rules: entries, placed: placed, unplaced: unplaced, openFill: openFill, ringShare: share,
+            counted: counted, countedAll: countedAll, withPlanShare: withPlan)
     }
 }
 

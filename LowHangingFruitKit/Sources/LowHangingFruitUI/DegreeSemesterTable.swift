@@ -74,9 +74,28 @@ struct DegreeSemesterTable: View {
     /// The muted line under a planned course for one requirement it counts
     /// toward (a requirement that still has room, per the contribution model).
     nonisolated static func fitLine(_ fit: DegreePlanFit) -> String {
-        let requirement = fit.requirement.lowercased()
-        if fit.degreeLabel.isEmpty { return "fits · \(requirement)" }
-        return "fits · \(fit.degreeLabel) · \(requirement)"
+        let requirement = DegreeAdvisor.displayLabel(fit.requirement).lowercased()
+        let label = DegreeAdvisor.displayLabel(fit.degreeLabel)
+        if label.isEmpty { return "fits · \(requirement)" }
+        return "fits · \(label) · \(requirement)"
+    }
+
+    /// At most two "fits" lines for a course: one per requirement it is laid
+    /// against, a planning-engine course's second rule included.
+    nonisolated static func fitLines(_ gains: [DegreeGain]) -> [String] {
+        var out: [String] = []
+        for gain in gains {
+            for requirement in [gain.requirement] + gain.extraRequirements {
+                out.append(fitLine(DegreePlanFit(degreeLabel: gain.degreeLabel, requirement: requirement)))
+            }
+        }
+        return Array(out.prefix(2))
+    }
+
+    /// Whether a column's cu figure is drawn as a warning, and its spoken value.
+    nonisolated static func loadIsOver(_ column: TimelineColumn) -> Bool {
+        column.kind == .future
+            && DegreeTimeline.isOverLimit(termCode: column.termCode, credits: DegreeTimeline.credits(column))
     }
 
     @State private var sheetTarget: PlanSheetTarget?
@@ -93,7 +112,13 @@ struct DegreeSemesterTable: View {
         let columns = DegreeTimeline.columns(
             history: state.degree.history, plan: plan, audit: lookupAudit, now: Date())
         let coverage = DegreeContribution.planned(plan: plan, audits: audits)
-        return Group {
+        return VStack(alignment: .leading, spacing: 6) {
+            if let summary = plan.summary {
+                Text(DegreePlanSummary.line(summary))
+                    .font(.lhfSans(12))
+                    .foregroundStyle(Color.smoothMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if isPage {
                 pageTable(columns, coverage: coverage)
             } else {
@@ -308,9 +333,12 @@ struct DegreeSemesterTable: View {
                     .buttonStyle(.plain)
                 }
             }
+            let over = Self.loadIsOver(column)
             Text("\(DegreeProgressMath.credits(credits)) cu")
                 .font(.lhfMono(12))
-                .foregroundStyle(Color.smoothMuted)
+                .foregroundStyle(over ? Color.smoothTomatoInk : Color.smoothMuted)
+                .accessibilityLabel("\(DegreeProgressMath.credits(credits)) cu")
+                .accessibilityValue(over ? "over the limit" : "")
         }
     }
 
@@ -430,8 +458,8 @@ struct DegreeSemesterTable: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } else if counts {
-                ForEach(Array(gains.prefix(2).enumerated()), id: \.offset) { _, gain in
-                    Text(Self.fitLine(DegreePlanFit(degreeLabel: gain.degreeLabel, requirement: gain.requirement)))
+                ForEach(Array(Self.fitLines(gains).enumerated()), id: \.offset) { _, line in
+                    Text(line)
                         .font(.lhfSans(11))
                         .foregroundStyle(Color.smoothMuted)
                         .lineLimit(2)
@@ -459,7 +487,8 @@ struct DegreeSemesterTable: View {
 
     /// The first two requirements the engine says a course counts toward.
     nonisolated static func engineLines(_ course: PlannedCourse) -> [String] {
-        Array((course.countsToward ?? []).filter { !$0.isEmpty }.prefix(2))
+        Array((course.countsToward ?? []).filter { !$0.isEmpty }
+            .map { DegreeAdvisor.displayLabel($0) }.prefix(2))
     }
 
     /// The small tag for a course Penn does not simply accept.

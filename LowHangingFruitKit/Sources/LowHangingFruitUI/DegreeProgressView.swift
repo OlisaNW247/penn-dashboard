@@ -155,7 +155,7 @@ enum DegreeProgressMath {
     /// replaces the number in the middle of the ring.
     static func withPlanText(base: Double, gain: Double) -> String? {
         guard gain >= 0.005 else { return nil }
-        return "≈ \(percentText((base + gain) * 100)) with plan"
+        return "≈ \(percentText(min(1, base + gain) * 100)) with plan"
     }
 
     /// Met and in-progress shares of a block's bar.
@@ -468,8 +468,10 @@ struct DegreeProgressView: View {
                     VStack(spacing: 6) {
                         if let match {
                             let ring = DegreeProgressMath.ring(for: match.audit)
-                            let gain = (projections[match.degreeID] ?? .empty).ringGain(base: ring.fraction)
-                            let planLine = DegreeProgressMath.withPlanText(base: ring.fraction, gain: gain)
+                            let projected = projections[match.degreeID] ?? .empty
+                            let gain = projected.ringGain(base: ring.fraction)
+                            let planLine = DegreeProgressMath.withPlanText(
+                                base: ring.fraction, gain: projected.withPlanGain(base: ring.fraction))
                             DegreeRingView(fraction: ring.fraction, centre: ring.centre,
                                            caption: ring.caption, diameter: 80,
                                            plannedFraction: gain, plannedLine: planLine)
@@ -483,8 +485,9 @@ struct DegreeProgressView: View {
                             .multilineTextAlignment(.center)
                         if let match {
                             let ring = DegreeProgressMath.ring(for: match.audit)
-                            let gain = (projections[match.degreeID] ?? .empty).ringGain(base: ring.fraction)
-                            if let planLine = DegreeProgressMath.withPlanText(base: ring.fraction, gain: gain) {
+                            let projected = projections[match.degreeID] ?? .empty
+                            if let planLine = DegreeProgressMath.withPlanText(
+                                base: ring.fraction, gain: projected.withPlanGain(base: ring.fraction)) {
                                 Text(planLine)
                                     .font(.lhfMono(10, weight: .semibold))
                                     .foregroundStyle(Color.smoothCobaltInk)
@@ -685,8 +688,11 @@ struct DegreeProgressView: View {
         let ring = DegreeProgressMath.ring(for: audit)
         // Read from the body so a course added in the table redraws the ring.
         let projection = DegreeProjection.make(plan: state.degreePlan, audit: audit)
-        let gain = projection.ringGain(base: ring.fraction + (tag == nil ? 0 : ring.extraFraction))
-        let planLine = DegreeProgressMath.withPlanText(base: ring.fraction, gain: gain)
+        let ringBase = ring.fraction + (tag == nil ? 0 : ring.extraFraction)
+        let gain = projection.ringGain(base: ringBase)
+        // The text counts in-progress rules as done; the arc does not.
+        let planLine = DegreeProgressMath.withPlanText(
+            base: ringBase, gain: projection.withPlanGain(base: ringBase))
         return VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center, spacing: 16) {
                 VStack(spacing: 6) {

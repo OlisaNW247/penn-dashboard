@@ -123,6 +123,23 @@ public enum DegreeTimeline {
         return held + sketched
     }
 
+    /// The most a fall or spring semester should hold, and a summer.
+    public static let normalLimit: Double = 6.5
+    public static let summerLimit: Double = 4
+
+    /// Whether a column's credits are above what Penn's schools allow without
+    /// an approval: more than 6.5 cu in a fall or spring, more than 4 in a
+    /// summer. A code that is not a term is judged as fall or spring.
+    public static func isOverLimit(termCode: String, credits: Double) -> Bool {
+        let limit: Double
+        if let term = Term(code: termCode), term.season == .summer {
+            limit = summerLimit
+        } else {
+            limit = normalLimit
+        }
+        return credits.isFinite && credits > limit + 1e-9
+    }
+
     /// The narrowest a page-layout cell may be: a course chip plus its remove
     /// button.
     public static let minimumPageCellWidth: Double = 112

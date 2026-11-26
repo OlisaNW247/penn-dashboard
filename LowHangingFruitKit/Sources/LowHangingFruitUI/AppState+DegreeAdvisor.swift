@@ -199,7 +199,7 @@ extension AppState {
             if let enginePlan = current.plan {
                 outcome = DegreeAdvisor.applyEnginePlan(
                     enginePlan, to: before,
-                    currentTerm: currentBrief.structured?.currentTerm ?? Term(date: now).code)
+                    currentTerm: currentBrief.structured?.currentTerm ?? Term(date: now).code, now: now)
             } else {
                 outcome = DegreeAdvisor.apply(current.actions, to: before, brief: currentBrief)
             }
@@ -270,7 +270,7 @@ extension AppState {
     /// the model knows it is not declared; appended when no entry has that id.
     nonisolated static func degreeAdvisorAudits(_ audits: [DegreeLabeledAudit], replacing degreeID: String,
                                                 with audit: DegreeAudit, name: String) -> [DegreeLabeledAudit] {
-        let swap = DegreeLabeledAudit(degreeID: degreeID, label: "\(name) (what if, not declared)", audit: audit)
+        let swap = DegreeLabeledAudit(degreeID: degreeID, label: "\(name)\(DegreeAdvisor.whatIfLabelSuffix)", audit: audit)
         var out = audits
         if let index = out.firstIndex(where: { $0.degreeID == degreeID }) {
             out[index] = swap

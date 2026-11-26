@@ -77,15 +77,28 @@ struct DegreeAdvisorView: View {
         return String(format: "%.1f", rounded)
     }
 
+    /// One scenario row. "best" plans at the top load with 4 cu summers and the
+    /// approvals, so it must not read like "approved" (the same load and
+    /// summers, no extras): `6.5 cu · 4 cu summers · approvals → spring 2028`.
+    nonisolated static func scenarioText(_ scenario: DegreeEngineScenario) -> String {
+        var text: String
+        if scenario.id == "best" {
+            text = "\(creditsText(scenario.maxLoad)) cu · 4 cu summers · approvals"
+        } else {
+            text = "\(creditsText(scenario.maxLoad)) cu · " + (scenario.summer ? "summer" : "no summer")
+        }
+        if let finish = scenario.finishTerm, !finish.isEmpty {
+            text += " → \(DegreePlanMath.termLabel(finish))"
+        }
+        return text
+    }
+
     /// The card under an answer that carries an engine plan.
     nonisolated static func planLines(_ plan: DegreeEnginePlan) -> DegreeAdvisorPlanLines {
         let scenarios = plan.scenarios.map { scenario -> DegreeAdvisorPlanLines.Scenario in
-            var text = "\(creditsText(scenario.maxLoad)) cu · " + (scenario.summer ? "summer" : "no summer")
-            if let finish = scenario.finishTerm, !finish.isEmpty {
-                text += " → \(DegreePlanMath.termLabel(finish))"
-            }
             return DegreeAdvisorPlanLines.Scenario(
-                text: text, isChosen: scenario.id == plan.chosen, meetsTarget: scenario.meetsTarget)
+                text: scenarioText(scenario), isChosen: scenario.id == plan.chosen,
+                meetsTarget: scenario.meetsTarget)
         }
         let totals = "\(creditsText(plan.remainingCredits)) cu left · "
             + "\(creditsText(plan.remainingCreditsWithoutOverlap)) without double counting"

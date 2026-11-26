@@ -35,8 +35,13 @@ public struct DegreeGain: Sendable, Equatable, Hashable {
     public let requirement: String
     /// 0...100. Can be 0 for a course that counts but moves nothing.
     public let points: Double
+    /// Further requirements in the same audit a planning-engine course is laid
+    /// against (it may fill two). Empty for every other course.
+    public let extraRequirements: [String]
 
-    public init(degreeID: String, degreeLabel: String, requirement: String, points: Double) {
+    public init(degreeID: String, degreeLabel: String, requirement: String, points: Double,
+                extraRequirements: [String] = []) {
+        self.extraRequirements = extraRequirements
         self.degreeID = degreeID
         self.degreeLabel = degreeLabel
         self.requirement = requirement
@@ -152,7 +157,8 @@ public enum DegreeContribution {
                         degreeID: entry.degreeID,
                         degreeLabel: label(of: entry, among: audits.count),
                         requirement: requirement,
-                        points: points(before: lacking, after: full, base: base)))
+                        points: points(before: lacking, after: full, base: base),
+                        extraRequirements: Array((full.countedAll[code] ?? []).dropFirst())))
                 }
             }
         }

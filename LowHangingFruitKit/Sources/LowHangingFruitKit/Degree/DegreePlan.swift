@@ -26,13 +26,21 @@ public struct PlannedCourse: Codable, Sendable, Hashable, Identifiable {
     /// "petition" or "check"). The table shows them; nothing computes with them.
     public let countsToward: [String]?
     public let approval: String?
+    /// Set only for a course the planning engine placed: the audit rules it
+    /// decided the course fills, as `"<degreeId>|<blockId>|<ruleId>"` (the same
+    /// order as `countsToward`). The projection honours them as given: the
+    /// engine already applied Penn's sharing rules, and the phone must not
+    /// second-guess it. Nil for every course the student or the chat placed.
+    public let slotIds: [String]?
     public var id: String { code }
 
     public init(
         code: String, title: String?, credits: Double,
         pickRuleKey: String? = nil, pickLabel: String? = nil,
-        countsToward: [String]? = nil, approval: String? = nil
+        countsToward: [String]? = nil, approval: String? = nil,
+        slotIds: [String]? = nil
     ) {
+        self.slotIds = slotIds
         self.countsToward = countsToward
         self.approval = approval
         self.code = code
@@ -42,7 +50,7 @@ public struct PlannedCourse: Codable, Sendable, Hashable, Identifiable {
         self.pickLabel = pickLabel
     }
 
-    private enum CodingKeys: String, CodingKey { case code, title, credits, pickRuleKey, pickLabel, countsToward, approval }
+    private enum CodingKeys: String, CodingKey { case code, title, credits, pickRuleKey, pickLabel, countsToward, approval, slotIds }
 
     /// The pick fields are decoded if present so a `degree-plan.json` written
     /// before they existed still loads: a failed decode quarantines the file.
@@ -55,6 +63,7 @@ public struct PlannedCourse: Codable, Sendable, Hashable, Identifiable {
         self.pickLabel = try container.decodeIfPresent(String.self, forKey: .pickLabel)
         self.countsToward = try container.decodeIfPresent([String].self, forKey: .countsToward)
         self.approval = try container.decodeIfPresent(String.self, forKey: .approval)
+        self.slotIds = try container.decodeIfPresent([String].self, forKey: .slotIds)
     }
 }
 
@@ -70,17 +79,92 @@ public struct PlannedTerm: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
+/// What the planning engine said about the plan it wrote, kept with the plan so
+/// the table can say so in one line. It describes the table exactly as the
+/// engine left it: any edit by hand drops it (`DegreePlanMath` does that), and
+/// the chat's undo brings the earlier plan back with its earlier summary.
+public struct DegreePlanSummary: Codable, Sendable, Equatable {
+    /// `YYYYTT` of the semester the engine's scenario finishes in, if it does.
+    public let finishTerm: String?
+    public let scenarioID: String
+    public let scenarioLabel: String
+    /// Credits the engine says are left to plan, if it said.
+    public let remainingCredits: Double?
+    /// True when the chosen scenario leans on an approval (a heavier load, a
+    /// petition, the placement exam).
+    public let needsApproval: Bool
+    public let createdAt: Date
+
+    public init(
+        finishTerm: String?, scenarioID: String, scenarioLabel: String,
+        remainingCredits: Double?, needsApproval: Bool, createdAt: Date
+    ) {
+        self.finishTerm = finishTerm
+        self.scenarioID = scenarioID
+        self.scenarioLabel = scenarioLabel
+        self.remainingCredits = remainingCredits
+        self.needsApproval = needsApproval
+        self.createdAt = createdAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case finishTerm, scenarioID, scenarioLabel, remainingCredits, needsApproval, createdAt
+    }
+
+    /// Lenient: a summary with a key missing still reads, because a failed
+    /// decode of the plan file quarantines the whole file.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.finishTerm = try? container.decodeIfPresent(String.self, forKey: .finishTerm)
+        self.scenarioID = (try? container.decodeIfPresent(String.self, forKey: .scenarioID)) ?? ""
+        self.scenarioLabel = (try? container.decodeIfPresent(String.self, forKey: .scenarioLabel)) ?? ""
+        self.remainingCredits = try? container.decodeIfPresent(Double.self, forKey: .remainingCredits)
+        self.needsApproval = (try? container.decodeIfPresent(Bool.self, forKey: .needsApproval)) ?? false
+        self.createdAt = (try? container.decodeIfPresent(Date.self, forKey: .createdAt))
+            ?? Date(timeIntervalSince1970: 0)
+    }
+
+    /// The one quiet line above the semester table: "plan · would finish
+    /// spring 2028 · 19 cu to go · needs approval". It says "would", because
+    /// whether anything counts is Penn's word, and it is lower case like the
+    /// rest of the screen. Without a finish term it says so instead of guessing.
+    public static func line(_ summary: DegreePlanSummary) -> String {
+        var parts = ["plan"]
+        if let finish = summary.finishTerm, !finish.isEmpty {
+            parts.append("would finish \(DegreePlanMath.termLabel(finish))")
+        } else {
+            parts.append("no finish semester")
+        }
+        if let left = summary.remainingCredits, left.isFinite, left > 0 {
+            parts.append("\(creditsText(left)) cu to go")
+        }
+        if summary.needsApproval { parts.append("needs approval") }
+        return parts.joined(separator: " · ")
+    }
+
+    /// One decimal at most, none when whole: "19", "19.5".
+    public static func creditsText(_ value: Double) -> String {
+        guard value.isFinite, abs(value) < 1e9 else { return "0" }
+        let rounded = (value * 10).rounded() / 10
+        if rounded == rounded.rounded() { return String(Int(rounded)) }
+        return String(format: "%.1f", rounded)
+    }
+}
+
 public struct DegreePlan: Codable, Sendable, Equatable {
     /// Ascending by `termCode`, each code once.
     public var terms: [PlannedTerm]
+    /// Set only while the plan is exactly what the planning engine wrote.
+    public var summary: DegreePlanSummary?
 
-    public init(terms: [PlannedTerm] = []) {
+    public init(terms: [PlannedTerm] = [], summary: DegreePlanSummary? = nil) {
         self.terms = terms
+        self.summary = summary
     }
 
     public static let empty = DegreePlan()
 
-    private enum CodingKeys: String, CodingKey { case terms }
+    private enum CodingKeys: String, CodingKey { case terms, summary }
 
     /// Lenient on purpose, as `DegreeSnapshot` is: a file with a key missing
     /// (or `{}`) must read as an empty plan rather than fail, because a failed
@@ -88,6 +172,7 @@ public struct DegreePlan: Codable, Sendable, Equatable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.terms = try container.decodeIfPresent([PlannedTerm].self, forKey: .terms) ?? []
+        self.summary = try? container.decodeIfPresent(DegreePlanSummary.self, forKey: .summary)
     }
 }
 
@@ -211,6 +296,7 @@ public enum DegreePlanMath {
         guard let code = next, !plan.terms.contains(where: { $0.termCode == code }) else { return plan }
         var out = plan
         out.terms.append(PlannedTerm(termCode: code))
+        out.summary = nil
         return out
     }
 
@@ -242,7 +328,10 @@ public enum DegreePlanMath {
         out.terms[index].courses.append(PlannedCourse(
             code: code, title: course.title, credits: course.credits,
             pickRuleKey: course.pickRuleKey, pickLabel: course.pickLabel,
-            countsToward: course.countsToward, approval: course.approval))
+            countsToward: course.countsToward, approval: course.approval,
+            slotIds: course.slotIds))
+        // A hand edit means the engine's summary no longer describes the table.
+        out.summary = nil
         return out
     }
 
@@ -279,6 +368,7 @@ public enum DegreePlanMath {
         } else {
             out.terms[to].courses.append(moved)
         }
+        out.summary = nil
         return out
     }
 
@@ -287,6 +377,7 @@ public enum DegreePlanMath {
         let wanted = normalizedCode(courseCode)
         var out = plan
         out.terms[index].courses.removeAll { normalizedCode($0.code) == wanted }
+        if out.terms[index].courses.count != plan.terms[index].courses.count { out.summary = nil }
         return out
     }
 
@@ -297,6 +388,7 @@ public enum DegreePlanMath {
         guard plan.terms.count > 1, let last = plan.terms.last, last.courses.isEmpty else { return plan }
         var out = plan
         out.terms.removeLast()
+        out.summary = nil
         return out
     }
 
