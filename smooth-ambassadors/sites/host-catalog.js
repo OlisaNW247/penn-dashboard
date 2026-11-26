@@ -8,12 +8,19 @@
 // the build's alias only applies to imports made from worker/, so this import
 // reaches the real catalog.
 
-export { CHANNELS, parseScanKey, posterImagePath } from "../worker/catalog.js";
+export { CHANNELS, RETIRED, parseScanKey, posterImagePath } from "../worker/catalog.js";
+import { SCHOOLS as SOURCE_SCHOOLS, RETIRED } from "../worker/catalog.js";
 
 export const APP_STORE_URL = SMOOTH_HOST.appStore;
 
+// canvasHosts (the install count's host-to-school map) is not something the host
+// file knows, so it is read from the source catalog by school id; a school the
+// host has and the catalog lacks simply has none.
 export const SCHOOLS = Object.fromEntries(
-  [...SMOOTH_HOST.schools].map(([id, name]) => [id, id === "upenn" ? { name, legacy: true } : { name }]),
+  [...SMOOTH_HOST.schools].map(([id, name]) => [
+    id,
+    { name, ...(id === "upenn" ? { legacy: true } : {}), ...(SOURCE_SCHOOLS[id]?.canvasHosts ? { canvasHosts: SOURCE_SCHOOLS[id].canvasHosts } : {}) },
+  ]),
 );
 
 export const UPENN_ONLY = [...SMOOTH_HOST.upennOnly];
@@ -29,6 +36,12 @@ export function posterName(poster) {
 export function designsFor(school) {
   if (!SMOOTH_HOST.schools.has(school)) return [];
   return [...SMOOTH_HOST.posters.keys()].filter((k) => school === "upenn" || !UPENN_ONLY.includes(k));
+}
+
+// Retired designs are a fixed list in the real catalog, so it is the same
+// list here; the host Map keeps them because printed codes still scan.
+export function offeredDesignsFor(school) {
+  return designsFor(school).filter((d) => !RETIRED.includes(d));
 }
 
 export function isValidCombo(school, poster) {

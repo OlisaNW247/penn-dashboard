@@ -580,6 +580,56 @@ build to the phone, apply the migration and deploy `sync`, `pair`,
   before pairing, so a fresh store install reads Canvas. Still unproven on
   real Canvas: the submission read and the feed to the phone; on real Ed:
   everything.
+- 2026-11-05, evening: **the first collection pass on the owner's 0.1.2
+  install hung** (`collectRunAtV1` 17:03 UTC, no summary, no holdings, no
+  files seen 50 minutes later, while the 5-minute device sync kept
+  pushing). The collector had no timeouts, and `collectRun` hands every
+  later caller the same stuck promise, so one request or one PDF that
+  never finishes blocks collection for the life of the worker; Ed never
+  got its turn. 0.1.3: a 30 s timeout on every collector, files and Ed
+  request (`adapters/timeout.js`), a 60 s cap per PDF (counted
+  `unparseable`, remembered), a 25-minute deadline on the whole pass
+  (`stopped: "deadline"` summary, the slot freed, an abandoned pass can
+  never overwrite a newer summary), and a progress marker
+  (`collectProgressV1`: phase, course i/n, request count; never a title
+  or URL) so the next stall says where it is. 542 tests. Where the
+  17:03 pass stuck is not known; the marker will say next time.
+- 2026-11-11: **the first complete pass on a store install**, on the
+  owner's new laptop (0.1.3; the 0.1.2 hang was on the old loaner, whose
+  stuck pass was never diagnosed): 16 courses, 1513 documents, 402 PDFs
+  extracted with none failed, 641 uploaded in 4 batches, 1528 requests,
+  no errors, no rate limit, about 15 minutes; the server gained 565 rows
+  from it (328 `file`, 227 `assignment`, 7 `announcement`, 3 `page`).
+  `ed: none`: the owner opened Ed while the pass was running, the token's
+  forced run got the running pass back and was lost. 0.1.4 queues a
+  forced run behind an in-flight pass and starts it when that pass ends
+  (`queuedForce` in `collectRun`; 543 tests). Ed on real Ed is still
+  unproven.
+- 2026-11-12: the harness also proves the **submission feed to the
+  phone**: the fake Canvas reports one assignment submitted and one not,
+  the laptop's sealed snapshot is decrypted in the harness with the
+  pairing key (AES-256-GCM, nonce||ciphertext||tag, no derivation, no
+  AAD; reproduced independently of `src/`) and holds a completion for the
+  submitted one at Canvas's `submitted_at` and none for the other; the
+  snapshot never travels in plaintext. Broken on purpose (the fake says
+  unsubmitted) it fails 2 checks. Found on the way: the harness's seeded
+  pairing key had been 48 bytes, so no earlier run had sealed a snapshot
+  (the Ed checks never depended on one); section 4b seeds a real 32-byte
+  key. The phone's side of applying a laptop completion is covered by the
+  Swift `SyncApplyPlan` tests and was seen live on 2026-10-23. This is
+  the rigorous form of the check the owner asked for, since a phone with
+  a live Canvas session marks submissions done on its own and proves
+  nothing about the laptop.
+- 2026-11-12, later: **Ed and the submission feed proven on the owner's
+  laptop** (0.1.3, the new laptop): the summary reads `ed: "in"`, the
+  work list `canvasSubmissions: "in"` with 126 assignments seen as
+  submitted, and the server holds 12 `ed` rows from the extension (the
+  first ever; newest 12:24 UTC), so the laptop read real Ed boards and
+  uploaded posts the phone had not. With the harness proof of the sealed
+  snapshot, every pipe is now seen working live: collection, PDFs, the
+  phone exchange, Ed, and submissions. The extension is good to go for
+  other students; the one thing to tell them is to open edstem.org once
+  after Chrome starts, which the popup says when it applies.
 - 2026-11-05, later: **the popup lost its dashboard** (owner's decision:
   the extension is not a product, it exists to gather data for the phone).
   Unpaired it is the pairing flow as before; paired it is the header, one

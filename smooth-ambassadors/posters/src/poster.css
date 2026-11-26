@@ -1,0 +1,24 @@
+@font-face { font-family: "Satoshi"; src: url("../../../LowHangingFruitKit/Sources/LowHangingFruitUI/Resources/Satoshi-Variable.ttf"); font-weight: 300 900; }
+@font-face { font-family: "Satoshi"; src: url("../../../LowHangingFruitKit/Sources/LowHangingFruitUI/Resources/Satoshi-VariableItalic.ttf"); font-weight: 300 900; font-style: italic; }
+@font-face { font-family: "Space Mono"; src: url("../../../LowHangingFruitKit/Sources/LowHangingFruitUI/Resources/SpaceMono-Bold.ttf"); font-weight: 700; }
+@font-face { font-family: "Space Mono"; src: url("../../../LowHangingFruitKit/Sources/LowHangingFruitUI/Resources/SpaceMono-Regular.ttf"); font-weight: 400; }
+@font-face { font-family: "Familjen"; src: url("../../../LowHangingFruitKit/Sources/LowHangingFruitUI/Resources/FamiljenGrotesk-Variable.ttf"); font-weight: 400 700; }
+:root {
+  --paper: #ffffff; --surface: #f2e5c9; --rule: #d9c9a6; --ink: #1b1714; --muted: #7c7060;
+  --tomato: #f07256; --marigold: #f7a844; --lemon: #f5d353; --teal: #40b3a5; --cobalt: #699ae7; --grape: #af85f0;
+  --tomato-ink: #b63b23; --marigold-ink: #985700; --lemon-ink: #746400; --teal-ink: #176d65; --cobalt-ink: #345ea8; --grape-ink: #7044a6;
+}
+* { box-sizing: border-box; margin: 0; }
+html, body { width: 2376px; height: 3672px; background: var(--paper); color: var(--ink); font-family: "Satoshi", sans-serif; overflow: hidden; }
+.page { position: relative; width: 2376px; height: 3672px; padding: 200px 170px 170px; display: flex; flex-direction: column; }
+h1 { font-weight: 800; letter-spacing: -0.035em; line-height: 0.92; }
+.mono { font-family: "Space Mono", monospace; }
+/* footer: S mark, wordmark, and the sticker slot the ambassador fills */
+.foot { margin-top: auto; display: flex; align-items: flex-end; justify-content: space-between; }
+.brand { display: flex; align-items: center; gap: 44px; }
+.mark { width: 200px; height: 200px; border-radius: 56px; background: #36e3dd; display: grid; place-items: center; overflow: hidden; }
+.mark img { width: 200px; height: 200px; display: block; }
+.brand .w { font-weight: 800; font-size: 108px; letter-spacing: -0.04em; line-height: 1; }
+.brand .s { font-size: 40px; font-weight: 500; color: var(--muted); margin-top: 18px; letter-spacing: 0.01em; }
+.qr { width: 640px; height: 640px; border-radius: 48px; border: 10px dashed var(--rule); display: grid; place-content: center; text-align: center; color: var(--muted); font-size: 40px; font-weight: 600; line-height: 1.35; }
+.qr small { display: block; font-size: 32px; font-weight: 500; }

@@ -8,6 +8,10 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Miniflare } from "miniflare";
 import { ideaTests } from "./ideas-suite.mjs";
+import { captureTests } from "./captures-suite.mjs";
+import { existsSync, readFileSync as readFile } from "node:fs";
+import { extractCanvasHosts, findCatalogFiles, OUT as HOSTS_JSON, SWIFT_SOURCES } from "../scripts/gen-canvas-hosts.mjs";
+import { installTests } from "./installs-suite.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FOUNDER = "test-founder-token-0123456789";
@@ -38,7 +42,7 @@ before(async () => {
     },
   });
   const db = await mf.getD1Database("DB");
-  const sql = ["0001_ambassadors.sql", "0002_poster_ideas.sql"].map((f) => readFileSync(join(root, "migrations", f), "utf8")).join("\n");
+  const sql = ["0001_ambassadors.sql", "0002_poster_ideas.sql", "0003_captures.sql", "0004_installs.sql"].map((f) => readFileSync(join(root, "migrations", f), "utf8")).join("\n");
   const clean = sql.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n");
   for (const stmt of clean.split(";").map((s) => s.trim()).filter(Boolean)) {
     await db.prepare(stmt).run();
@@ -77,8 +81,16 @@ test("existing routes: /api/stats lists exactly the live rows, in the live order
   const s = await r.json();
   assert.deepEqual(Object.keys(s), ["rows"]);
   const live = JSON.parse(readFileSync(join(root, "test/fixtures/live-stats-shape.json"), "utf8")).rows;
-  assert.equal(s.rows.length, 62);
-  assert.deepEqual(s.rows.map(({ total, ...rest }) => rest), live);
+  // The 62 live rows of 2026-11-10 are all still there, in their order
+  // (retiring a design never removes its row); the designs added on
+  // 2026-11-22 follow them within each school, one row per school.
+  const liveKeys = new Set(live.map((r) => r.poster));
+  assert.equal(s.rows.length, 62 + 5 * 5);
+  assert.deepEqual(s.rows.filter((r) => liveKeys.has(r.poster)).map(({ total, ...rest }) => rest), live);
+  for (const school of ["upenn", "umiami", "uva", "case-western", "clark"]) {
+    const tail = s.rows.filter((r) => r.school === school).slice(-5).map((r) => r.poster);
+    assert.deepEqual(tail, ["missed", "moved", "one-list", "sweeper", "ask"], school);
+  }
   assert.deepEqual(Object.keys(s.rows[0]), ["school", "schoolName", "poster", "name", "total"]);
   const total = (school, poster) => s.rows.find((x) => x.school === school && x.poster === poster).total;
   assert.equal(total("upenn", "ib"), 40);
@@ -197,10 +209,49 @@ test("two-tap drop log, post log, checklist, feedback, pause", async () => {
   assert.match(page, /paused until/);
 });
 
-test("stickers page renders a QR per design", async () => {
+test("stickers page renders a QR per offered design, none for a retired one", async () => {
   const t = await (await get(`/a/${token}/stickers`)).text();
-  assert.equal((t.match(/<svg class="qr"/g) || []).length, 12);
+  const { offeredDesignsFor, RETIRED } = await import("../worker/catalog.js");
+  assert.equal((t.match(/<svg class="qr"/g) || []).length, offeredDesignsFor("uva").length);
+  assert.equal(RETIRED.length, 2);
+  for (const d of RETIRED) assert.doesNotMatch(t, new RegExp(`/p/${d}\\b`), d);
   assert.doesNotMatch(t, new RegExp(token));
+});
+
+// Retired designs (Marco, 2026-11-21: "Tabard rush list, what does that even
+// mean for a non-Penn student?", "have you seen these two ... get rid of
+// that one") leave everything an ambassador is handed and nothing a printed
+// code depends on.
+test("plan.json carries no contacts key when FOUNDER_CONTACTS is unset", async () => {
+  const plan = await (await get(`/a/${token}/plan.json?anon=sidechat&tz=300`)).json();
+  assert.equal("contacts" in plan, false);
+});
+
+test("a retired design is not offered, but its printed codes still scan and count", async () => {
+  const { RETIRED, designsFor, offeredDesignsFor } = await import("../worker/catalog.js");
+  assert.deepEqual(RETIRED, ["these-two", "tabard"]);
+  for (const school of ["upenn", "uva", "umiami", "case-western", "clark"]) {
+    for (const d of RETIRED) {
+      assert.ok(designsFor(school).includes(d), `${school} still accepts ${d}`);
+      assert.ok(!offeredDesignsFor(school).includes(d), `${school} no longer offers ${d}`);
+    }
+  }
+  // Nothing handed out names them: the plan, the page's gallery and drop chips.
+  const plan = await (await get(`/a/${token}/plan.json?anon=sidechat&tz=300`)).json();
+  assert.deepEqual(plan.posters.map((p) => p.key), offeredDesignsFor("uva"));
+  const page = await (await get(`/a/${token}`)).text();
+  assert.doesNotMatch(page, /tabard|these-two/);
+  // The printed codes keep working: a plain scan, the ambassador's poster link, the stats row.
+  const before = await total("uva/tabard");
+  assert.equal((await get("/scan/uva/tabard")).status, 302);
+  assert.equal(await total("uva/tabard"), before + 1);
+  assert.equal((await get(`/r/${ref}/p/these-two`)).status, 302);
+  assert.equal(await total("uva/these-two"), 1);
+  const stats = await (await get("/api/stats")).json();
+  assert.ok(stats.rows.some((r) => r.school === "uva" && r.poster === "tabard"));
+  assert.ok(stats.rows.some((r) => r.school === "upenn" && r.poster === "these-two"));
+  // A drop of one still logs (an ambassador may hold printed copies).
+  assert.equal((await post(`/a/${token}/drop`, { design: "tabard", copies: "1" })).status, 303);
 });
 
 test("founder view reflects everything and digest skips paused", async () => {
@@ -231,20 +282,19 @@ test("public leaderboard has schools only, no people", async () => {
   assert.ok(uva.recent >= 2);
 });
 
-test("plan.json: today's post carries the ambassador's link and their anon app", async () => {
+test("plan.json: today's post is a bare post with its reply, in their anon app", async () => {
   const r = await get(`/a/${token}/plan.json?anon=sidechat&tz=300`);
   assert.equal(r.status, 200);
   const p = await r.json();
   assert.equal(p.school, "uva");
   assert.equal(p.schoolName, "UVA");
   assert.ok(p.today && typeof p.today.text === "string");
-  if (p.today.kind === "anon") {
-    assert.equal(p.today.channel, "sidechat");
-    assert.match(p.today.text, new RegExp(`https://example.test/r/${ref}/s/sidechat`));
-  }
-  if (p.today.channel) assert.match(p.today.text, /example\.test\/r\//);
+  assert.equal(p.today.kind, "anon");
+  assert.equal(p.today.channel, "sidechat");
+  assert.doesNotMatch(p.today.text, /http/);
+  assert.equal(p.today.reply, "Smooth for Students on the App Store");
   assert.equal(p.checklist.find((c) => c.key === "download").done, true);
-  assert.equal(p.messages.length, 6);
+  assert.equal(p.messages.length, 2);
   assert.ok(p.numbers.linkOpens >= 1);
   assert.doesNotMatch(JSON.stringify(p), /555/);
   // The same day gives the same post; the next day moves on.
@@ -264,26 +314,48 @@ test("the app's posts get JSON instead of a redirect", async () => {
   assert.equal(me.posts, 2);
 });
 
-test("every daily entry has a kind the plan understands", async () => {
-  const m = JSON.parse(readFileSync(join(root, "worker/templates/messages.json"), "utf8"));
-  assert.ok(m.daily.length >= 10);
-  for (const d of m.daily) assert.ok(["anon", "gc", "ig", "dm", "rest"].includes(d.kind), d.kind);
-  assert.ok(m.daily.filter((d) => d.kind === "anon").length >= 7);
-  // Olisa, 2026-11-12: the anonymous posts say more than "canvas and gradescope
-  // deadlines". Across the bank they cover the three things the app does, and the
-  // sweeper is an alarm, never a phone call, in every message an ambassador can copy.
-  const anon = m.daily.filter((d) => d.kind === "anon").map((d) => d.text);
-  for (const theme of [/everywhere your professor posts/, /\btree\b/, /sweeper/]) {
-    assert.ok(anon.filter((t) => theme.test(t)).length >= 3, String(theme));
+const REPLY = "Smooth for Students on the App Store";
+const bank = () => JSON.parse(readFileSync(join(root, "worker/templates/messages.json"), "utf8"));
+const playbookExamples = () => JSON.parse(readFileSync(join(root, "worker/templates/playbook.json"), "utf8")).examples;
+
+test("plan.json messages are exactly the playbook's two examples (drift guard)", async () => {
+  const [q, l] = playbookExamples();
+  const p = await (await get(`/a/${token}/plan.json?anon=fizz&tz=300`)).json();
+  assert.deepEqual(p.messages.map((m) => m.key), ["question", "list"]);
+  assert.equal(p.messages[0].text, q.post);
+  assert.equal(p.messages[1].text, l.post);
+  for (const m of p.messages) assert.equal(m.reply, REPLY);
+  assert.equal(q.reply, REPLY);
+  assert.equal(l.reply, REPLY);
+});
+
+test("today alternates the two posts, never rests, and carries the reply", async () => {
+  const { dailyPost } = await import("../worker/data.js");
+  const [q, l] = playbookExamples();
+  const seen = [];
+  for (let d = 100; d < 104; d++) {
+    const t = dailyPost({ daily: bank().daily, dayIndex: d, anonApp: "sidechat" });
+    assert.notEqual(t.kind, "rest");
+    assert.equal(t.reply, REPLY);
+    seen.push(t.text);
   }
-  // Some posts are in a hype voice, and a tip says to post the story ones when true.
-  assert.ok(anon.some((t) => t.startsWith("smooth just saved my life")));
-  assert.ok(anon.some((t) => t.startsWith("this new smooth app is crazy")));
-  assert.ok(m.posting_tips.some((t) => /when they're true/.test(t)));
-  for (const t of [...m.daily, ...m.messages].map((x) => x.text)) {
-    assert.doesNotMatch(t, /\bcalls? you\b|phone call|ed discussion|\bedstem\b/i, t.slice(0, 40));
-    if (/sweeper/.test(t)) assert.match(t, /rings|alarm/, t.slice(0, 40));
+  assert.ok(seen.every((t) => t === q.post || t === l.post));
+  for (let i = 1; i < seen.length; i++) assert.notEqual(seen[i], seen[i - 1]);
+  assert.equal(new Set(seen).size, 2);
+});
+
+test("the bank holds only the two posts, with no links or placeholders", () => {
+  const m = bank();
+  const [q, l] = playbookExamples();
+  assert.equal(m.messages.length, 2);
+  assert.equal(m.daily.length, 2);
+  assert.deepEqual(m.daily.map((d) => d.text), [q.post, l.post]);
+  for (const d of m.daily) {
+    assert.equal(d.kind, "anon");
+    assert.equal(d.reply, REPLY);
   }
+  for (const t of [...m.daily, ...m.messages].map((x) => x.text)) assert.doesNotMatch(t, /http|\{|\}/);
+  assert.ok(!m.posting_tips.some((t) => /saved my life/.test(t)));
 });
 
 // ---- the private code never appears in anything posted or printed
@@ -298,15 +370,55 @@ test("the token is nowhere in posts, messages or stickers; only the ref is", asy
   const plan = await (await get(`/a/${token}/plan.json?anon=fizz&tz=300`)).json();
   const texts = [plan.today.text, ...plan.messages.map((m) => m.text)];
   for (const t of texts) assert.ok(!t.includes(token), t);
-  for (const t of texts)
-    for (const m of t.match(/https?:\/\/\S*\/(?:a|r)\/\S+/g) || []) assert.match(m, new RegExp(`/r/${ref}/`), m);
-  assert.ok(plan.messages.some((m) => m.text.includes(`/r/${ref}/s/`)));
   assert.match(plan.page, new RegExp(`/a/${token}$`));
   const stickers = await (await get(`/a/${token}/stickers`)).text();
   assert.ok(!stickers.includes(token), "stickers page");
   const page = await (await get(`/a/${token}`)).text();
   assert.doesNotMatch(page, new RegExp(`/a/${token}/(s|p)/`));
-  assert.match(page, new RegExp(`/r/${ref}/s/`));
+  assert.match(page, /copy reply/);
+  assert.ok(page.includes(playbookExamples()[0].post));
+  // The two posts carry no link, so the page keeps one "copy my link" button
+  // on the public ref: without it the tracked share links would be nowhere.
+  assert.match(page, new RegExp(`/r/${ref}/s/dm"`));
+  assert.match(page, /copy my link/);
+  assert.doesNotMatch(page, /opens: \d+ total/);
+});
+
+test("plan.json carries a public share link per channel, never the token", async () => {
+  const plan = await (await get(`/a/${token}/plan.json?anon=fizz&tz=300`)).json();
+  assert.ok(plan.links && typeof plan.links.gc === "string", "links.gc");
+  assert.match(plan.links.gc, new RegExp(`/r/${ref}/s/gc$`));
+  for (const link of Object.values(plan.links)) assert.ok(!link.includes(token), link);
+});
+
+test("plan.json carries the posting guidance, with the share link filled in and the token nowhere", async () => {
+  const plan = await (await get(`/a/${token}/plan.json?anon=fizz&tz=300`)).json();
+  const g = plan.guidance;
+  assert.equal(g.test, undefined);
+  assert.equal(typeof g.footer, "string");
+  assert.ok(g.footer.length > 0 && g.footer.length < 160);
+  assert.deepEqual(g.kinds.map((k) => k.key), ["plug", "sneak"]);
+  for (const k of g.kinds) {
+    assert.ok(k.label.length > 0, k.key);
+    assert.ok(k.example.text.length > 0 && k.example.text.length < 300, k.key);
+    assert.ok(k.example.reply.trim().length > 0, k.key);
+    assert.ok(k.example.reply.includes("/r/"), k.key);
+    assert.ok(!k.example.text.includes("http"), k.key);
+    assert.ok(k.how.length > 0 && k.how.length < 120, k.key);
+    assert.equal(k.prompts, undefined);
+    assert.equal(k.examples, undefined);
+  }
+  const all = JSON.stringify(g);
+  for (const bad of ["{link}", "hoco", token]) assert.ok(!all.includes(bad), bad);
+  const [q, l] = playbookExamples();
+  assert.equal(plan.messages.length, 2);
+  assert.equal(plan.messages[0].text, q.post);
+  assert.equal(plan.messages[1].text, l.post);
+});
+
+test("every guidance example has a reply (template only)", () => {
+  const g = JSON.parse(readFileSync(join(root, "worker/templates/guidance.json"), "utf8"));
+  for (const k of g.kinds) assert.ok(k.example.reply.trim().length > 0, k.key);
 });
 
 test("the old token share and poster routes are gone and count nothing", async () => {
@@ -461,4 +573,40 @@ ideaTests({
   founder: FOUNDER,
   db: () => mf.getD1Database("DB"),
   req: (path, init) => mf.dispatchFetch("https://example.test" + path, { redirect: "manual", ...init }),
+});
+
+captureTests({
+  test,
+  skip: false,
+  founder: FOUNDER,
+  db: () => mf.getD1Database("DB"),
+  req: (path, init) => mf.dispatchFetch("https://example.test" + path, { redirect: "manual", ...init }),
+});
+
+installTests({
+  test,
+  skip: false,
+  founder: FOUNDER,
+  db: () => mf.getD1Database("DB"),
+  req: (path, init) => mf.dispatchFetch("https://example.test" + path, { redirect: "manual", ...init }),
+});
+
+test("canvas-hosts.json matches the Swift school catalog it is generated from", (t) => {
+  const files = existsSync(SWIFT_SOURCES) ? findCatalogFiles() : [];
+  if (!files.length) return t.skip("LowHangingFruitKit's CanvasSchoolCatalogData.swift is not present; run from the full repository");
+  const fresh = extractCanvasHosts(files.map((f) => readFile(f, "utf8")));
+  assert.deepEqual(JSON.parse(readFile(HOSTS_JSON, "utf8")), fresh, "run: npm run gen:hosts");
+});
+
+test("plan.json: contacts come from FOUNDER_CONTACTS, leniently, and the key is absent otherwise", async () => {
+  const { parseContacts } = await import("../worker/founder-lines.js");
+  const good = JSON.stringify([{ name: "olisa", phone: "+1 555 010 0100" }, { name: " marco ", phone: "+1 555 010 0101" }]);
+  assert.deepEqual(parseContacts({ FOUNDER_CONTACTS: good }), [
+    { name: "olisa", phone: "+1 555 010 0100" }, { name: "marco", phone: "+1 555 010 0101" }]);
+  assert.deepEqual(parseContacts({}), []);
+  assert.deepEqual(parseContacts({ FOUNDER_CONTACTS: "not json" }), []);
+  assert.deepEqual(parseContacts({ FOUNDER_CONTACTS: '{"a":1}' }), []);
+  assert.deepEqual(parseContacts({ FOUNDER_CONTACTS: JSON.stringify([{ name: "x" }, { name: "", phone: "1" }, 4, null]) }), []);
+  const five = JSON.stringify([1, 2, 3, 4, 5].map((i) => ({ name: "n" + i, phone: "+1 555 010 010" + i })));
+  assert.equal(parseContacts({ FOUNDER_CONTACTS: five }).length, 4);
 });

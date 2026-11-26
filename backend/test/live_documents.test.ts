@@ -122,6 +122,7 @@ Deno.test("the complete-set id read excludes every window kind and scopes by col
     ["eq", "course_id", "c"],
     ["not", "kind", "in", "(announcement,ed)"],
     ["is", "gone_at", null],
+    ["neq", "kind", "file"],
     ["eq", "collector", "phone"],
   ]);
 });
@@ -134,6 +135,18 @@ Deno.test("the extension's complete-set read leaves out server-written rows", as
     ["eq", "course_id", "c"],
     ["not", "kind", "in", "(announcement,ed)"],
     ["is", "gone_at", null],
+    ["neq", "kind", "file"],
     ["neq", "collector", "server"],
+  ]);
+});
+
+Deno.test("a report that lists files does not exclude file rows", async () => {
+  const { client, recorded } = fakeClient([{ id: "file:c:1" }]);
+  await selectLiveDocumentIDsForCourse(client, "c", "phone", true);
+  assertEquals(recorded[0].calls, [
+    ["eq", "course_id", "c"],
+    ["not", "kind", "in", "(announcement,ed)"],
+    ["is", "gone_at", null],
+    ["eq", "collector", "phone"],
   ]);
 });

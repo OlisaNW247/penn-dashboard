@@ -27,10 +27,9 @@ public enum PosterIdeaImage {
         guard !data.isEmpty, maxDimension > 0,
               let source = CGImageSourceCreateWithData(data as CFData, nil),
               CGImageSourceGetCount(source) > 0 else { return nil }
-        let qualities: [Double] = [0.8, 0.65, 0.5, 0.35]
-        var dimension = maxDimension
         // ImageIO may scale a thumbnail up to the requested size, so cap the
         // request at the picture's own long side: never upsize.
+        var dimension = maxDimension
         if let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
            let w = props[kCGImagePropertyPixelWidth] as? Int,
            let h = props[kCGImagePropertyPixelHeight] as? Int, max(w, h) > 0 {
@@ -43,12 +42,52 @@ public enum PosterIdeaImage {
                 kCGImageSourceThumbnailMaxPixelSize: dimension,
             ]
             guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
-            for quality in qualities {
-                if let jpeg = encodeJPEG(image, quality: quality), jpeg.count <= maxBytes { return jpeg }
-            }
+            if let jpeg = encode(image, maxBytes: maxBytes) { return jpeg }
             dimension = max(1, dimension / 2)
         }
         return nil
+    }
+
+    /// The same shrink-and-encode for a picture that is already pixels, such
+    /// as a frame read out of a screen recording. The JPEG is built from the
+    /// pixels alone, so no metadata can ride along. Scales down with
+    /// CoreGraphics when the long side is over `maxDimension` (one halving of
+    /// the size and the quality steps again when the bytes will not fit, like
+    /// the Data entry point); never upsizes.
+    public static func prepared(cgImage: CGImage, maxDimension: Int, maxBytes: Int) -> Data? {
+        guard maxDimension > 0 else { return nil }
+        var dimension = max(1, min(maxDimension, max(cgImage.width, cgImage.height)))
+        for _ in 0..<2 {
+            let image = scaled(cgImage, longSide: dimension) ?? cgImage
+            if let jpeg = encode(image, maxBytes: maxBytes) { return jpeg }
+            dimension = max(1, dimension / 2)
+        }
+        return nil
+    }
+
+    private static func encode(_ image: CGImage, maxBytes: Int) -> Data? {
+        for quality in [0.8, 0.65, 0.5, 0.35] {
+            if let jpeg = encodeJPEG(image, quality: quality), jpeg.count <= maxBytes { return jpeg }
+        }
+        return nil
+    }
+
+    /// `image` resized so its long side is `longSide`, or nil when it already
+    /// is no longer than that (the caller then keeps the original) or a
+    /// context cannot be made.
+    private static func scaled(_ image: CGImage, longSide: Int) -> CGImage? {
+        let long = max(image.width, image.height)
+        guard long > longSide, long > 0 else { return nil }
+        let ratio = Double(longSide) / Double(long)
+        let width = max(1, Int((Double(image.width) * ratio).rounded()))
+        let height = max(1, Int((Double(image.height) * ratio).rounded()))
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage()
     }
 
     private static func encodeJPEG(_ image: CGImage, quality: Double) -> Data? {

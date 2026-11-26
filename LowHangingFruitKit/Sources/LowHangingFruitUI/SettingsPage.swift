@@ -183,6 +183,19 @@ struct SettingsPage: View {
             }
             .smoothSectionBackground(.smoothTeal)
 
+            // "agent", its own section right after accounts (Marco,
+            // 2026-11-11: "Connected agent should be a different block in
+            // profile under agent"). It sat inside accounts for a day, where
+            // the switch read as one more account row.
+            if state.canUseAgentConnection {
+                Section {
+                    ProfileAgentRows()
+                } header: {
+                    SmoothSectionHeader(AgentConnectionCopy.sectionHeader, accent: .smoothCobalt)
+                }
+                .smoothSectionBackground(.smoothGrape)
+            }
+
             Section {
                 Picker("appearance", selection: Binding(
                     get: { state.appearanceMode },
@@ -200,7 +213,6 @@ struct SettingsPage: View {
             .smoothSectionBackground(.smoothCobalt)
 
             remindersSection
-            SweeperSettingsSection()
             ProfileClassesSection { showRecurring = true }
             ProfileNotificationsSection()
             iCloudSyncSection
@@ -378,15 +390,25 @@ struct SettingsPage: View {
     @ViewBuilder
     private var ambassadorSection: some View {
         Section {
-            NavigationLink(value: ContentView.DashRoute.ambassador) {
+            // A button and not a NavigationLink: the page is its own
+            // destination (`path = [.ambassador]`, Marco 2026-11-22), so back
+            // goes to the dashboard and not through Profile.
+            Button {
+                AmbassadorModel.shared.requestOpen()
+            } label: {
                 HStack {
                     Text("ambassador mode")
                     Spacer()
                     Text(ambassador.statusLine)
                         .font(.lhfSecondary(12, weight: .medium))
                         .foregroundStyle(Color.smoothMuted)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.v2DateText)
                 }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
         } header: {
             SmoothSectionHeader("ambassador", accent: .smoothCobalt)
         }

@@ -23,13 +23,21 @@ Three things, and nothing else:
    `initialize` and `appStore` through `SMOOTH_HOST`, so there is one list
    of schools and designs.
 
-The embedded poster images (`imageData`) are byte-identical.
+The embedded poster images (`imageData`) were byte-identical until
+2026-11-22; since then `build-sites.mjs` may add designs to the `posters`
+Map and their pictures to `imageData` (every original picture kept as data,
+the line re-serialised). Designs are never removed there: a retired design
+(`RETIRED` in the generated section) still scans and still counts, it is
+only no longer offered to ambassadors.
 
 Do not edit the generated section by hand. Its source is the
 `smooth-ambassadors` project (`worker/`, `sites/`, `scripts/build-sites.mjs`
 in the `penn-dashboard` repository). `node scripts/build-sites.mjs
 <this repository>` rewrites the section and is safe to run twice. Adding a
-school or poster to the Maps at the top of the file needs no rebuild. A new
+school to the Maps at the top of the file needs no rebuild. A poster is
+added by putting its key, name and preview in the `smooth-ambassadors`
+project (`worker/catalog.js`, `posters/previews/{key}.jpg`) and rebuilding,
+which writes the Map entry and the pictures here. A new
 UPenn-only poster also needs adding to `SMOOTH_HOST.upennOnly`.
 
 ## Sign-in: there are no accounts
@@ -65,12 +73,14 @@ The app (JSON):
 
 | Request | Answer |
 |---|---|
-| `GET /a/{code}/plan.json?anon={fizz\|sidechat\|yikyak}&tz={minutes west of UTC}` | 200, the plan: `name`, `school`, `schoolName`, `title`, `status`, `pausedUntil`, `page`, `appStore`, `numbers`, `today`, `messages`, `checklist`, `tips`, `channels`, `generatedAt`, and since 2026-11-11 three additive keys: `posters` (`[{key, name, image, scans}]` for their school, `image` an absolute URL, `scans` that design's total there), `dashboard` (absolute `/?school={school}`) and `ideas` (`{sent, limit: 30, dailyLimit: 5}`). 404 for an unknown code. |
+| `GET /a/{code}/plan.json?anon={fizz\|sidechat\|yikyak}&tz={minutes west of UTC}` | 200, the plan: `name`, `school`, `schoolName`, `title`, `status`, `pausedUntil`, `page`, `appStore`, `numbers`, `today`, `messages`, `checklist`, `tips`, `channels`, `generatedAt`, and since 2026-11-11 three additive keys: `posters` (`[{key, name, image, scans}]` for their school, `image` an absolute URL, `scans` that design's total there), `dashboard` (absolute `/?school={school}`) and `ideas` (`{sent, limit: 30, dailyLimit: 5}`), and since 2026-11-18 three more additive keys: `playbook` (`{lead, steps, examples}` from `worker/templates/playbook.json`), `suggested` (`[{id, text, reply, ts}]`, only that ambassador's, newest first, always present) and `captures` (`{feed: {framesPerRecording: 16, frameBytes: 200000, sentToday, dailyLimit: 32, stored, limit: 96}, results: {imageBytes: 300000, sentToday, dailyLimit: 8, stored, limit: 60}, styles: [{key, label}]}`). 404 for an unknown code. Since 2026-11-19 `today` and each `messages` entry may carry an optional string `reply` (the follow-up to post under the post), `messages` is two entries (`question`, `list`), no post text holds a link, and `today.kind` is never `rest`. Since 2026-11-22 `numbers` may also carry `schoolInstalls` and `schoolInstallsRecent` (integers): students at that school who connected Canvas on an app build that reports it, all time and new in the window. |
+| `POST /api/install` `{"host": "canvas.upenn.edu", "kind": "new"}` | Public, no code. The app's one anonymous count per install. 200 `{"ok": true}` for any well-formed body (also when the host is unknown or a limit swallowed it), 400 for a malformed one, 405 for other methods. Stores a per-host daily tally and nothing about the caller. |
 | `POST /a/{code}/post` `{"channel": "...", "place": "daily"}` | 200 `{"ok": true, "message": "..."}`. 400 for an unknown channel. |
 | `POST /a/{code}/check` `{"step": "...", "done": "1"\|"0"}` | 200 `{"ok": true}` |
 | `POST /a/{code}/feedback` `{"body": "..."}` | 200 `{"ok": true}` |
 | `POST /a/{code}/pause` `{"weeks": "4"\|"0"}` | 200 `{"ok": true}` |
 | `POST /a/{code}/idea` `{"note": "...", "image": "<base64>", "type": "..."}` | 200 `{"ok": true, "message": "sent. thank you."}`. At least one of note and image, else 400. Note is trimmed and cut at 500 characters. Image is base64 only (a `data:...;base64,` prefix and whitespace are stripped), at most 600,000 bytes decoded (413), and its type is decided from its first bytes (JPEG, PNG or WebP, else 400): the `type` field is ignored. Limits per ambassador: 5 a UTC day and 30 stored (429). Errors are `{"ok": false, "message"}` for JSON requests, plain text otherwise. This route alone accepts a body up to 900,000 characters; every other route keeps 16 KB. |
+| `POST /a/{code}/capture` `{"kind": "feed"\|"result", "image": "<base64>", ...}` | 200 `{"ok": true, "message": "sent."}` (303 back to the page for a form post). Image rules as for `idea` (base64, prefix and whitespace stripped, type sniffed from the bytes, JPEG/PNG/WebP else 400) but the decoded cap is 200,000 bytes for `feed` and 300,000 for `result` (413). `feed` also needs `batch` (`[a-z0-9]{8,32}`, one recording) and `seq` (0 to 15, the still's place): a (batch, seq) already held answers 200 and stores nothing, so a retry is safe. `result` takes `platform` (fizz, sidechat, yikyak, else other), `style` (question, list, pitch, else other), optional `upvotes` and `views` (digits, at most 10,000,000, else stored NULL) and a `note` cut at 300. Limits per ambassador, enforced inside the INSERT: feed 32 a UTC day, 96 stored, 16 per batch; result 8 a day, 60 stored (429). `upvotes` and `views` may carry thousands separators ("1,200", "1 200"); "1.2k", "12.5", "-5" and "1e3" store NULL. A global ceiling also applies, see Schema. Body cap 900,000 characters, like `idea`. |
 
 A POST answers JSON when `Accept` or `Content-Type` is `application/json`.
 The same routes take form posts from the web page and answer a 303 back to it.
@@ -97,8 +107,11 @@ The founders:
 |---|---|
 | `GET /f/{FOUNDER_TOKEN}` | roster, numbers, feedback, the weekly digest generator. This is where an ambassador is added and where their code comes from. |
 | `POST /f/{FOUNDER_TOKEN}/add\|update\|reminder\|replied\|feedback-seen\|idea-seen\|idea-delete` | roster and idea actions |
-| `GET /f/{FOUNDER_TOKEN}/idea/{id}` | a poster idea's image bytes with the sniffed type, `nosniff`, `private, no-store`, `Content-Security-Policy: default-src 'none'; sandbox`, `inline`. 404 for an id with no image. Ambassadors cannot reach it. |
-| `GET /f/{FOUNDER_TOKEN}/export.json` | everything, for a backup (poster ideas without their image data: id, ambassador, ts, note, mime, hasImage) |
+| `POST /f/{FOUNDER_TOKEN}/suggest` `id` (an ambassador), `text` (1 to 600), `reply` (optional, cut at 300) | stores a post for that ambassador to try, at most 20 each (429, enforced inside the INSERT). A `left` ambassador is refused like an unknown one (404 `no such ambassador.`). `suggest-delete` takes the suggestion's `id`. |
+| `POST /f/{FOUNDER_TOKEN}/capture-seen\|capture-delete` `id`, or `amb` plus `batch` | acts on one capture, or on one ambassador's whole recording (the batch id alone never matches another ambassador's). Ids are digits only, as for every founder action, and are checked against the value exactly as sent, so `"1 "` or `"1\n"` is refused (400) and never read as 1. |
+| `GET /f/{FOUNDER_TOKEN}/capture/{id}` | a capture's image bytes, with exactly the idea route's headers. Ambassadors cannot reach it. |
+| `GET /f/{FOUNDER_TOKEN}/idea/{id}` | a poster idea's image bytes with the sniffed type, `nosniff`, `private, no-store`, `Content-Security-Policy: default-src 'none'; sandbox`, `inline`. 404 for an id with no image. Ambassadors cannot reach it. The id uses the same strict digits rule: `/capture/01`, `/capture/+1` and `/capture/1%20` are 404. |
+| `GET /f/{FOUNDER_TOKEN}/export.json` | everything, for a backup (poster ideas without their image data: id, ambassador, ts, note, mime, hasImage; `captures` as metadata only, with no image data; and `suggestions`) |
 
 Public: `GET /api/leaderboard?days=14` gives counts per school. No names,
 contacts or codes.
@@ -115,15 +128,27 @@ The code reads them as `env.FOUNDER_TOKEN` and so on, next to `env.DB`.
 
 ## Schema
 
-`migrations/0001_ambassadors.sql` and `migrations/0002_poster_ideas.sql` (the
-`poster_ideas` table, image kept as base64 TEXT, with an index), reference copies of what the Worker
+`migrations/0001_ambassadors.sql`, `migrations/0002_poster_ideas.sql` (the
+`poster_ideas` table, image kept as base64 TEXT, with an index) and `migrations/0003_captures.sql` (`captures`, feed stills and post-result screenshots in one table with the image as base64 TEXT, and `suggestions`), reference copies of what the Worker
 creates by itself. Every statement is `CREATE TABLE IF NOT EXISTS` or
 `CREATE INDEX IF NOT EXISTS`: `ambassadors` (with `token` and `ref`), `amb_hits`, `scan_events`,
-`activity`, `checklist`, `feedback`, `reminders`, and `poster_ideas`. The Worker runs both files once
+`activity`, `checklist`, `feedback`, `reminders`, `poster_ideas`, `captures` and `suggestions`. The Worker runs all three files once
 per isolate on the first ambassador request or the first scan, the same way
 the tracker has always created `scans`. Nothing alters, drops or rewrites
 `scans` or any of its rows. Applying the file as a migration first is
 equally fine and changes nothing.
+
+**Capture ceiling.** `captures` holds base64 images, and each ambassador's limits
+are independent: 96 feed frames of 200,000 bytes plus 60 results of 300,000 bytes
+is about 26 MB decoded, about 34 MB of base64 text, for one code. A roster of
+thirty leaked or hostile codes could therefore store about a gigabyte in a
+database that also holds the real scan counts, so a global number bounds the
+table whatever the roster: `CAPTURES_GLOBAL_LIMIT` (1500 rows, in
+`worker/data.js`), enforced inside the same INSERT statements as the
+per-ambassador limits, never by a count read first. When it is the global ceiling
+that refuses a write the answer is 429 `we're full right now. tell olisa or
+marco.` Founders free room by deleting recordings and results from the founder
+page.
 
 Names and contacts of real people live only in D1. Export `scans` before
 the first deploy anyway.

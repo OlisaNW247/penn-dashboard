@@ -53,7 +53,7 @@ Deno.test("buildMessages orders: instructions, context document, profiles, histo
 
   const last = messages[messages.length - 1];
   assert.equal(last.role, "user");
-  assert.ok(last.content.startsWith("Current date: 2026-09-07T12:00:00.000Z"));
+  assert.ok(last.content.startsWith("Current instant (UTC): 2026-09-07T12:00:00.000Z"));
   assert.ok(last.content.includes("QUESTION: When is the midterm?"));
 });
 
@@ -90,7 +90,7 @@ Deno.test("buildMessages omits the excerpts block from the user turn when excerp
   const last = messages[messages.length - 1];
   assert.equal(
     last.content,
-    "Current date: 2026-09-07T12:00:00.000Z\n\nQUESTION: When is the midterm?",
+    "Current instant (UTC): 2026-09-07T12:00:00.000Z\n\nQUESTION: When is the midterm?",
   );
 });
 
@@ -100,7 +100,7 @@ Deno.test("buildMessages includes the excerpts block ahead of QUESTION: when non
   const last = messages[messages.length - 1];
   assert.equal(
     last.content,
-    `Current date: 2026-09-07T12:00:00.000Z\n\n${excerpts}\n\nQUESTION: When is the midterm?`,
+    `Current instant (UTC): 2026-09-07T12:00:00.000Z\n\n${excerpts}\n\nQUESTION: When is the midterm?`,
   );
 });
 
@@ -264,4 +264,39 @@ Deno.test("SYSTEM_INSTRUCTIONS explains the Sections sentence, including that ex
   assert.ok(SYSTEM_INSTRUCTIONS.includes('"Sections:" sentence'));
   assert.ok(SYSTEM_INSTRUCTIONS.includes("exam rooms or one-off room changes"));
   assert.ok(SYSTEM_INSTRUCTIONS.includes("(the student's section)"));
+});
+
+Deno.test("COURSE PROFILES render as Markdown: heading per course, bullets, arrays joined, nesting capped", () => {
+  const profiles = {
+    "PHYS 0151 — lab site (section 151)": { attendancePolicy: "two absences\nallowed" },
+    "PHYS 0151 — lecture site (section 401)": {
+      officeHours: ["Mon 3pm", "Wed 4pm"],
+      latePolicy: "24 hour grace",
+      grading: { homework: 30, exams: { midterm: 25, final: { weight: 45, note: "x" } } },
+    },
+  };
+  const messages = buildMessages({ ...BASE_INPUT, profiles });
+  const block = messages.find((m) => m.content.startsWith("COURSE PROFILES"))?.content;
+  assert.equal(
+    block,
+    [
+      "COURSE PROFILES (extracted from syllabi):",
+      "### PHYS 0151 — lab site (section 151)",
+      "- attendancePolicy: two absences allowed",
+      "",
+      "### PHYS 0151 — lecture site (section 401)",
+      "- grading:",
+      "  - exams:",
+      "    - final: {\"note\":\"x\",\"weight\":45}",
+      "    - midterm: 25",
+      "  - homework: 30",
+      "- latePolicy: 24 hour grace",
+      "- officeHours: Mon 3pm; Wed 4pm",
+    ].join("\n"),
+  );
+});
+
+Deno.test("SYSTEM_INSTRUCTIONS tells the model to resolve relative days against the student's local line", () => {
+  assert.ok(SYSTEM_INSTRUCTIONS.includes("never against the UTC instant"));
+  assert.ok(SYSTEM_INSTRUCTIONS.includes("name the calendar date you resolved it to"));
 });

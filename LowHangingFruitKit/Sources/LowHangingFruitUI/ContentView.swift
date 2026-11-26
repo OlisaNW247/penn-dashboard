@@ -30,6 +30,8 @@ struct ContentView: View {
     @StateObject private var vm: DashboardViewModel
 
     @Environment(\.scenePhase) private var scenePhase
+    /// The last-hour poll (`LastHourPoller`): runs while the scene is active.
+    @State private var lastHourPoller = LastHourPoller()
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
     @Environment(\.feedbackNoticeContext) private var feedbackNoticeContext
@@ -41,16 +43,33 @@ struct ContentView: View {
     /// reminder (`NotificationResponseRouter`) or a `smooth://ambassador`
     /// link (`RootView`), consumed here by pushing Profile → ambassador.
     @ObservedObject private var ambassador = AmbassadorModel.shared
+    /// A tap on the missed-Duo-push notice (`DuoWaitNotice`): opens the same
+    /// Canvas sign-in cover the "duo needs you" row does.
+    @ObservedObject private var duoNotice = DuoWaitNoticeInbox.shared
     /// Set in `.onAppear` once `vm` holds the dashboard's items, and read by
     /// `takeLoudAlertActions()`. Until then nothing is taken, because a tap
     /// handled against an empty `vm.items` completes nothing and re-plans the
     /// reminders from an empty list (see `NotificationActionInbox.drain`).
     @State private var isDashboardBound = false
+    /// The one-time overdue swipe lesson's card, while its cover is up.
+    @State private var overdueLesson: DashItem?
+    /// Decided once per process, on the first non-empty item list.
+    @State private var overdueLessonDecided = false
 
     @State private var filter: DashFilter = .thisWeek
     @State private var editing: DashItem?
+    /// The agent draft whose review sheet is up.
+    @State private var reviewingDraft: AgentDraftReview?
+    #if DEBUG
+    /// The agent screenshot seam's two sheets (AppState+AgentDemo.swift).
+    @State private var debugShowCodeSheet = false
+    @State private var debugApproveLookup: AgentPendingLookup?
+    #endif
     @State private var showAddSheet = false
     @State private var showAnnouncementFinds = false
+    @State private var showSweeper = false
+    /// The header's "new" dot leaves once the Sweeper page has been opened.
+    @AppStorage(SweeperView.pageSeenKey, store: UserDefaults.lhf) private var sweeperPageSeen = false
     /// Frozen when the megaphone sheet opens, so rows can still say "new"
     /// after opening has marked everything seen. Holds both kinds of id: a
     /// find's `Assignment.id` and a record's `AnnouncementReadState.recordKey`.
@@ -75,7 +94,7 @@ struct ContentView: View {
         case assistant
         case degree
         /// Profile → ambassador mode (2026-11-09). A route of its own so a
-        /// reminder tap can land on it (`path = [.profile, .ambassador]`)
+        /// reminder tap can land on it (`path = [.ambassador]`)
         /// with Profile underneath for the back button.
         case ambassador
     }
@@ -89,7 +108,15 @@ struct ContentView: View {
     /// Lockstep sizes for the whole dashboard title. `ViewThatFits` chooses
     /// one candidate for the complete wordmark-plus-weekday group, so the two
     /// faces can never scale independently when header space gets tight.
-    static let dashboardTitlePointSizes: [CGFloat] = [27, 24, 21, 18]
+    /// 1pt steps from 29 down since 2026-11-11 (Marco: the wordmark and
+    /// weekday "look too small"). `ViewThatFits` takes the largest step that
+    /// fits, so the title is now as large as the row allows. The old list
+    /// (27, 24, 21, 18) made "Smooth Wednesday" fall from 27 straight to 24
+    /// on a 402pt phone; simply adding 2pt to each step made it fall to 23,
+    /// smaller than before, which is the wrong fix this replaces. The spacer
+    /// before the buttons gave up 10pt (minimum 2) for it; the buttons keep
+    /// their 42pt and their places.
+    static let dashboardTitlePointSizes: [CGFloat] = Array(stride(from: 29, through: 18, by: -1))
 
     init(previewVM: DashboardViewModel? = nil) {
         _vm = StateObject(wrappedValue: previewVM ?? DashboardViewModel())
@@ -139,6 +166,17 @@ struct ContentView: View {
                     // showed over a live session.
                     canvasSessionStatusLineView
 
+                    // "connected to claude": a connection that appeared while
+                    // the app was open (Marco, 2026-11-09: connecting was
+                    // "not that clear"). Same quiet line as the session's;
+                    // a tap puts it away.
+                    if let line = state.agentConnectionBanner {
+                        Button { state.agentConnectionBanner = nil } label: {
+                            agentConnectedLine(line)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
                     // Gradescope's own line, for a student whose connection the
                     // server stopped recognising on two runs an hour apart
                     // (`GradescopeReauthRule`). One line, no second-guessing
@@ -156,7 +194,9 @@ struct ContentView: View {
                         addInlineButton
                     }
                     .padding(.horizontal, 20)
-                    .padding(.top, 14)
+                    // 10, not 14, since 2026-11-12 (Marco: "can you push the
+                    // todo, all, prev, that part up a few pixels").
+                    .padding(.top, 10)
 
                     if let classFilter {
                         ClassFilterChip(name: courseDisplayName(classFilter)) {
@@ -227,8 +267,9 @@ struct ContentView: View {
         // A reminder tap or an ambassador link: land on the page, with
         // Profile under it. Read at appearance too, because a cold launch
         // from the notification sets the flag before this view exists.
-        .onAppear { openAmbassadorIfAsked() }
+        .onAppear { openAmbassadorIfAsked(); openDuoSignInIfAsked() }
         .onChange(of: ambassador.pendingOpen) { _, _ in openAmbassadorIfAsked() }
+        .onChange(of: duoNotice.pendingOpen) { _, _ in openDuoSignInIfAsked() }
         // Class renames live in AppState but are read by the cards, which are
         // deliberately AppState-free so they still render in previews.
         .environment(\.courseNameOverrides, state.courseNameOverrides)
@@ -250,6 +291,25 @@ struct ContentView: View {
                 vm.reload(preservingEdits: true)
                 await scheduler.reschedule(from: vm.items)
             }
+            // The server wake forgets this phone the moment reminders or the
+            // Sweeper go off. Weak: `NotificationScheduler` owns the closure.
+            scheduler.onSweeperWakeInputOff = { [weak state] in
+                guard let state else { return }
+                Task { @MainActor in await state.withdrawSweeperWakeIfSent() }
+            }
+            // Work a source has just confirmed submitted: take its reminders,
+            // buzzes and alarm back now, through the scheduler's serializer,
+            // instead of at the next full re-plan. Never completes anything.
+            state.submissionCanceller = { [weak vm, weak scheduler] ids, source in
+                guard let vm, let scheduler else { return }
+                let started = Date()
+                let counts = await scheduler.cancelForSubmitted(ids, items: vm.items, source: source)
+                #if DEBUG
+                DebugWakeLog.record(source: source, outcome: "cancel", duration: Date().timeIntervalSince(started),
+                                    cancelledRequests: counts.requests, cancelledAlarms: counts.alarms)
+                #endif
+                _ = counts
+            }
             // Berserk alarms never ring for preview or demo data. The scheduler
             // asks at every reschedule (`BerserkAlarmPlan.alarmsAllowed`), so a
             // probe rather than a flag copied in here, where it would go stale
@@ -265,6 +325,17 @@ struct ContentView: View {
                 vm.loadSampleData()
                 state.gradeWatcher.loadPreviewSnapshots(SampleData.gradeSnapshots())
                 if args.contains("-LHFShowSettings") { path = [.profile] }
+                if args.contains("-LHFShowSweeper") { showSweeper = true }
+                if args.contains("-LHFDemoAgentState") || args.contains("-LHFDemoAgentOff")
+                    || args.contains("-LHFDraftReviewHarness") {
+                    let demo = state.installAgentDemo(arguments: args)
+                    vm.applyDemoAgentState(drafts: demo.drafts, submittedBy: demo.submittedBy)
+                    if args.contains("-LHFDraftReviewHarness"), let first = state.agentDrafts.first {
+                        reviewingDraft = AgentDraftReview(draftID: first.id)
+                    }
+                    if args.contains("-LHFShowCodeSheet") { debugShowCodeSheet = true }
+                    if args.contains("-LHFShowApproveSheet") { debugApproveLookup = state.debugAgentDemo?.lookup }
+                }
                 if args.contains("-LHFShowProfile") { path = [.profile] }
                 if args.contains("-LHFShowGrades") { path = [.grades] }
                 if args.contains("-LHFShowAssistant") { path = [.assistant] }
@@ -304,12 +375,15 @@ struct ContentView: View {
             // render and this closure.
             isDashboardBound = true
             takeLoudAlertActions()
+            openDuoSignInIfAsked()
+            decideOverdueLesson()
         }
         // Every later tap, with the dashboard already on screen.
         .onChange(of: actionInbox.queue) { _, queue in
             guard !queue.isEmpty else { return }
             takeLoudAlertActions()
         }
+        .onChange(of: vm.items) { _, _ in decideOverdueLesson() }
         .task {
             // Read Duo's trust cookie once up front. The loop below sleeps
             // five minutes before its first `refresh()`, and
@@ -358,6 +432,7 @@ struct ContentView: View {
             // itself. If it replans before that drain, the drain's own
             // replan (`needsReplan`) follows and takes the finished item's
             // buzzes back out.
+            lastHourPoller.start(state: state, scheduler: scheduler, vm: vm, reason: .task)
             await refreshSessionSourcesAtLaunch()
             // Silent auto-refresh loop while the dashboard is on screen.
             while !Task.isCancelled {
@@ -368,13 +443,28 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
+                lastHourPoller.start(state: state, scheduler: scheduler, vm: vm, reason: .active)
                 Task {
                     await scheduler.refreshAuthStatus()
                     // Before `refresh()`, whose first step is the network. See
                     // `replanFromLedger`.
                     await replanFromLedger()
+                    // Inside the last hour before an alarm, ask Canvas's
+                    // planner now, ahead of `refresh()` and its grades fetch
+                    // (which the 15-minute throttle may skip).
+                    await pollInsideTheHour(source: .foreground)
                     await refresh()
                 }
+            } else if phase == .background {
+                // Only `.background` stops it. DEBUG traces of 2026-11-19
+                // (20:53Z, and 04:26Z the day before) show "poller stop" with
+                // no start after it while two refresh passes still ran: an
+                // `.active -> .inactive` (a system overlay, Face ID, the
+                // alarm's own full-screen alert, the app switcher) stopped
+                // it, and nothing restarted it while the scene stayed
+                // inactive. A planner GET while inactive is harmless and the
+                // 5-minute loop keeps running then anyway.
+                lastHourPoller.stop(reason: .background)
             }
         }
         // The reconnect cover (below) keeps this view mounted, so nothing
@@ -396,6 +486,21 @@ struct ContentView: View {
                 )
             )
         }
+        .sheet(item: $reviewingDraft, onDismiss: rescheduleNotifications) { review in
+            AgentDraftReviewSheet(draftID: review.draftID)
+                .environmentObject(state)
+        }
+        #if DEBUG
+        .sheet(isPresented: $debugShowCodeSheet) {
+            AgentCodeSheet().environmentObject(state)
+        }
+        .sheet(isPresented: Binding(get: { debugApproveLookup != nil },
+                                    set: { if !$0 { debugApproveLookup = nil } })) {
+            if let lookup = debugApproveLookup {
+                AgentLinkApproveSheet(lookup: lookup).environmentObject(state)
+            }
+        }
+        #endif
         .sheet(isPresented: $showAddSheet, onDismiss: rescheduleNotifications) {
             AddAssignmentSheet()
                 .environmentObject(state)
@@ -405,6 +510,16 @@ struct ContentView: View {
         // same on the way out.
         .sheet(isPresented: $showAnnouncementFinds, onDismiss: rescheduleNotifications) {
             announcementFindsSheet
+        }
+        // The Sweeper's choices reschedule themselves as they are made
+        // (`NotificationScheduler.rescheduleAfterPreferenceChange`), so the
+        // sheet needs no `onDismiss` replan. The environment objects are
+        // passed explicitly, as every other presentation here does.
+        .sheet(isPresented: $showSweeper) {
+            SweeperView(items: vm.items)
+                .environmentObject(state)
+                .environmentObject(scheduler)
+                .lhfSheetTheme()
         }
         // A Canvas or Gradescope reconnect (`AppState.restartOnboarding(for:)`
         // with a single service, from a signed-in install) opens over the
@@ -422,6 +537,11 @@ struct ContentView: View {
         #else
         .sheet(isPresented: reconnectCoverBinding) { reconnectCover }
         #endif
+        #if os(iOS)
+        .fullScreenCover(item: $overdueLesson) { overdueLessonCover(for: $0) }
+        #else
+        .sheet(item: $overdueLesson) { overdueLessonCover(for: $0) }
+        #endif
         // The one-ask "include this class's readings?" popup that used to
         // live here (`CourseNudgeSheet`, driven off `pendingCourseNudge`)
         // was removed 2026-08-27 (docs/decisions.md): readings now import
@@ -438,10 +558,73 @@ struct ContentView: View {
         }
     }
 
+    /// Decided once per process on the first non-empty item list; the key is
+    /// written when the cover appears so a kill mid-screen never shows it
+    /// twice and a cover that failed to present costs nothing.
+    private func decideOverdueLesson() {
+        guard isDashboardBound, !overdueLessonDecided, !vm.items.isEmpty else { return }
+        let store = OverdueSwipeLessonStore()
+        #if DEBUG
+        if OverdueSwipeLesson.isForced {
+            overdueLessonDecided = true
+            overdueLesson = OverdueSwipeLesson.forcedCandidate(in: vm.items, now: Date())
+            return
+        }
+        #endif
+        let candidate = OverdueSwipeLesson.candidate(in: vm.items, now: Date())
+        guard OverdueSwipeLesson.shouldShow(hasCandidate: candidate != nil, alreadyShown: store.hasShown,
+                                            usingFixtureData: state.isUsingFixtureData,
+                                            reconnecting: state.isReconnecting) else {
+            // A reconnect in progress leaves it undecided so it is asked again.
+            if store.hasShown || state.isUsingFixtureData || candidate == nil { overdueLessonDecided = true }
+            return
+        }
+        // The key is written by the cover's `onAppear`, not here: if another
+        // sheet is up, the cover never presents and the lesson must survive.
+        overdueLessonDecided = true
+        overdueLesson = candidate
+    }
+
+    /// The two closures are the timeline's own `onCommit`/`onComplete` wiring,
+    /// byte for byte, so the lesson writes exactly what a dashboard swipe
+    /// writes and nothing else.
+    private func overdueLessonCover(for item: DashItem) -> some View {
+        OverdueSwipeLessonView(
+            item: item,
+            overdueDays: OverdueSwipeLesson.overdueDays(of: item, now: Date()),
+            onCommit: { vm.commitCompletion(item) },
+            onComplete: {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                    vm.complete(item)
+                }
+                rescheduleNotifications()
+            },
+            onDismiss: { overdueLesson = nil }
+        )
+        .lhfSheetTheme()
+        #if os(macOS)
+        .frame(minWidth: 480, minHeight: 600)
+        #endif
+        .onAppear {
+            #if DEBUG
+            if OverdueSwipeLesson.isForced { return }
+            #endif
+            OverdueSwipeLessonStore().markShown()
+        }
+    }
+
+    private func openDuoSignInIfAsked() {
+        // Waits for the dashboard to bind (the loud-alert inbox's rule); this
+        // view only exists past onboarding and the update wall.
+        guard duoNotice.pendingOpen, isDashboardBound else { return }
+        duoNotice.consume()
+        state.restartOnboarding(for: .canvas)
+    }
+
     private func openAmbassadorIfAsked() {
         guard ambassador.pendingOpen else { return }
         ambassador.consumePendingOpen()
-        path = [.profile, .ambassador]
+        path = [.ambassador]
     }
 
     /// Reads `AppState.isReconnecting`; the only write it makes is closing the
@@ -489,11 +672,16 @@ struct ContentView: View {
     /// recurring task without changing the dashboard's data flow.
     private var addInlineButton: some View {
         Button { showAddSheet = true } label: {
+            // Lemon since 2026-11-11: tomato went to the Sweeper (Marco: "make
+            // the plus a different color and make that the color of Smooth
+            // Sweeper"). Not teal (the profile button beside the Sweeper),
+            // not cobalt (the class filter next to it), not grape (ask and the
+            // agent), not marigold (the megaphone).
             Image(systemName: "plus")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.smoothTomatoInk)
+                .foregroundStyle(Color.smoothLemonInk)
                 .frame(width: 38, height: 38)
-                .background(Circle().fill(Color.smoothTomato.opacity(0.22)))
+                .background(Circle().fill(Color.smoothLemon.opacity(0.32)))
                 // Drawn 38pt, tappable 44pt: the same inset `DashCircleIcon`
                 // gives the filter button next to it, so the three controls
                 // share one hit size without widening the row.
@@ -516,6 +704,54 @@ struct ContentView: View {
         showAnnouncementFinds = true
     }
 
+    /// The Sweeper's button, left of the megaphone: opens the Sweeper page.
+    ///
+    /// **An alarm in the +'s old colours (2026-11-11).** Marco, first: "the
+    /// shovel or sweep emoji sucks, and the color's too similar", so the drawn
+    /// broom became `alarm.fill` (it says what the Sweeper does, and a symbol
+    /// stays crisp at 17pt) on a solid tomato squircle. Then, on the phone:
+    /// "far too orange ... a complete eyesore. Maybe make the plus a different
+    /// color and make that the color of Smooth Sweeper." So the Sweeper now
+    /// wears exactly what the + wore, a 22% tomato wash under a tomato-ink
+    /// glyph, and the + went to lemon. The tomato-ink glyph is what keeps it
+    /// apart from the marigold megaphone beside it, whose glyph is ink. The
+    /// wrong fix is a darker solid: any full warm fill is the block he
+    /// called an eyesore.
+    ///
+    /// **An ink glyph on the tomato wash since 2026-11-12.** Marco, on the
+    /// phone: "the alarm should be black instead of red", then, seeing it on
+    /// a grey wash: "Why is the alarm now gray? It should still be red, but
+    /// the icon should be black." So the squircle keeps the +'s old 22% tomato
+    /// wash and only the glyph changed, to the header's default `smoothInk`
+    /// (black on paper, paper-ink after sunset). The "new" dot stays dark red.
+    ///
+    /// The dot is "new", not "on": it shows only until the Sweeper page has
+    /// been opened once (`sweeperPageSeenKey`, set by `SweeperView`), then
+    /// never again. Marco: "the dot next to it should go away after the first
+    /// time." It used to be the on light, which never went away.
+    private var sweeperButton: some View {
+        Button { showSweeper = true } label: {
+            headerButton(color: .smoothTomato, fillOpacity: 0.22) {
+                Image(systemName: "alarm.fill")
+                    .font(.system(size: 17, weight: .semibold))
+            }
+            .overlay(alignment: .topTrailing) {
+                if !sweeperPageSeen {
+                    Circle()
+                        .fill(Color.smoothTomatoInk)
+                        .frame(width: 11, height: 11)
+                        .overlay { Circle().stroke(Color.smoothPaper, lineWidth: 2) }
+                        .offset(x: 3, y: -3)
+                        .accessibilityHidden(true)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Smooth Sweeper")
+        .accessibilityValue(scheduler.loudAlertEnabled ? "on" : "off")
+        .help("Smooth Sweeper")
+    }
+
     /// The megaphone, in the header (it was a 38pt control in the row under
     /// it until 2026-10-18). Same squircle as `navButton`; only the action
     /// differs.
@@ -532,8 +768,8 @@ struct ContentView: View {
                 // Sits on the squircle's upper-right corner. The continuous
                 // 15pt radius cuts the corner far less than the circle did,
                 // so the same 2pt offsets still land on the shape. They leave it overhanging
-                // the 48pt frame by 2pt, which nothing above or beside it
-                // clips (the profile button is 10pt away). A capsule, not a
+                // the button frame by 2pt, which nothing above or beside it
+                // clips (the profile button is 8pt away). A capsule, not a
                 // circle, so "12" and "99+" widen it rather than overflow it.
                 .overlay(alignment: .topTrailing) {
                     if unreadAnnouncementCount > 0 {
@@ -628,7 +864,7 @@ struct ContentView: View {
             statusLineLabel("approve the duo push on this phone")
         case .duoNeedsYou:
             Button { state.restartOnboarding(for: .canvas) } label: {
-                statusLineLabel("duo needs you \u{00B7} tap to finish")
+                statusLineLabel("duo needs you \u{00B7} tap to finish \u{2014} every 30 days, smooth can get signed out")
             }
             .buttonStyle(.plain)
         case .passwordChanged:
@@ -647,6 +883,23 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
         }
+    }
+
+    private func agentConnectedLine(_ text: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 13, weight: .semibold))
+            Text(text)
+                .font(.lhfSans(11))
+            Spacer(minLength: 0)
+            Image(systemName: "xmark")
+                .font(.system(size: 10, weight: .semibold))
+                .accessibilityLabel("dismiss")
+        }
+        .foregroundStyle(Color.v2DateText)
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
+        .accessibilityElement(children: .combine)
     }
 
     private func statusLineLabel(_ text: String) -> some View {
@@ -698,22 +951,55 @@ struct ContentView: View {
         return HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
                 ViewThatFits(in: .horizontal) {
-                    headerTitle(weekday: weekday, pointSize: Self.dashboardTitlePointSizes[0])
-                    headerTitle(weekday: weekday, pointSize: Self.dashboardTitlePointSizes[1])
-                    headerTitle(weekday: weekday, pointSize: Self.dashboardTitlePointSizes[2])
-                    headerTitle(weekday: weekday, pointSize: Self.dashboardTitlePointSizes[3])
+                    ForEach(Self.dashboardTitlePointSizes, id: \.self) { size in
+                        if ambassador.isSignedIn {
+                            ambassadorTitle(pointSize: size)
+                        } else {
+                            headerTitle(weekday: weekday, pointSize: size)
+                        }
+                    }
                 }
                 .layoutPriority(1)
                 .frame(height: 48, alignment: .center)
 
-                Text(Self.dateText(now))
-                    .font(.lhfMono(14, weight: .medium))
-                    .foregroundStyle(Color.smoothMuted)
+                // An ambassador gets no date line (Marco, 2026-11-22: "remove
+                // the date entirely on the dashboard, just the users underneath
+                // ambassador"): the one line under the title is how many people
+                // at their school have the app, in the date line's own face,
+                // and nothing at all until the server sends the count.
+                if ambassador.isSignedIn {
+                    if let plan = ambassador.plan, let users = plan.numbers?.schoolInstalls {
+                        AmbassadorStatsLine(schoolLabel: plan.schoolLabel, users: users)
+                    }
+                } else {
+                    Text(Self.dateText(now))
+                        .font(.lhfMono(14, weight: .medium))
+                        .foregroundStyle(Color.smoothMuted)
+                }
             }
 
-            Spacer(minLength: 12)
+            // 2, not 12, since 2026-11-11: the title may sit right beside the
+            // Sweeper button (Marco: "even if the title sits a little closer"),
+            // the buttons never move.
+            Spacer(minLength: 2)
 
-            HStack(spacing: 10) {
+            HStack(spacing: Self.headerButtonSpacing) {
+                // The broom first (owner's sketch, 2026-11-09): three buttons
+                // now share the row with "Smooth Wednesday", so all three are
+                // 42pt and 8pt apart instead of 48 and 10 (`headerButtonSize`).
+                // The medal is a button of its own, first in the row, so all four
+                // squircles are identical and 8pt apart (Marco, 2026-11-22:
+                // "space all the icons evenly"). `SmoothWordmark`'s badge
+                // parameters are unused now.
+                if ambassador.isSignedIn {
+                    Button { path = [.ambassador] } label: {
+                        headerButton(icon: Self.ambassadorBadgeSymbol, color: .smoothMarigold)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("ambassador")
+                    .help("ambassador")
+                }
+                sweeperButton
                 // Where the grades button used to be (Grade Watcher was removed
                 // 2026-10-18, `FeatureFlags.gradeWatcher`). Always here, even
                 // with nothing to list: a control that appears and disappears
@@ -725,6 +1011,9 @@ struct ContentView: View {
                 }
                 navButton(to: .profile, icon: "person.crop.circle.fill", title: "profile", color: .smoothTeal)
             }
+            // The title block is 48pt tall; centre the shorter buttons on it
+            // instead of letting them hang from the top.
+            .frame(height: 48)
         }
     }
 
@@ -744,6 +1033,41 @@ struct ContentView: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// The title once the student has signed in as an ambassador (Marco,
+    /// 2026-11-12: "Replace the Smooth ___ {day} with Ambassador with an
+    /// underline, and a special icon for them. This is only when they become
+    /// an ambassador"). "Ambassador" in the weekday's face at the same lockstep
+    /// size, then the badge to its right (Marco, 2026-11-21; it led until then), with the wordmark's own gradient squiggle under
+    /// the word so it reads as Smooth's. Nothing else in the header moves;
+    /// signing out brings "Smooth {weekday}" back on the next draw, because
+    /// `ambassador` is observed.
+    private func ambassadorTitle(pointSize: CGFloat) -> some View {
+        // The same view as the "Smooth" wordmark, so it squiggles and shines
+        // on a tap and backflips on three (Marco, 2026-11-12: "the ambassador
+        // squiggle needs to squiggle when you touch it. Super important").
+        // The medal is drawn like the header buttons and sits under the same
+        // squiggle as the word; a tap also opens the page, so the student
+        // never has to go through Profile for it.
+        SmoothWordmark(
+            pointSize: pointSize,
+            text: "Ambassador",
+            font: .lhfHeaderTitle(pointSize)
+        ) {
+            path = [.ambassador]
+        }
+        .foregroundStyle(Color.smoothInk)
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("ambassador")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    /// The ambassador's badge in the header. A medal: earned, and nothing
+    /// else in the app uses it (the megaphone is announcements, the star
+    /// would read as a rating).
+    static let ambassadorBadgeSymbol = "medal.fill"
+
     private func navButton(to route: DashRoute, icon: String, title: String, color: Color) -> some View {
         NavigationLink(value: route) {
             headerButton(icon: icon, color: color)
@@ -753,23 +1077,44 @@ struct ContentView: View {
         .help(title)
     }
 
-    /// The header's 48pt squircle, shared by the push buttons above and the
-    /// megaphone (which presents a sheet, so it is a `Button`, not a
-    /// `NavigationLink`). One drawing, so the buttons cannot drift apart in
+    /// The header's squircle, shared by the push buttons above and the
+    /// broom and megaphone (which present sheets, so they are `Button`s, not
+    /// `NavigationLink`s). One drawing, so the buttons cannot drift apart in
     /// size, fill or stroke.
     /// A squircle, not a rounded square: `.continuous` corners are what make
     /// it one, and 0.32 of the side matches the other controls. The owner
     /// replaced the circles with these on 2026-11-06.
-    private static let headerShape = RoundedRectangle(cornerRadius: 48 * 0.32, style: .continuous)
+    ///
+    /// **42pt, not 48 (2026-11-10).** With the broom the row holds three
+    /// buttons beside "Smooth Wednesday". The title already steps down through
+    /// `dashboardTitlePointSizes` to fit, and the owner's rule is that the
+    /// buttons give way before the title does, so all three shrink together
+    /// (a lone smaller button would read as a mistake). The wrong fix is
+    /// shrinking only the title: it is the screen's identity.
+    static let headerButtonSize: CGFloat = 42
+    static let headerButtonSpacing: CGFloat = 8
+    private static let headerShape = RoundedRectangle(cornerRadius: headerButtonSize * 0.32, style: .continuous)
 
     private func headerButton(icon: String, color: Color) -> some View {
-        Image(systemName: icon)
-            .font(.system(size: 17, weight: .semibold))
-            .foregroundStyle(Color.smoothInk)
-            .frame(width: 48, height: 48)
-            .background(Self.headerShape.fill(color.opacity(0.18)))
+        headerButton(color: color) {
+            Image(systemName: icon)
+                .font(.system(size: 17, weight: .semibold))
+        }
+    }
+
+    /// `fillOpacity` and `glyph` are 0.18 and ink for every button but the
+    /// Sweeper's, which wears the +'s old tomato (see `sweeperButton`).
+    private func headerButton<Glyph: View>(color: Color, fillOpacity: Double = 0.18,
+                                           glyph glyphColor: Color = .smoothInk,
+                                           @ViewBuilder glyph: () -> Glyph) -> some View {
+        glyph()
+            .foregroundStyle(glyphColor)
+            .frame(width: Self.headerButtonSize, height: Self.headerButtonSize)
+            .background(Self.headerShape.fill(color.opacity(fillOpacity)))
             .overlay { Self.headerShape.stroke(color.opacity(0.48), lineWidth: 1.25) }
-            .contentShape(Self.headerShape)
+            // Drawn 42pt so three fit beside the title, but touched at 44pt,
+            // the platform's minimum, the same trick the control row uses.
+            .contentShape(Self.headerShape.inset(by: -1))
     }
 
     /// Silent refresh: re-fetch the cookieless Canvas feed, re-sync Gradescope
@@ -800,9 +1145,25 @@ struct ContentView: View {
         // the lists and the reminders in this same pass. A no-op without a
         // key, throttled to once per two minutes, never a banner.
         await state.deviceSyncPass()
+        await state.agentOffSwitchCleanupPass()
+        await state.agentSnapshotPass()
+        // Before the reload in `settleAfterFetch`, so a new draft's chip is on
+        // its card in this same pass.
+        await state.agentDraftsPass()
         await settleAfterFetch()
         await announceGradeChanges()
         await announceTurnedIn()
+        await announceAgentDrafts()
+    }
+
+    /// "Claude drafted …", once per draft (`AgentDraftNotices`). Posted with
+    /// the turned-in notices' rules: never asks for permission, silent when
+    /// reminders are off.
+    private func announceAgentDrafts() async {
+        let notices = state.pendingAgentDraftNotices
+        guard !notices.isEmpty else { return }
+        state.pendingAgentDraftNotices = []
+        await scheduler.postAgentDraftNotifications(notices)
     }
 
     /// The cold-launch pass: the cookie-authenticated fetches and the
@@ -826,8 +1187,35 @@ struct ContentView: View {
         // and only a `.dead` answer starts the renewal waited on next.
         await state.awaitPendingSessionProbe()
         await state.awaitPendingSilentRenewal()
+        // The throttle lift: inside the last hour before an alarm, one planner
+        // read now, before the grades fetch and regardless of its throttle.
+        await pollInsideTheHour(source: .launch)
         await fetchSessionSources()
         await settleAfterFetch()
+    }
+
+    /// One planner read when a Sweeper alarm is within the hour
+    /// (`AppState.pollPlannerWindowIfInsideTheHour`, the one place that is
+    /// decided). Skipped until the dashboard is bound, because `vm.items` is
+    /// empty before that and an empty list has no next ring.
+    private func pollInsideTheHour(source: WakeSource) async {
+        guard isDashboardBound else {
+            #if DEBUG
+            DebugWakeLog.record(source: source, outcome: "skip unbound", duration: 0,
+                                cancelledRequests: 0, cancelledAlarms: 0)
+            #endif
+            return
+        }
+        let ring = scheduler.nextSweep(in: vm.items)?.ringAt
+        #if DEBUG
+        if !LastHourPoll.insideTheHour(now: Date(), nextRing: ring) {
+            let word = ring == nil ? "skip nil-ring"
+                : (ring! <= Date() ? "skip past-ring" : "skip far-ring")
+            DebugWakeLog.record(source: source, outcome: word, duration: 0,
+                                cancelledRequests: 0, cancelledAlarms: 0)
+        }
+        #endif
+        await state.pollPlannerWindowIfInsideTheHour(nextRing: ring, source: source)
     }
 
     /// Reloads the dashboard from the ledger and re-plans the reminders and
@@ -886,6 +1274,9 @@ struct ContentView: View {
         // inside the cooldown). Rides this existing activation/5-minute
         // cadence rather than a timer of its own.
         state.retrySilentRenewalIfDue()
+        // Duo's trust, renewed before it lapses (a forced hidden sign-in,
+        // at most once a week, only while everything else is healthy).
+        state.renewDuoTrustIfDue()
         // Cheap (one cookie-jar read, no network) — refreshed on the same
         // activation/5-minute cadence as everything else here (and once at
         // launch by the `.task` above) so
@@ -900,6 +1291,26 @@ struct ContentView: View {
         // it too.
         state.refreshAnnouncementBadge()
         if scheduler.isEnabled { await scheduler.reschedule(from: vm.items) }
+        // A Duo push nobody approved for an hour: one notice per latch.
+        await state.postDuoWaitNoticeIfDue(scheduler: scheduler)
+        // Backstop: the minute poller is foreground-only and has, once on a
+        // device, made no read while an alarm was inside the hour
+        // (2026-11-18). This makes every refresh pass inside the hour a
+        // planner read as well, outside the grades fetch's 15-minute
+        // throttle; outside the hour it costs nothing.
+        // Revive the poller on every refresh pass: `start` is idempotent
+        // (it guards `task == nil`), so a running one costs nothing, and a
+        // stopped one is back even when the `.active` transition was never
+        // delivered to `.onChange`.
+        if scenePhase != .background {
+            lastHourPoller.start(state: state, scheduler: scheduler, vm: vm, reason: .settle)
+        }
+        await pollInsideTheHour(source: .foreground)
+        // The server wake: ask iOS for a token (no prompt) and tell the server
+        // when the plan's moments changed. Foreground only; never a wake.
+        SweeperWakeRegistrar.registerIfNeeded(state: state, scheduler: scheduler)
+        await state.sweeperWakePass(plan: scheduler.plannedAlarms(from: vm.items),
+                                    remindersOn: scheduler.isEnabled, sweeperOn: scheduler.loudAlertEnabled)
     }
 
     /// Drains "Turned in ✓" confirmations the same way grade changes drain —
@@ -1065,6 +1476,13 @@ struct ContentView: View {
                         onUndo: { item in
                             vm.undoFacts(item)
                             rescheduleNotifications()
+                        },
+                        onReviewDraft: { item in
+                            if let draft = item.agentDraft { reviewingDraft = AgentDraftReview(draftID: draft.draftID) }
+                        },
+                        onDraftOpened: { item in
+                            guard let draft = item.agentDraft else { return }
+                            Task { await state.markAgentDraftSeen(draft.draftID) }
                         }
                     )
                 }
@@ -1299,16 +1717,56 @@ struct ContentView: View {
 /// skips itself entirely under Reduce Motion.
 struct SmoothWordmark: View {
     let pointSize: CGFloat
+    /// "Smooth" in the wordmark face by default; the ambassador header passes
+    /// "Ambassador" in the weekday's face (`ContentView.ambassadorTitle`).
+    var text: String = "Smooth"
+    var font: Font? = nil
+    /// An SF Symbol drawn in front of the word as a header-button-style
+    /// squircle (`WordmarkBadge`), under the same squiggle and shine.
+    var badge: String? = nil
+    var badgeColor: Color = .smoothMarigold
+    /// The badge after the word instead of before it (the ambassador header
+    /// since 2026-11-21, Marco: "move the ambassador to the left and then
+    /// have the ambassador icon to the right of it"). The squiggle and the
+    /// shine cover the whole row either way.
+    var badgeTrailing: Bool = false
+    /// The badge's side. Defaults to a size that follows the title; the
+    /// ambassador header passes the header buttons' own size (Marco,
+    /// 2026-11-22) so the medal is the same size as they are.
+    var badgeSize: CGFloat? = nil
+    /// Runs on every tap after the ripple or flip has been started.
+    var onTap: (() -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var wavePhase: CGFloat = 0
     @State private var waveLift: CGFloat = 1
     @State private var shine: CGFloat = 0
     @State private var isPlaying = false
+    /// The backflip: one full turn about the x axis, then reset to 0 with no
+    /// animation so the next flip starts from the normal pose.
+    @State private var flip: Double = 0
+    @State private var taps = WordmarkTripleTap()
+
+    /// The letters, with the badge in front when there is one. Used twice:
+    /// drawn, and as the mask the shine sweeps through.
+    private var letters: some View {
+        HStack(alignment: .center, spacing: 6) {
+            if let badge, !badgeTrailing {
+                WordmarkBadge(symbol: badge, color: badgeColor, size: badgeSize ?? pointSize * 1.25)
+            }
+            if let font {
+                Text(text).font(font)
+            } else {
+                Text(text).font(.lhfWordmark(pointSize))
+            }
+            if let badge, badgeTrailing {
+                WordmarkBadge(symbol: badge, color: badgeColor, size: badgeSize ?? pointSize * 1.25)
+            }
+        }
+    }
 
     var body: some View {
-        Text("Smooth")
-            .font(.lhfWordmark(pointSize))
+        letters
             .overlay { shineOverlay }
             .overlay(alignment: .bottomLeading) {
                 SmoothSquiggle(phase: wavePhase, lift: waveLift)
@@ -1323,8 +1781,37 @@ struct SmoothWordmark: View {
                     .frame(height: 6)
                     .offset(y: 6)
             }
+            .rotation3DEffect(.degrees(flip), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
             .contentShape(Rectangle())
-            .onTapGesture(perform: play)
+            .onTapGesture(perform: tapped)
+    }
+
+    /// Every tap feeds the counter first (the ripple ignores taps while it
+    /// plays, the counter must not); the third tap inside the window flips,
+    /// the others ripple as before.
+    private func tapped() {
+        if taps.register(at: Date()), !reduceMotion {
+            backflip()
+        } else {
+            play()
+        }
+        onTap?()
+    }
+
+    /// Marco, 2026-11-11: "if you click on the smooth button three times in a
+    /// row, you should make the whole smooth thing do a 360, basically do a
+    /// backflip ... then it goes back to normal and resets." One turn about
+    /// the horizontal axis, ending exactly at 360, which looks like 0; then
+    /// the angle is set back to 0 without animation. Skipped under Reduce
+    /// Motion (the counter still resets).
+    private func backflip() {
+        lhfHapticLight()
+        withAnimation(.easeInOut(duration: 0.8)) { flip = 360 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) {
+            var t = Transaction()
+            t.disablesAnimations = true
+            withTransaction(t) { flip = 0 }
+        }
     }
 
     /// A soft white band masked to the glyphs, so only the letters catch
@@ -1340,7 +1827,7 @@ struct SmoothWordmark: View {
             .frame(width: band)
             .offset(x: -band + shine * (geo.size.width + band))
         }
-        .mask(Text("Smooth").font(.lhfWordmark(pointSize)))
+        .mask(letters)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
@@ -1360,6 +1847,57 @@ struct SmoothWordmark: View {
             shine = 0
             isPlaying = false
         }
+    }
+}
+
+/// The ambassador's medal in the header title: the header buttons' squircle
+/// (continuous corners, radius 0.32 × size, an 18% wash and a 48% stroke of
+/// its colour, an ink glyph), scaled to the title's point size so it reads as
+/// one of them rather than a loose symbol (Marco, 2026-11-12: "make it like
+/// the other icons").
+struct WordmarkBadge: View {
+    let symbol: String
+    let color: Color
+    let size: CGFloat
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: size * 0.32, style: .continuous)
+    }
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: size * 0.46, weight: .semibold))
+            .foregroundStyle(Color.smoothInk)
+            .frame(width: size, height: size)
+            .background(shape.fill(color.opacity(0.18)))
+            .overlay { shape.stroke(color.opacity(0.48), lineWidth: 1.25) }
+            .accessibilityHidden(true)
+    }
+}
+
+/// Three taps on the wordmark inside `window` seconds fire once; the count
+/// then starts again, and a tap after the window starts a new count. Pure and
+/// clock-free (the caller passes the time), so the rule is tested with fixed
+/// dates.
+struct WordmarkTripleTap: Equatable {
+    static let window: TimeInterval = 1.5
+    private(set) var count = 0
+    private(set) var firstTapAt: Date?
+
+    /// True on the third tap of a run; the run resets either way.
+    mutating func register(at now: Date) -> Bool {
+        if let first = firstTapAt, now.timeIntervalSince(first) <= Self.window, count > 0 {
+            count += 1
+        } else {
+            count = 1
+            firstTapAt = now
+        }
+        if count >= 3 {
+            count = 0
+            firstTapAt = nil
+            return true
+        }
+        return false
     }
 }
 

@@ -35,12 +35,26 @@ import Foundation
 final class RescheduleSerializer<Input> {
     private(set) var isRunning = false
     private var latest: Input?
+    /// How a call that arrives mid-pass combines with one already waiting.
+    /// Nil is the original rule: the newest replaces the waiting one, which is
+    /// right for a plan that is a function of its items. A caller whose input
+    /// carries work that must not be dropped (a cancel for submitted work,
+    /// `NotificationScheduler.cancelForSubmitted`) supplies a merge, because
+    /// replacing would let a later re-plan erase a waiting cancel or the
+    /// reverse.
+    private let merge: ((_ waiting: Input, _ arriving: Input) -> Input)?
 
-    init() {}
+    init(merge: ((_ waiting: Input, _ arriving: Input) -> Input)? = nil) {
+        self.merge = merge
+    }
 
     func submit(_ input: Input, perform: @MainActor (Input) async -> Void) async {
         guard !isRunning else {
-            latest = input
+            if let waiting = latest, let merge {
+                latest = merge(waiting, input)
+            } else {
+                latest = input
+            }
             return
         }
         isRunning = true

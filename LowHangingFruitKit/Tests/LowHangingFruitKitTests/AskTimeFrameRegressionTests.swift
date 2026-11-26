@@ -430,7 +430,7 @@ struct AskTimeFrameRegressionTests {
         let block = BackendAssistantResponder.excerptBlock(question: Self.question, context: F.context([F.schedule, post]))
         let lines = F.lines(block)
         try #require(!lines.isEmpty)
-        #expect(lines[0].contains("posted Nov 1") && lines[0].contains("No lectures this week"))
+        #expect(lines[0].contains("posted 2026-11-01") && lines[0].contains("No lectures this week"))
         #expect(F.latestAt8(block, post))
         #expect(block.text.contains(BackendAssistantResponder.meetingExcerptNote))
         if case .classMeeting(let range) = F.frame(Self.question) {
@@ -446,7 +446,7 @@ struct AskTimeFrameRegressionTests {
         let block = BackendAssistantResponder.excerptBlock(question: "where is cis 2620 lecture today", context: F.context([F.schedule, post]))
         let lines = F.lines(block)
         try #require(!lines.isEmpty)
-        #expect(lines[0].contains("posted Oct 30") && lines[0].contains("Room change"))
+        #expect(lines[0].contains("posted 2026-10-30") && lines[0].contains("Room change"))
         #expect(F.latestAt8(block, post))
     }
 
@@ -469,8 +469,8 @@ struct AskTimeFrameRegressionTests {
         let block = BackendAssistantResponder.excerptBlock(question: Self.question, context: F.context([F.schedule, off, on]))
         let lines = F.lines(block)
         try #require(lines.count >= 2)
-        #expect(lines[0].contains("posted Nov 2") && lines[0].contains("Class is on as usual"))
-        #expect(lines[1].contains("posted Oct 28"))
+        #expect(lines[0].contains("posted 2026-11-02") && lines[0].contains("Class is on as usual"))
+        #expect(lines[1].contains("posted 2026-10-28"))
         #expect(F.latestAt8(block, on))
     }
 
@@ -498,7 +498,7 @@ struct AskTimeFrameRegressionTests {
         #expect(block.sources.first?.documentID == F.schedule.id)
     }
 
-    @Test("a due-date question gets the excerpts a plain search gives, with no note, whatever the post dates")
+    @Test("a due-date question gets the passages a plain search gives, with no note, whatever the post dates; the computed list precedes them")
     func dueQuestionIsUnchanged() throws {
         let freshPost = F.ed(9, title: "Homework 5", body: "Homework 5 is due tomorrow at noon.", posted: F.eastern(2026, 11, 2, 9))
         let oldPost = F.ed(10, title: "Homework 2", body: "Homework 2 is due tomorrow at noon.", posted: F.eastern(2026, 9, 1))
@@ -517,6 +517,14 @@ struct AskTimeFrameRegressionTests {
         #expect(block.sources.map(\.documentID) == plain.map(\.document.id))
         #expect(!block.text.contains(BackendAssistantResponder.recencyExcerptNote))
         #expect(!block.text.contains(BackendAssistantResponder.meetingExcerptNote))
+        // Since steps 3 and 5 the block also carries the computed due list, ahead
+        // of the passages (this test pinned "no computed line" before; the
+        // passages themselves are still exactly a plain search's). There is no
+        // work list here, so the list says nothing is due.
+        let all = block.text.components(separatedBy: "\n")
+        #expect(all[1] == "Nothing on the work list is due in the asked range (2026-11-03 to 2026-11-03).")
+        let firstExcerpt = try #require(all.firstIndex { $0.hasPrefix("[1] ") })
+        #expect(1 < firstExcerpt)
     }
 
     @Test("a news question: the newest post is in the block (Latest@8) among many older ones")

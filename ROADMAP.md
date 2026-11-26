@@ -7,7 +7,7 @@ start and updates both before it ends** (`CLAUDE.md` → "Start here" has the
 table of what goes where). When an item lands, move it to **Done recently**
 with its date and commit, rather than deleting it.
 
-Last updated 2026-11-12 on `v12` (degree: weekly reads, the full view, Wharton concentrations; the Now entry). Before that, 2026-11-10 on `v12` (degree progress rewritten against the real Path@Penn). Before that, 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
+Last updated 2026-11-22 on `claude/onboarding-work-f6b7f1` (the overdue swipe lesson). Before that, 2026-11-22 on `claude/ambassador-header` (`origin/v12` merged in: the anonymous per-school install count, `FeatureFlags.installCount`). Before that, 2026-11-22 on `claude/ambassador-header` (the side sessions merged: the Sweeper and sign-in test pass, the release review, the onboarding pass, ambassador mode cut to four tasks). Before that, 2026-11-21 on `claude/onboarding-work-f6b7f1` and `claude/ambassador-work-c14201`. Before that, 2026-11-17 on `claude/v12-isolate-ab8b22` (the agent connection switched off for 3.5.0; it stays on `v11`). Before that, 2026-11-12 on `v11` (`origin/v12` merged in: ambassador mode ships in 3.5.0 (21), degree progress stays off). Before that, 2026-11-12 on `v12` (degree: weekly reads, the full view, Wharton concentrations; the Now entry). Before that, 2026-11-10 on `v12` (degree progress rewritten against the real Path@Penn). Before that, 2026-11-05 on `v10` (composed-day Phases 1-3 built; the
 backend half went live 2026-11-05 01:20-01:45 UTC, the evening of 2026-11-04
 US Eastern). Before that, 2026-10-28 on `release/3.4.0` (the 3.4.0 release,
 renamed from 3.3.1 that afternoon when PR #16 was folded in). Before
@@ -48,6 +48,29 @@ These block shipping, or would make shipping risky. The launch-prep
 work of 2026-10-09/10 is summarised, with the order to take these in,
 in `docs/LAUNCH_PREP_HANDOFF.md`.
 
+- **Ambassador posters: finish the seventh zip** (2026-11-22,
+  `claude/ambassador-posters-f068d6`). Needs the current Sites export from
+  Olisa's ChatGPT session (not on the Mac), then `docs/deploy.md` steps 2
+  to 5; the first run of `build-sites.mjs` against the real `imageData`
+  decides whether `scripts/lib/add-posters.mjs` read its shape right (it
+  refuses rather than guesses). And Marco's two "more serious" posters:
+  he says neither `life-is-so-smooth` nor `brutal-russian-beheading` is
+  one; ask him for the files, then catalog key, name, preview, same path.
+
+- **3.5.0 (21) ships without the agent connection** (Marco, 2026-11-17: "we're not going to actually go with the agent stuff from V11 ... V12 will be solely the ambassador stuff and just some of the other stuff"). `FeatureFlags.agentConnection = false` on `claude/v12-isolate-ab8b22` with the two leaks closed (the cached draft chip, prev's "submitted by" line), the agent tests skipping while off, and the review notes, listing and privacy text without it (`docs/V12_ISOLATION_2026-11-17.md`: route A, flag off, over route B, a branch that deletes the code, which would cost two days and make `v11` unmergeable). Marco settled the rest the same day: "keep all but agent" (the Sweeper page and header button, the scroll fix, swipe both ways, the squircle header, the wordmark backflip, the hovering shapes, the Atkinson class code, the truthful in-class label, the held course-material sync, the assignment-PDF pass, the update-wall changes list, the ambassador header all ship). Left for Marco: merging the branch into the release line, the phone check of the off state, the stamp, archive and upload. The agent-connection item below is now `v11`'s, not this release's.
+- **Ship 3.5.0 (21), the v11 release, now with ambassador mode** (`origin/v12`
+  merged into `v11` on 2026-11-12, degree progress off; `docs/V11_RETURN_2026-11-11.md` is
+  the short checklist). The backend is fully deployed (2026-11-11: the three
+  test-session findings went live as `agent-auth` v12, `mcp` v11,
+  `agent-snapshot` v8, `delete-account` v15, with the front address secret).
+  Left: merge `claude/v11-ui-pass-84648c` and look at it on a phone; a
+  second person's phone through the whole connect-draft-submit path; a link
+  draft and a file draft submitted once; stamp 3.5.0 (21) in `project.yml`
+  and `project.pbxproj`; paste `docs/appstore/LISTING.md` What's New and the
+  3.5.0 block of `REVIEW_NOTES.md`; re-read the privacy label for the agent
+  connection; archive, upload, submit; set the manifest `changes` list when
+  it is live. Not in this release: ChatGPT (Marco, 2026-11-11: "no chat gpt
+  for now"), the connector listing (needs icon, support and privacy URLs).
 - **`v12` is with Marco for the finishing touches on ambassador mode**
   (handed over 2026-11-12, `docs/HANDOFF_V12_MARCO_2026-11-12.md`). Before
   it ships: his pass on the ambassador page, the device checks nobody has
@@ -55,7 +78,12 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   phone, the daily reminder and its tap, dark mode), the merge with `v11`
   (five files conflict, six Swift files merge without a marker and need
   reading), a test code and paragraph for App Review, a new build number,
-  and the third server zip if it is not deployed yet.
+  and nothing on the server side: the per-school download count's zip went
+  live on 2026-11-22. That count needs the App Store privacy label re-read
+  before the build is submitted, and shows zero until a build with it is
+  released. Also unseen on any phone: the
+  2026-11-18 sections (what works, from the founders, the feed recording
+  and post-result sheets).
 - **Degree progress is switched off on `v12` and continues on the
   `degree-progress` branch** (2026-11-12, Olisa: not ready, so `v12` went to
   Marco without it, `FeatureFlags.degreeProgress = false`, nothing deleted;
@@ -182,20 +210,50 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
      it afterwards.
   Also open: the phone's course-material sync reported `manifest failed ·
   uploaded 0 · errors 7` on 2026-11-03, which would starve extraction.
+- **The Sweeper rings only when it should** (for 3.5.0 (21), Marco's
+  decision of 2026-11-17/18; **Release 1 built 2026-11-18 on
+  `claude/sweeper-build-0a4dd0`, blind**, the server wake in progress on the
+  same branch; `docs/SWEEPER_BUILD_PLAN_2026-11-18.md` is the build order;
+  what is left is the device checks under CLAUDE.md → Known gaps and the
+  merge into the release line at Marco's word; the paragraph below is the
+  plan as written on 2026-11-16). Marco's "Yes, plan it" of 2026-11-16
+  answered the research's one question: the server may hold, per install,
+  an APNs device token and the minutes at which that install wants to be
+  woken, and nothing about which course, which work, a session or a state.
+  Later the same day Marco told the research session, of "arm only from a
+  confirmed read": "no dont want no alarm option as this cd lead to someone
+  missing an assignemnt". An occasional wrong ring is accepted over a
+  missed one, so **the alarm stays armed ahead of time as today and the
+  work is making the cancel as reliable as iOS allows**.
+  `docs/SWEEPER_ACCURACY_PLAN_2026-11-16.md` (revised for that the same
+  day) is the brief, two releases: **Release 1, phone only**, four phases
+  that ship alone, in order: cancel at observation; a `planner/items` poll
+  every minute inside the last hour while the app is open; only a
+  confirmed submitted read cancels (an unknown read never arms or disarms)
+  plus the kind-based quiet rules (nothing to submit, in-class, zero
+  points, optional/survey titles, found exams); the background wake proven
+  on a phone with a throttle bypass for the poll. **Release 2, the server
+  timer push**: a silent APNs push at the phone's chosen minutes, best
+  effort, never after a force-quit, degrading to Release 1 under every
+  failure Apple documents; needs the APNs key from Olisa as Account Holder
+  and a paragraph in `docs/PRIVACY.md`; optionally, for the three-buzz
+  fallback only, a notification service extension that downgrades a buzz
+  to "turned in" after a force-quit, at the price of cookies in a second
+  process and a title on the server. The floor that remains: a force-quit
+  app or a dropped push with a website submission in the last hour rings
+  once for work already in; "turned in" on the alarm silences it. Measured
+  by counts kept on the phone (`rangSubmitted` to zero or only the floor),
+  never titles.
 - **Reminders for work already turned in, and a Sweeper that earns its
   ring** (Marco, 2026-11-04: reminded of an assignment he had submitted
   fifteen minutes earlier; agreed to the plan the same day). Reminders
   are local notifications scheduled days ahead and only a replan after a
   Canvas grades fetch unsets one; that fetch runs at most every 15
   minutes and only in the foreground, so a submission inside about 20
-  minutes of a reminder, or with the app closed, cannot stop it.
-  `docs/REMINDER_SUBMISSION_FIX_SESSION_PROMPT.md` is the brief, four
-  parts that ship alone: cancel at observation, a submissions-only poll
-  every minute inside the last hour, the background wake proven on a
-  phone with a throttle bypass, and the Sweeper armed only inside the
-  last hour from a confirmed-unsubmitted check, qualified by rules
-  (no-submission, zero points, "optional"/"survey" titles) with a seam
-  for a pooled model verdict later. Not started.
+  minutes of a reminder, or with the app closed, cannot stop it. The
+  2026-11-04 brief (`docs/REMINDER_SUBMISSION_FIX_SESSION_PROMPT.md`) is
+  superseded by the entry above; its four parts are Release 1 there.
+  Not started.
 - **Ship the no-banner sign-in as 3.4.1.** `v9` (2026-11-02): the sign-out
   banner is gone for good, replaced by a quiet status line the clock can
   never trigger; silent re-login on every open; keepalive probes; the
@@ -477,6 +535,177 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
 
 ## Next: features
 
+- **3.5.0 test pass leftovers** (`docs/TEST_RELEASE_3.5.0_2026-11-22.md` →
+  Decisions, 2026-11-22). Deferred from the release night, none blocking:
+  R-M1, the ambassador's day index (a tick inside the 30-minute plan cache
+  after midnight is filed under yesterday; compute it locally with the
+  server's formula, and rewrite `AmbassadorModelTests`, which pin the plan's
+  index; `staleCachedDayIndex` is the test, still `withKnownIssue`); R-M2's
+  second half, a group-chat drop that failed to log (a pending flag resent
+  on the next `refresh()`); R-I2, the overdue lesson's key written before
+  its cover is known to have presented (write it in the cover's `onAppear`).
+  Fixed the same night: R-M2's anonymous post, R-M3, R-L1 to R-L7.
+
+- **Wrong rings after a force-quit: the check in a notification extension**
+  (**built 2026-11-21 on `sweeper/force-quit-check` at Marco's "build it",
+  compiled, never on a phone**; CLAUDE.md → What the app does, "The
+  force-quit check", and Known gaps for what the device test needs;
+  `excused` is fixed there, the zero-point buzz-only idea is not; the
+  research was `docs/SWEEPER_FORCE_QUIT_RESEARCH_2026-11-21.md`). The wake built on
+  2026-11-18 is a background push, which iOS discards for a force-quit app.
+  An alert push with `mutable-content` reaches a Notification Service
+  Extension even then. That extension can read the planner with the phone's
+  own cookies and cancel, while the server keeps holding only a token and
+  minutes. The open question is whether an extension may call
+  `AlarmManager.cancel`. The SDK doesn't forbid it, and the daemon's core
+  has the extension-to-app lookup, but nothing is proven. A two-hour
+  device test (the doc's §6) decides between building that and the
+  narrower fallbacks in its §5. Two small fixes stand alone: Canvas's
+  planner `excused` is not decoded, so the last-hour poll can't cancel
+  excused work; and `points_possible == 0` / `omit_from_final_grade` could
+  go buzz-only ahead of the word list.
+- **The Sweeper as a server-held alarm clock** (Marco, 2026-11-17: "help me
+  understand how we can do a smooth sweeper and have it belong to a server
+  … research submission status before we send out the smooth sweeper").
+  **Built on 2026-11-18 on `claude/sweeper-build-0a4dd0` for 3.5.0, both
+  halves, verified on neither** (Done recently; what Olisa and Marco must do
+  before a push can arrive is under CLAUDE.md → Known gaps). Two documents
+  were the design: `docs/SERVER_SWEEPER_EXPLAINED_2026-11-17.md`
+  (plain language: what a closed iPhone can and cannot do, what the server
+  holds and never holds, one alarm start to finish, every failure ending in
+  "the alarm rings as set") and `docs/SERVER_SWEEPER_DESIGN_2026-11-17.md`
+  (Release 2 of `docs/SWEEPER_ACCURACY_PLAN_2026-11-16.md` worked to the
+  field and hour: the phone uploads a device token and at most 24 wake
+  minutes, no items; a `sweeper_wakes` table, `pg_cron` every minute through
+  `pg_net` into a `sweeper-wake` function that sends one silent APNs push
+  per due row with Apple's headers and status handling quoted; the push wake
+  runs the planner read, a Gradescope page only for Gradescope-only items,
+  and cancels on a confirmed "submitted" alone; the fallback is the armed
+  alarm ringing; PRIVACY.md and PROTOCOL.md text; about 45 hours in eight
+  phases after Release 1 ships). It also closes, from Instructure's own
+  pages and `notification.rb`, that Canvas offers a student no push,
+  webhook or receipt an outside app can use: Live Events are the
+  institution's, push channels need Instructure's developer key, and "All
+  Submissions" is instructor-and-admin only. Six departures from the plan's
+  §2 are listed in its §11 (two APNs keys, Gradescope in the wake, not
+  `refreshCanvasGrades` in the 30 seconds, a tick secret and answer-first
+  tick, `verify_jwt = false` with `requireUser`, the 410 timestamp in
+  milliseconds). Needs from Olisa: the APNs key(s) and Push Notifications
+  on the App ID; from Marco: the deploy go and the privacy label.
+
+- **Where the Sweeper's accuracy can come from** (Marco, 2026-11-16: "super
+  important that like smooth sweeper only goes off when it needs to").
+  `docs/SWEEPER_STATUS_RESEARCH_2026-11-16.md`: no iOS mechanism runs our
+  code at an exact time after a force-quit, so the loud alarm can only be
+  armed from a confirmed read, never gated at ring time; the four parts of
+  `docs/REMINDER_SUBMISSION_FIX_SESSION_PROMPT.md` come first, then a
+  server timer push (silent, best effort) is the one way to reach a closed
+  app, and it needs the owners' answer on holding a device token and ring
+  minutes per install. Answered yes on 2026-11-16. **Marco's decision the
+  same day: no "no alarm unless confirmed" mode ("no dont want no alarm
+  option as this cd lead to someone missing an assignemnt"); a missed
+  assignment is worse than a wrong ring.** The build brief is
+  `docs/SWEEPER_ACCURACY_PLAN_2026-11-16.md` (Now, above; the plan
+  session's, being revised to the always-armed design); it replaces part 4
+  of the 2026-11-04 brief.
+
+- **A loud same-day warning for in-class quizzes** (Marco, 2026-11-09: "it
+  didn't tell me I had a quiz today"). PHYS 0151 Quiz 7 was in todo for two
+  days and filed at its due time; the Sweeper never rings for nothing to
+  submit, so the 1-hour reminder is the only alert. Three options for Marco
+  in `docs/QUIZ_MISSED_2026-11-09.md` (a morning-of notice for quiz/exam
+  titles; exam-card treatment; leave it). His pick first; then read his
+  lead times off the plist.
+
+- **Agent connection for v11** (Marco, 2026-11-07: "a connection for an
+  agent to have all the context to your classes and the possibility to
+  submit assignments"). Plan in `docs/AGENT_CONNECTION_PLAN_V11_2026-11-07.md`
+  on `research/agent-connection-v11` (docs only, off `v10`), direction
+  confirmed by Marco 2026-11-08: a cloud MCP connector on the Supabase
+  backend so claude.ai, the Claude iPhone app, Desktop and Code (ChatGPT
+  where its plans allow) read the student's work list, courses, pooled
+  material and facts, and propose drafts (text, URL, file); the draft
+  shows on the card as "drafted by Claude" and the student reviews and
+  submits from the app, Smooth doing the Canvas POST with the student's
+  own session. No submit tool for the agent, ever. Sign-in is pairing as
+  authorization (the phone approves each connection; our own small
+  authorization server, opaque tokens). The one privacy change: the
+  server stores the opted-in student's work list, disclosed in an opt-in
+  screen and `PRIVACY.md`. `docs/AGENT_CONNECTION_RESEARCH_2026-11-08.md`
+  has the mechanics with sources; `docs/AGENT_CONNECTION_SESSION_PROMPT.md`
+  is the brief for the session that builds it, starting with five Phase 0
+  spikes. Supersedes the 2026-10-30 plan on
+  `research/agent-canvas-via-smooth`. **Built so far (2026-11-08, branch
+  `agent/connection-v11` off `research/agent-connection-v11`, not pushed,
+  not deployed):** the Phase 1 backend (`agent-auth`, `mcp`,
+  `agent-snapshot`, six service-role tables, Deno 818 / SQL check green,
+  the authorization server reviewed), the Canvas submit spike
+  (`-LHFSubmitSpike`, compiled, never run), and a Claude Code sign-in
+  completed end to end against a dev tunnel. What stops the next step is
+  in the plan's "Open asks for Marco": a host of ours in front of the
+  functions (Claude Code's sign-in only reads root `.well-known` paths), a
+  connector on his claude.ai account, a Canvas sandbox, his phone, Olisa's
+  deploy go. Decisions 7, 8 and 9 were taken by the session that evening at
+  Marco's word ("decide based on feasibility and our goal"): polling,
+  our own authorization server, a front host of ours
+  (`backend/connector-front/`, on Vercel since Deno Deploy sign-ups were
+  found closed the same night). **Phase 2 (the phone's opt-in screen,
+  approve sheet, snapshot upload, `smooth://link`) is built and compiled
+  the same evening (3714 / 358), never on a phone.** Phases 3 to 5 are not
+  started. **Deployed 2026-11-08 night**: the connector front at
+  `smooth-agent.vercel.app` (Vercel, Marco's account) and the three
+  functions with the migration, at Olisa's go. The end-to-end test (a
+  claude.ai connector, approved on the phone) is the next step and needs
+  Marco's claude.ai account and his phone on the cable. 2026-11-09: a
+  scripted client proved the live path end to end; the hardening and the
+  Phase 3 drafts backend are built on the branch, undeployed; the Phase 3
+  phone half (polling, chip, review sheet) and Phase 4 are next. **Later
+  that night the real thing worked**: Marco's claude.ai connected, his
+  phone approved, Claude read his work list. His ask: a clear "connected"
+  state on the sign-in page and in Smooth at the moment it happens.
+  2026-11-10: hardening, drafts backend and the assignment-context fix
+  deployed; open decision: pool the PDFs linked from open assignments so
+  Claude can read a problem set (privacy text and Olisa's sync).
+  **2026-11-11 (03:52 UTC): v11 complete end to end on Marco's phone.**
+  Claude read Problem Set 7 through the connection (the PDF pooled by the
+  phone's new pass), drafted the solutions, the phone rendered the PDF,
+  Marco reviewed on the redesigned sheet and submitted: Canvas submission
+  357257138. Left: the directory listings (a session is on it), ChatGPT as
+  a client, the `smooth://link` tap from the Claude iPhone app, telling
+  Olisa about the sync changes, and the ship (version, notes, upload).
+  2026-11-10 later, on `claude/v11-backend-645aa0` (off `agent/connection-v11`,
+  nothing deployed): the sign-in page now shows "Connected to Smooth /
+  Returning to <agent>…" with a tick for 1.5 s before handing back (Marco's
+  ask; a hidden tab goes at once); `agent-e2e.mjs` walks the drafts against
+  production (13/13 green); every read tool states all three annotation
+  hints, as OpenAI requires; `docs/CONNECTOR_LISTING_CHECKLIST_2026-11-10.md`
+  lists what ChatGPT and Claude's directory need and what Marco has to
+  supply; and `docs/MANIFEST_FAILURE_2026-11-10.md` shows Marco's
+  "manifest failed" is the phone giving up on a 200 (most likely a
+  cancelled task), which also keeps the assignment-PDF pass from ever
+  running on his phone. The Swift fix is with the dashboard-investigation
+  session.
+  **2026-11-10 (later): the phone halves of Phases 3 and 4 are built,
+  compiled and tested on `claude/v11-phone-c7aaf2`, never on a phone and
+  never against Canvas**: drafts polled onto the card ("drafted by claude",
+  a preview, "review and submit", one notice per draft), the review sheet
+  (whole text, link or file with a QuickLook preview, submit behind a
+  confirmation, decline), `CanvasSubmissionClient` (preflight, attempt
+  record before any POST, the file upload, one POST never retried, a verify
+  GET, "check canvas" when the answer is unknown), and the "connected to
+  claude" confirmation and dashboard line Marco asked for. Next, in order:
+  install on Marco's phone and have claude.ai propose a text draft to a
+  **Canvas sandbox assignment** (never a graded one) and submit it; then a
+  URL and a file; then one low-stakes Penn assignment Marco picks (Phase 4's
+  "done when the verify GET agrees and a repeat is refused").
+- **v11 extensions, ranked** (2026-11-11, documents only):
+  `docs/V11_EXTENSIONS_2026-11-11.md` evaluates fourteen candidates and
+  ranks five to do next: close the unverified submit paths (text, URL, a
+  manual repeat, `smooth://link`), rate caps on the MCP (tool calls and
+  draft creation have none today), a "work on this in Claude" card button,
+  a ChatGPT trial by Marco, and math rendering (Unicode guidance now, a
+  KaTeX spike later). Set aside with reasons: Gradescope drafts, pooled
+  agent notes, student Ed threads, a blocking course opt-out.
 - **Degree progress: pick a degree, see progress, try a what-if** (Olisa's
   ask, 2026-11-09; researched that morning, then **decided and built blind the
   same day on `v12`**: see Now. Olisa chose the Path@Penn-login route the
@@ -642,6 +871,32 @@ in `docs/LAUNCH_PREP_HANDOFF.md`.
   that session. It covers a remote kill switch in the update manifest
   (off unless turned on), on-device only, recon by Marco before any
   client, and compiling through the GitHub runner on a draft PR.
+
+  **Decision, 2026-11-02 (Olisa, owner): build the direct reader**, having
+  read that McGraw Hill's terms appear to bar "robots, scrapers and
+  automatic devices" without written permission and that Apple 5.2.2 asks
+  for permission under a service's terms. Settled; not to be argued again.
+  The conditions: a remote switch in `lhf-update.json`,
+  `"readers": {"mcgrawHill": true}`, **off unless on** (any other value, a
+  missing key, a failed fetch on a fresh install or a last good fetch over
+  seven days old is off; only Olisa turns it on); a compile-time
+  `FeatureFlags.mcgrawHillReader`; on the phone only, never pooled, never in
+  the ask context document, no analytics; `docs/PRIVACY.md` in the same
+  commit as the reader; never on preview or demo data.
+
+  **2026-11-24, on `v13`** (the new line, cut from the 3.5.0 (21) source):
+  the groundwork from `feature/mcgraw-hill-reader` (green there 3458/340 on
+  `v8`) is ported: the switch and its store, `ReaderGate`, the launch-host
+  recognition and its id cache, `McGrawHillEnricher` (done-state, the
+  student's own date and "in connect" onto recognised Canvas rows; no second
+  card), `McGrawHillRow` (the `mh-` home Olisa agreed for items Canvas does
+  not list, filtered out of ask), the Keychain service and
+  `McGrawHillReauthRule`. Dropped in the port: the Sweeper exemption, because
+  Marco's buzz-only rule of 2026-11-18 already gives every `external_tool`
+  assignment three buzzes instead of the alarm and he ruled out silencing
+  work by accident. Next: recon, now runnable because Olisa has a Mac and a
+  friend with a Connect class (brief 1, `docs/mcgraw-hill/MARCO_BRIEFS.md`,
+  writes `docs/mcgraw-hill/RECON.md`); then the client, behind the flag.
 
 - **Improve the tree (ask)** (owner's request, 2026-10-24; the research
   is done, nothing implemented). `docs/TREE_IMPROVEMENT_PLAN.md` has the
@@ -1022,6 +1277,140 @@ Kept so nobody rebuilds them blind.
   the change; Apple's on-device model suggests related subject names when a
   search finds little, checked against Penn's list. CLAUDE.md → Degree →
   "Typed search".
+- **2026-11-24, `v13`** (the line after 3.5.0 (21); green on the runner,
+  4536 / 479 at `a9384e4`, iOS build green, not on a phone): the McGraw Hill
+  groundwork (Next → McGraw Hill), the extension's 0.1.3 / 0.1.4 fixes from
+  `v8`, and the five 3.5.0 test-pass findings deferred on 2026-11-22 (R-M1
+  ambassador day index, R-M2 group-chat resend, R-I1 swipe axis, R-I2 lesson
+  key, R-I3 the agent off-switch cleanup).
+- **3.5.0 test-pass fixes** (2026-11-22, `claude/confident-davinci-73aa68`,
+  filtered suites green, Mac only; `docs/TEST_RELEASE_3.5.0_2026-11-22.md` →
+  Decisions): the ambassador's anonymous post ticks only once logged, so a
+  failed log can be retried; the overdue lesson skips cancelled, event and
+  nothing-to-submit items and anything over 60 days late; the practice cards
+  skip submitted work and events; the install count follows the Worker's host
+  rule and ignores a future attempt stamp; the update list drops bare
+  domains; contacts get unique ids, drop a trailing extension and refuse
+  vanity letters; "1 user at …".
+
+- **2026-11-22.** Downloads by school. Apple reports none, so the app
+  sends one anonymous count per install after Canvas is connected (the
+  school's Canvas host, new or existing, no id), the ambassador site keeps
+  a per-school daily tally, and each ambassador sees "{school} downloads"
+  in the app and on their web page; the founder page lists every school.
+  The privacy policy says so. On `v12`, compiled on the runner, not on a
+  phone; the server half went live the same day, and no number moves until
+  an app build with it is released.
+- **2026-11-22.** Overdue swipe lesson on `claude/onboarding-work-f6b7f1`,
+  Marco's ask for 3.5.0 via the release session: a student updating with an
+  item 5+ days past due sees, once per install, a cover teaching the swipe on
+  their own most overdue card (`OverdueSwipeLesson`, CLAUDE.md → Dashboard).
+  Filtered suites and the unsigned iOS build green; not yet on a phone.
+- **2026-11-21.** Onboarding pass on `claude/onboarding-work-f6b7f1`, from
+  Marco's list: the intro's relaxed figure redrawn (seated, leaning back on
+  one arm), the tour cut from three pages to two, the walk's progress dots
+  shown on all three steps, and the swipe practice lesson rebuilt on the
+  student's own just-synced assignments (generic BIO/ECON/WRTG cards as
+  the fallback), with a nudge animation on the practice card, a skip button
+  and shorter lowercase instructions. CLAUDE.md → Onboarding and the 3.4.0
+  "Practice lesson" paragraph. Compiled and tested; not on a phone.
+- **2026-11-22.** Ambassador posters, on `claude/ambassador-posters-f068d6`
+  (not merged, nothing live). `tabard` and `these-two` retired from what an
+  ambassador is offered (plan, gallery, drop chips, stickers), while their
+  printed codes keep scanning and counting; five generic designs
+  (`missed`, `moved`, `one-list`, `sweeper`, `ask`), approved by Marco from
+  the renders, in the catalog with sources and 700 px previews;
+  `build-sites.mjs` learned to add designs to the live Worker's own Map and
+  image dictionary (`scripts/lib/add-posters.mjs`, tested against synthetic
+  hosts of three shapes, never yet against the real file). Worker suite 77
+  pass plus the pre-existing chunked-body failure. Still open: the seventh
+  zip needs the Sites archive from Olisa's ChatGPT session, and Marco's two
+  "more serious" posters are unidentified (not the two unpublished masters).
+
+- **2026-11-21.** Two sign-in fixes on the release line, from Marco's own
+  phone sitting on "duo needs you" for a day: the hidden sign-in renews
+  Duo's 30-day trust before it lapses (a weekly forced re-authentication
+  while the session is alive, `force_login=1`, latching nothing), and a
+  missed Duo push becomes one local notification after an hour. The
+  status line now says "every 30 days, smooth can get signed out".
+  CLAUDE.md → Stay signed in; Known gaps has the phone test.
+- **2026-11-18.** Release 2 of the Sweeper accuracy plan, the server wake,
+  on `claude/sweeper-build-0a4dd0`, built to
+  `docs/SERVER_SWEEPER_DESIGN_2026-11-17.md`: the `sweeper_wakes` table and
+  `sweeper-wake` function (a device token and at most 24 wake minutes per
+  install, a `pg_cron` tick that claims in one statement and sends one
+  silent APNs push per due minute with Apple's exact headers, a dedicated
+  tick secret, config errors failing the tick loudly instead of deleting
+  rows, a 30-day age-out; Deno 942, sql-check green with the cron paths
+  skipped; **not deployed**), and the phone's half (`SweeperWakePlan`,
+  `sweeperWakePass` after each replan, the app delegate's three callbacks,
+  `runWake(.push)` doing only the planner read, the cancel and a no-prompt
+  replan inside a once-only 25 s race, `remote-notification` in both
+  plists, `FeatureFlags.sweeperWake = true`; `docs/PRIVACY.md` and the
+  review notes say what leaves the phone). Not in the tree on purpose: the
+  `aps-environment` entitlement (Olisa's step, after Push Notifications on
+  the App ID) and the push wake's Gradescope leg. Nothing has met Apple or
+  a phone.
+- **2026-11-18.** Release 1 of the Sweeper accuracy plan, on
+  `claude/sweeper-build-0a4dd0` for 3.5.0, blind: a read that sees a
+  submission cancels that item's reminders, buzzes and AlarmKit alarm at
+  once (`cancelForSubmitted`, three observation points); only a confirmed
+  `.submitted` read cancels, an unknown read changes nothing
+  (`SubmissionRead`); the quiet rules by kind in one named rule
+  (`SweeperQuietReason`; the one new reason is a module row with no Canvas
+  id; manual tasks ring as before); a planner poll every minute inside the
+  last hour while open, and one read past the grades throttle at launch, on
+  return to the foreground and in a background wake
+  (`LastHourPoller`, `applyPlannerWindow`); `debugWakeLogV1` and
+  `sweeperCountsV1`. Not built, by the plan's own ask for Marco's word: the
+  zero-points and optional-title rules.
+- **2026-11-17.** The agent connection switched off for 3.5.0 (`FeatureFlags.agentConnection = false`, `claude/v12-isolate-ab8b22`, `docs/V12_ISOLATION_2026-11-17.md`): the flag already hid Profile, `smooth://link` and both passes; the cached-draft chip and prev's "submitted by you" line, which read the phone's cache and attempt store and not the flag, now guard on `agentSurfacesAllowed`. Nothing deleted; `v11` keeps the feature.
+
+- **2026-11-22.** Ambassador mode, round two (`claude/ambassador-work-c14201`,
+  compiled and tested, not on a phone): the page is its own destination
+  from the header medal, Profile and the reminder; for ambassadors the
+  dashboard's date line reads "November 22nd", the medal is 42pt and a
+  stats card shows "users at <school>" from the install count; the page
+  opens on a downloads goal of 100; posters has a 0...30 slider instead of
+  a tick; anonymous chats has a "1 a day" goal with a week of dots and the
+  weekly minimum, a daily reminder, and the Worker's two-kind posting
+  guidance ("plug smooth" and "sneak smooth in" since round three the same
+  evening, one example post each and a how line; Marco's Odyssey rule)
+  with a bundled fallback; the stats became one line under the date in
+  round three. The release line and the posters branch were merged in first.
+  Nothing deployed: the Worker's `guidance` and the posters wait for
+  Olisa's zip.
+- **2026-11-21.** Ambassador mode cut to the job (Marco, from the build on
+  his phone): the page is four task rows (anonymous chats, group chats,
+  posters, feedback) that each open a sheet with a "done", then numbers, the
+  reminder (twice a week by default) and the account rows; the job line,
+  "what works", "help us help you" and the messages section are gone, the
+  feed-still and post-result sheets deleted; a once-per-install intro after
+  the first sign-in; "Ambassador" before the medal in the header. On
+  `claude/ambassador-work-c14201`, compiled and tested, not on a phone. The
+  posters themselves are being redone on `claude/ambassador-posters-f068d6`
+  (retire the Penn-specific designs, add Marco's two serious ones, new
+  generic ones for his approval); nothing deployed.
+- **2026-11-19.** The ambassador post bank is two posts. Olisa had every
+  written post removed and kept only his two real Sidechat posts (the
+  question, the ranking), each with the reply "Smooth for Students on the
+  App Store", which the app and the web page now show under the post with
+  its own copy button. Today's post alternates between the two; no rest
+  day. The same day the 2026-11-18 server zip went live and the `v12`
+  build went onto Olisa's phone. On `v12`, compiled on the runner, not on
+  a phone; the server half went live the same evening. The page also
+  pulls to refresh now, after his phone kept showing the old six from its
+  saved plan.
+- **2026-11-18.** Ambassador mode learns from what worked. Olisa's two
+  Sidechat posts that did well (a question; Smooth slipped into a ranking)
+  are the examples in a new "what works" section, which tells an
+  ambassador to scroll their own feed first and copy the format. Two new
+  uploads: a screen recording of their school's feed (the phone sends
+  stills cut from it, not the video) so the founders can write posts for
+  that campus, and a screenshot of how a post did with its upvotes and
+  views. The founder page can send an ambassador a post to try. On `v12`,
+  compiled on the runner, not on a phone; the server half is a zip waiting
+  for a deploy.
 - **2026-11-12.** Ambassador mode after its first look on a phone: the
   "getting started" checklist is gone, the page opens on the job and a
   filled "open my web page" button, feedback is "feedback and ideas" and
@@ -1029,6 +1418,14 @@ Kept so nobody rebuilds them blind.
   (everywhere a professor posts, the tree, the sweeper) with five in a hype
   voice. Degree progress switched off behind its flag, and `v12` handed to
   Marco.
+- **2026-11-10.** A no-submission card says "in class" only when Canvas says
+  on paper, it is an event, or its title names a quiz or exam; otherwise
+  "off canvas" (`NothingToSubmitLabel`, CIS 3990 Project 2). Not on a phone.
+- **2026-11-10, `v11`.** The Sweeper gets a header button (broom, left of
+  the megaphone) and its own page: on/off, a countdown card for the next
+  alarm, defaults, and per-class on/off, lead time and sound. The Profile
+  section is gone. Scrolling that starts on a card no longer sticks
+  (`CompletionSwipe.Axis`).
 - **2026-11-09.** Ambassador mode in the app (Profile → ambassador, for
   `v11`): sign in with the code from your ambassador page, today's post
   written and ready to copy, "i posted it", your numbers, a daily local

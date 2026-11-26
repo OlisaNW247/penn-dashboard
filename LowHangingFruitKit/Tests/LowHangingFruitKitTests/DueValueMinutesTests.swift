@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+@testable import LowHangingFruitKit
 @testable import LowHangingFruitUI
 
 /// The card's date column and the spoken/menu-bar due text, inside the last
@@ -114,27 +115,79 @@ struct DueValueMinutesTests {
     }
 }
 
-/// The small line under the due value: "in class" for nothing-to-submit cards,
-/// beaten by "late" because only one word fits in that slot.
+/// The small line under the due value: the nothing-to-submit word, beaten by
+/// "late" because only one word fits in that slot. Since 2026-11-10 the word
+/// is "in class" only when Canvas says on paper, the item is an event, or the
+/// title names a quiz or exam; otherwise "off canvas" (CIS 3990's Project 2,
+/// handed in on a git server, read "in class" before).
 @Suite("Due value secondary label")
 struct DueValueSecondaryLabelTests {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
-    @Test("nothing to submit, not overdue, says in class")
-    func inClass() {
+    @Test("a nothing-to-submit word, not overdue, is shown")
+    func shown() {
         let value = smoothDueValue(now.addingTimeInterval(5 * 3600), now: now)
-        #expect(value.secondaryLabel(showsNothingToSubmit: true) == "in class")
+        #expect(value.secondaryLabel(nothingToSubmit: "in class") == "in class")
+        #expect(value.secondaryLabel(nothingToSubmit: "off canvas") == "off canvas")
     }
 
     @Test("nothing to submit and overdue says late")
     func lateWins() {
         let value = smoothDueValue(now.addingTimeInterval(-10 * 3600), now: now)
-        #expect(value.secondaryLabel(showsNothingToSubmit: true) == "late")
+        #expect(value.secondaryLabel(nothingToSubmit: "in class") == "late")
     }
 
     @Test("a normal card that is not overdue has no secondary line")
     func normalHasNone() {
         let value = smoothDueValue(now.addingTimeInterval(5 * 3600), now: now)
-        #expect(value.secondaryLabel(showsNothingToSubmit: false) == nil)
+        #expect(value.secondaryLabel(nothingToSubmit: nil) == nil)
+    }
+
+    @Test("the word per Canvas submission type",
+          arguments: [
+            // (submission_types, title, expected word)
+            (["on_paper"], "Lab notebook check", "in class"),
+            (["none"], "Project 2: Feature Extension", "off canvas"),
+            (["not_graded"], "Reading response", "off canvas"),
+            (["none"], "Quiz 7", "in class"),
+            (["none"], "Midterm 3", "in class"),
+            (["on_paper", "none"], "Worksheet", "in class"),
+          ] as [([String], String, String)])
+    func wordPerType(types: [String], title: String, expected: String) {
+        let grade = GradeItem(id: "1", name: title, pointsPossible: 10, submissionTypes: types)
+        #expect(grade.requiresNoSubmission)
+        #expect(NothingToSubmitLabel.text(isEvent: false, submitsOnPaper: grade.submitsOnPaper, title: title) == expected)
+    }
+
+    @Test("an event keeps in class whatever its title")
+    func eventKeepsInClass() {
+        #expect(NothingToSubmitLabel.text(isEvent: true, submitsOnPaper: false, title: "Read chapter 27") == "in class")
+    }
+
+    @Test("a hybrid or online type is not on paper and not nothing-to-submit")
+    func hybridIsNotOnPaper() {
+        let hybrid = GradeItem(id: "1", name: "x", pointsPossible: 1, submissionTypes: ["on_paper", "online_upload"])
+        #expect(!hybrid.requiresNoSubmission)
+        #expect(!hybrid.submitsOnPaper)
+        let unknown = GradeItem(id: "2", name: "x", pointsPossible: 1, submissionTypes: nil)
+        #expect(!unknown.submitsOnPaper)
+    }
+
+    @Test("quiz is matched as a whole word")
+    func quizWholeWord() {
+        #expect(NothingToSubmitLabel.namesASitting("Quiz 8"))
+        #expect(NothingToSubmitLabel.namesASitting("Weekly quizzes"))
+        #expect(!NothingToSubmitLabel.namesASitting("Quizlet set"))
+        #expect(!NothingToSubmitLabel.namesASitting("Project 2: Feature Extension"))
+    }
+
+    @Test("a DashItem says off canvas for a none assignment and in class for an on-paper one")
+    func dashItemWord() {
+        let a = Assignment(source: .canvas, sourceID: "p2", kind: .assignment, course: "CIS 3990",
+                           title: "Project 2: Feature Extension", dueAt: nil, url: nil)
+        #expect(DashItem(assignment: a, isCompleted: false, requiresNoSubmission: true).nothingToSubmitLabel == "off canvas")
+        #expect(DashItem(assignment: a, isCompleted: false, requiresNoSubmission: true,
+                         submitsOnPaper: true).nothingToSubmitLabel == "in class")
+        #expect(DashItem(assignment: a, isCompleted: false).nothingToSubmitLabel == nil)
     }
 }

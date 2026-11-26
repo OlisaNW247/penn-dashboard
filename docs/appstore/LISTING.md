@@ -1,6 +1,10 @@
 # App Store listing — copy & metadata
 
-_Last updated: 2026-10-20. Rewritten for **3.1.0** (build 13), going straight
+_Last updated: 2026-11-17. Draft for **3.5.0** (build 21): What's New, the
+Sweeper paragraph, the Promotional text and the Description count are new
+(the CONNECT AN AI ASSISTANT paragraph of 2026-11-11 came out on 2026-11-17:
+the agent connection is switched off, `docs/V12_ISOLATION_2026-11-17.md`;
+Marco: "keep all but agent", so the rest of the list stands); the rest is the 3.1.0 rewrite of 2026-10-20 (build 13), which went straight
 to App Review from `v8`. The product is **Smooth** (display name and copy
 only — the bundle id stays `com.lhf.lowhangingfruit`, and internal names such
 as module names, app-group names, and defaults keys keep their LHF spelling).
@@ -9,8 +13,8 @@ as module names, app-group names, and defaults keys keep their LHF spelling).
 claim in the Promotional text, Description and FEATURES has been scrubbed. A
 claim or a screenshot of an unexposed feature is a Guideline 2.3.1 rejection,
 so check the screenshots in App Store Connect for any grades screen too.
-Live on the store is **3.0.0 (11)**, whose copy still carries the grades
-claims, so **every section below has to be re-pasted, not just What's New.**_
+Live on the store is **3.4.1 (20)**; paste the 3.5.0 What's New, Promotional
+text and Description. The 3.0.0 grades claims are long gone from the copy._
 
 Fill these into App Store Connect. Character limits noted; all copy below is
 within limits.
@@ -39,14 +43,13 @@ within limits.
 
 ## Promotional text (≤170, editable anytime)
 
-Every Canvas deadline in one calm list, soonest first — now with an alarm for anything you haven't turned in, and answers to questions about your classes. (154)
+Every Canvas deadline in one calm list, soonest first, with an alarm for anything you haven't turned in. Now with its own Sweeper page. (131)
 
 ## Description
 
 There's more to life than school. Smooth is for the rest of it.
 
-Every deadline your classes throw at you — assignments, readings, quizzes,
-labs, the lecture you keep forgetting — lands in one calm list, soonest
+Every deadline your classes throw at you lands in one calm list, soonest
 first. You open it, you see what's next, you close it. That's the whole idea.
 
 Connect Canvas once and Smooth fills itself in: what's due, when, for which
@@ -57,47 +60,41 @@ THE SMOOTH SWEEPER
 Ten minutes before anything you haven't turned in, Smooth rings. On iOS 26 it's
 a real alarm: full screen on the lock screen, through silent mode and Focus,
 with "turned in" and Stop buttons, and a live countdown in the Dynamic Island.
-Open the app while it rings and Smooth takes the whole screen: "turned in,"
-"open in canvas," or "not yet." On older iPhones it's three loud Time
+Open the app while it rings and Smooth takes the whole screen. On older iPhones it's three loud Time
 Sensitive notifications with "turned in" and "open in canvas" buttons. It's on
-by default, with a switch in Profile.
+by default; the Sweeper has its own page, from the alarm button in the header.
 
 NOT JUST PROBLEM SETS
 A week of school isn't only things you upload. Smooth picks up readings, class
-sessions, and everything else on your Canvas calendar — including readings a
-professor buries in the Modules page — and tags anything you don't hand in
-with a plain "nothing to submit," so you always know whether a deadline wants
-a file or just you. Those never turn red for being late. They just pass.
+sessions, and everything else on your Canvas calendar, including readings
+buried in the Modules page, and tags anything you don't hand in so you know
+whether a deadline wants a file or just you. Those never turn red for being
+late. They just pass.
 
 THE MEGAPHONE
-Tap it for the past week of announcements from Canvas and Ed Discussion, and
-the tasks hiding inside them. Those tasks land on your list as cards too, for
-any class where you leave that switched on. Exams named in a syllabus or an
-announcement get one black card each, never duplicated.
+Tap it for announcements from Canvas and Ed Discussion, and the tasks hiding
+inside them. Those tasks land on your list as cards too. Exams named in a syllabus or an
+announcement get one card each, never duplicated.
 
 JUST ASK
 "When's my next exam?" "What's the late policy in 2400?" "Anything new on Ed
 this week?" Ask in plain English on the tree and get an answer out of your own
-course material, with tappable links to its sources. Follow-ups work, and at
-Penn it knows where and when each section meets. An AI model writes the
-answer; offline or over the daily limit, Smooth answers from what's already on
-your phone instead.
+course material, with tappable source links. Follow-ups work. An AI model
+writes the answer; offline or over the daily limit, Smooth answers from what's
+already on your phone instead.
 
 FEATURES
 • One chronological list of everything due, soonest first
 • todo / all / prev views, and a filter by class
-• Swipe to complete; tap a card for details, or to open it in Canvas or
-  Gradescope
+• Swipe to complete; tap a card for details or to open it in Canvas
 • Add your own one-off or weekly tasks; delete them or stop repeating
-• Adjust any due date by hand when your professor moves it
+• Adjust any due date by hand
 • Per-class reminder times and switches
 • Home Screen and Lock Screen widget showing what's due next
-• Ed Discussion (Penn): announcements, pinned threads and staff posts feed the
-  tree and the megaphone
-• Announcement Watcher with an optional AI assist (on by default, off anytime
-  in Profile)
+• Ed Discussion (Penn) feeds the tree and the megaphone
+• Announcement Watcher with an optional AI assist (off anytime in Profile)
 • Stays signed in to Canvas at Penn
-• Light and dark appearance, including a full after-sunset dark mode
+• Light and dark appearance
 
 PRIVATE BY DESIGN
 Your work, your completions, your name, and your Canvas and Gradescope logins
@@ -114,7 +111,53 @@ deletes your account and its data from our server.
 Smooth is an independent app and is not affiliated with or endorsed by
 Instructure (Canvas), Turnitin (Gradescope), Ed Discussion, or any university.
 
-_Description: 3,793 characters including line breaks, within the 4,000 limit. The 3.0.0 text said a grades feature and "archive it in a tap" semester rollover; neither is in this build, so both are gone._
+_Description: 3,373 characters including line breaks, within the 4,000 limit (the 3.5.0 assistant paragraph came out on 2026-11-17 with the feature)._
+
+## What's New in 3.5.0 (release notes, ≤4000)
+
+The Sweeper gets its own page, and rings only when it should.
+
+• The Smooth Sweeper has its own page, opened from the alarm button in the
+  header: a countdown to the next alarm, and a lead time and sound for each
+  class
+• The alarm now stands down the moment Canvas shows the work turned in, and
+  in the last hour before a deadline Smooth checks Canvas every minute while
+  it is open
+• Work Smooth cannot confirm (an outside tool) gets three notifications at
+  the sweeping time instead of the alarm
+• Staying signed in: Smooth renews Duo's trust for this phone before it runs
+  out, so a day away no longer ends on a push you were not there for; if a
+  push is missed, one notification tells you to sign in
+• Swipe a card either way to complete it; scrolling no longer sticks when
+  your finger starts on a card
+• A card with nothing to hand in says "in class" or "off canvas" under its due
+  time, whichever is true
+• Ask knows each class's weekly schedule and your own section, and leans on
+  the newest posts for questions about this week
+• Campus ambassadors get their own page under Profile
+• The update screen lists what changed
+
+_What's New: about 1,000 characters, within the 4,000 limit. Drafted
+2026-11-22 for Marco's review; the agent connection and degree progress are
+switched off in this build and deliberately not mentioned._
+
+### Update wall list for 3.5.0 (the manifest's `changes`)
+
+Set on `lhf-update.json` (the `update-manifest` branch) when 3.5.0 goes
+live, beside the floor the workflow raises. Each line lowercase, at most 40
+characters, no link, at most 6 (`UpdatePolicy.sanitizedChanges` drops a line
+that breaks a rule, never cuts it). Replaces whatever list was there.
+
+```json
+"changes": [
+  "the smooth sweeper has its own page",
+  "the sweeper is more accurate and careful",
+  "swipe a card either way to finish it",
+  "become a smooth ambassador"
+]
+```
+
+Longest line: 40 characters (the limit). Marco's wording, 2026-11-22.
 
 ## What's New in 3.4.1 (release notes, ≤4000)
 
@@ -321,6 +364,15 @@ When prompted in App Store Connect → App Privacy, this app now collects data:
   announcements — uploaded from the student's own Canvas session; not used for
   tracking).
 
+**Open for the first build with the install count (2026-11-22):** after
+Canvas is connected the app sends the school's Canvas web address once, with
+no identifier, to the poster-scan site, which keeps a per-school daily tally
+(`docs/PRIVACY.md` → "One anonymous count: which school"). It is not linked
+to a user and not used for tracking. The cautious answer is one more entry,
+**Usage Data → Other Usage Data, not linked to the user, Analytics**; the
+"there is no ... analytics SDK" sentence below stays true (it is our own
+request, no SDK). Olisa or Marco decides before that build is submitted.
+
 The feedback form (3.3.0) does not change these answers: it is a Google
 Form opened in Safari, outside the app, and the app sends it nothing.
 
@@ -350,12 +402,11 @@ unless it is licensed: confirm the licence is in hand before uploading.)
 
 ## Build / version
 
-- Marketing version: **3.4.1** (stamped 2026-11-06; 3.4.0 (17) is live since
-  2026-10-28; before it 3.3.0 (16), 3.2.1 (15), 3.2.0 (14), 3.1.0 (13))
-- Build: **20** (must exceed every build App Store Connect has seen; 18 and
-  19 were uploaded 2026-11-06/07 and superseded before submission. **Before
-  archiving, confirm in App Store Connect → TestFlight → Builds that no
-  build 20 exists**, and pick the next number if one does.)
+- Marketing version: **3.5.0** (draft; **3.4.1 (20)** is live since 2026-11-08;
+  3.4.0 (17) before it since 2026-10-28; before it 3.3.0 (16), 3.2.1 (15), 3.2.0 (14), 3.1.0 (13))
+- Build: **21** (must exceed every build App Store Connect has seen; 20 is
+  3.4.1's. **Before archiving, confirm in App Store Connect → TestFlight →
+  Builds that no build 21 exists**, and pick the next number if one does.)
 - The widget target's `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` must match
   the app's or validation fails. Both are stamped from `project.yml` and are
-  3.4.1 / 20 in `project.yml` and the committed project.
+  3.4.1 / 20 in `project.yml` and the committed project until the 3.5.0 stamp.

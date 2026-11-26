@@ -58,16 +58,60 @@ struct DashboardPracticeProgress {
         step = Feature(rawValue: feature.rawValue - 1).map(Step.feature) ?? step
     }
 
+    /// The student may leave the lesson from any step; the sync gate on
+    /// `canContinue` still decides when the walk can actually move on.
+    mutating func skip() { step = .ready }
+
     func canContinue(syncReady: Bool) -> Bool { step == .ready && syncReady }
 }
 
+/// The three cards the lesson lets the student practise on. Built from the
+/// assignments the just-finished Canvas sync fetched, because testers read
+/// invented classes as "I'm not taking those". Nothing here is written back:
+/// the cards are plain values and swiping one only moves the lesson's own state.
+enum PracticeCards {
+    nonisolated static func items(from assignments: [Assignment], now: Date) -> [DashItem] {
+        // Not work Canvas already shows as handed in, and not a calendar event:
+        // "swipe right to finish" is the first thing a student does to their own
+        // list, and it should land on something they still owe (R-L4).
+        let upcoming = assignments
+            .filter { ($0.dueAt ?? .distantPast) >= now && !$0.submitted && $0.kind != .event }
+            .sorted { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) }
+        var picked: [Assignment] = []
+        var seen = Set<String>()
+        for a in upcoming where picked.count < 3 && seen.insert(a.course).inserted { picked.append(a) }
+        for a in upcoming where picked.count < 3 && !picked.contains(where: { $0.id == a.id }) { picked.append(a) }
+        picked.sort { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) }
+        if picked.isEmpty { return fallback(now: now) }
+        return picked.map { DashItem(assignment: $0, dueOverride: nil, isCompleted: false, completedAt: nil) }
+    }
+
+    /// Courses that could be anyone's, so a student with nothing upcoming still
+    /// sees something that is not claiming to be their schedule.
+    nonisolated static func fallback(now: Date) -> [DashItem] {
+        let rows: [(String, String, Double)] = [
+            ("BIO 101", "lab report 2", 1),
+            ("ECON 101", "problem set 3", 2),
+            ("WRTG 101", "reading response", 4),
+        ]
+        return rows.enumerated().map { index, row in
+            let assignment = Assignment(source: .canvas, sourceID: "practice-\(index + 1)", kind: .assignment,
+                                        course: row.0, title: row.1,
+                                        dueAt: now.addingTimeInterval(row.2 * 86_400), url: nil)
+            return DashItem(assignment: assignment, dueOverride: nil, isCompleted: false, completedAt: nil)
+        }
+    }
+}
+
 struct CanvasCompletionGuide: View {
+    let items: [DashItem]
     let isReady: Bool
     let notice: String?
     let onContinue: () -> Void
 
     @State private var progress = DashboardPracticeProgress()
-    @State private var samples = SampleData.items()
+    /// Off at the first touch, and never on under Reduce Motion.
+    @State private var nudging = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AccessibilityFocusState private var instructionFocused: Bool
 
@@ -81,6 +125,7 @@ struct CanvasCompletionGuide: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            skipBar
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     header
@@ -108,28 +153,32 @@ struct CanvasCompletionGuide: View {
                     .accessibilityElement(children: .combine)
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(feature?.title ?? (practiced ? "Almost there." : inPrevious ? "2 / 2 · Undo in prev" : "1 / 2 · Try a swipe"))
+                        Text(feature?.title ?? (practiced ? "Almost there." : inPrevious ? "swipe left to undo" : "swipe right to finish"))
                             .font(.lhfSerif(26))
                             .accessibilityAddTraits(.isHeader)
                             .accessibilityFocused($instructionFocused)
-                        Label(feature?.detail ?? (practiced ? "Smooth is finishing your first Canvas sync." : inPrevious ? "Swipe left or tap to undo." : "Swipe right to mark this done."),
+                        Label(feature?.detail ?? (practiced ? "Smooth is finishing your first Canvas sync." : inPrevious ? "pull it left, or tap it, to put it back." : "pull the card to the right when you've turned something in."),
                               systemImage: feature != nil ? "info.circle" : inPrevious ? "arrow.left" : practiced ? "checkmark" : "arrow.right")
                             .font(.lhfSans(15, weight: .medium))
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    if let item = samples.first {
+                    if let item = items.first {
                         if inPrevious {
-                            DoneCardView(item: item, dayLabel: "Today", onTap: undo)
+                            nudged(direction: -1) {
+                                DoneCardView(item: item, dayLabel: "Today", onTap: undo)
+                            }
                         } else {
-                            AssignmentCardView(item: item, onComplete: complete, onEdit: {})
-                                .id(practiced)
-                                .allowsHitTesting(!practiced)
-                                .opacity(practiced ? 0.25 : 1)
-                                .accessibilityAction(named: "Mark complete", complete)
+                            nudged(direction: practiced ? 0 : 1) {
+                                AssignmentCardView(item: item, onComplete: complete, onEdit: {})
+                                    .id(practiced)
+                                    .allowsHitTesting(!practiced)
+                                    .opacity(practiced ? 0.25 : 1)
+                                    .accessibilityAction(named: "Mark complete", complete)
+                            }
                         }
                     }
                     if !inPrevious {
-                        ForEach(Array(samples.dropFirst().prefix(2))) { item in
+                        ForEach(Array(items.dropFirst().prefix(2))) { item in
                             AssignmentCardView(item: item, onComplete: {}, onEdit: {})
                                 .allowsHitTesting(false)
                                 .accessibilityHidden(true)
@@ -192,7 +241,44 @@ struct CanvasCompletionGuide: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.smoothPaper.ignoresSafeArea())
         .onAppear { instructionFocused = true }
-        .onChange(of: progress.step) { _, _ in instructionFocused = true }
+        .onChange(of: progress.step) { _, _ in
+            instructionFocused = true
+            nudging = true
+        }
+    }
+
+    private var skipBar: some View {
+        HStack {
+            Spacer()
+            Button("skip") { skip() }
+                .font(.lhfSans(14, weight: .medium))
+                .foregroundStyle(Color.v2DateText)
+                .buttonStyle(.plain)
+                .frame(minWidth: 44, minHeight: 44)
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 6)
+    }
+
+    /// A slow hint that the card moves: out about 22pt in the swipe's
+    /// direction, back, a rest, until the first touch. The offset sits on this
+    /// wrapper because the card views own their own drag and must not see it.
+    /// One branch on purpose: switching between two `content()` branches when
+    /// `nudging` flips would rebuild the card mid-drag and kill the student's swipe.
+    private func nudged<Content: View>(direction: CGFloat, @ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .phaseAnimator([false, true]) { view, out in
+                view.offset(x: (nudging && !reduceMotion && direction != 0 && out) ? 22 * direction : 0)
+            } animation: { out in
+                // Rest at home: wait, slide out, ease back, wait.
+                out ? .easeInOut(duration: 0.7).delay(1.2) : .easeInOut(duration: 0.5)
+            }
+            .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in nudging = false })
+    }
+
+    private func skip() {
+        change { progress.skip() }
+        if progress.canContinue(syncReady: isReady) { onContinue() }
     }
 
     private var header: some View {

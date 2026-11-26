@@ -46,6 +46,14 @@ final class NotificationScheduler: ObservableObject {
     @Published private(set) var sweeperMinutes: Int
     @Published private(set) var sweeperSound: SweeperSound
     @Published private(set) var sweeperExcludedCourses: Set<String>
+    /// A class's own lead time and sound, when it chose one. Absent means
+    /// "follow the default", so changing the default moves every class that
+    /// never chose (`SweeperSettings`). Versioned keys, because the shape
+    /// (course -> value) is new and an older build must not misread it.
+    @Published private(set) var sweeperMinutesOverrides: [String: Int]
+    @Published private(set) var sweeperSoundOverrides: [String: SweeperSound]
+    private static let sweeperMinutesOverridesKey = "notif.sweeperCourseMinutesV1"
+    private static let sweeperSoundOverridesKey = "notif.sweeperCourseSoundV1"
     nonisolated static let sweeperMinuteOptions = [5, 10, 15, 20, 30, 60]
     var sweeperLead: TimeInterval { TimeInterval(sweeperMinutes * 60) }
 
@@ -79,6 +87,71 @@ final class NotificationScheduler: ObservableObject {
         sweeperExcludedCourses = []
         defaults.removeObject(forKey: "notif.sweeperExcludedCourses")
         rescheduleAfterPreferenceChange()
+    }
+
+    /// Everything the Sweeper plans from, as one value (`SweeperSettings`).
+    var sweeperSettings: SweeperSettings {
+        SweeperSettings(
+            isOn: loudAlertEnabled,
+            defaultMinutes: sweeperMinutes,
+            defaultSound: sweeperSound,
+            excludedCourses: sweeperExcludedCourses,
+            minutesOverrides: sweeperMinutesOverrides,
+            soundOverrides: sweeperSoundOverrides)
+    }
+
+    /// Gives a class its own lead time; nil goes back to the default. An
+    /// unoffered value is ignored, like `setSweeperMinutes`.
+    func setSweeperCourseMinutes(_ course: String, minutes: Int?) {
+        if let minutes {
+            guard Self.sweeperMinuteOptions.contains(minutes) else { return }
+            sweeperMinutesOverrides[course] = minutes
+        } else {
+            sweeperMinutesOverrides[course] = nil
+        }
+        persistSweeperOverrides()
+        rescheduleAfterPreferenceChange()
+    }
+
+    /// Gives a class its own sound; nil goes back to the default.
+    func setSweeperCourseSound(_ course: String, sound: SweeperSound?) {
+        sweeperSoundOverrides[course] = sound
+        persistSweeperOverrides()
+        rescheduleAfterPreferenceChange()
+    }
+
+    /// Clears one class's lead time and sound. Whether the class is switched
+    /// on or off is a separate choice and is left alone.
+    func resetSweeperCourseOverrides(_ course: String) {
+        sweeperMinutesOverrides[course] = nil
+        sweeperSoundOverrides[course] = nil
+        persistSweeperOverrides()
+        rescheduleAfterPreferenceChange()
+    }
+
+    /// An empty map removes its key rather than storing `[:]`, so a student
+    /// who never touched a class leaves nothing behind.
+    private func persistSweeperOverrides() {
+        if sweeperMinutesOverrides.isEmpty {
+            defaults.removeObject(forKey: Self.sweeperMinutesOverridesKey)
+        } else {
+            defaults.set(sweeperMinutesOverrides, forKey: Self.sweeperMinutesOverridesKey)
+        }
+        if sweeperSoundOverrides.isEmpty {
+            defaults.removeObject(forKey: Self.sweeperSoundOverridesKey)
+        } else {
+            defaults.set(sweeperSoundOverrides.mapValues(\.rawValue), forKey: Self.sweeperSoundOverridesKey)
+        }
+    }
+
+    /// The soonest alarm that will really ring, for the Sweeper page's card.
+    /// Nil while reminders are off as well as while the Sweeper is: `reschedule`
+    /// returns before planning when reminders are off, so nothing is set.
+    func nextSweep(in items: [DashItem], now: Date = Date()) -> SweepRing? {
+        guard isEnabled else { return nil }
+        let prefs = resolvedPreferences(nil)
+        return SweeperSettings.nextSweep(in: items, now: now, settings: sweeperSettings,
+                                         courseRemindersOn: { prefs.notificationsEnabled($0) })
     }
     @Published private(set) var authStatus: UNAuthorizationStatus = .notDetermined
 
@@ -148,12 +221,38 @@ final class NotificationScheduler: ObservableObject {
     /// behind a foreground pass must not be allowed to prompt just because
     /// the pass it joined was.
     private struct PassRequest {
-        let items: [DashItem]
+        /// Nil for a pass that only cancels (`cancelForSubmitted`).
+        let items: [DashItem]?
         let mayPrompt: Bool
+        /// Cancels for work confirmed submitted, applied before any re-plan in
+        /// the same pass. They ride in the request, and `merge` below
+        /// concatenates them, so a cancel folded into a running pass is never
+        /// lost to a later re-plan replacing it (nor a re-plan to a cancel).
+        var cancels: [CancelJob] = []
+
+        init(items: [DashItem]?, mayPrompt: Bool, cancels: [CancelJob] = []) {
+            self.items = items
+            self.mayPrompt = mayPrompt
+            self.cancels = cancels
+        }
+
+        static func merged(waiting: PassRequest, arriving: PassRequest) -> PassRequest {
+            // A re-plan is a function of its items, so the newest one wins; a
+            // cancel-only arrival keeps the waiting re-plan.
+            let items = arriving.items ?? waiting.items
+            let mayPrompt = arriving.items != nil ? arriving.mayPrompt : waiting.mayPrompt
+            return PassRequest(items: items, mayPrompt: mayPrompt, cancels: waiting.cancels + arriving.cancels)
+        }
+    }
+
+    private struct CancelJob {
+        let ids: Set<String>
+        let items: [DashItem]
+        let source: WakeSource
     }
 
     /// Makes `reschedule` run one pass at a time; see `RescheduleSerializer`.
-    private let reschedulePasses = RescheduleSerializer<PassRequest>()
+    private let reschedulePasses = RescheduleSerializer<PassRequest>(merge: PassRequest.merged)
 
     private static let enabledKey      = "notif.enabled"
     private static let offsetsKey      = "notif.leadOffsets"
@@ -162,7 +261,7 @@ final class NotificationScheduler: ObservableObject {
 
     /// iOS caps pending local notifications at 64; stay under it with headroom.
     static let maxPending = 60
-    static let horizonDays = 14
+    nonisolated static let horizonDays = 14
 
     /// Pending slots held by requests this planner does not own and must not
     /// count on: ambassador mode's daily reminder (one, or five for
@@ -240,6 +339,12 @@ final class NotificationScheduler: ObservableObject {
         self.sweeperMinutes = Self.sweeperMinuteOptions.contains(minutes) ? minutes : 10
         self.sweeperSound = SweeperSound(rawValue: d.string(forKey: "notif.sweeperSound") ?? "") ?? .smooth
         self.sweeperExcludedCourses = Set(d.stringArray(forKey: "notif.sweeperExcludedCourses") ?? [])
+        // Read defensively: a value that is no longer an offered choice
+        // (an option list that shrank) is dropped, not trusted.
+        let savedMinutes = d.dictionary(forKey: Self.sweeperMinutesOverridesKey) as? [String: Int] ?? [:]
+        self.sweeperMinutesOverrides = savedMinutes.filter { Self.sweeperMinuteOptions.contains($0.value) }
+        let savedSounds = d.dictionary(forKey: Self.sweeperSoundOverridesKey) as? [String: String] ?? [:]
+        self.sweeperSoundOverrides = savedSounds.compactMapValues(SweeperSound.init(rawValue:))
 
         #if DEBUG
         // Screenshot seam: show the reminders feature fully expanded (in-memory
@@ -280,8 +385,15 @@ final class NotificationScheduler: ObservableObject {
         } else {
             cancelAll()
             cancelAlarms()
+            onSweeperWakeInputOff?()
         }
     }
+
+    /// Told when a switch the server wake depends on goes off (reminders, the
+    /// Sweeper), so the server forgets this phone's moments at once rather
+    /// than at the next foreground. Bound by `ContentView`, which owns the
+    /// `AppState`; nil anywhere else, which is the old behaviour.
+    var onSweeperWakeInputOff: (@MainActor () -> Void)?
 
     /// Whether any switch the Profile page shows is on. The empty answer is a
     /// real, saved state (see `init`), and it is invisible in a list of
@@ -309,6 +421,7 @@ final class NotificationScheduler: ObservableObject {
     func setLoudAlertEnabled(_ on: Bool) {
         loudAlertEnabled = on
         defaults.set(on, forKey: Self.loudAlertKey)
+        if !on { onSweeperWakeInputOff?() }
     }
 
     // MARK: Reschedule (idempotent)
@@ -403,14 +516,71 @@ final class NotificationScheduler: ObservableObject {
     }
 
     private func submitPass(_ request: PassRequest, now: Date) async {
-        lastScheduledItems = request.items
-        rescheduleGeneration += 1
+        if let items = request.items {
+            lastScheduledItems = items
+            rescheduleGeneration += 1
+        }
         var firstPassNow: Date? = now
         await reschedulePasses.submit(request) { request in
             let passNow = firstPassNow ?? Date()
             firstPassNow = nil
-            await self.performReschedule(from: request.items, now: passNow, mayPrompt: request.mayPrompt)
+            for job in request.cancels { self.performCancel(job) }
+            if let items = request.items {
+                await self.performReschedule(from: items, now: passNow, mayPrompt: request.mayPrompt)
+            }
         }
+    }
+
+    /// Takes back, at once, the reminders, buzzes and Sweeper alarm of work a
+    /// source has just confirmed submitted, instead of waiting for the next
+    /// full re-plan (up to 15 minutes later, or a background wake that may not
+    /// come: Marco's 2026-11-03 reminder fifteen minutes after he handed in).
+    ///
+    /// Runs through the same serializer as `reschedule`, so it cannot
+    /// interleave with a pass that is adding the very requests it removes. If a
+    /// pass is running the job is folded into it and runs first in the rerun;
+    /// the return value is then (0, 0), the real counts being in
+    /// `SweeperCounts`. **Never completes anything**: a Canvas-observed
+    /// submission is `canvasSubmitted`, not the student's own tick, and the
+    /// next ordinary re-plan drops the item by its own rules anyway. Only a
+    /// confirmed `.submitted` read gets here; the alarm stays armed days ahead
+    /// otherwise.
+    @discardableResult
+    func cancelForSubmitted(_ ids: Set<String>, items: [DashItem],
+                            source: WakeSource = .foreground) async -> (requests: Int, alarms: Int) {
+        guard !ids.isEmpty else { return (0, 0) }
+        let before = lastCancelCounts
+        let job = CancelJob(ids: ids, items: items, source: source)
+        await reschedulePasses.submit(PassRequest(items: nil, mayPrompt: false, cancels: [job]), perform: { request in
+            for job in request.cancels { self.performCancel(job) }
+            if let items = request.items {
+                await self.performReschedule(from: items, now: Date(), mayPrompt: request.mayPrompt)
+            }
+        })
+        let after = lastCancelCounts
+        return (after.requests - before.requests, after.alarms - before.alarms)
+    }
+
+    /// Running totals of what cancels removed, read as a difference by
+    /// `cancelForSubmitted` so it can report its own counts.
+    private var lastCancelCounts: (requests: Int, alarms: Int) = (0, 0)
+
+    private func performCancel(_ job: CancelJob) {
+        let plan = SubmissionObservation.cancellations(submittedAssignmentIDs: job.ids, items: job.items)
+        guard !plan.requestIDs.isEmpty || !plan.alarmIDs.isEmpty else { return }
+        let sink: any PendingNotificationSink = notificationSinkOverride ?? self
+        sink.removePending(identifiers: plan.requestIDs)
+        if let backend = activeAlarmBackend() {
+            // A ringing alarm is stopped first (stopping is what silences it),
+            // then every id the item could have been scheduled under is
+            // cancelled; ids AlarmKit never held are ignored.
+            backend.stopRinging(among: plan.alarmIDs)
+            backend.cancel(ids: plan.alarmIDs)
+        }
+        lastCancelCounts.requests += plan.requestIDs.count
+        lastCancelCounts.alarms += plan.alarmIDs.count
+        SweeperCounts.increment(SweeperCounts.cancelledAtObservation, by: 1, defaults: defaults)
+        SweeperCounts.increment(SweeperCounts.cancelledKey(job.source.rawValue), by: 1, defaults: defaults)
     }
 
     private func performReschedule(from items: [DashItem], now: Date, mayPrompt: Bool) async {
@@ -613,6 +783,39 @@ final class NotificationScheduler: ObservableObject {
         }
     }
 
+    /// The missed-Duo-push notice (`DuoWaitNotice`). Same rules as the
+    /// turned-in confirmations: no permission prompt, nothing when reminders
+    /// are off. Answers whether it was handed to the system.
+    func postDuoWaitNotification() async -> Bool {
+        guard isEnabled else { return false }
+        await refreshAuthStatus()
+        guard authStatus == .authorized || authStatus == .provisional else { return false }
+        return (try? await center.add(DuoWaitNotice.request())) != nil
+    }
+
+    /// "Claude drafted Problem Set 7", one per new agent draft
+    /// (`AgentDraftNotices`). Same rules as the turned-in confirmations: no
+    /// permission prompt, nothing when reminders are off. Identifiers use the
+    /// `agentdraft:` prefix, which no other scheme here shares.
+    func postAgentDraftNotifications(_ notifications: [(title: String, body: String)]) async {
+        guard isEnabled, !notifications.isEmpty else { return }
+        await refreshAuthStatus()
+        guard authStatus == .authorized || authStatus == .provisional else { return }
+        for request in Self.agentDraftRequests(notifications) {
+            try? await center.add(request)
+        }
+    }
+
+    static func agentDraftRequests(_ notifications: [(title: String, body: String)]) -> [UNNotificationRequest] {
+        notifications.map { notification in
+            let content = UNMutableNotificationContent()
+            content.title = notification.title
+            content.body = notification.body
+            content.sound = .default
+            return UNNotificationRequest(identifier: "agentdraft:\(UUID().uuidString)", content: content, trigger: nil)
+        }
+    }
+
     /// Pure request-building for turned-in confirmations, mirroring
     /// `gradeRequests` — unit-testable without `UNUserNotificationCenter`.
     ///
@@ -782,11 +985,16 @@ final class NotificationScheduler: ObservableObject {
         // an item the `maxLoudItems` cut dropped keeps its plain 10-minute
         // reminder, if the student asked for one, because otherwise it would
         // have neither.
-        let loudItemIDs = Set(loud.map(\.item.id))
+        // Each item's own lead, because a class can ring earlier or later than
+        // the default: the plain reminder it replaces is the one at THAT lead.
+        let loudLeadByItem = Dictionary(uniqueKeysWithValues: loud.map { ($0.item.id, TimeInterval($0.minutes * 60)) })
+        // Work nothing can confirm (`SweeperSettings.isBuzzOnly`) has no alarm
+        // in `plannedAlarms`, so its buzzes are returned whatever the delivery
+        // is: in alarm mode they are the only alert it has.
+        let buzzOnlyIDs = Set(loud.filter { SweeperSettings.isBuzzOnly($0.item) }.map { $0.item.assignment.id })
         let loudByItem = loud.map { alert in
             (id: alert.item.assignment.id,
-             requests: Self.loudRequests(for: alert, now: now, nameOverrides: nameOverrides,
-                                         minutes: sweeperMinutes, sound: sweeperSound))
+             requests: Self.loudRequests(for: alert, now: now, nameOverrides: nameOverrides))
         }
 
         var byCourse: [String: [Candidate]] = [:]
@@ -831,7 +1039,7 @@ final class NotificationScheduler: ObservableObject {
                 // The loud alert IS the 10-minute reminder for this item, only
                 // louder. Scheduling the plain one beside it would put a fourth
                 // "Due in 10 minutes" on the lock screen at the same instant.
-                if TimeInterval(offset.rawValue) == sweeperLead, loudItemIDs.contains(item.id) { continue }
+                if let loudLead = loudLeadByItem[item.id], TimeInterval(offset.rawValue) == loudLead { continue }
                 let fire = due.addingTimeInterval(-Double(offset.rawValue))
                 guard fire > now else { continue }
                 byCourse[course, default: []]
@@ -843,7 +1051,7 @@ final class NotificationScheduler: ObservableObject {
         // that is none, or just those of the items whose alarm AlarmKit would
         // not take. See `loudAlertsAsAlarms` above.
         let buzzes = loudByItem
-            .filter { !loudAlertsAsAlarms || buzzFallbackAssignmentIDs.contains($0.id) }
+            .filter { !loudAlertsAsAlarms || buzzFallbackAssignmentIDs.contains($0.id) || buzzOnlyIDs.contains($0.id) }
             .flatMap(\.requests)
         let budget = max(0, Self.maxPending - buzzes.count - Self.reservedForeignSlots)
 
@@ -916,6 +1124,11 @@ final class NotificationScheduler: ObservableObject {
         /// position (1...3) so the identifier means the same thing on every
         /// pass. Never empty.
         let pending: [(number: Int, fire: Date)]
+        /// The lead time and sound this item's class resolves to
+        /// (`SweeperSettings.resolved(for:)`), so the buzzes' wording and
+        /// sound and the plain reminder they replace all follow the class.
+        let minutes: Int
+        let sound: SweeperSound
     }
 
     /// Which items get the loud alert, nearest-due first, capped at
@@ -964,20 +1177,22 @@ final class NotificationScheduler: ObservableObject {
     ) -> [LoudAlert] {
         guard loudAlertEnabled else { return [] }
 
+        // The eligibility rule lives on `SweeperSettings`, shared with the
+        // Sweeper page's "next sweep" card; only the timing is judged here.
+        let settings = sweeperSettings
         var alerts: [LoudAlert] = []
         for item in items {
-            guard !item.isCompleted, let due = item.due, due > now, due <= horizon else { continue }
-            guard !item.showsNothingToSubmit, !RecurringTask.isOccurrence(item.assignment) else { continue }
-            guard !item.isFoundExam else { continue }
-            guard !sweeperExcludedCourses.contains(item.assignment.course) else { continue }
-            guard prefs.notificationsEnabled(item.assignment.course) else { continue }
+            guard settings.qualifies(item, now: now, horizon: horizon,
+                                     courseRemindersOn: { prefs.notificationsEnabled($0) }),
+                  let due = item.due else { continue }
+            let (minutes, sound) = settings.resolved(for: item.assignment.course)
 
-            let first = due.addingTimeInterval(-sweeperLead)
+            let first = due.addingTimeInterval(-TimeInterval(minutes * 60))
             let pending = (1...Self.loudAlertCount)
                 .map { (number: $0, fire: first.addingTimeInterval(Double($0 - 1) * Self.loudAlertSpacing)) }
                 .filter { $0.fire > now }
             guard !pending.isEmpty else { continue }
-            alerts.append(LoudAlert(item: item, pending: pending))
+            alerts.append(LoudAlert(item: item, pending: pending, minutes: minutes, sound: sound))
         }
 
         // Nearest first, and the id after that, so the cut is a function of
@@ -1013,7 +1228,19 @@ final class NotificationScheduler: ObservableObject {
         let horizon = now.addingTimeInterval(Double(Self.horizonDays) * 86_400)
         let selection = loudAlerts(from: items.filter { !$0.isFactCancelled }, now: now, horizon: horizon, preferences: prefs)
             .map(\.item)
-        return BerserkAlarmPlan.alarms(for: selection, now: now, nameOverrides: prefs.courseNameOverrides, lead: sweeperLead, sound: sweeperSound)
+            // Unconfirmable work is buzzed, never alarmed (`isBuzzOnly`). It
+            // stays in `loudAlerts`' selection (and the nearest-ten cut), so
+            // `plannedRequests` returns its buzzes; leaving it out of this
+            // plan is what keeps "exactly one of alarm or buzzes" true.
+            .filter { !SweeperSettings.isBuzzOnly($0) }
+        // One call per item, because each class resolves its own lead and
+        // sound and `alarms` takes one of each. Order is the selection's.
+        let settings = sweeperSettings
+        return selection.flatMap { item -> [PlannedAlarm] in
+            let (minutes, sound) = settings.resolved(for: item.assignment.course)
+            return BerserkAlarmPlan.alarms(for: [item], now: now, nameOverrides: prefs.courseNameOverrides,
+                                           lead: TimeInterval(minutes * 60), sound: sound)
+        }
     }
 
     /// The notifications of one item's alert, in the voice of the ordinary
@@ -1054,10 +1281,10 @@ final class NotificationScheduler: ObservableObject {
     private static func loudRequests(
         for alert: LoudAlert,
         now: Date,
-        nameOverrides: [String: String],
-        minutes: Int,
-        sound: SweeperSound
+        nameOverrides: [String: String]
     ) -> [UNNotificationRequest] {
+        let minutes = alert.minutes
+        let sound = alert.sound
         let assignment = alert.item.assignment
         let buttons = LoudAlertActions.buttons(for: assignment)
         return alert.pending.map { number, fire in
@@ -1152,11 +1379,16 @@ final class NotificationScheduler: ObservableObject {
         return name
     }
 
+    /// The start of every due-date reminder's request id. One constant so the
+    /// code that cancels a submitted item's requests builds the same ids the
+    /// planner does instead of re-typing the string.
+    nonisolated static let requestIdentifierPrefix = "due:"
+
     /// Stable, unique per (assignment, lead time) — the property `reschedule`'s
     /// cancel-and-re-add cycle depends on, since a request that re-plans to the
     /// same identifier simply replaces itself.
     private static func identifier(for candidate: Candidate) -> String {
-        "due:\(candidate.item.assignment.id):\(candidate.offset.rawValue)"
+        "\(requestIdentifierPrefix)\(candidate.item.assignment.id):\(candidate.offset.rawValue)"
     }
 
     /// Shares `budget` slots out: the reminders that fire inside `urgentWindow`

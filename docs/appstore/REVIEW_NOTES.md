@@ -1,16 +1,82 @@
 # App Review notes — paste into App Store Connect → App Review Information → Notes
 
-> **For the first build that carries ambassador mode (2026-11-09, `v11`):**
-> add this paragraph to the block, under PROFILE, so the code-gated screen
-> is disclosed (Guideline 2.3.1 forbids undocumented features). Replace the
-> code with a real one from the founder view before pasting.
+> **Ambassador mode ships first in 3.5.0 (21).** The 3.5.0 block below
+> already carries this paragraph (updated for the job-first page and the
+> posters), so the code-gated screen is disclosed (Guideline 2.3.1 forbids
+> undocumented features). Replace `<code>` with a real one from the founder
+> view before pasting, in App Store Connect only. The original wording:
 >
 > ```text
 > AMBASSADOR MODE
 > Profile > ambassador is for a handful of student volunteers who help spread the word about Smooth at their schools. It asks for a code we text them (no account, no password) and then shows a suggested post for the day, a copy button, a daily local reminder they can turn off, and their own link-open counts. It never asks for or rewards App Store ratings or reviews. To see it, enter this test code: <code>. Any other student sees only the row.
 > ```
 
-## To paste for 3.2.0 (14), 2026-10-23 (the same block served 3.1.0 (13) on 2026-10-20)
+## To paste for 3.5.0 (21), 2026-11-17
+
+Since 2026-11-17 the block describes no agent connection: Marco held the
+feature back (`FeatureFlags.agentConnection = false`,
+`docs/V12_ISOLATION_2026-11-17.md`), so a paragraph about it would be a
+claim about an unexposed feature (Guideline 2.3.1), and the privacy and
+networking lines are back to "the work list stays on the device". The
+AMBASSADOR MODE paragraph stays; `<code>` is the test code Olisa makes in
+the founder view, pasted into App Store Connect only, never here. Every
+earlier fact is kept. The Sweeper walkthrough item points at the header's
+alarm button and its page.
+
+```text
+HOW TO REVIEW WITHOUT A SCHOOL LOGIN
+Sign-in is each university's own Canvas single sign-on (Penn: PennKey plus Duo); only the university issues those accounts, so there is no demo login. You don't need one:
+
+On the first screen, tap "Preview" under "Get started" (also at the bottom right of the school search screen). It loads a populated demo; no account or network is needed.
+
+From the demo:
+1. Dashboard: the todo / all / prev switch. Swipe a card either way to complete it; tap it for details.
+2. Megaphone (header): announcements and the tasks found in them.
+3. Ask: the floating button; in the demo it answers on the device.
+4. Profile: the person button in the header. Accounts, reminders, classes, notifications.
+5. Widget: "Next Due", Home or Lock Screen.
+6. Smooth Sweeper: the alarm button in the header opens its page (next-alarm countdown, per-class lead time and sound). It never rings on sample data.
+
+WHAT IT DOES
+A dashboard for university students: their own Canvas deadlines (calendar feed and signed-in session) and, optionally, Gradescope, in one list with local reminders.
+
+ALARMS AND NOTIFICATIONS
+The Sweeper rings before work the student has not turned in (10 minutes by default, on by default): on iOS 26 one AlarmKit alarm, full screen like Clock, after asking permission once; on earlier iOS, or if refused, three Time Sensitive notifications. This version holds the code for a server-sent wake-up before an alarm, but it does not run in the shipped build: the app carries no push entitlement, so its request for a push token fails, and the server function is not deployed. Every notification the student sees is local.
+
+AMBASSADOR MODE
+Profile > ambassador mode is for a few student volunteers who promote Smooth at their schools. It asks for a code we send them (no account, no password) and shows four tasks (a suggested anonymous post for the day with a copy button, a share link for group chats, their school's posters, a feedback box), their school's download count against a goal, a daily local reminder they can turn off, and a way to text the founders. It never asks for or rewards ratings or reviews. To see it, enter this test code: <code>. Any other student sees only the row.
+
+PRIVACY AND NETWORKING
+- Grades, completions, the work list, the name and login cookies stay on the device (cookies in the Keychain, this device only).
+- At Penn, our backend (Supabase) pools non-personal course material (syllabi, pages, assignment descriptions, announcements, Ed staff posts) per Canvas course and answers "ask" through an AI model via OpenRouter; questions and answers are not stored. The announcement "ai assist" is on by default; Profile > notifications turns it off. Each install has an anonymous account (no email or name); disconnecting Canvas deletes it.
+- No tracking, ads or third-party SDKs. One anonymous count per install: after Canvas is connected the app sends the school's Canvas web address once, with no identifier, and our server keeps only a per-school daily tally.
+
+STAY SIGNED IN (PENN ONLY)
+A one-line notice above Penn's login page says signing in saves the PennKey on this device. After a verified sign-in in the app's own login web view, the PennKey is kept in the device Keychain (this device only, never synced, sent only to Penn's login page) to sign the student back in. Duo is never bypassed; one rejected password turns it off; disconnecting Canvas deletes it; preview mode never uses it.
+
+THIRD-PARTY SERVICES (5.2.2)
+Smooth is an independent client for services the student already uses, with their own credentials, showing only their own data; not affiliated with Instructure (Canvas), Turnitin (Gradescope), Ed Discussion or any university.
+```
+
+_Character count of the block above: 3609 (limit 4,000), measured on the text between the fences._
+
+**Before submitting:** the App Store privacy label needs no agent-connection
+answers for 3.5.0 (the feature is off); the label in `LISTING.md` still lists
+the 2026-09 answers, which hold.
+
+What's New: paste the 3.5.0 text from `LISTING.md`.
+
+**Install count (2026-11-22, merged from `v12`).** The block above already
+carries the replacement for the old "No analytics, tracking, ads or
+third-party SDKs" line, because this build sends one anonymous per-install
+count (`FeatureFlags.installCount`, `docs/PRIVACY.md`). The App Store privacy
+label has to be re-read for the same build (`LISTING.md` -> App Privacy): the
+count carries no identifier and is not linked to a user, but it is data the
+app sends and we keep as a tally, so whether the label gains a "Usage Data,
+not linked to you, Analytics" entry is Olisa's and Marco's decision, not an
+assumption.
+
+## History: as pasted for 3.2.0 (14), 2026-10-23 (the same block served 3.1.0 (13) on 2026-10-20)
 
 This is the block to paste for 3.2.0; nothing a reviewer meets changed
 since 3.1.0 except the megaphone's class bubbles and every class listed,
@@ -244,7 +310,10 @@ end-to-end.
    through the same session and regroups them into syllabus categories, which
    the student can edit.
 7. **Reminders (optional):** local notifications before each due date, with
-   per-class settings. No remote/push notifications.
+   per-class settings. 3.5.0 holds the code for a server-sent wake-up
+   before a Sweeper alarm, switched off in the shipped build (no push
+   entitlement, nothing registered, the server function not deployed);
+   every notification is local.
 
 ## Data, privacy, and networking
 

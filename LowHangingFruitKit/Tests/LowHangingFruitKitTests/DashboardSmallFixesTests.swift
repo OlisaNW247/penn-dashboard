@@ -22,7 +22,7 @@ struct DashboardSmallFixesTests {
         #expect(!source.contains(".alert(\"Rename class\""))
     }
 
-    @Test("the add button has the same 44pt hit area as the filter button, and the megaphone is the header's 48pt squircle; the control row stays round")
+    @Test("the add button has the same 44pt hit area as the filter button, and the megaphone is the header's 42pt squircle; the control row stays round")
     func controlRowHitAreas() throws {
         let source = try uiSource("ContentView.swift")
         guard !source.isEmpty else { return }
@@ -41,13 +41,50 @@ struct DashboardSmallFixesTests {
         // buttons, so its size, fill and stroke cannot drift from theirs.
         let megaphone = try declarationBody("private var announcementFindsButton: some View", in: source)
         #expect(megaphone.contains("headerButton(icon: \"megaphone.fill\""))
-        let circle = try declarationBody("private func headerButton(", in: source)
-        #expect(circle.contains(".frame(width: 48, height: 48)"))
-        #expect(circle.contains(".contentShape(Self.headerShape)"))
-        #expect(source.contains("RoundedRectangle(cornerRadius: 48 * 0.32, style: .continuous)"))
+        // Three header buttons since the Sweeper broom (2026-11-10): drawn
+        // 42pt so "Smooth Wednesday" keeps one line, touched at 44pt.
+        let squircle = try declarationBody("private func headerButton<Glyph: View>(", in: source)
+        #expect(source.contains("static let headerButtonSize: CGFloat = 42"))
+        #expect(squircle.contains(".frame(width: Self.headerButtonSize, height: Self.headerButtonSize)"))
+        #expect(squircle.contains(".contentShape(Self.headerShape.inset(by: -1))"))
+        #expect(source.contains("RoundedRectangle(cornerRadius: headerButtonSize * 0.32, style: .continuous)"))
         // The reference the others copy.
         let controls = try uiSource("DashboardControls.swift")
         #expect(controls.contains(".contentShape(Circle().inset(by: -3))"))
+    }
+
+    @Test("the Sweeper's header button is an ink alarm on the tomato wash, and its dot leaves once the page has been seen")
+    func sweeperHeaderButton() throws {
+        // Marco, 2026-11-11: "the shovel or sweep emoji sucks, and the color's
+        // too similar", and the dot "should go away after the first time".
+        let source = try uiSource("ContentView.swift")
+        guard !source.isEmpty else { return }
+        let button = try declarationBody("private var sweeperButton: some View", in: source)
+        #expect(button.contains("Image(systemName: \"alarm.fill\")"))
+        // Marco, 2026-11-12: "It should still be red, but the icon should be
+        // black." The 22% tomato wash, the header's default ink glyph (no
+        // glyph colour passed), no neutral wash.
+        #expect(button.contains("headerButton(color: .smoothTomato, fillOpacity: 0.22) {"))
+        #expect(!button.contains("glyph: .smoothTomatoInk") && !button.contains("smoothMuted"))
+        #expect(button.contains(".fill(Color.smoothTomatoInk)"))  // the dot stays dark red
+        #expect(button.contains("if !sweeperPageSeen {"))
+        #expect(!button.contains("BroomGlyph") && !button.contains("if scheduler.loudAlertEnabled {"))
+        #expect(source.contains("@AppStorage(SweeperView.pageSeenKey, store: UserDefaults.lhf) private var sweeperPageSeen = false"))
+        #expect(SweeperView.pageSeenKey == "sweeperPageSeenV1")
+        let page = try uiSource("SweeperView.swift")
+        #expect(page.contains(".onAppear { UserDefaults.lhf.set(true, forKey: Self.pageSeenKey) }"))
+        #expect(!page.contains("struct BroomGlyph"))
+    }
+
+    @Test("the control row sits 10pt under the header, 4pt higher than before")
+    func controlRowGap() throws {
+        // Marco, 2026-11-12: "push the todo, all, prev, that part up a few pixels".
+        let source = try uiSource("ContentView.swift")
+        guard !source.isEmpty else { return }
+        let row = try #require(source.range(of: "DashViewPicker(selection: $filter)"))
+        let tail = String(source[row.upperBound...].prefix(500))
+        #expect(tail.contains(".padding(.top, 10)"))
+        #expect(!tail.contains(".padding(.top, 14)"))
     }
 
     @Test("the todo empty state does not claim a week, because todo is only overdue plus two days")

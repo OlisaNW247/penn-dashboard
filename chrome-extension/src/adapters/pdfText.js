@@ -11,7 +11,7 @@ globalThis.pdfjsWorker = { WorkerMessageHandler };
 
 // bytes: Uint8Array. Returns the text of every page, joined by newlines
 // (page order), or "" when there is no text layer. Throws on a corrupt PDF.
-export async function extractPdfText(bytes) {
+export async function extractPdfText(bytes, { signal } = {}) {
   const task = pdfjs.getDocument({
     data: bytes,
     isEvalSupported: false,
@@ -20,6 +20,11 @@ export async function extractPdfText(bytes) {
     useSystemFonts: false,
     verbosity: 0,
   });
+  // On abort (the caller's per-PDF timeout) stop pdf.js's work; the pending
+  // promise then rejects. task.destroy() is pdf.js's loading-task API.
+  const stop = () => { try { task.destroy(); } catch { /* ignore */ } };
+  if (signal?.aborted) stop();
+  else signal?.addEventListener("abort", stop, { once: true });
   const doc = await task.promise;
   try {
     const parts = [];

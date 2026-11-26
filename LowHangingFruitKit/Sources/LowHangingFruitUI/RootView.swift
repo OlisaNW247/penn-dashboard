@@ -27,6 +27,8 @@ struct RootCore: View {
     /// The `smooth://pair` link the phone was opened with, while the sheet that
     /// asks "pair this laptop?" is up (`AppState+DeviceSync.swift`).
     @State private var pendingPairing: PendingPairing?
+    @State private var pendingAgentLink: PendingAgentLink?
+    @State private var agentLookup: AgentLookupPresentation?
 
     /// True while the running build is below the enforced floor.
     private var isWalled: Bool {
@@ -53,7 +55,8 @@ struct RootCore: View {
                 UpdateRequiredView(
                     minimum: minimum,
                     message: message,
-                    appStoreURL: updateGate.appStoreURL
+                    appStoreURL: updateGate.appStoreURL,
+                    changes: updateGate.changes
                 )
                 .transition(.opacity)
             } else {
@@ -67,7 +70,7 @@ struct RootCore: View {
                     .overlay(alignment: .top) {
                         if case .updateAvailable(let latest) = updateGate.verdict,
                            !updateGate.isAvailableBannerDismissed {
-                            UpdateAvailableBanner(latest: latest) {
+                            UpdateAvailableBanner(latest: latest, changes: updateGate.changes) {
                                 updateGate.dismissAvailableBanner()
                             }
                             .transition(.move(edge: .top).combined(with: .opacity))
@@ -82,11 +85,19 @@ struct RootCore: View {
             }
         }
         .task {
+            // Recorded before anything waits on the network: the first launch
+            // of this build is the only moment "onboarding already complete"
+            // proves an install pre-dates it.
+            InstallCountReporter.shared.recordFirstLaunch(onboardingComplete: state.hasCompletedOnboarding)
             await updateGate.refresh()
+            await reportInstallCountIfDue()
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
-                Task { await updateGate.refresh() }
+                Task {
+                    await updateGate.refresh()
+                    await reportInstallCountIfDue()
+                }
                 // Ambassador mode: put its daily reminder back if something
                 // cleared the pending queue, and fetch a fresh plan if the
                 // cached one is old. A no-op when nobody is signed in.
@@ -115,16 +126,42 @@ struct RootCore: View {
             // Profile → ambassador. Anything else falls through to pairing.
             if AmbassadorModel.shared.receive(url: url) { return }
             if let pending = state.pendingPairing(from: url) { pendingPairing = pending }
+            if let link = state.pendingAgentLink(from: url) { pendingAgentLink = PendingAgentLink(request: link) }
+        }
+        .task(id: pendingAgentLink?.id) {
+            guard let pending = pendingAgentLink else { return }
+            let found = await state.lookupAgentLink(pending.request)
+            pendingAgentLink = nil
+            if let found, !isWalled { agentLookup = AgentLookupPresentation(lookup: found) }
         }
         .onChange(of: updateGate.verdict) { _, verdict in
-            if case .updateRequired = verdict { pendingPairing = nil }
+            if case .updateRequired = verdict { pendingPairing = nil; pendingAgentLink = nil; agentLookup = nil }
         }
         .sheet(item: $pendingPairing) { pending in
             PairLaptopSheet(link: pending.link).environmentObject(state)
         }
+        .sheet(item: $agentLookup) { shown in
+            AgentLinkApproveSheet(lookup: shown.lookup).environmentObject(state)
+        }
 #if os(macOS)
         .frame(minWidth: 480, minHeight: 600)
 #endif
+    }
+
+    /// The anonymous install count (`InstallCountReporter`). It sits here
+    /// because this view is foreground-only (the background refresh never
+    /// builds it), runs at a cold launch (`.task`) and on every return to the
+    /// foreground, and is asked only after the update check has settled, so a
+    /// build behind the wall (`isWalled`) sends nothing. Preview and demo data
+    /// are refused by the rule through `isUsingFixtureData`.
+    private func reportInstallCountIfDue() async {
+        guard !isWalled else { return }
+        await InstallCountReporter.shared.reportIfDue(
+            onboardingComplete: state.hasCompletedOnboarding,
+            canvasConnected: state.isCanvasConnected,
+            usingFixtureData: state.isUsingFixtureData,
+            host: state.canvasInstallation.host
+        )
     }
 
     /// The feedback card's notice and its two actions, or nil when there is
@@ -192,6 +229,9 @@ struct RootCore: View {
                     // Foreground only (this view never exists in a background
                     // wake), throttled and silent; see `deviceSyncPass`.
                     await state.deviceSyncPass()
+                    await state.agentSnapshotPass()
+                    // Drafts an agent proposed while the app was closed.
+                    await state.agentDraftsPass()
                 }
         }
     }

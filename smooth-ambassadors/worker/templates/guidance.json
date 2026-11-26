@@ -1,0 +1,18 @@
+{
+  "_help": "How to post on the anonymous apps, taught in the app's anonymous-chats sheet (plan.guidance). Marco, 2026-11-22: two kinds, named plainly, each led by one example post and a reply the ambassador rewrites in their own words, then one line of how, then one footer line. {link} is filled by the Worker with the ambassador's share link for the chosen anonymous app; it only ever appears in a reply. No real people, fraternities, schools or school events. The two real posts in messages.json are separate and stay.",
+  "footer": "the idea is just to get the name and link out there without sounding too much like an ad. quantity > quality, use your creativity.",
+  "kinds": [
+    {
+      "key": "plug",
+      "label": "plug smooth",
+      "example": { "text": "what do you guys use to stay on top of assignments", "reply": "i use this app {link}" },
+      "how": "post the question, then reply to yourself."
+    },
+    {
+      "key": "sneak",
+      "label": "sneak smooth in",
+      "example": { "text": "yo that [thing that happened] was crazy. smooth lowk clutch", "reply": "{link}" },
+      "how": "put the smooth link in the comments."
+    }
+  ]
+}

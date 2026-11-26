@@ -88,6 +88,11 @@ final class UpdateGateStore: ObservableObject {
     /// are the states that must show nothing extra.
     @Published private(set) var feedbackNotice: FeedbackNotice?
 
+    /// The manifest's short change list, shown under the line on the wall and
+    /// the banner. Same sources and same fail-open rule as `feedbackNotice`;
+    /// empty adds nothing to either screen.
+    @Published private(set) var changes: [String] = []
+
     private let installedVersion: AppVersion?
     private let manifestURL: URL?
     private let session: URLSession
@@ -235,6 +240,7 @@ final class UpdateGateStore: ObservableObject {
                 self.verdict = cached.verdict(forInstalled: installedVersion)
                 self.appStoreURL = cached.appStoreURL
                 self.feedbackNotice = cached.feedback
+                self.changes = cached.changes
             }
         } else {
             // Unparseable bundle version: inert rather than guessing. See
@@ -326,11 +332,21 @@ final class UpdateGateStore: ObservableObject {
             let policy = try await client.fetchPolicy()
             let fetchedAt = now()
             cache.save(policy, at: fetchedAt)
+            // The reader kill switch (`ReaderSwitches`): recorded on every
+            // successful fetch, whatever it says, so a manifest without a
+            // `readers` object records "all off". Only here, never from the
+            // cached policy at init and never on a failed fetch: the switch
+            // fails closed, so the one thing that may turn a reader on is a
+            // manifest this process has just read. Demo mode and a forced
+            // DEBUG verdict never reach this line (`neverFetches`), and
+            // `ReaderGate` keeps fixture data off on its own anyway.
+            ReaderSwitchStore(defaults: defaults).record(policy.readers, at: fetchedAt)
             lastFetchDate = fetchedAt
             let previous = verdict
             verdict = policy.verdict(forInstalled: installedVersion)
             appStoreURL = policy.appStoreURL
             feedbackNotice = policy.feedback
+            changes = policy.changes
             verdictDidChange(from: previous)
         } catch {
             // Fail open: no state changes at all. Deliberately not even

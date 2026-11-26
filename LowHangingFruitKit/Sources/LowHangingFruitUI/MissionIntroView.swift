@@ -1,7 +1,9 @@
 import SwiftUI
 
-/// The product explanation that follows the animated opening story and hands
-/// directly into account connection. Kept separate from `IntroView` so the
+/// The two-page product explanation that follows the animated opening story
+/// (which already shows the chaos resolving into calm, so the tour no longer
+/// repeats that point on a page of its own) and hands directly into account
+/// connection. Kept separate from `IntroView` so the
 /// cinematic first beat and the swipeable product tour can evolve independently.
 struct MissionIntroView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -14,13 +16,13 @@ struct MissionIntroView: View {
         if let flag = arguments.firstIndex(of: "-LHFMissionPage"),
            arguments.indices.contains(flag + 1),
            let requested = Int(arguments[flag + 1]) {
-            return max(0, min(2, requested))
+            return max(0, min(Self.pageCount - 1, requested))
         }
 #endif
         return 0
     }()
 
-    private static let pageCount = 3
+    private static let pageCount = 2
 
     var body: some View {
         ZStack {
@@ -78,31 +80,10 @@ struct MissionIntroView: View {
     private var pageContent: some View {
         switch page {
         case 0:
-            purposePage
-        case 1:
             methodPage
         default:
             featuresPage
         }
-    }
-
-    private var purposePage: some View {
-        VStack(alignment: .leading, spacing: 28) {
-            MissionScatter()
-                .frame(height: 360)
-
-            Text("We kept losing points on the easy stuff.")
-                .font(.lhfSerif(36))
-                .foregroundStyle(Color.v2Ink)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text("Assignments were everywhere. The small, reachable ones were the easiest to miss.")
-                .font(.lhfSans(17))
-                .foregroundStyle(Color.v2DateText)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.horizontal, 24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
     private var methodPage: some View {
@@ -260,96 +241,6 @@ struct MissionIntroView: View {
             withAnimation(.easeInOut(duration: 0.30)) {
                 page = next
             }
-        }
-    }
-}
-
-/// Illustrates the pane's headline ("We kept losing points on the easy stuff"):
-/// the chips start tossed around the pane, the way coursework feels, then
-/// settle into one ordered list, which is what Smooth does with it. The
-/// animation plays once per appearance (reset on disappear so paging back
-/// replays it) and is skipped entirely under Reduce Motion, which lands
-/// straight on the organized list rather than hiding the point of the picture.
-private struct MissionScatter: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var organized = false
-    @State private var gatherTask: Task<Void, Never>?
-
-    /// label, colour, scattered x/y fraction, scattered rotation, and the
-    /// chip's row in the organized list (due-day order: Today, Tue ... Mon).
-    /// Hard-coded rather than parsed from the label, so copy edits cannot
-    /// silently reorder the list.
-    private let chips: [(String, Color, CGFloat, CGFloat, Double, Int)] = [
-        ("CIS 1200 · Today", .smoothTomato, 0.18, 0.20, -10, 0),
-        ("PHYS 151 · Fri", .smoothMarigold, 0.72, 0.12, 8, 4),
-        ("ECON 0100 · Mon", .smoothLemon, 0.86, 0.44, -7, 5),
-        ("PSYC 1010 · Tue", .smoothTeal, 0.28, 0.48, 11, 1),
-        ("MATH 1410 · Wed", .smoothCobalt, 0.66, 0.66, -5, 2),
-        ("ENGL 016 · Thu", .smoothGrape, 0.08, 0.77, 7, 3),
-    ]
-
-    private let verticalInset: CGFloat = 16
-
-    var body: some View {
-        GeometryReader { proxy in
-            let rowHeight = (proxy.size.height - verticalInset * 2) / CGFloat(chips.count)
-            ZStack {
-                ForEach(Array(chips.enumerated()), id: \.offset) { index, chip in
-                    let parts = chip.0.components(separatedBy: " · ")
-                    let course = parts.first ?? chip.0
-                    let due = parts.count > 1 ? parts[1] : ""
-                    HStack(spacing: 0) {
-                        Text(course)
-                        // Keeps the scattered chip reading "CIS 1200 · Today";
-                        // hidden once the due day is pushed to the right edge.
-                        Text(" · ").opacity(organized ? 0 : 1)
-                        if organized { Spacer(minLength: 8) }
-                        Text(due)
-                    }
-                    .font(.lhfMono(11, weight: .semibold))
-                    .foregroundStyle(Color.v2Ink)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .frame(width: organized ? proxy.size.width * 0.78 : nil)
-                    .background(chip.1.opacity(0.22), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                    .rotationEffect(.degrees(organized ? 0 : chip.4))
-                    .position(
-                        x: organized ? proxy.size.width * 0.5 : chip.2 * proxy.size.width,
-                        y: organized
-                            ? verticalInset + (CGFloat(chip.5) + 0.5) * rowHeight
-                            : chip.3 * proxy.size.height
-                    )
-                    .animation(
-                        reduceMotion
-                            ? nil
-                            : .spring(response: 0.7, dampingFraction: 0.78).delay(Double(index) * 0.06),
-                        value: organized
-                    )
-                }
-            }
-            .frame(width: proxy.size.width, height: proxy.size.height)
-        }
-        .accessibilityHidden(true)
-        .onAppear {
-            gatherTask?.cancel()
-            if reduceMotion {
-                organized = true
-                return
-            }
-            // A cancellable sleeping task, not a Timer: onDisappear cancels it
-            // so nothing outlives the pane.
-            gatherTask = Task {
-                try? await Task.sleep(for: .seconds(0.9))
-                guard !Task.isCancelled else { return }
-                withAnimation(.spring(response: 0.7, dampingFraction: 0.78)) {
-                    organized = true
-                }
-            }
-        }
-        .onDisappear {
-            gatherTask?.cancel()
-            gatherTask = nil
-            organized = false
         }
     }
 }

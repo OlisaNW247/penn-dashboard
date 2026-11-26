@@ -271,6 +271,28 @@ final class AppState: ObservableObject {
     /// dashboard is mounted, which is also when there is nothing to re-plan
     /// from. `disconnectCanvas` runs it (`replanRemindersAfterDisconnect`).
     var reminderReplanner: (@MainActor () async -> Void)?
+
+    /// Takes back the reminders, buzzes and Sweeper alarm of work a source has
+    /// just confirmed submitted, at the moment of observation rather than at
+    /// the next full re-plan. Wired where `reminderReplanner` is (`ContentView`
+    /// and `LHFBackgroundRefresh.run()`), for the same reason: the scheduler
+    /// and the dashboard's items belong to the view layer. It receives ids
+    /// that may be ledger ids, a twin's `linkedID` or Canvas assignment ids;
+    /// `SubmissionObservation.cancellations` matches all three. Nil while no
+    /// dashboard is mounted. Never completes anything.
+    var submissionCanceller: (@MainActor (Set<String>, WakeSource) async -> Void)?
+
+    /// The one door the three observation points use (the grades fetch, the
+    /// structured sources and Gradescope, plus the last-hour poll). The
+    /// callers are synchronous, so the cancel is fired in a main-actor `Task`:
+    /// the cancel is a few removals and an AlarmKit call that must not hold up
+    /// a sync, and its ordering against a re-plan is the scheduler's
+    /// serializer's job, not the caller's. Empty sets and fixture data do
+    /// nothing.
+    func noteSubmittedIDs(_ ids: Set<String>, source: WakeSource) {
+        guard !ids.isEmpty, !isUsingFixtureData, let canceller = submissionCanceller else { return }
+        Task { @MainActor in await canceller(ids, source) }
+    }
     private var pendingReminderReplan: Task<Void, Never>?
 
     /// Assignments whose completion `commitCompletion` has already written to
@@ -335,6 +357,38 @@ final class AppState: ObservableObject {
     /// replace" reasoning `submittedCanvasAssignmentIDs` uses for courses a
     /// partial refresh didn't cover. Read through `requiresNoSubmission(_:)`.
     @Published private(set) var noSubmissionCanvasAssignmentIDs: Set<String> = []
+
+    /// The subset of `noSubmissionCanvasAssignmentIDs` Canvas says is handed
+    /// in on paper (`GradeItem.submitsOnPaper`), persisted beside it under
+    /// `onPaperCanvasAssignmentIDsKey` and updated by the same per-item rule.
+    /// It decides one word only: a no-submission card says "in class" when
+    /// its id is here and "off canvas" otherwise (`NothingToSubmitLabel`).
+    /// Reminders, the Sweeper and auto-filing still read the wider set, so a
+    /// student who submits Project 2 on a git server keeps every rule that
+    /// "nothing to submit on Canvas" already had. A separate set rather than
+    /// a map of submission types, so the existing key and its readers stay
+    /// byte for byte; until the first grade refresh after the update the set
+    /// is empty and such a card reads "off canvas" (or "in class" when its
+    /// title names a quiz or exam), which the launch refresh corrects.
+    @Published private(set) var onPaperCanvasAssignmentIDs: Set<String> = []
+
+    /// Canvas assignments whose only submission type is an external tool
+    /// (`GradeItem.isExternalToolOnly`), persisted under
+    /// `externalToolCanvasAssignmentIDsKey` and updated by the same per-item
+    /// rule as the sets above. The Sweeper reads it: such work can never be
+    /// confirmed submitted, so it gets the three buzzes, not an alarm.
+    @Published private(set) var externalToolCanvasAssignmentIDs: Set<String> = []
+
+    /// Canvas assignment ids Grade Watcher has seen launch McGraw Hill
+    /// Connect or ALEKS (`GradeItem.externalToolHost`, recognised by
+    /// `McGrawHillTool`), cached and persisted exactly as
+    /// `noSubmissionCanvasAssignmentIDs` just above is, for the same reason:
+    /// the enrichment pass (`McGrawHillEnricher`) matches McGraw Hill items
+    /// only to these rows, so a Connect "Homework 3" can never mark an
+    /// unrelated Canvas "Homework 3" done. Updated per item by
+    /// `Self.updatedMcGrawHillToolIDs`; cleared with the Canvas session.
+    /// Device-local, never mirrored to iCloud, never sent anywhere.
+    @Published private(set) var mcgrawHillToolCanvasAssignmentIDs: Set<String> = []
 
     /// Settings → "ai assist". Default
     /// **true**, absent-key-means-on, same idiom as
@@ -490,6 +544,28 @@ final class AppState: ObservableObject {
     /// Test seams: a canned fetch result and the course list to read it with.
     var structuredSourcesRunForTesting: CanvasStructuredSourcesClient.RunResult?
     var structuredSourcesCoursesForTesting: [CourseSummary]?
+    /// Test seam for the last-hour planner read (`fetchPlannerWindowForPoll`).
+    /// Where the Sweeper's counts are kept (`SweeperCounts`); a test points it
+    /// at a scratch suite so it never writes the shared defaults domain.
+    var sweeperCountsDefaults: UserDefaults = .lhf
+    var plannerWindowFetchForTesting: (@Sendable (Date, Date) async -> PlannerWindowResult)?
+    /// The server wake's memory (`AppState+SweeperWake.swift`): the device
+    /// token (also in `UserDefaults.lhf`, so a cold launch has it), the hash of
+    /// the last list the server was sent and when. Memory only, so a relaunch
+    /// sends once, which is what a server that lost the row needs.
+    var sweeperWakeToken: String?
+    var isSweeperWakeRunning = false
+    var lastSweeperWakePlanHash: String?
+    var lastSweeperWakeSentAt: Date?
+    /// Where the wake's flags live; a test points it at a scratch suite.
+    var sweeperWakeDefaults: UserDefaults = .lhf
+    /// Test seam for the two `sweeper-wake` calls.
+    var sweeperWakeTransportForTesting: SweeperWakeTransport?
+    /// Test seam: stands in for `canUseSweeperWake`'s install facts.
+    var sweeperWakeAvailabilityForTesting: Bool?
+    /// What the latest planner window read said, for the poller's back-off
+    /// (rate limit, the bucket's remaining requests). Memory only.
+    var lastPlannerWindowResult: PlannerWindowResult?
 
     // Facts the server read out of pooled course posts (`AppState+AppliedFacts.swift`).
     // Stored here because an extension cannot hold stored properties. Nil under
@@ -581,6 +657,47 @@ final class AppState: ObservableObject {
     /// nothing on screen shows them.
     var isDeviceSyncRunning = false
     var lastDeviceSyncAt: Date?
+
+    // MARK: Agent connection (AppState+AgentConnection.swift)
+
+    /// True when the server lists at least one connected agent. Set by
+    /// `refreshAgentConnections()`; nothing reads the network per frame.
+    @Published var hasAgentConnections = false
+    /// The student's opt-in to the snapshot upload.
+    @Published var agentConnectionEnabled: Bool = UserDefaults.lhf.bool(forKey: SharedDefaults.agentConnectionEnabledKey)
+    var lastAgentSnapshotAt: Date?
+    var isAgentSnapshotRunning = false
+    /// The student's open drafts (AppState+AgentDrafts.swift), newest first.
+    /// Seeded from the content-free cache so a relaunch draws the card chips
+    /// before the first poll; the poll replaces it whole. With the kill
+    /// switch off the cache is left unread (a build that had the feature may
+    /// have written one), so no chip can outlive the switch.
+    @Published var agentDrafts: [AgentDraft] = FeatureFlags.agentConnection ? AgentDraftCache.load(from: .lhf) : []
+    var lastAgentDraftsAt: Date?
+    var isAgentDraftsRunning = false
+    /// "Claude drafted …" notices the last drafts pass found, drained by
+    /// `ContentView` the way turned-in notices are.
+    var pendingAgentDraftNotices: [(title: String, body: String)] = []
+    /// What Canvas takes for each Canvas assignment id, as the last
+    /// structured-sources run read it off the assignments list. Memory only;
+    /// the review sheet reads it before asking Canvas itself.
+    var canvasSubmissionRulesByAssignmentID: [String: CanvasSubmissionRules] = [:]
+    /// What Canvas takes for each open draft, read once per draft when its
+    /// review sheet first opens (`agentDraftAcceptance`). Memory only.
+    var agentDraftAcceptanceByDraftID: [String: CanvasAcceptance] = [:]
+    /// Tests stand in for `CanvasSubmissionClient.fetchRules` here.
+    var agentRulesFetchForTesting: (@Sendable (_ courseID: String, _ assignmentID: String) async -> CanvasSubmissionClient.RulesResult)?
+    /// The dashboard's one-line "connected to claude", set when a connection
+    /// appears that the phone had not seen. Memory only.
+    @Published var agentConnectionBanner: String?
+    #if DEBUG
+    /// The screenshot seam (`-LHFDemoAgentState`, `-LHFDraftReviewHarness`,
+    /// AppState+AgentDemo.swift). Nil in every real run; compiled out of
+    /// Release.
+    var debugAgentDemo: AgentDemoState?
+    #endif
+    /// Never-twice records for Canvas submissions of drafts.
+    lazy var agentSubmitAttempts: AgentSubmitAttemptStore = AgentSubmitAttemptStore.makeDefault()
 
     /// Grade changes detected by the last refresh and not yet announced. The
     /// view layer drains this (it owns the `NotificationScheduler`), so the
@@ -890,6 +1007,14 @@ final class AppState: ObservableObject {
     /// device, not a student preference, so there is nothing here worth
     /// syncing and no harm in two devices disagreeing about it for a while.
     private static let noSubmissionCanvasAssignmentIDsKey = "noSubmissionCanvasAssignmentIDsV1"
+    /// Backs `onPaperCanvasAssignmentIDs`. Device-local, never mirrored, for
+    /// the reasons the key just above gives.
+    private static let onPaperCanvasAssignmentIDsKey = "onPaperCanvasAssignmentIDsV1"
+    /// Backs `externalToolCanvasAssignmentIDs`. Device-local, as the two above.
+    private static let externalToolCanvasAssignmentIDsKey = "externalToolCanvasAssignmentIDsV1"
+    /// Backs `mcgrawHillToolCanvasAssignmentIDs`. Device-local, never
+    /// mirrored, for `noSubmissionCanvasAssignmentIDsKey`'s reasons.
+    private static let mcgrawHillToolCanvasAssignmentIDsKey = "mcgrawHillToolCanvasAssignmentIDsV1"
     private static let announcementWatcherEnabledKey = "announcementWatcherEnabledV1"
     /// Backs `announcementAIEnabled`. Default-**on** now — see that
     /// property's doc comment — so, like `announcementWatcherEnabledKey`
@@ -996,6 +1121,8 @@ final class AppState: ObservableObject {
     /// When `autoLoginAwaitingDuo` was last latched. Absent on a latch set by
     /// an older build, which reads as "old enough" for the foreground retry.
     private static let autoLoginAwaitingDuoSinceKey = "autoLoginAwaitingDuoSinceV1"
+    /// When the last forced Duo-trust renewal was started (`renewDuoTrustIfDue`).
+    static let duoTrustRenewalAttemptAtKey = "duoTrustRenewalAttemptAtV1"
     /// When a foreground attempt last submitted the saved password and did
     /// not end `.renewed`; the next foreground submission waits an hour
     /// (`CanvasSessionRenewer.failedSubmissionSpacing`), across relaunches.
@@ -1179,6 +1306,18 @@ final class AppState: ObservableObject {
         // cold launch, before any grade refresh has had a chance to run.
         self.noSubmissionCanvasAssignmentIDs = Set(
             UserDefaults.lhf.stringArray(forKey: Self.noSubmissionCanvasAssignmentIDsKey) ?? []
+        )
+        self.onPaperCanvasAssignmentIDs = Set(
+            UserDefaults.lhf.stringArray(forKey: Self.onPaperCanvasAssignmentIDsKey) ?? []
+        )
+        self.externalToolCanvasAssignmentIDs = Set(
+            UserDefaults.lhf.stringArray(forKey: Self.externalToolCanvasAssignmentIDsKey) ?? []
+
+        )
+        // Seeded for the same first-frame reason: the Sweeper is planned
+        // before any grade refresh has run.
+        self.mcgrawHillToolCanvasAssignmentIDs = Set(
+            UserDefaults.lhf.stringArray(forKey: Self.mcgrawHillToolCanvasAssignmentIDsKey) ?? []
         )
         // Both default to true (absent-key-means-on, per each property's doc
         // comment) but MUST be read back from UserDefaults.lhf rather than
@@ -1547,6 +1686,40 @@ final class AppState: ObservableObject {
             lastSilentRenewalAttemptAt = nil
             UserDefaults.lhf.removeObject(forKey: Self.lastBackgroundSilentRenewalAttemptAtKey)
             lastBackgroundSilentRenewalAttemptAt = nil
+        }
+        // `-LHFRenewDuoTrustNow`: treats Duo's trust as about to lapse for
+        // this launch (infinite horizon) and forgets the last forced
+        // renewal, so the owner can watch a forced re-authentication on a
+        // phone whose trust is weeks away. The rule's other guards (live
+        // session, no Duo wait, password not rejected, spacing of the
+        // password itself) still apply.
+        if ProcessInfo.processInfo.arguments.contains("-LHFRenewDuoTrustNow") {
+            debugRenewDuoTrustNow = true
+            UserDefaults.lhf.removeObject(forKey: Self.duoTrustRenewalAttemptAtKey)
+        }
+        // `-LHFSubmitSpike <courseID> <assignmentID>`: Phase 0 diagnostic for
+        // docs/AGENT_CONNECTION_RESEARCH_2026-11-08.md §8 items 1-2. Submits a
+        // one-word text entry through URLSession with the saved cookies and
+        // reports what Canvas said. Lines carry no cookie, token or query
+        // string; they go to the console and to `debugSubmitSpikeLogV1`.
+        if let flag = ProcessInfo.processInfo.arguments.firstIndex(of: "-LHFSubmitSpike") {
+            let args = ProcessInfo.processInfo.arguments
+            let ids = args.dropFirst(flag + 1).prefix(2).map { String($0) }
+            if ids.count == 2, ids.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) }) {
+                let host = canvasInstallation.host
+                let base = canvasInstallation.baseURL
+                Task.detached {
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    let cookies = await AutoSyncCoordinator.canvasCookies(forHost: host)
+                    let runner = CanvasSubmitSpikeRunner(session: .shared, baseURL: base, cookies: cookies)
+                    await runner.run(courseID: ids[0], assignmentID: ids[1]) { line in
+                        print(line)
+                        Self.appendSubmitSpikeLog(line)
+                    }
+                }
+            } else {
+                print("LHF-SUBMIT abort: usage -LHFSubmitSpike <courseID> <assignmentID>")
+            }
         }
         // `-LHFForgetDuoTrust`: stages a genuine PennKey + Duo re-login for
         // this launch. It deletes Duo's cookies (the remembered-device trust)
@@ -2743,6 +2916,9 @@ final class AppState: ObservableObject {
             UserDefaults.lhf.set(now.timeIntervalSince1970, forKey: Self.autoLoginAwaitingDuoSinceKey)
         } else {
             UserDefaults.lhf.removeObject(forKey: Self.autoLoginAwaitingDuoSinceKey)
+            // The wait is over: the "sign in" notice for it (DuoWaitNotice)
+            // is stale, and the next latch is a new one that may post again.
+            DuoWaitNotice.latchCleared()
         }
     }
 
@@ -2899,7 +3075,20 @@ final class AppState: ObservableObject {
     /// `-LHFForgetDuoTrust`: no session probe (pre-expiry or keepalive) for
     /// this process, so the aged clock goes straight to the renewal.
     private var debugSkipSessionProbe = false
+    /// `-LHFRenewDuoTrustNow` (DEBUG launch argument): see `init`.
+    private var debugRenewDuoTrustNow = false
     private var loggedProbeSkip = false
+
+    /// `-LHFSubmitSpike`'s trail, kept like `debugRenewalLogV1` so it can be
+    /// read off the phone's App Group plist afterwards (last 50 lines).
+    nonisolated private static func appendSubmitSpikeLog(_ line: String) {
+        guard !SharedDefaults.isTestRunner else { return }
+        let key = "debugSubmitSpikeLogV1"
+        var entries = UserDefaults.lhf.stringArray(forKey: key) ?? []
+        entries.append(line)
+        if entries.count > 50 { entries.removeFirst(entries.count - 50) }
+        UserDefaults.lhf.set(entries, forKey: key)
+    }
 
     private func noteProbeSkipped() {
         guard !loggedProbeSkip else { return }
@@ -2911,6 +3100,13 @@ final class AppState: ObservableObject {
     /// When the renewal now in flight started; nil when idle. The status
     /// line shows "slow connection" only after 3 seconds of it.
     @Published private(set) var silentRenewalStartedAt: Date?
+
+    /// True while the renewal in flight is a forced Duo-trust renewal
+    /// (`renewDuoTrustIfDue`): one that runs over a live session on purpose.
+    /// The status line must not call that "slow connection · reconnecting"
+    /// (test pass of 2026-11-22: the weekly forced sign-in takes 6 to 27 s and
+    /// would have shown the line over a working session every week).
+    private(set) var silentRenewalIsForced = false
 
     /// True while the in-flight foreground renewal has sent a Duo push and
     /// is waiting for the student to approve it. Cleared when the attempt
@@ -2929,7 +3125,7 @@ final class AppState: ObservableObject {
     /// the renewer's in-flight guard would have made it anyway; skipping it
     /// here keeps the stored task and the in-flight flag describing the real
     /// attempt rather than a redundant instant `.notAttempted`.
-    func startSilentCanvasRenewal(cooldown: TimeInterval? = nil) {
+    func startSilentCanvasRenewal(cooldown: TimeInterval? = nil, forceReauthentication: Bool = false) {
         guard pendingSilentRenewal == nil else { return }
         // Nothing left to try silently (item 15); see the property.
         guard !silentRenewalCannotProceed else { return }
@@ -2937,8 +3133,9 @@ final class AppState: ObservableObject {
         let generation = silentRenewalGeneration
         isSilentRenewalInFlight = true
         silentRenewalStartedAt = Date()
+        silentRenewalIsForced = forceReauthentication
         pendingSilentRenewal = Task { @MainActor [weak self] in
-            _ = await self?.performSilentCanvasRenewal(cooldown: cooldown)
+            _ = await self?.performSilentCanvasRenewal(cooldown: cooldown, forceReauthentication: forceReauthentication)
             self?.finishSilentCanvasRenewal(generation: generation)
         }
     }
@@ -2948,6 +3145,7 @@ final class AppState: ObservableObject {
         pendingSilentRenewal = nil
         isSilentRenewalInFlight = false
         silentRenewalStartedAt = nil
+        silentRenewalIsForced = false
         duoPushSent = false
     }
 
@@ -3187,11 +3385,171 @@ final class AppState: ObservableObject {
         startSilentCanvasRenewal()
     }
 
+    /// Pure rule: should the foreground start a FORCED sign-in now, to get
+    /// Duo's remembered-device trust renewed before it lapses?
+    ///
+    /// Why. Duo's trust is a cookie in the hidden login store and lasts 30
+    /// days from the last pass through Duo. The keepalive keeps Canvas's own
+    /// session alive for a daily user, so Duo is never visited and the trust
+    /// silently runs out. The first time that student then leaves for over a
+    /// day, the silent sign-in types the saved PennKey, reaches Duo, finds no
+    /// trust, Duo sends a push nobody approves, and the app latches "duo
+    /// needs you" (the owner's phone, 2026-11-21). Passing through Duo while
+    /// the student is at the phone and the trust is still good renews it
+    /// without a push.
+    ///
+    /// Only inside `horizon` before the trust ends, and only when it has not
+    /// ended: with the trust already gone a forced sign-in would send a push
+    /// for nothing, and the ordinary path (`retrySilentRenewalIfDue`) handles
+    /// that case. The session must be working (a broken one is the ordinary
+    /// path's job), no Duo wait, no rejected password, no attempt in flight,
+    /// no login pane. Attempts are `spacing` apart and the password's own
+    /// foreground spacing applies, so this can never type the password
+    /// more than the renewer already would.
+    ///
+    /// The wrong fixes: renewing whenever trust is missing or old (pushes a
+    /// phone that was fine); a renewal without `force_login` (Canvas lands on
+    /// the dashboard and Duo is never reached, so nothing is renewed); and
+    /// a retry on every refresh (the password would be typed hourly).
+    nonisolated static func shouldRenewDuoTrust(
+        trustExpiry: Date?,
+        now: Date,
+        sessionExpired: Bool,
+        awaitingDuo: Bool,
+        disabledReason: String?,
+        lastTrustRenewalAttemptAt: Date?,
+        lastCredentialSubmissionAt: Date?,
+        lastFailedCredentialSubmissionAt: Date? = nil,
+        renewalInFlight: Bool,
+        loginPaneActive: Bool,
+        isPenn: Bool,
+        canAutoLoginSilently: Bool = true,
+        horizon: TimeInterval = 5 * 24 * 3600,
+        spacing: TimeInterval = 7 * 24 * 3600,
+        credentialSpacing: TimeInterval = CanvasSessionRenewer.foregroundCredentialSpacing,
+        failedSpacing: TimeInterval = CanvasSessionRenewer.failedSubmissionSpacing
+    ) -> Bool {
+        guard isPenn, canAutoLoginSilently else { return false }
+        guard let trustExpiry, trustExpiry > now, trustExpiry.timeIntervalSince(now) <= horizon else { return false }
+        guard !sessionExpired, !awaitingDuo, disabledReason == nil else { return false }
+        guard !renewalInFlight, !loginPaneActive else { return false }
+        if let last = lastTrustRenewalAttemptAt {
+            let age = now.timeIntervalSince(last)
+            guard age >= 0, age >= spacing else { return false }
+        }
+        if let last = lastCredentialSubmissionAt, now.timeIntervalSince(last) < credentialSpacing { return false }
+        // A password that just failed waits out the renewer's own hour.
+        if let last = lastFailedCredentialSubmissionAt, now.timeIntervalSince(last) < failedSpacing { return false }
+        return true
+    }
+
+    /// Foreground only, from `ContentView.refresh()` right after
+    /// `retrySilentRenewalIfDue`. Starts one hidden, forced sign-in when
+    /// `shouldRenewDuoTrust` says so (see it for why). Same attempt as any
+    /// silent renewal otherwise: same credential closure, budget and
+    /// outcome handling.
+    func renewDuoTrustIfDue(now: Date = Date()) {
+        #if DEBUG
+        DebugRenewalLog.record("duo trust check: entered ctx=\(renewalContext.rawValue) fixture=\(isUsingFixtureData) jar=\(hasRefreshedDuoSummary)")
+        #endif
+        guard renewalContext == .foreground, !isUsingFixtureData else { return }
+        // The first pass of a launch runs before the Duo jar has been read,
+        // so `duoTrustExpiry` is nil and the rule would wait for the next
+        // five-minute pass, which a student who opens the app for two
+        // minutes never reaches (seen 2026-11-21: the test launch went to
+        // the background after one minute with nothing attempted). Read the
+        // jar first, then ask again; `refreshDuoRememberSummary` always sets
+        // the flag, so this recurses exactly once.
+        guard hasRefreshedDuoSummary else {
+            #if DEBUG
+            DebugRenewalLog.record("duo trust check: reading jar")
+            #endif
+            Task { @MainActor [weak self] in
+                await self?.refreshDuoRememberSummary()
+                #if DEBUG
+                DebugRenewalLog.record("duo trust check: jar read")
+                #endif
+                self?.renewDuoTrustIfDue(now: Date())
+            }
+            return
+        }
+        var horizon = 5.0 * 24 * 3600
+        #if DEBUG
+        if debugRenewDuoTrustNow { horizon = .infinity }
+        #endif
+        let lastAttempt = (UserDefaults.lhf.object(forKey: Self.duoTrustRenewalAttemptAtKey) as? Double)
+            .map { Date(timeIntervalSince1970: $0) }
+        let lastSubmission = Self.persistedCredentialSubmissionAt()
+        let isPenn = canvasInstallation.id == CanvasInstallation.penn.id
+        let silently = canAutoLoginSilently
+        #if DEBUG
+        // Which guard said no, in words (2026-11-21: the first phone test
+        // refused silently and nothing on the device said why). Counts and
+        // fixed words only.
+        let refusal: String? = {
+            guard isPenn else { return "not-penn" }
+            guard let expiry = duoTrustExpiry else { return "no-trust-cookie" }
+            let days = Int(expiry.timeIntervalSince(now) / 86_400)
+            if expiry.timeIntervalSince(now) > horizon { return "far \(days)d" }
+            if canvasSessionExpired { return "session-expired" }
+            if autoLoginAwaitingDuo { return "awaiting-duo" }
+            if autoLoginDisabledReason != nil { return "password-disabled" }
+            if !silently { return "cannot-auto-login" }
+            if isSilentRenewalInFlight { return "in-flight" }
+            if isCanvasLoginPaneActive { return "login-pane" }
+            if let lastAttempt, now.timeIntervalSince(lastAttempt) < 7 * 24 * 3600 { return "attempt-spacing" }
+            if let lastSubmission, now.timeIntervalSince(lastSubmission) < CanvasSessionRenewer.foregroundCredentialSpacing { return "credential-spacing" }
+            if let failed = failedCredentialSubmissionAt, now.timeIntervalSince(failed) < CanvasSessionRenewer.failedSubmissionSpacing { return "failed-spacing" }
+            if pendingSilentRenewal != nil { return "pending" }
+            if silentRenewalCannotProceed { return "cannot-proceed" }
+            return nil
+        }()
+        DebugRenewalLog.record("duo trust check: \(refusal ?? "start") (trust \(duoTrustExpiry.map { "\(Int($0.timeIntervalSince(now) / 86_400))d" } ?? "none"))")
+        #endif
+        guard Self.shouldRenewDuoTrust(
+            trustExpiry: duoTrustExpiry,
+            now: now,
+            sessionExpired: canvasSessionExpired,
+            awaitingDuo: autoLoginAwaitingDuo,
+            disabledReason: autoLoginDisabledReason,
+            lastTrustRenewalAttemptAt: lastAttempt,
+            lastCredentialSubmissionAt: lastSubmission,
+            lastFailedCredentialSubmissionAt: failedCredentialSubmissionAt,
+            renewalInFlight: isSilentRenewalInFlight,
+            loginPaneActive: isCanvasLoginPaneActive,
+            isPenn: isPenn,
+            canAutoLoginSilently: silently,
+            horizon: horizon
+        ) else { return }
+        guard pendingSilentRenewal == nil, !silentRenewalCannotProceed else { return }
+        let before = duoTrustExpiry
+        startSilentCanvasRenewal(forceReauthentication: true)
+        #if DEBUG
+        Task { @MainActor [weak self] in
+            await self?.awaitPendingSilentRenewal()
+            await self?.refreshDuoRememberSummary()
+            let extended = (self?.duoTrustExpiry).map { after in before.map { after > $0 } ?? true } ?? false
+            DebugRenewalLog.record("duo trust renewal: \(extended ? "extended" : "unchanged")")
+        }
+        #endif
+    }
+
     /// Records one outcome in the summary, the retry bookkeeping and the
     /// consecutive-landing count, then persists them. The writes honour
     /// `persistsConfirmedDeadFlag` so `noteRenewalOutcomeForTesting` stays out
     /// of the shared defaults domain, for the reason given there.
-    private func recordSilentRenewal(kind: RenewalOutcomeKind, context: RenewalContext, at now: Date) {
+    private func recordSilentRenewal(kind: RenewalOutcomeKind, context: RenewalContext, at now: Date, forcedWithoutLatch: Bool = false) {
+        // A forced Duo-trust attempt that reached Duo or the login page
+        // writes its summary and nothing else: the landing streak, the
+        // stand-down and the last-outcome slot are read by rules about the
+        // ordinary sign-in and must not hear about it.
+        if forcedWithoutLatch {
+            lastSilentRenewalSummary = Self.renewalSummary(kind: kind, at: now, context: context)
+            if persistsConfirmedDeadFlag, let summary = lastSilentRenewalSummary {
+                UserDefaults.lhf.set(summary, forKey: Self.lastSilentRenewalSummaryKey)
+            }
+            return
+        }
         // Landing count first. Only a foreground landing counts toward the
         // "second consecutive" rule; a background landing neither adds to it
         // nor resets it. `.timedOut` is unknown and leaves it alone.
@@ -3313,6 +3671,7 @@ final class AppState: ObservableObject {
         defaults.removeObject(forKey: Self.lastBackgroundSilentRenewalAttemptAtKey)
         defaults.removeObject(forKey: Self.silentRenewalConsecutiveLandingsKey)
         defaults.removeObject(forKey: Self.lastCredentialSubmissionAtKey)
+        defaults.removeObject(forKey: Self.duoTrustRenewalAttemptAtKey)
     }
 
     // MARK: - Duo remembered-device diagnostics
@@ -3434,8 +3793,27 @@ final class AppState: ObservableObject {
     /// beside a fresher one. A date already in the past is ignored so an
     /// expired cookie never counts as trust. Reads only `expiresDate`, never a name or a value, and is
     /// `nonisolated` for the same reason as its sibling above.
+    ///
+    /// Only Duo's remembered-device cookies count (2026-11-21): the jar also
+    /// holds other Duo cookies that live a year, and the max over all of them
+    /// kept the renewal's five-day window from ever opening. The cookie's
+    /// purpose tag is the part of its name before the first `|`
+    /// (`duoCookieDisplayName` explains the tag is not a secret and the part
+    /// after the `|` is); the remembered-device tag is `browsertrust`.
     nonisolated static func duoTrustExpiry(cookies: [HTTPCookie], now: Date) -> Date? {
-        cookies.compactMap { $0.expiresDate }.filter { $0 > now }.max()
+        cookies
+            .filter { duoCookieTag($0.name) == duoTrustCookieTag }
+            .compactMap { $0.expiresDate }
+            .filter { $0 > now }
+            .max()
+    }
+
+    nonisolated static let duoTrustCookieTag = "browsertrust"
+
+    /// The purpose tag of a Duo cookie name: everything before the first `|`.
+    nonisolated static func duoCookieTag(_ name: String) -> String {
+        guard let separator = name.firstIndex(of: "|") else { return name }
+        return String(name[name.startIndex..<separator])
     }
 
     /// Truncates a Duo cookie name to everything before its first `|` plus
@@ -3471,11 +3849,19 @@ final class AppState: ObservableObject {
     /// never stale by even one fire-and-forget `Task`'s worth of a race),
     /// and on app foreground (`ContentView.refresh()`).
     func refreshDuoRememberSummary() async {
+        // Attach a web view to the store first, or a cold process reads an
+        // empty jar (see `LoginDataStores.warmCanvasStore`).
+        LoginDataStores.warmCanvasStore()
         let cookies: [HTTPCookie] = await withCheckedContinuation { continuation in
             LoginDataStores.canvas.httpCookieStore.getAllCookies { continuation.resume(returning: $0) }
         }
         let duoCookies = cookies.filter { $0.domain.localizedCaseInsensitiveContains("duosecurity") }
         let now = Date()
+        #if DEBUG
+        // Counts only: how many cookies the store answered with, and how many
+        // of them are Duo's, so an empty read is visible on a phone.
+        DebugRenewalLog.record("duo jar: \(cookies.count) cookies, \(duoCookies.count) duo")
+        #endif
         duoRememberSummary = Self.duoRememberSummary(cookies: duoCookies, now: now)
         duoTrustExpiry = Self.duoTrustExpiry(cookies: duoCookies, now: now)
         hasRefreshedDuoSummary = true
@@ -3961,7 +4347,8 @@ final class AppState: ObservableObject {
         loginMissing: Bool,
         hasSavedCredentials: Bool,
         sessionExpired: Bool = true,
-        saveFailed: Bool = false
+        saveFailed: Bool = false,
+        forcedRenewal: Bool = false
     ) -> CanvasSessionStatusLine {
         if passwordRejected { return .passwordChanged }
         if saveFailed { return .couldntSavePassword }
@@ -3969,8 +4356,12 @@ final class AppState: ObservableObject {
         // a missed push must not speak over a live one (2026-11-02 review).
         if awaitingDuo && sessionExpired && !renewalInFlight { return .duoNeedsYou }
         if loginMissing && !hasSavedCredentials { return .signInNeeded }
+        // A push the forced Duo-trust renewal sent is still the student's to
+        // approve, so that line stays; "reconnecting" does not, because a
+        // forced attempt runs over a live session and nothing is being
+        // reconnected (`silentRenewalIsForced`).
         if renewalInFlight && duoPushSent { return .duoPush }
-        if renewalInFlight && inFlightFor >= 3 { return .reconnecting }
+        if renewalInFlight && inFlightFor >= 3 && !forcedRenewal { return .reconnecting }
         return .none
     }
 
@@ -4010,7 +4401,8 @@ final class AppState: ObservableObject {
             loginMissing: missing,
             hasSavedCredentials: missing ? hasCredentialForSilentRenewal : false,
             sessionExpired: canvasSessionExpired,
-            saveFailed: credentialSaveFailed
+            saveFailed: credentialSaveFailed,
+            forcedRenewal: silentRenewalIsForced
         )
     }
 
@@ -4160,7 +4552,7 @@ final class AppState: ObservableObject {
     /// A background `AppState` gets `CanvasSessionRenewer.backgroundTimeout`
     /// so the attempt fits inside the system's wake budget.
     @discardableResult
-    private func performSilentCanvasRenewal(cooldown: TimeInterval? = nil) async -> CanvasSessionRenewer.Outcome {
+    private func performSilentCanvasRenewal(cooldown: TimeInterval? = nil, forceReauthentication: Bool = false) async -> CanvasSessionRenewer.Outcome {
         guard !isUsingFixtureData else {
             #if DEBUG
             DebugRenewalLog.record("requested, skipped: fixture data (-LHFDemoData)")
@@ -4238,7 +4630,9 @@ final class AppState: ObservableObject {
                 now: Date(),
                 madeForegroundAttemptThisProcess: madeForegroundRenewalThisProcess
             )
-        if isForegroundAttempt { madeForegroundRenewalThisProcess = true }
+        // A forced Duo-trust attempt must not spend the once-per-open Duo
+        // retry grant the ordinary path keeps for a real latch.
+        if isForegroundAttempt && !forceReauthentication { madeForegroundRenewalThisProcess = true }
         defer { duoRetryGrantedForThisAttempt = false }
 
         let attemptTimeout = renewalContext == .background
@@ -4255,15 +4649,23 @@ final class AppState: ObservableObject {
         let outcome = await renewer.renewIfNeeded(
             timeout: attemptTimeout,
             cooldown: attemptSpacing,
-            isBackground: renewalContext == .background
+            isBackground: renewalContext == .background,
+            forceReauthentication: forceReauthentication
         )
+        // Recorded only when the attempt actually ran (not gated away), so a
+        // refused start does not cost the week.
+        if forceReauthentication {
+            if case .notAttempted = outcome {} else {
+                UserDefaults.lhf.set(Date().timeIntervalSince1970, forKey: Self.duoTrustRenewalAttemptAtKey)
+            }
+        }
         // The account may have been disconnected, switched or re-keyed while
         // the attempt ran (item 14): its verdict is about an account that is
         // gone and must change nothing here.
         guard !Self.renewalResultIsStale(startedGeneration: startedGeneration, currentGeneration: canvasAccountGeneration) else {
             return .abortedByLoginPane
         }
-        applyRenewalOutcome(outcome)
+        applyRenewalOutcome(outcome, forced: forceReauthentication)
 
         guard outcome == .renewed else { return outcome }
         let cookies = await AutoSyncCoordinator.canvasCookies(forHost: canvasInstallation.host)
@@ -4276,7 +4678,7 @@ final class AppState: ObservableObject {
     /// — always applies, pulled out of `performSilentCanvasRenewal()` so
     /// `noteRenewalOutcomeForTesting(_:)` below can drive the exact same code
     /// a real attempt runs without needing a real network round trip.
-    private func applyRenewalOutcome(_ outcome: CanvasSessionRenewer.Outcome) {
+    private func applyRenewalOutcome(_ outcome: CanvasSessionRenewer.Outcome, forced: Bool = false) {
         // Wired on EVERY outcome, not just `.renewed` — the whole point of
         // the sticky dead-state fix is that a foreground `.needsDuo` or a
         // second `.landedOnLoginPage` (real proof the session is dead
@@ -4285,6 +4687,29 @@ final class AppState: ObservableObject {
         // comment) must reach `canvasSessionExpired` too, not just a
         // successful renewal.
         let context = renewalContext
+        // A forced attempt (Duo trust renewal) runs over a session that is
+        // alive. Its Duo prompt or its login-page landing says nothing about
+        // that session, so it records the summary and latches nothing: no
+        // awaiting-Duo, no confirmed-dead, no stand-down, no landing counts.
+        // `.renewed`, `.passwordRejected` and `.timedOut` are handled as for
+        // any attempt (a rejection is real; a timeout changes nothing).
+        let forcedWithoutLatch: Bool = {
+            guard forced else { return false }
+            switch outcome {
+            case .needsDuo, .landedOnLoginPage: return true
+            default: return false
+            }
+        }()
+        if forcedWithoutLatch {
+            recordSilentRenewal(kind: Self.renewalOutcomeKind(outcome), context: context, at: Date(), forcedWithoutLatch: true)
+            #if DEBUG
+            DebugRenewalLog.record("forced duo trust renewal: \(Self.renewalOutcomeKind(outcome).rawValue), nothing latched")
+            #endif
+            Task { @MainActor [weak self] in
+                await self?.refreshDuoRememberSummary()
+            }
+            return
+        }
         if case .renewed = outcome {
             sessionProbeSaidDead = false
             // A success ends the 60-minute failed-submission wait (item 12):
@@ -4393,7 +4818,7 @@ final class AppState: ObservableObject {
     /// plumbing round-trips a value nothing production ever writes to it.
     /// Not a parameter on any production call site; production always goes
     /// through `performSilentCanvasRenewal()`'s own `renewIfNeeded()` call.
-    func noteRenewalOutcomeForTesting(_ outcome: CanvasSessionRenewer.Outcome) {
+    func noteRenewalOutcomeForTesting(_ outcome: CanvasSessionRenewer.Outcome, forced: Bool = false) {
         // Restores the PRIOR value, not `true`: a state that called
         // `disablePersistenceForTesting()` must stay unpersisted after this
         // seam returns, or the Duo stand-down, landing count and attempt
@@ -4402,7 +4827,7 @@ final class AppState: ObservableObject {
         let previous = persistsConfirmedDeadFlag
         persistsConfirmedDeadFlag = false
         defer { persistsConfirmedDeadFlag = previous }
-        applyRenewalOutcome(outcome)
+        applyRenewalOutcome(outcome, forced: forced)
     }
 
     #if DEBUG
@@ -5115,6 +5540,34 @@ final class AppState: ObservableObject {
                 await CanvasAccessTokenMinter.revoke(outgoingToken)
             }
         }
+        // The agent connection goes the same way, after the revoke above for
+        // the same reason: detached, best-effort, so the server's list and
+        // every agent's access are removed even if the local clear below
+        // races or the account deletion never lands.
+        if let backend = BackendServices.client {
+            Task.detached { _ = try? await AgentConnectionClient(client: backend).deleteSnapshot() }
+        }
+        // The Sweeper's server wake goes too: the server forgets this phone's
+        // token and moments. Ungated by the flag, like the agent's, but only
+        // when a list was ever sent.
+        Task { @MainActor [weak self] in await self?.withdrawSweeperWakeIfSent() }
+        UserDefaults.lhf.removeObject(forKey: SharedDefaults.agentConnectionEnabledKey)
+        // The off-switch cleanup's one-shot marker goes too: with the opt-in
+        // gone it can never fire again, and a new Canvas account starts clean.
+        UserDefaults.lhf.removeObject(forKey: Self.agentOffCleanupDoneKey)
+        agentConnectionEnabled = false
+        hasAgentConnections = false
+        // The server deletes the drafts with the snapshot; the phone's copies,
+        // its notice memory and its attempt records go with them.
+        clearAgentDraftsLocally()
+        // The assignment-PDF pass's memory is Canvas-account state too: file
+        // ids and when each was last tried (a scan waits a week). Kept, a
+        // reconnect would skip files for days, and a switch to another
+        // school would read the old school's numeric ids. The rules the
+        // review sheet reads first are the same kind of state, in memory.
+        UserDefaults.lhf.removeObject(forKey: Self.attachmentAttemptsKey)
+        UserDefaults.lhf.removeObject(forKey: Self.lastAttachmentSyncSummaryKey)
+        canvasSubmissionRulesByAssignmentID = [:]
         CanvasAccessTokenStore.clear()
         forcedCanvasAccessTokenForTesting = nil
         updateCanvasICSURL("")
@@ -5147,6 +5600,16 @@ final class AppState: ObservableObject {
         // Canvas account) would otherwise inherit and caveat incorrectly.
         noSubmissionCanvasAssignmentIDs = []
         UserDefaults.lhf.removeObject(forKey: Self.noSubmissionCanvasAssignmentIDsKey)
+        onPaperCanvasAssignmentIDs = []
+        UserDefaults.lhf.removeObject(forKey: Self.onPaperCanvasAssignmentIDsKey)
+        externalToolCanvasAssignmentIDs = []
+        UserDefaults.lhf.removeObject(forKey: Self.externalToolCanvasAssignmentIDsKey)
+        mcgrawHillToolCanvasAssignmentIDs = []
+        UserDefaults.lhf.removeObject(forKey: Self.mcgrawHillToolCanvasAssignmentIDsKey)
+        // McGraw Hill's session exists only beside a Canvas login (the reader
+        // enriches Canvas rows), so it goes with Canvas, as Ed's does.
+        SessionCookieStore.remove(service: .mcgrawHill)
+        McGrawHillReauthStore.reset()
         gradeWatcher.clearAll(keepingHistory: keepingStudentWork)
         // Drop the durable ledger's Canvas rows too, or a disconnected
         // account's unfinished work survives in the store and reappears on
@@ -5610,11 +6073,18 @@ final class AppState: ObservableObject {
                 previous: gradescopeItems
             )
             // Same durable reconciliation as Canvas (see `sync()`).
+            // What was already read as submitted, taken before the reconcile
+            // so the cancel below is only for work that turned submitted in
+            // THIS read (a hook on the result; the scrape is untouched).
+            let gradescopeSubmittedBefore = Set(gradescopeItems.filter { $0.submitted }.map(\.id))
             if let store = assignmentStore {
                 reconcileGradescopeFetch(fetched, into: store)
             } else {
                 gradescopeItems = fetched
             }
+            noteSubmittedIDs(
+                Set(gradescopeItems.filter { $0.submitted }.map(\.id)).subtracting(gradescopeSubmittedBefore),
+                source: .gradescope)
             lastGradescopeSync = Date()
             // Re-stamp the Gradescope session after every authenticated
             // fetch, as Canvas already does (`GradeWatcherStore`,
@@ -8559,6 +9029,24 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// The card the dashboard shows for a snapshot item id, resolved the way
+    /// the dashboard collapses twins: the card's own id, then a card whose
+    /// `linkedID` is this id, then a card this id is a hidden twin of
+    /// (`completionTwins`, from the last rebuild), then, for an id the
+    /// merged coursework holds, the card its own `linkedID` names. A draft
+    /// on the Gradescope half of a Canvas+Gradescope pair still finds the
+    /// one card the student sees.
+    func shownAssignment(forItemID itemID: String) -> Assignment? {
+        let shown = assignments + laterAssignments + assessments
+        if let a = shown.first(where: { $0.id == itemID }) { return a }
+        if let a = shown.first(where: { $0.linkedID == itemID }) { return a }
+        if let survivor = completionTwins.first(where: { $0.value.contains(itemID) })?.key,
+           let a = shown.first(where: { $0.id == survivor }) { return a }
+        if let source = mergedCoursework.first(where: { $0.id == itemID }), let linked = source.linkedID,
+           let a = shown.first(where: { $0.id == linked || $0.linkedID == linked }) { return a }
+        return nil
+    }
+
     func rebuildDashboardItems(now: Date = Date()) {
         // Found afresh by the collapse passes below (`carryCompletion`), so a
         // pair that no longer exists is not cleared with an unrelated card.
@@ -9384,6 +9872,19 @@ final class AppState: ObservableObject {
         assignment.canvasAssignmentID.map { noSubmissionCanvasAssignmentIDs.contains($0) } ?? false
     }
 
+    /// True when Canvas says this no-submission assignment is handed in on
+    /// paper (`onPaperCanvasAssignmentIDs`): the card may then say "in class".
+    func submitsOnPaper(_ assignment: Assignment) -> Bool {
+        guard requiresNoSubmission(assignment), let id = assignment.canvasAssignmentID else { return false }
+        return onPaperCanvasAssignmentIDs.contains(id)
+    }
+
+    /// True when Canvas lists an external tool as this assignment's only
+    /// submission type (`externalToolCanvasAssignmentIDs`).
+    func isExternalTool(_ assignment: Assignment) -> Bool {
+        assignment.canvasAssignmentID.map { externalToolCanvasAssignmentIDs.contains($0) } ?? false
+    }
+
     /// The cache-backed, works-offline twin of `autoSubmittedNoSubmissionIDs`
     /// below. That function only ever runs as part of a live grade refresh —
     /// it writes durable ledger state (`applySubmissionState`) once one
@@ -9509,6 +10010,13 @@ final class AppState: ObservableObject {
             if !notifications.isEmpty {
                 pendingTurnedInNotices += notifications
             }
+            // Cancel the alarm now, not at the next re-plan. Deliberately not
+            // `newlySubmitted`: that set is shaped for notices (no-submission
+            // items removed); a cancel for such an item is harmless and its
+            // alarm never existed. These are Canvas assignment ids, which
+            // `SubmissionObservation.cancellations` matches through
+            // `canvasAssignmentID`.
+            noteSubmittedIDs(observedSubmitted.subtracting(previousSubmittedIDs), source: .grades)
         }
 
         // Self-healing no-submission id cache (the dashboard card's caveat
@@ -9529,6 +10037,31 @@ final class AppState: ObservableObject {
             UserDefaults.lhf.set(
                 Array(noSubmissionCanvasAssignmentIDs).sorted(),
                 forKey: Self.noSubmissionCanvasAssignmentIDsKey
+            )
+            onPaperCanvasAssignmentIDs = Self.updatedOnPaperIDs(
+                cached: onPaperCanvasAssignmentIDs,
+                snapshots: Array(gradeWatcher.snapshots.values)
+            )
+            UserDefaults.lhf.set(
+                Array(onPaperCanvasAssignmentIDs).sorted(),
+                forKey: Self.onPaperCanvasAssignmentIDsKey
+            )
+            externalToolCanvasAssignmentIDs = Self.updatedExternalToolIDs(
+                cached: externalToolCanvasAssignmentIDs,
+                snapshots: Array(gradeWatcher.snapshots.values)
+            )
+            UserDefaults.lhf.set(
+                Array(externalToolCanvasAssignmentIDs).sorted(),
+                forKey: Self.externalToolCanvasAssignmentIDsKey
+
+            )
+            mcgrawHillToolCanvasAssignmentIDs = Self.updatedMcGrawHillToolIDs(
+                cached: mcgrawHillToolCanvasAssignmentIDs,
+                snapshots: Array(gradeWatcher.snapshots.values)
+            )
+            UserDefaults.lhf.set(
+                Array(mcgrawHillToolCanvasAssignmentIDs).sorted(),
+                forKey: Self.mcgrawHillToolCanvasAssignmentIDsKey
             )
         }
 
@@ -9638,6 +10171,40 @@ final class AppState: ObservableObject {
     /// `noSubmissionAssignmentIDs` above, so the cache's self-healing
     /// behaviour is testable without a network, a `GradeWatcherStore`, or
     /// `UserDefaults`.
+    /// The same per-item replace as `updatedNoSubmissionIDs`, for the
+    /// on-paper subset: an observed item enters when Canvas says on paper and
+    /// leaves otherwise; an unobserved course keeps what `cached` had.
+    static func updatedOnPaperIDs(
+        cached: Set<String>,
+        snapshots: [CourseGradeSnapshot]
+    ) -> Set<String> {
+        var next = cached
+        for snapshot in snapshots {
+            for category in snapshot.categories {
+                for item in category.items {
+                    if item.submitsOnPaper { next.insert(item.id) } else { next.remove(item.id) }
+                }
+            }
+        }
+        return next
+    }
+
+    /// The same per-item replace again, for the external-tool-only set.
+    static func updatedExternalToolIDs(
+        cached: Set<String>,
+        snapshots: [CourseGradeSnapshot]
+    ) -> Set<String> {
+        var next = cached
+        for snapshot in snapshots {
+            for category in snapshot.categories {
+                for item in category.items {
+                    if item.isExternalToolOnly { next.insert(item.id) } else { next.remove(item.id) }
+                }
+            }
+        }
+        return next
+    }
+
     static func updatedNoSubmissionIDs(
         cached: Set<String>,
         snapshots: [CourseGradeSnapshot]
@@ -9655,6 +10222,52 @@ final class AppState: ObservableObject {
             }
         }
         return next
+    }
+
+    /// The update rule for `mcgrawHillToolCanvasAssignmentIDs`: the same
+    /// per-item replace as `updatedNoSubmissionIDs`. Every item a refresh
+    /// observed enters the set when its launch host is McGraw Hill's and
+    /// leaves it otherwise; a course the refresh never touched keeps what the
+    /// cache had. Pure, so it is tested without a network or defaults, and
+    /// `nonisolated` so a test (or any caller) need not be on the main actor
+    /// for a function that touches no state (`CLAUDE.md`, the `decidedText` trap).
+    nonisolated static func updatedMcGrawHillToolIDs(
+        cached: Set<String>,
+        snapshots: [CourseGradeSnapshot]
+    ) -> Set<String> {
+        var next = cached
+        for snapshot in snapshots {
+            for category in snapshot.categories {
+                for item in category.items {
+                    if McGrawHillTool.isMcGrawHill(host: item.externalToolHost) {
+                        next.insert(item.id)
+                    } else {
+                        next.remove(item.id)
+                    }
+                }
+            }
+        }
+        return next
+    }
+
+    /// Whether the McGraw Hill reader may run right now (`ReaderGate`): the
+    /// compile-time flag, the manifest's last-known `readers.mcgrawHill`
+    /// (`ReaderSwitchStore`), never on preview or demo data, and in a DEBUG
+    /// build `-LHFForceMcGrawHillReader` in place of the manifest, so a
+    /// developer's phone can run it while the live switch stays off. No
+    /// reader reads it yet (2026-11-02); the client lands after recon.
+    var isMcGrawHillReaderOn: Bool {
+        #if DEBUG
+        let forced = ProcessInfo.processInfo.arguments.contains("-LHFForceMcGrawHillReader")
+        #else
+        let forced = false
+        #endif
+        return ReaderGate.mcgrawHill(
+            compiledIn: FeatureFlags.mcgrawHillReader,
+            switches: ReaderSwitchStore().load(),
+            debugForced: forced,
+            isUsingFixtureData: isUsingFixtureData
+        )
     }
 
     /// Pure planning for "Turned in ✓" notifications — mirrors

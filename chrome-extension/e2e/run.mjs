@@ -2,7 +2,7 @@
 // of Ed / Canvas / Gradescope / the backend. See e2e/README.md.
 // Usage: node e2e/run.mjs [path-to-extension-dir]
 import { createRequire } from "node:module";
-import { randomBytes } from "node:crypto";
+import { randomBytes, webcrypto } from "node:crypto";
 import { rmSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -157,6 +157,49 @@ try {
   console.log("collectSummaryV1:", JSON.stringify(sum));
   check(sum?.ed === "in", 'collectSummaryV1.ed === "in"', `ed=${sum?.ed}`);
   console.log(`(upload batches: ${world.uploads.length}, of which after natural path: ${naturalUploads})`);
+
+  section("4b. Canvas submission feed -> encrypted snapshot");
+  // The seeded "ab"x32 text is 48 bytes as base64url, not a 32-byte key, so the real pass refuses it;
+  // use a proper random 32-byte key (the harness's own, never printed).
+  const keyBytes = randomBytes(32);
+  const keyText = keyBytes.toString("base64url");
+  await run1.popup.evaluate((k) => chrome.storage.local.set({ pairingKeyV1: k }), keyText);
+  const before4b = world.deviceSyncUploads.length;
+  // Clear the 2-minute pass throttle and the submissions throttle so both run now.
+  await run1.popup.evaluate(async () => {
+    await chrome.storage.local.remove("deviceSyncAtV1");
+    const w = (await chrome.storage.local.get("workListV1")).workListV1;
+    if (w) await chrome.storage.local.set({ workListV1: { ...w, submissions: { ...(w.submissions ?? {}), at: null } } });
+  });
+  await run1.popup.evaluate(() => chrome.runtime.sendMessage({ type: "refresh" }));
+  await run1.popup.evaluate(() => chrome.runtime.sendMessage({ type: "sync" }));
+  const got = await until("a device-sync upload", () => world.deviceSyncUploads.length > before4b, 30000, world);
+  check(!!got, "a sealed snapshot was PUT to device-sync", `${world.deviceSyncUploads.length - before4b} new put(s)`);
+  if (got) {
+    // Independent copy of the scheme: AES-256-GCM, base64 (standard) of nonce(12) || ciphertext || tag(16), no AAD.
+    const unseal = async (b64) => {
+      const raw = Buffer.from(b64, "base64");
+      const key = await webcrypto.subtle.importKey("raw", keyBytes, { name: "AES-GCM" }, false, ["decrypt"]);
+      return JSON.parse(Buffer.from(await webcrypto.subtle.decrypt({ name: "AES-GCM", iv: raw.subarray(0, 12), tagLength: 128 }, key, raw.subarray(12))).toString("utf8"));
+    };
+    let snap = null;
+    for (const put of [...world.deviceSyncUploads].reverse()) {
+      try { const s = await unseal(put.ciphertext); if (s?.completions && s.completions["canvas:assignment-5001"]) { snap = s; break; } snap ??= s; } catch { /* sealed under another key */ }
+    }
+    check(!!snap, "uploaded ciphertext decrypts with the pairing key (AES-256-GCM, nonce||ct||tag)");
+    const comp = snap?.completions ?? {};
+    const c1 = comp["canvas:assignment-5001"];
+    check(!!c1 && c1.done === true && Date.parse(c1.at) === Date.parse(world.submittedAt), "snapshot has canvas:assignment-5001 done:true at the submitted_at instant", `entry: ${JSON.stringify(c1)} want at ${world.submittedAt}`);
+    check(!("canvas:assignment-5002" in comp), "snapshot has no entry for the unsubmitted canvas:assignment-5002", `completion keys: ${Object.keys(comp).join(", ")}`);
+  }
+  const wl = (await local(run1.popup)).workListV1;
+  check(wl?.canvasSubmissions === "in", 'workListV1.canvasSubmissions === "in"', `got ${wl?.canvasSubmissions}`);
+  const subKeys = Object.keys(wl?.submissions?.submitted ?? {});
+  check(subKeys.length === 1 && subKeys[0] === "5001", 'workListV1.submissions.submitted has exactly "5001"', `keys: ${subKeys}`);
+  // Scoped to device-sync and pair: the course-material `sync` upload legitimately carries assignment
+  // documents (pooled, by design); the student's own snapshot is what must leave sealed.
+  const plain = world.log.filter((r) => r.host.endsWith("supabase.co") && /^\/functions\/v1\/(device-sync|pair)$/.test(r.path) && /Homework 6|assignment-5001/.test(JSON.stringify([r.headers, r.body, r.path, r.query])));
+  check(plain.length === 0, 'no device-sync/pair request carries "Homework 6" or "assignment-5001" in plaintext', `${plain.length} leaking`);
 
   section("5. restart (storage.session gone, storage.local kept)");
   await run1.ctx.close(); run1 = null;

@@ -11,12 +11,16 @@
 		32F054AC86C4A8682B05C8E4 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 81469103D4BF3FC55D12744D /* Assets.xcassets */; };
 		384C21DBD5604A56D4A14118 /* NextDueWidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15BEE7C2AFB58FF33B8669DA /* NextDueWidgetViews.swift */; };
 		4150CDEA08AF4294E73766B4 /* LHFWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 36A41FC5BDF63B438392CB80 /* LHFWidgetExtension.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		41AF54598031F2916D4E24CD /* berserk-alarm.caf in Resources */ = {isa = PBXBuildFile; fileRef = E213740FCDFA9C109D9BD2B3 /* berserk-alarm.caf */; };
-		856044C84708E114495A0F16 /* sweeper-chime.wav in Resources */ = {isa = PBXBuildFile; fileRef = F2F2A5EC08E7AEB8393D1E88 /* sweeper-chime.wav */; };
-		7CB79FA3D5ABA53CE431DE49 /* sweeper-pulse.wav in Resources */ = {isa = PBXBuildFile; fileRef = 9248689226C5D3652707465A /* sweeper-pulse.wav */; };
 		42AE1B7938FC4C4341B0D4DD /* LHFWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DB8113231E3D48AD7BA5FCC /* LHFWidgetBundle.swift */; };
-		5E9A2C4B8D1F36070A8B3C5D /* BerserkAlarmActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7B3C9D1E5F20483A6C1D7E2 /* BerserkAlarmActivity.swift */; };
+		474CA532EBB9F936B4D563AC /* LHFSweeperCheck.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 8F7211ACFF5DAE8134E9C4AF /* LHFSweeperCheck.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		528CC1AB9904D4BDE80E1130 /* berserk-alarm.caf in Resources */ = {isa = PBXBuildFile; fileRef = FD80AA4DDE2B440081A9BEF2 /* berserk-alarm.caf */; };
+		5B0BB5237ABCB07030633908 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AB501DD52F5868DC19D59214 /* PrivacyInfo.xcprivacy */; };
+		7CB79FA3D5ABA53CE431DE49 /* sweeper-pulse.wav in Resources */ = {isa = PBXBuildFile; fileRef = 9248689226C5D3652707465A /* sweeper-pulse.wav */; };
 		7EBFF15B18E4FD732FFE5CD6 /* LowHangingFruitKit in Frameworks */ = {isa = PBXBuildFile; productRef = 08FB2D886E5CD2462F4499AB /* LowHangingFruitKit */; };
+		856044C84708E114495A0F16 /* sweeper-chime.wav in Resources */ = {isa = PBXBuildFile; fileRef = F2F2A5EC08E7AEB8393D1E88 /* sweeper-chime.wav */; };
+		8CF9854502E3D1A09F7C9239 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A03A60B58030B23BFFE4E53F /* NotificationService.swift */; };
+		B10BA9AFEBDE5E9C5B792792 /* BerserkAlarmActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28923758393251E416035B1B /* BerserkAlarmActivity.swift */; };
+		B411C4D66B60B80FB9B9B704 /* LowHangingFruitKit in Frameworks */ = {isa = PBXBuildFile; productRef = D700FE45F000DF98CAC1804A /* LowHangingFruitKit */; };
 		C605BB8A825C3CE1F721F408 /* NextDueWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D175FBC8ADFCE883C1BD602 /* NextDueWidget.swift */; };
 		CA3D288792488CF294DC9987 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 7E2124B8767D8FCEAE27A015 /* PrivacyInfo.xcprivacy */; };
 		D4423A175D42F440EF1A7B26 /* LHFApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DC183EBB281825AF54C0509 /* LHFApp.swift */; };
@@ -31,6 +35,13 @@
 			remoteGlobalIDString = AFAF0ABD5130C2804488E807;
 			remoteInfo = LHFWidgetExtension;
 		};
+		CA1D4D1AE2767BBAE0A12D81 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6FD65FD2BAF22BFD1465B937 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 900F3C86025146D7FCBCD8C7;
+			remoteInfo = LHFSweeperCheck;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -41,6 +52,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				4150CDEA08AF4294E73766B4 /* LHFWidgetExtension.appex in Embed Foundation Extensions */,
+				474CA532EBB9F936B4D563AC /* LHFSweeperCheck.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -50,20 +62,25 @@
 /* Begin PBXFileReference section */
 		15BEE7C2AFB58FF33B8669DA /* NextDueWidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NextDueWidgetViews.swift; sourceTree = "<group>"; };
 		1DB8113231E3D48AD7BA5FCC /* LHFWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LHFWidgetBundle.swift; sourceTree = "<group>"; };
+		23E22960F24BB282A1CAF9CD /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		28923758393251E416035B1B /* BerserkAlarmActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BerserkAlarmActivity.swift; sourceTree = "<group>"; };
 		36A41FC5BDF63B438392CB80 /* LHFWidgetExtension.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = LHFWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		3DC183EBB281825AF54C0509 /* LHFApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LHFApp.swift; sourceTree = "<group>"; };
 		3E88A5FCA88FE663462B6EAA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		6EA86EE778920A20E2D18C04 /* LHFApp-macOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "LHFApp-macOS.entitlements"; sourceTree = "<group>"; };
 		7E2124B8767D8FCEAE27A015 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		81469103D4BF3FC55D12744D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		8F7211ACFF5DAE8134E9C4AF /* LHFSweeperCheck.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = LHFSweeperCheck.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		91DB2A6DDA741DE34D50D036 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		9248689226C5D3652707465A /* sweeper-pulse.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "sweeper-pulse.wav"; sourceTree = "<group>"; };
 		9D175FBC8ADFCE883C1BD602 /* NextDueWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NextDueWidget.swift; sourceTree = "<group>"; };
-		A7B3C9D1E5F20483A6C1D7E2 /* BerserkAlarmActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BerserkAlarmActivity.swift; sourceTree = "<group>"; };
+		A03A60B58030B23BFFE4E53F /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		AB501DD52F5868DC19D59214 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		AF8D2C118F6B334F54D0BD92 /* LHFApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LHFApp.entitlements; sourceTree = "<group>"; };
 		B2FB5A48F750018E0BC603A6 /* Smooth.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Smooth.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C5231672329B97276105F09B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		E213740FCDFA9C109D9BD2B3 /* berserk-alarm.caf */ = {isa = PBXFileReference; path = berserk-alarm.caf; sourceTree = "<group>"; };
 		F2F2A5EC08E7AEB8393D1E88 /* sweeper-chime.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "sweeper-chime.wav"; sourceTree = "<group>"; };
-		9248689226C5D3652707465A /* sweeper-pulse.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "sweeper-pulse.wav"; sourceTree = "<group>"; };
+		FD80AA4DDE2B440081A9BEF2 /* berserk-alarm.caf */ = {isa = PBXFileReference; path = "berserk-alarm.caf"; sourceTree = "<group>"; };
 		FDF6FFE94ABFA7265FCF40BD /* LowHangingFruitKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = LowHangingFruitKit; path = LowHangingFruitKit; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
@@ -84,9 +101,27 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F05371D94CC4DF0D9358BE90 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B411C4D66B60B80FB9B9B704 /* LowHangingFruitKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		1A8DEF5E46B1390FE3290713 /* LHFSweeperCheck */ = {
+			isa = PBXGroup;
+			children = (
+				23E22960F24BB282A1CAF9CD /* Info.plist */,
+				A03A60B58030B23BFFE4E53F /* NotificationService.swift */,
+				AB501DD52F5868DC19D59214 /* PrivacyInfo.xcprivacy */,
+			);
+			path = LHFSweeperCheck;
+			sourceTree = "<group>";
+		};
 		645E573CA0B117A7092E842C /* Packages */ = {
 			isa = PBXGroup;
 			children = (
@@ -99,13 +134,14 @@
 			isa = PBXGroup;
 			children = (
 				81469103D4BF3FC55D12744D /* Assets.xcassets */,
-				E213740FCDFA9C109D9BD2B3 /* berserk-alarm.caf */,
-				F2F2A5EC08E7AEB8393D1E88 /* sweeper-chime.wav */,
-				9248689226C5D3652707465A /* sweeper-pulse.wav */,
+				FD80AA4DDE2B440081A9BEF2 /* berserk-alarm.caf */,
 				C5231672329B97276105F09B /* Info.plist */,
+				6EA86EE778920A20E2D18C04 /* LHFApp-macOS.entitlements */,
 				AF8D2C118F6B334F54D0BD92 /* LHFApp.entitlements */,
 				3DC183EBB281825AF54C0509 /* LHFApp.swift */,
 				7E2124B8767D8FCEAE27A015 /* PrivacyInfo.xcprivacy */,
+				F2F2A5EC08E7AEB8393D1E88 /* sweeper-chime.wav */,
+				9248689226C5D3652707465A /* sweeper-pulse.wav */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -114,6 +150,7 @@
 			isa = PBXGroup;
 			children = (
 				BD87B42517DAD1720B9348D2 /* App */,
+				1A8DEF5E46B1390FE3290713 /* LHFSweeperCheck */,
 				FADA5631D722E4F4DFE0E4F8 /* LHFWidget */,
 				645E573CA0B117A7092E842C /* Packages */,
 				CBFE620718A0F730DD6ECF02 /* Products */,
@@ -123,6 +160,7 @@
 		CBFE620718A0F730DD6ECF02 /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				8F7211ACFF5DAE8134E9C4AF /* LHFSweeperCheck.appex */,
 				36A41FC5BDF63B438392CB80 /* LHFWidgetExtension.appex */,
 				B2FB5A48F750018E0BC603A6 /* Smooth.app */,
 			);
@@ -132,7 +170,7 @@
 		FADA5631D722E4F4DFE0E4F8 /* LHFWidget */ = {
 			isa = PBXGroup;
 			children = (
-				A7B3C9D1E5F20483A6C1D7E2 /* BerserkAlarmActivity.swift */,
+				28923758393251E416035B1B /* BerserkAlarmActivity.swift */,
 				3E88A5FCA88FE663462B6EAA /* Info.plist */,
 				1DB8113231E3D48AD7BA5FCC /* LHFWidgetBundle.swift */,
 				9D175FBC8ADFCE883C1BD602 /* NextDueWidget.swift */,
@@ -158,6 +196,7 @@
 			);
 			dependencies = (
 				B48A3040576496CAEB4EC903 /* PBXTargetDependency */,
+				604A6161E88BFF9CCC549A65 /* PBXTargetDependency */,
 			);
 			name = LowHangingFruit;
 			packageProductDependencies = (
@@ -166,6 +205,26 @@
 			productName = LowHangingFruit;
 			productReference = B2FB5A48F750018E0BC603A6 /* Smooth.app */;
 			productType = "com.apple.product-type.application";
+		};
+		900F3C86025146D7FCBCD8C7 /* LHFSweeperCheck */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 74E3F8DA75682FAFBF102592 /* Build configuration list for PBXNativeTarget "LHFSweeperCheck" */;
+			buildPhases = (
+				C73740D6AA70A6D3635E9A46 /* Sources */,
+				CCD2A82FD5899DB5E1F4A656 /* Resources */,
+				F05371D94CC4DF0D9358BE90 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = LHFSweeperCheck;
+			packageProductDependencies = (
+				D700FE45F000DF98CAC1804A /* LowHangingFruitKit */,
+			);
+			productName = LHFSweeperCheck;
+			productReference = 8F7211ACFF5DAE8134E9C4AF /* LHFSweeperCheck.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 		AFAF0ABD5130C2804488E807 /* LHFWidgetExtension */ = {
 			isa = PBXNativeTarget;
@@ -200,6 +259,10 @@
 						DevelopmentTeam = 24A3TDB277;
 						ProvisioningStyle = Automatic;
 					};
+					900F3C86025146D7FCBCD8C7 = {
+						DevelopmentTeam = 24A3TDB277;
+						ProvisioningStyle = Automatic;
+					};
 					AFAF0ABD5130C2804488E807 = {
 						DevelopmentTeam = 24A3TDB277;
 						ProvisioningStyle = Automatic;
@@ -223,6 +286,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				900F3C86025146D7FCBCD8C7 /* LHFSweeperCheck */,
 				AFAF0ABD5130C2804488E807 /* LHFWidgetExtension */,
 				4229ABBB731AA124C4A354F5 /* LowHangingFruit */,
 			);
@@ -230,6 +294,14 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		CCD2A82FD5899DB5E1F4A656 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5B0BB5237ABCB07030633908 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		CE28EE0BA22847C3F242A40A /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -243,10 +315,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				32F054AC86C4A8682B05C8E4 /* Assets.xcassets in Resources */,
-				41AF54598031F2916D4E24CD /* berserk-alarm.caf in Resources */,
+				CA3D288792488CF294DC9987 /* PrivacyInfo.xcprivacy in Resources */,
+				528CC1AB9904D4BDE80E1130 /* berserk-alarm.caf in Resources */,
 				856044C84708E114495A0F16 /* sweeper-chime.wav in Resources */,
 				7CB79FA3D5ABA53CE431DE49 /* sweeper-pulse.wav in Resources */,
-				CA3D288792488CF294DC9987 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -265,16 +337,30 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				5E9A2C4B8D1F36070A8B3C5D /* BerserkAlarmActivity.swift in Sources */,
+				B10BA9AFEBDE5E9C5B792792 /* BerserkAlarmActivity.swift in Sources */,
 				42AE1B7938FC4C4341B0D4DD /* LHFWidgetBundle.swift in Sources */,
 				C605BB8A825C3CE1F721F408 /* NextDueWidget.swift in Sources */,
 				384C21DBD5604A56D4A14118 /* NextDueWidgetViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C73740D6AA70A6D3635E9A46 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8CF9854502E3D1A09F7C9239 /* NotificationService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		604A6161E88BFF9CCC549A65 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			platformFilter = ios;
+			target = 900F3C86025146D7FCBCD8C7 /* LHFSweeperCheck */;
+			targetProxy = CA1D4D1AE2767BBAE0A12D81 /* PBXContainerItemProxy */;
+		};
 		B48A3040576496CAEB4EC903 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			platformFilter = ios;
@@ -292,7 +378,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "App/LHFApp-macOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = 24A3TDB277;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Info.plist;
@@ -307,6 +393,32 @@
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		54E78DA363F6BC97BC0BDF1B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LHFSweeperCheck/LHFSweeperCheck.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 21;
+				DEVELOPMENT_TEAM = 24A3TDB277;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LHFSweeperCheck/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 3.5.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lhf.lowhangingfruit.sweepercheck;
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -382,7 +494,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = LHFWidget/LHFWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = 24A3TDB277;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = LHFWidget/Info.plist;
@@ -411,7 +523,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "App/LHFApp-macOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = 24A3TDB277;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Info.plist;
@@ -426,6 +538,32 @@
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		A0FE6D65EBB731F40E53B6EF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LHFSweeperCheck/LHFSweeperCheck.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 21;
+				DEVELOPMENT_TEAM = 24A3TDB277;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LHFSweeperCheck/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 3.5.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lhf.lowhangingfruit.sweepercheck;
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -494,7 +632,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = LHFWidget/LHFWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = 24A3TDB277;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = LHFWidget/Info.plist;
@@ -545,6 +683,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		74E3F8DA75682FAFBF102592 /* Build configuration list for PBXNativeTarget "LHFSweeperCheck" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				54E78DA363F6BC97BC0BDF1B /* Debug */,
+				A0FE6D65EBB731F40E53B6EF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -556,6 +703,10 @@
 
 /* Begin XCSwiftPackageProductDependency section */
 		08FB2D886E5CD2462F4499AB /* LowHangingFruitKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = LowHangingFruitKit;
+		};
+		D700FE45F000DF98CAC1804A /* LowHangingFruitKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = LowHangingFruitKit;
 		};

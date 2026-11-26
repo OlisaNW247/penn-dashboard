@@ -104,6 +104,10 @@ struct DoneCardView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dragX: CGFloat = 0
     @State private var didUndo = false
+    /// Held for one drag; see `CompletionSwipe.Axis`.
+    @State private var swipeAxis: CompletionSwipe.Axis = .undecided
+    /// Resets on a cancelled drag too; its change clears `swipeAxis` (R-I1).
+    @GestureState private var dragIsLive = false
     private let corner: CGFloat = 18
 
     var body: some View {
@@ -118,15 +122,25 @@ struct DoneCardView: View {
         }
         .contentShape(RoundedRectangle(cornerRadius: corner))
         .onTapGesture { if item.canMarkActive { undo() } }
-        .gesture(
+        // Simultaneous so a scroll that starts on a finished card still
+        // scrolls; the axis is decided once per drag (CompletionSwipe.Axis).
+        .simultaneousGesture(
             DragGesture(minimumDistance: 18)
+                .updating($dragIsLive) { _, live, _ in live = true }
                 .onChanged { value in
-                    guard item.canMarkActive, !didUndo,
-                          abs(value.translation.width) > abs(value.translation.height) else { return }
+                    if swipeAxis == .undecided {
+                        swipeAxis = CompletionSwipe.axis(
+                            width: value.translation.width,
+                            height: value.translation.height
+                        )
+                    }
+                    guard item.canMarkActive, !didUndo, swipeAxis == .horizontal else { return }
                     dragX = max(-86, min(0, value.translation.width))
                 }
                 .onEnded { value in
-                    guard item.canMarkActive else { return }
+                    let wasHorizontal = swipeAxis == .horizontal
+                    swipeAxis = .undecided
+                    guard item.canMarkActive, wasHorizontal else { return }
                     if CompletionSwipe.accepts(horizontal: value.translation.width,
                                                vertical: value.translation.height,
                                                predicted: value.predictedEndTranslation.width,
@@ -139,6 +153,9 @@ struct DoneCardView: View {
                     }
                 }
         )
+        .onChange(of: dragIsLive) { _, live in
+            if !live { swipeAxis = .undecided }
+        }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(item.canMarkActive ? .isButton : [])
         .accessibilityHint(item.canMarkActive ? "Tap or swipe left to mark incomplete" : "turned in on canvas")
@@ -177,6 +194,16 @@ struct DoneCardView: View {
                     .strikethrough(true, color: Color.smoothInk)
                     .lineLimit(1)
                     .truncationMode(.tail)
+                // "submitted by you · drafted by claude" (2026-11-11). The
+                // model has set `agentSubmittedBy` since 2026-11-10, but
+                // this card never drew it, so the line CLAUDE.md promised
+                // in prev existed only in the active card's code path.
+                if item.isCompleted, let name = item.agentSubmittedBy {
+                    Text(AgentConnectionCopy.submittedByYou(name))
+                        .font(.lhfSecondary(12, weight: .semibold))
+                        .foregroundStyle(Color.smoothGrapeInk)
+                        .lineLimit(1)
+                }
             }
 
             Spacer(minLength: 8)

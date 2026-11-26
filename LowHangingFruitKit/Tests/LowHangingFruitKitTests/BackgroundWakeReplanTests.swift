@@ -44,15 +44,28 @@ struct BackgroundWakeReplanTests {
     @Test("the re-plan builds its items the way the dashboard does and honours the reminders switch")
     func replanBody() throws {
         let code = try HardeningSourceScan.uiCode("BackgroundRefresh.swift")
+        // Since 2026-11-18 the item assembly lives in `dashboardItems(for:)`,
+        // shared with the wake's planner read and its cancel at observation,
+        // so the pin is in two parts: the helper builds the items the way the
+        // dashboard does, and `replan` plans from exactly that helper behind
+        // the reminders switch. Same behaviour as the single-body version.
         let replan = try HardeningSourceScan.body(
             ofFunctionDeclaredWith: "func replan(scheduler: NotificationScheduler, state: AppState) async", in: code)
-        let order = [
+        let replanOrder = [
             "guard scheduler.isEnabled else { return }",
+            "await scheduler.rescheduleWithoutPrompting(from: dashboardItems(for: state))",
+        ]
+        let replanFound = try HardeningSourceScan.positions(of: replanOrder, in: replan)
+        #expect(zip(replanFound, replanFound.dropFirst()).allSatisfy(<))
+
+        let items = try HardeningSourceScan.body(
+            ofFunctionDeclaredWith: "func dashboardItems(for state: AppState) -> [DashItem]", in: code)
+        let itemsOrder = [
             "dashboard.bind(to: state)",
             "dashboard.reload(preservingEdits: true)",
-            "await scheduler.rescheduleWithoutPrompting(from: dashboard.items)",
+            "return dashboard.items",
         ]
-        let found = try HardeningSourceScan.positions(of: order, in: replan)
-        #expect(zip(found, found.dropFirst()).allSatisfy(<))
+        let itemsFound = try HardeningSourceScan.positions(of: itemsOrder, in: items)
+        #expect(zip(itemsFound, itemsFound.dropFirst()).allSatisfy(<))
     }
 }

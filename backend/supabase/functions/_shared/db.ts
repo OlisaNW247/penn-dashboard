@@ -17,6 +17,7 @@ import type {
 } from "./manifest.ts";
 import { factsResponse, WINDOW_KINDS, windowAgeOutFilter } from "./manifest.ts";
 import { isAuthUserGone } from "./devices.ts";
+import { removeUserDraftObjects } from "./agentDrafts.ts";
 import {
   catalogEntryWire,
   academicSemester,
@@ -298,6 +299,7 @@ export async function selectLiveDocumentIDsForCourse(
   client: SupabaseClient,
   courseID: string,
   onlyCollector?: "phone" | "extension",
+  reportListsFiles = false,
 ): Promise<string[]> {
   // Window kinds (`announcement`, `ed`; see `WINDOW_KINDS` in manifest.ts)
   // are excluded on purpose, so the complete-set rule in the upload step can
@@ -328,6 +330,10 @@ export async function selectLiveDocumentIDsForCourse(
   // between a crawl and its own next manifest simply had not downloaded
   // them, which is exactly how ECON 0100 lost five fresh crawl rows on
   // 2026-10-26, when crawled rows still carried the default 'phone'.
+  //
+  // And a report that lists no `file` id for the course cannot retire file
+  // rows: a client that collects no files has no view of them.
+  if (!reportListsFiles) query = query.neq("kind", "file");
   query = onlyCollector ? query.eq("collector", onlyCollector) : query.neq("collector", "server");
   const { data, error } = await query;
   if (error) throw error;
@@ -1245,6 +1251,32 @@ export async function upsertDirectoryCache(client: SupabaseClient, key: string, 
  * resolved owner id from a linked device's token -- `delete-account`
  * guards that with `decideDeleteAccount`. */
 export async function deleteUserData(client: SupabaseClient, userId: string): Promise<void> {
+  // The Sweeper wake (20261118090000_sweeper_wake.sql): the student's device
+  // token and the minutes they asked to be nudged at. First, because a
+  // push token is the one row here that can still reach their phone.
+  const { error: wakesError } = await client.from("sweeper_wakes").delete().eq("user_id", userId);
+  if (wakesError) throw wakesError;
+
+  // The agent connection (20261108090000_agent_connection.sql). Drafts and
+  // the snapshot first (they hold the student's own work), then connections
+  // (their tokens cascade), then any authorization still waiting.
+  // The files first, best effort: the rows (which name the objects) go next,
+  // and a storage hiccup must never fail the deletion.
+  await removeUserDraftObjects(client, userId);
+  const { error: uploadsError } = await client.from("agent_uploads").delete().eq("user_id", userId);
+  if (uploadsError) throw uploadsError;
+  const { error: draftsError } = await client.from("agent_drafts").delete().eq("user_id", userId);
+  if (draftsError) throw draftsError;
+
+  const { error: snapshotsError } = await client.from("agent_snapshots").delete().eq("user_id", userId);
+  if (snapshotsError) throw snapshotsError;
+
+  const { error: connectionsError } = await client.from("agent_connections").delete().eq("user_id", userId);
+  if (connectionsError) throw connectionsError;
+
+  const { error: pendingError } = await client.from("agent_pending_auth").delete().eq("user_id", userId);
+  if (pendingError) throw pendingError;
+
   const { error: enrollmentsError } = await client.from("enrollments").delete().eq("user_id", userId);
   if (enrollmentsError) throw enrollmentsError;
 

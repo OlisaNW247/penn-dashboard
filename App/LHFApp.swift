@@ -18,6 +18,13 @@ import AppIntents
 @main
 struct LHFApp: App {
     @Environment(\.scenePhase) private var scenePhase
+    #if os(iOS)
+    // The Sweeper's server wake needs an app delegate: iOS hands a device
+    // token and a silent push to nothing else. The adaptor adds one and
+    // replaces nothing; the notification center's own delegate is still the
+    // one `NotificationResponseRouter.install()` sets below.
+    @UIApplicationDelegateAdaptor(LHFAppDelegate.self) private var appDelegate
+    #endif
 
     init() {
         // On both platforms, and here rather than from a view or the
@@ -67,6 +74,39 @@ struct LHFApp: App {
             }
     }
 }
+
+#if os(iOS)
+
+/// The three remote-notification callbacks of the Sweeper's server wake, and
+/// nothing else: every rule is in `LowHangingFruitUI` (`LHFSweeperWake`,
+/// `LHFBackgroundRefresh.handlePushWake`). The token is turned into hex here
+/// and never printed or logged. The push handler is the completion-handler
+/// form, never the `async` one: the async form calls iOS's completion on a
+/// cooperative-pool thread and UIKit aborts (CLAUDE.md → Traps).
+final class LHFAppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication,
+                     didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
+        LHFSweeperWake.noteDeviceToken(hex)
+    }
+
+    func application(_ application: UIApplication,
+                     didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        LHFSweeperWake.noteRegistrationFailed()
+    }
+
+    func application(_ application: UIApplication,
+                     didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+                     fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+        #if canImport(BackgroundTasks)
+        LHFBackgroundRefresh.handlePushWake(userInfo: userInfo, completion: completionHandler)
+        #else
+        completionHandler(.noData)
+        #endif
+    }
+}
+
+#endif
 
 #if canImport(AlarmKit) && os(iOS)
 

@@ -59,6 +59,12 @@ struct AssignmentCardView: View {
     /// (`AppState.rejectFacts`). Nil, the default, offers no `undo`: the
     /// megaphone's found cards and previews pass none.
     var onUndo: (() -> Void)? = nil
+    /// "review and submit" (or "check canvas") on a card with an agent's
+    /// draft. Nil offers nothing, so the megaphone and previews show none.
+    var onReviewDraft: (() -> Void)? = nil
+    /// Called the first time this card is opened while it carries a draft,
+    /// which is what marks the draft `seen` on the server.
+    var onDraftOpened: (() -> Void)? = nil
     /// The dashboard's own verdict on whether this item is an exam, for when
     /// it knows better than the title does (an exam that arrived from an
     /// announcement or the syllabus under some other name). Nil, the default
@@ -91,6 +97,11 @@ struct AssignmentCardView: View {
     @State private var isCompleting = false
     @State private var paperScatter = false
     @State private var isArmed = false
+    /// Held for one drag; see `CompletionSwipe.Axis`.
+    @State private var swipeAxis: CompletionSwipe.Axis = .undecided
+    /// True while a drag is live; a cancelled drag never calls `onEnded`, but
+    /// this resets, and its change clears `swipeAxis` (R-I1).
+    @GestureState private var dragIsLive = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -106,7 +117,7 @@ struct AssignmentCardView: View {
     private let maxDrag: CGFloat = 86
 
     private var dragProgress: CGFloat {
-        min(max(dragX / completeThreshold, 0), 1)
+        min(abs(dragX) / completeThreshold, 1)
     }
 
     // MARK: Exam styling
@@ -173,7 +184,12 @@ struct AssignmentCardView: View {
                     .allowsHitTesting(false)
             }
         }
-        .gesture(completeDrag(state: state))
+        // Simultaneous, not `.gesture`: the ScrollView must always get the
+        // touch too, or a scroll that starts on a card dies (CompletionSwipe.Axis).
+        .simultaneousGesture(completeDrag(state: state))
+        .onChange(of: dragIsLive) { _, live in
+            if !live { swipeAxis = .undecided }
+        }
         // Swipe is invisible to VoiceOver, so completing needs a spoken action
         // of its own. Without this the feature would simply not exist for
         // anyone navigating by rotor.
@@ -197,6 +213,7 @@ struct AssignmentCardView: View {
                 isExpanded.toggle()
             }
             lhfHapticLight()
+            if isExpanded, let draft = item.agentDraft, draft.isUnseen { onDraftOpened?() }
         }
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isButton)
@@ -228,8 +245,8 @@ struct AssignmentCardView: View {
                 // this row is back to being plain course-code text.
                 HStack(spacing: 6) {
                     Text(item.assignment.displayCourse(overrides: courseNameOverrides).uppercased())
-                        .font(.lhfMono(9.5, weight: .semibold))
-                        .tracking(1.1)
+                        .font(.lhfCourseCode(10))
+                        .tracking(Font.courseCodeTracking)
                         .foregroundStyle(courseCodeColor(now: now))
                     if isNew {
                         // The header badge's own tomato, so "unread" is one
@@ -264,10 +281,17 @@ struct AssignmentCardView: View {
                 // "in class" under the due value (`secondaryLabel`), where
                 // "late" sits. VoiceOver hears "nothing to submit", and the
                 // source, through the card's accessibility value.
-                if let caveat = item.caveatText {
-                    Text(caveat)
+                //
+                // The agent's chip ("drafted by claude", or "submitted by you
+                // · drafted by claude" in prev) rides the same line in grape,
+                // the agent's colour (the ask accent), so the one thing to act
+                // on is found without opening the card. On the exam card's
+                // inverted ground it keeps the secondary colour, which is the
+                // one that reads there.
+                if item.caveatText != nil {
+                    caveatLine
                         .font(.lhfSecondary(9, weight: .semibold))
-                        .foregroundStyle(secondaryTextColor)
+                        .lineLimit(1)
                 }
             }
 
@@ -283,7 +307,7 @@ struct AssignmentCardView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 if let secondary = value.secondaryLabel(
-                    showsNothingToSubmit: item.showsNothingToSubmit
+                    nothingToSubmit: item.nothingToSubmitLabel
                 ) {
                     Text(secondary)
                         .font(.lhfMono(8.5, weight: .semibold))
@@ -364,6 +388,10 @@ struct AssignmentCardView: View {
                     .padding(.top, 4)
             }
 
+            if let draft = item.agentDraft, let onReviewDraft {
+                agentDraftRow(draft, onReview: onReviewDraft)
+            }
+
             // Facts that changed this card: the instructor's own words, one
             // line each, opening the post they came from where it is known.
             // The details are the same `Link` shape as the source links
@@ -435,6 +463,49 @@ struct AssignmentCardView: View {
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
+    private var caveatLine: Text {
+        let chipColor = isExam ? secondaryTextColor : Color.smoothGrapeInk
+        let facts = item.factCaveatText.map { Text($0).foregroundStyle(secondaryTextColor) }
+        let chip = item.agentChipText.map { Text($0).foregroundStyle(chipColor) }
+        switch (facts, chip) {
+        case let (f?, c?): return f + Text(" \u{00B7} ").foregroundStyle(secondaryTextColor) + c
+        case let (f?, nil): return f
+        case let (nil, c?): return c
+        case (nil, nil): return Text("")
+        }
+    }
+
+    /// The agent's draft in the opened card: a few lines of it, then the one
+    /// button. A `Button` for the same reason as "edit date": a control of
+    /// its own claims the touch before the card's collapse tap does.
+    private func agentDraftRow(_ draft: AgentDraftDisplay, onReview: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let preview = draft.preview {
+                Text(preview)
+                    .font(.lhfSecondary(12))
+                    .foregroundStyle(secondaryTextColor)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            // Drawn like "edit date" and "undo": a glyph, then the words.
+            Button { onReview() } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: draft.checkCanvas ? "questionmark.circle" : "paperplane")
+                        .font(.system(size: 12, weight: .medium))
+                        .accessibilityHidden(true)
+                    Text(draft.checkCanvas ? AgentConnectionCopy.checkCanvas : AgentConnectionCopy.reviewAndSubmit)
+                        .font(.lhfAssignmentTitle(12))
+                }
+                .foregroundStyle(primaryTextColor)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.top, 6)
+    }
+
     @ViewBuilder
     private func factDetailRow(_ detail: FactItemDisplay.Detail) -> some View {
         if !detail.text.isEmpty {
@@ -480,20 +551,35 @@ struct AssignmentCardView: View {
 
     private func completeDrag(state: DueState) -> some Gesture {
         DragGesture(minimumDistance: 18, coordinateSpace: .local)
+            .updating($dragIsLive) { _, live, _ in live = true }
             .onChanged { value in
-                // Vertical intent belongs to the ScrollView. Checking this on
-                // every change (not just the first) keeps a diagonal drag from
-                // dragging the card sideways while the list scrolls under it.
-                guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                let nextDrag = min(max(0, value.translation.width), maxDrag)
-                let nextArmed = nextDrag >= completeThreshold
+                // Vertical intent belongs to the ScrollView, for the whole
+                // drag: decided once, so a scroll that drifts sideways never
+                // starts moving the card while the list moves under it.
+                if swipeAxis == .undecided {
+                    swipeAxis = CompletionSwipe.axis(
+                        width: value.translation.width,
+                        height: value.translation.height
+                    )
+                }
+                guard swipeAxis == .horizontal else { return }
+                let nextDrag = min(max(-maxDrag, value.translation.width), maxDrag)
+                let nextArmed = abs(nextDrag) >= completeThreshold
                 if nextArmed && !isArmed { lhfHapticLight() }
                 isArmed = nextArmed
                 dragX = nextDrag
             }
             .onEnded { value in
-                let horizontalFlick = value.predictedEndTranslation.width >= completeThreshold + 14
-                if isArmed || (dragX >= 42 && horizontalFlick) {
+                let wasHorizontal = swipeAxis == .horizontal
+                swipeAxis = .undecided
+                guard wasHorizontal else { return }
+                // Either direction clears a card (owner's rule, 2026-11-12);
+                // the thresholds live in `CompletionSwipe.acceptsCompletion`.
+                if CompletionSwipe.acceptsCompletion(
+                    horizontal: value.translation.width,
+                    vertical: value.translation.height,
+                    predicted: value.predictedEndTranslation.width
+                ) {
                     triggerComplete(state: state)
                 } else {
                     withAnimation(.spring(response: 0.28, dampingFraction: 0.72)) {
@@ -507,6 +593,8 @@ struct AssignmentCardView: View {
     private func triggerComplete(state: DueState) {
         guard !isCompleting else { return }
         isCompleting = true
+        // The exit continues the way the card was pulled.
+        let side: CGFloat = dragX < 0 ? -1 : 1
         // Save first, then animate: the completion is recorded before the card
         // starts to leave, not when it has finished leaving (`onCommit`). Kept
         // above both animation branches below so neither can run without it.
@@ -515,7 +603,7 @@ struct AssignmentCardView: View {
 
         if reduceMotion {
             withAnimation(.easeOut(duration: 0.18)) {
-                dragX = maxDrag
+                dragX = side * maxDrag
                 exitOpacity = 0
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { onComplete() }
@@ -526,7 +614,7 @@ struct AssignmentCardView: View {
         // pieces of the same paper used by the empty state, and make room for
         // the next assignment. There is no label or confirmation icon.
         withAnimation(.spring(response: 0.22, dampingFraction: 0.78)) {
-            dragX = completeThreshold + 3
+            dragX = side * (completeThreshold + 3)
             exitScale = 1.006
         }
         DispatchQueue.main.async {
@@ -536,7 +624,7 @@ struct AssignmentCardView: View {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
             withAnimation(.easeOut(duration: 0.22)) {
-                dragX = completeThreshold + 6
+                dragX = side * (completeThreshold + 6)
                 exitScale = 0.94
                 exitOffset = -6
                 exitOpacity = 0

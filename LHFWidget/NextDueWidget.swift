@@ -1,6 +1,9 @@
 import WidgetKit
 import SwiftUI
 import LowHangingFruitKit
+#if DEBUG && canImport(AlarmKit)
+import AlarmKit
+#endif
 
 struct NextDueEntry: TimelineEntry {
     let date: Date
@@ -60,6 +63,19 @@ struct NextDueProvider: TimelineProvider {
         let now = Date()
         let snapshot = WidgetSnapshotStore.current(now: now)
         let updateRequired = updateRequiredFlag()
+        #if DEBUG && canImport(AlarmKit)
+        // Device probe for the Sweeper's force-quit check: can an extension
+        // see AlarmKit at all? Logged to the same key the notification
+        // extension uses, tagged `widget`. Nothing here is released.
+        if #available(iOS 26.0, *) {
+            do {
+                let count = try AlarmManager.shared.alarms.count
+                SweepDebugLog.append("widget alarms \(count)", now: now)
+            } catch {
+                SweepDebugLog.append("widget alarms error \(String(describing: error))", now: now)
+            }
+        }
+        #endif
         let entries = WidgetTimelinePlanner.steps(for: snapshot, now: now).map {
             NextDueEntry(date: $0.date, snapshot: $0.snapshot, updateRequired: updateRequired)
         }

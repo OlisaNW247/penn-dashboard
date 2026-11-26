@@ -84,7 +84,9 @@ extension AppState {
         structuredDueOverrides = defaults.dictionary(forKey: StructuredKey.dueOverrides) as? [String: Date] ?? [:]
     }
 
-    private func saveStructuredState() {
+    /// Internal, not private: the last-hour poll's applier
+    /// (`AppState+LastHourPoll.swift`) saves the same set.
+    func saveStructuredState() {
         guard let defaults = structuredDefaults else { return }
         defaults.set(structuredCompletedItemIDs.sorted(), forKey: StructuredKey.completed)
         defaults.set(structuredCompletionOverrides.sorted(), forKey: StructuredKey.completionOverrides)
@@ -196,6 +198,14 @@ extension AppState {
             return summary
         }
 
+        // What each assignment takes, for the agent review sheet. Merged, so
+        // a course this run could not read keeps what an earlier run saw.
+        for course in run.courses {
+            for assignment in course.assignments {
+                if let rules = assignment.submissionRules { canvasSubmissionRulesByAssignmentID[assignment.id] = rules }
+            }
+        }
+
         let signals = CanvasStructuredSourcesReconciler.signals(from: run, courses: courses, baseURL: canvasBaseURL)
         summary.missing = signals.missing.count
 
@@ -261,7 +271,12 @@ extension AppState {
             structuredCompletedItemIDs.subtract(retracted)
             structuredCompletionOverrides.subtract(retracted)
         }
+        let completedBefore = structuredCompletedItemIDs
         structuredCompletedItemIDs.formUnion(completed)
+        // Only what is newly confirmed done is worth cancelling an alarm for,
+        // and an id the student has un-ticked (an override) is theirs to
+        // re-arm, not Canvas's to cancel.
+        let newlyCompleted = completed.subtracting(completedBefore).subtracting(structuredCompletionOverrides)
 
         // 3. Dismissals: replaced by a complete planner read, otherwise additive.
         let dismissed = Set(signals.dismissals.flatMap { ids($0.ref) })
@@ -289,6 +304,7 @@ extension AppState {
         summary.dueOverrides = structuredDueOverrides.count
 
         saveStructuredState()
+        noteSubmittedIDs(newlyCompleted, source: .structured)
         recordStructuredSummary(summary)
         return summary
     }

@@ -9,6 +9,8 @@ import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { Miniflare } from "miniflare";
 import { ideaTests } from "./ideas-suite.mjs";
+import { captureTests } from "./captures-suite.mjs";
+import { installTests } from "./installs-suite.mjs";
 
 const { SITES_ORIGINAL, SITES_EDITED } = process.env;
 const skip = SITES_ORIGINAL && SITES_EDITED ? false : "set SITES_ORIGINAL and SITES_EDITED to run";
@@ -55,7 +57,6 @@ async function snapshot(mf, path, init) {
 const cases = [
   ["GET", "/"],
   ["GET", "/?school=uva"],
-  ["GET", "/api/stats"],
   ["GET", "/scan/ib"],
   ["GET", "/scan/uva/ib"],
   ["GET", "/scan/uva/jester"],
@@ -91,7 +92,37 @@ test("parity: counters and stats after the scans", { skip }, async () => {
     assert.equal(await total(mf, "ib"), 41);
     assert.equal(await total(mf, "uva/ib"), 1);
   }
-  assert.deepEqual(await snapshot(edited, "/api/stats"), await snapshot(orig, "/api/stats"));
+  await statsParity();
+});
+
+// /api/stats is the one route that may differ: the edited Worker lists the
+// designs scripts/build-sites.mjs added (one row per school, after the
+// original ones), with every original row unchanged and in its place.
+async function statsParity() {
+  const a = await req(orig, "/api/stats");
+  const b = await req(edited, "/api/stats");
+  for (const h of HEADERS) assert.equal(b.headers.get(h), a.headers.get(h), h);
+  const A = (await a.json()).rows;
+  const B = (await b.json()).rows;
+  const origKeys = new Set(A.map((r) => r.poster));
+  assert.deepEqual(B.filter((r) => origKeys.has(r.poster)), A);
+  const { DESIGNS } = await import("../worker/catalog.js");
+  const added = DESIGNS.filter((d) => !origKeys.has(d));
+  assert.equal(B.length, A.length + added.length * 5);
+  for (const school of new Set(A.map((r) => r.school))) {
+    const tail = B.filter((r) => r.school === school).slice(-added.length).map((r) => r.poster);
+    assert.deepEqual(tail, added, school);
+  }
+  return { A, B, added };
+}
+
+test("parity: /api/stats keeps every original row and adds the new designs after them", { skip }, async () => {
+  const { added } = await statsParity();
+  assert.ok(added.includes("missed"));
+  const img = await req(edited, "/posters/uva/missed.jpg");
+  assert.equal(img.status, 200);
+  assert.equal(img.headers.get("content-type"), "image/jpeg");
+  assert.equal((await req(orig, "/posters/uva/missed.jpg")).status, 404);
 });
 
 test("parity: near-miss paths stay the host's plain 404", { skip }, async () => {
@@ -208,7 +239,7 @@ test("a plain scan is also logged with a timestamp", { skip }, async () => {
 test("an empty database: tables are created lazily", { skip }, async () => {
   const stats = await req(fresh, "/api/stats");
   assert.equal(stats.status, 200);
-  assert.equal((await stats.json()).rows.length, 62);
+  assert.ok((await stats.json()).rows.length >= 62);
   assert.equal((await req(fresh, "/a/aaaaaaaaaaaaaa/plan.json")).status, 404);
 });
 
@@ -221,14 +252,15 @@ test("the token is nowhere in posts or stickers, and the old routes are gone", {
   const plan = await (await req(edited, `/a/${token}/plan.json?anon=fizz&tz=300`)).json();
   const texts = [plan.today.text, ...plan.messages.map((m) => m.text)];
   for (const t of texts) assert.ok(!t.includes(token), t);
-  for (const t of texts)
-    for (const m of t.match(/https?:\/\/\S*\/(?:a|r)\/\S+/g) || []) assert.match(m, new RegExp(`/r/${ref}/`), m);
-  assert.ok(plan.messages.some((m) => m.text.includes(`/r/${ref}/s/`)));
+  for (const t of texts) assert.doesNotMatch(t, /http/);
+  assert.deepEqual(plan.messages.map((m) => m.key), ["question", "list"]);
+  assert.equal(plan.today.reply, "Smooth for Students on the App Store");
   assert.match(plan.page, new RegExp(`/a/${token}$`));
   assert.ok(!(await (await req(edited, `/a/${token}/stickers`)).text()).includes(token));
   const page = await (await req(edited, `/a/${token}`)).text();
   assert.doesNotMatch(page, new RegExp(`/a/${token}/(s|p)/`));
-  assert.match(page, new RegExp(`/r/${ref}/s/`));
+  assert.match(page, /copy reply/);
+  assert.match(page, /\/r\/[a-z0-9]+\/s\/dm"/);
 
   const [scans, hits] = [await scansSnap(), await dbCount("amb_hits")];
   for (const p of [`/a/${token}/s/fizz`, `/a/${token}/p/ib`]) assert.equal((await req(edited, p)).status, 404, p);
@@ -301,6 +333,24 @@ test("a left ambassador's code stops working, their stickers still count the sch
 // The same idea, plan.json, page and font checks as test/routes.test.mjs, now
 // against the built single file next to the untouched host code.
 ideaTests({
+  test,
+  skip,
+  label: "built file: ",
+  founder: FOUNDER,
+  db: () => edited.getD1Database("DB"),
+  req: (path, init) => req(edited, path, init),
+});
+
+captureTests({
+  test,
+  skip,
+  label: "built file: ",
+  founder: FOUNDER,
+  db: () => edited.getD1Database("DB"),
+  req: (path, init) => req(edited, path, init),
+});
+
+installTests({
   test,
   skip,
   label: "built file: ",

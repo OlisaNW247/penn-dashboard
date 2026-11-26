@@ -156,6 +156,17 @@ enum BerserkAlarmEngine {
         }
     }
 
+    /// Cancels exactly the named alarms, ringing or not, and nothing else. For
+    /// work confirmed submitted: the caller has already stopped any that ring.
+    /// An id AlarmKit does not hold (never scheduled, or already gone) is
+    /// ignored rather than thrown, because the cancel is asked for every
+    /// (lead, sound) pair an item could have been set under and most of them
+    /// never existed. Never reads the store: a failed read must not stop a
+    /// cancel that the id alone can do.
+    static func cancel(ids: Set<UUID>, in store: any BerserkAlarmStore) {
+        for id in ids { try? store.cancel(id: id) }
+    }
+
     private static func isPresent(_ id: UUID, in store: any BerserkAlarmStore) -> Bool {
         (try? store.storedAlarms())?.contains { $0.id == id } ?? false
     }

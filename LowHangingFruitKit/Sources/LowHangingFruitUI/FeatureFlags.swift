@@ -139,6 +139,30 @@ enum FeatureFlags {
     /// deletes). Turn it off if a bad fact keeps hiding or moving real work.
     static let appliedFacts = true
 
+    /// **The agent connection** (docs/AGENT_CONNECTION_PLAN_V11_2026-11-07.md):
+    /// a student connects an agent such as Claude to Smooth, approves the
+    /// sign-in on this phone, and the phone uploads a closed-field snapshot
+    /// of the work list for it to read.
+    ///
+    /// **This is the kill switch for every agent-connection surface on the
+    /// phone**: the `smooth://link` handler, the Settings section, the
+    /// snapshot upload, the drafts poll, the "drafted by" chip on a card,
+    /// the review sheet and prev's "submitted by you · drafted by". False
+    /// leaves none of them reachable and uploads nothing; a draft cache or
+    /// an attempt record an earlier build left on the phone is not read.
+    ///
+    /// **Off since 2026-11-17, at Marco's word** ("we're not going to
+    /// actually go with the agent stuff from V11 ... V12 will be solely the
+    /// ambassador stuff and just some of the other stuff"), so that 3.5.0
+    /// ships ambassador mode without the agent connection. Nothing was
+    /// deleted: the code, its tests, the deployed backend (`agent-auth`,
+    /// `mcp`, `agent-snapshot`) and anything a phone cached stay, and the
+    /// DEBUG `-LHFDemoAgentState` arguments still draw the screens from
+    /// invented data (they never reach the server). What was still open when
+    /// it went off is in CLAUDE.md → Known gaps. To bring it back, set this
+    /// to `true`; the tests skipped while it is false run again by
+    /// themselves (`docs/V12_ISOLATION_2026-11-17.md`).
+    static let agentConnection = false
     /// **A degree screen, read from Path@Penn with the student's own login.**
     /// Profile → classes gets a "degree" row that opens the student's
     /// audit (what is met, in progress and open, block by block) and a "what
@@ -171,6 +195,59 @@ enum FeatureFlags {
     /// line is what switches the feature on there, and that merge should be
     /// a decision, not a side effect.
     static let degreeProgress = true
+
+    /// **The server wake for the Sweeper: a silent push that makes the phone
+    /// ask Canvas whether work was handed in, 15 and 3 minutes before a ring.**
+    /// While this is true a Penn install with reminders and the Sweeper on
+    /// registers for remote notifications (no permission prompt: a silent push
+    /// needs none), tells the server a list of whole-minute instants and a
+    /// hash of that list (`SweeperWakeClient`, `docs/PRIVACY.md`), and, when a
+    /// push arrives, runs one planner read from the phone's own Canvas session
+    /// (`LHFBackgroundRefresh.runWake(.push)`). The alarm stays armed
+    /// regardless; only a confirmed submitted read takes it back.
+    ///
+    /// **On because it can only ever help:** the server sends nothing until a
+    /// build carries the `aps-environment` entitlement (Olisa's step, not in
+    /// this tree), so until then registration fails, the DEBUG wake log says
+    /// `register-failed` once and the app runs as before.
+    ///
+    /// **Off registers nothing and sends nothing.** A phone that had sent a
+    /// list before (`sweeperWakeEverSentV1`) makes one `delete` at its next
+    /// foreground so the server forgets its token and moments.
+    static let sweeperWake = true
+
+    /// The anonymous install count (2026-11-22, the owner's ask: Apple
+    /// reports no downloads by school, so how many students have set Smooth
+    /// up at each one?). After a student has really connected Canvas, the app
+    /// sends ONE request per install carrying the school's Canvas host and
+    /// `new` or `existing`, and nothing else (`InstallCountReporter`).
+    ///
+    /// **This is the kill switch.** False sends nothing, ever; the three
+    /// defaults keys it keeps are left alone.
+    static let installCount = true
+
+    /// **The McGraw Hill reader is compiled out: off until it exists.**
+    /// Owners' decision of 2026-11-02 (`ROADMAP.md`): build a reader of the
+    /// student's own Connect (later ALEKS) assignments, on the phone only,
+    /// although McGraw Hill's terms appear to bar automated access without
+    /// written permission. This flag is the release's hard off; the live,
+    /// no-release switch is the update manifest's `readers.mcgrawHill`
+    /// (`ReaderSwitches`), which is off unless the manifest says `true`. The
+    /// reader runs only when both say on, and never on preview or demo data
+    /// (`ReaderGate.mcgrawHill`).
+    ///
+    /// False today because there is no reader yet: only the pieces that need
+    /// no McGraw Hill endpoint are built (the switch, the host recognition,
+    /// the enrichment pass, the session store and reauth rule). Flip it to
+    /// true in the commit that lands the client, once `docs/mcgraw-hill/
+    /// RECON.md` exists; the manifest then decides, and Olisa turns it on.
+    ///
+    /// The Sweeper needs nothing from this flag: a Connect assignment is
+    /// `external_tool`, which the buzz-only rule of 2026-11-18
+    /// (`SweeperSettings.isBuzzOnly`) already gives three buzzes instead of
+    /// the alarm, because no Canvas read can confirm it. When the reader
+    /// can confirm it, that is the place to let it ring again.
+    static let mcgrawHillReader = false
 
     /// Evaluates a token-store read only while the experiment is enabled.
     /// Keeping the guard around the closure (rather than around its result)

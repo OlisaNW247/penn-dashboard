@@ -48,7 +48,8 @@ address can be entered manually. Catalog sources and limitations live in
 `docs/canvas-directory/`; authenticated support is not proven for all sites. Everything
 server-side is Penn-only for now: pooled course materials, the server path
 of ask, the announcement AI assist, and "stay signed in" (PennKey).
-Non-Penn installs run fully on-device, because the backend keys course
+Non-Penn installs run fully on-device (apart from the one anonymous
+per-school count below, since 2026-11-22), because the backend keys course
 material by numeric Canvas course id, and two schools' ids would collide.
 
 **Privacy posture; say it this way.** "The student's own data stays
@@ -79,7 +80,13 @@ model on the server for course-level "facts"; they belong to the class,
 carry no user id, and a student's AI-assist switch does not stop them
 (`docs/PRIVACY.md` says so). The phone also reads Canvas's own structured
 endpoints (Planner, module completion, section dates) with the student's
-session and keeps the results on the phone. Since 2026-11-10 (`v12`; first read on a device the same day, Olisa's iPhone 17, a Debug build of `d2f37a0`; **switched off on 2026-11-12**, `FeatureFlags.degreeProgress = false`, so while it is off none of this runs) a
+session and keeps the results on the phone. Since 2026-11-10 (built, never
+on a phone or against Canvas) a student with the agent connection on also
+polls their agent's open drafts, keeps a content-free list of them in
+`UserDefaults.lhf` (`agentDraftsCacheV1`), tells the server when a draft
+was seen, declined, submitted or failed, and submits a draft to Canvas from
+the phone with their own session; the server never sees the session and
+Since 2026-11-10 (`v12`; first read on a device the same day, Olisa's iPhone 17, a Debug build of `d2f37a0`; **switched off on 2026-11-12**, `FeatureFlags.degreeProgress = false`, so while it is off none of this runs) a
 Penn install can show the student's degree audit by running Penn's own
 Path@Penn page in a hidden WebView (`PathPortal`), signed in with the same
 saved PennKey, and asking that page for the audit through allowlisted
@@ -97,8 +104,15 @@ planned by semester, the options Penn lists) and the chat's last turns to
 the `degree-advisor` function, under the anonymous account, with no name,
 id, grade or GPA. The function hands it to a model and stores none of it.
 Nothing is sent until a message is sent, and the chat says so first
-(`docs/PRIVACY.md` → "Degree progress" → "Plan with AI"). There is no analytics, tracking,
-or third-party SDK. Don't say "everything is on-device" (untrue since
+(`docs/PRIVACY.md` → "Degree progress" → "Plan with AI"). Since 2026-11-22 (`v12`, compiled on the runner, never
+on a phone, not released) every install, at any school, sends **one
+anonymous count**: after Canvas is connected, the school's Canvas host and
+`new` or `existing`, once, with no id, to the poster-scan site, which keeps a
+per-school daily tally (`docs/PRIVACY.md` → "One anonymous count: which
+school"). It is the first thing a non-Penn install has ever sent, so "non-Penn
+installs run fully on-device" now has that one exception. There is no
+tracking and no third-party SDK; say "no tracking", not "no analytics", from
+that build on. Don't say "everything is on-device" (untrue since
 `assistant-ui`) or "no server" (untrue since the backend). `docs/PRIVACY.md`
 is the student-facing version and must change in the same commit as any
 behaviour it describes.
@@ -110,6 +124,14 @@ password, no name. Two things go through it:
 - **Course materials.** Syllabus, course pages, modules, assignment
   descriptions and announcements are fetched from Canvas with the student's
   own login, then pooled per Canvas course so classmates share one copy.
+  Since 2026-11-10 (blind) the PDFs an instructor links from an assignment's
+  description are pooled too: at the end of a successful
+  `refreshCourseKnowledge`, `attachmentPass` (`AppState+AssignmentAttachments.swift`;
+  planning in `AssignmentAttachmentPlanner.swift`, fetching in
+  `CanvasFilesClient.swift`, the document in `AssignmentAttachmentRunner.swift`)
+  reads each linked file id from open or just-past assignments, fetches PDFs
+  under 10 MB and uploads them as `file` documents, the shape the Chrome
+  extension makes. The student's own uploads and submissions are never read.
   Sync is automatic: after Canvas connects, then on the refresh loop with
   hourly staleness. There is no manual sync. Since 2026-10-02 (`v8`, not
   yet verified on a device) the same sync also reads **Ed Discussion** for
@@ -151,12 +173,64 @@ with the backend unreachable, ask answers on-device:
 items, retrieves policy and content answers from synced course materials
 (`CourseKnowledgeCollector` → `CourseKnowledgeStore`), and on iOS 26 /
 macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
-(`OnDeviceLanguageModel`). A twelfth function, `degree-advisor`, is in the tree on `degree-progress` and **live since 2026-11-14 at about 17:49 UTC** (version 1 from `b5b0762`; **version 2 since about 18:40 UTC the same day, from `1b92d58`**, the what-if round trip, both at Olisa's go **version 5 since 2026-11-15 about 17:35 UTC, from `d2e0a49`**, the picks, at his go (versions 3 and 4 were not deployed from this session; `ask` read 24 and `sync` 31 at the same moment); **version 6 since 2026-11-15 about 18:20 UTC, from `335ec9a`**, the rounds, at his go; **version 7 since 2026-11-16, from `4083bc0`**, the deterministic planner, at his go; **version 9 since later on 2026-11-16, from `9c45e21`**, area lists, the best case and no MBA courses, at his go (version 8 was not deployed from this session; `ask` read 25 and `sync` 32 at the same moment); **version 10 since 2026-11-26 about 21:56 UTC, from `2b8a3a9`**, the corrected policy and Penn's program packs, at his go (`ask` 25 and `sync` 32 unchanged); **version 11 since 2026-11-26 about 22:49 UTC, from `7f93bcc`**, registered courses counted as load and `slotIds` on scheduled courses, at his go (`ask` 25 and `sync` 32 unchanged)); Degree → Plan with AI); only a `degree-progress` build calls it. Eleven Edge Functions are in
-`backend/supabase/functions/` (all eleven are deployed; `extract-facts` was
-the last, on 2026-11-05): `ask`,
+(`OnDeviceLanguageModel`). A twelfth function, `degree-advisor`, is in the tree on `degree-progress` and **live since 2026-11-14 at about 17:49 UTC** (version 1 from `b5b0762`; **version 2 since about 18:40 UTC the same day, from `1b92d58`**, the what-if round trip, both at Olisa's go **version 5 since 2026-11-15 about 17:35 UTC, from `d2e0a49`**, the picks, at his go (versions 3 and 4 were not deployed from this session; `ask` read 24 and `sync` 31 at the same moment); **version 6 since 2026-11-15 about 18:20 UTC, from `335ec9a`**, the rounds, at his go; **version 7 since 2026-11-16, from `4083bc0`**, the deterministic planner, at his go; **version 9 since later on 2026-11-16, from `9c45e21`**, area lists, the best case and no MBA courses, at his go (version 8 was not deployed from this session; `ask` read 25 and `sync` 32 at the same moment); **version 10 since 2026-11-26 about 21:56 UTC, from `2b8a3a9`**, the corrected policy and Penn's program packs, at his go (`ask` 25 and `sync` 32 unchanged); **version 11 since 2026-11-26 about 22:49 UTC, from `7f93bcc`**, registered courses counted as load and `slotIds` on scheduled courses, at his go (`ask` 25 and `sync` 32 unchanged)); Degree → Plan with AI); only a `degree-progress` build calls it.
+Beside it (it is not counted in what follows, which is `v13`'s own count), fifteen Edge Functions are in
+`backend/supabase/functions/`, fourteen deployed and one written and
+**not deployed**, **`sweeper-wake`** (2026-11-18, `claude/sweeper-build-0a4dd0`:
+the Sweeper's wake-up clock, `backend/PROTOCOL.md` → "The Sweeper wake";
+it holds, per install, an APNs device token and at most 24 wake minutes and
+nothing else, sends one silent push per due minute from a `pg_cron` tick,
+needs the `LHF_APNS_*` secrets from Olisa's key and the `pg_cron` / `pg_net`
+extensions and two Vault secrets on the project before it can run; deploy
+with `node backend/scripts/deploy-sweeper.mjs` at Marco's go, never from a
+session): `ask`,
 `ask-canary`, `delete-account`, `device-sync`, `discover-websites`,
-`extract-announcement`, **`extract-facts`**, `extract-profile`,
-`map-categories`, `pair`, `sync`. `extract-facts` (written 2026-11-04 on
+`extract-announcement`, **`extract-facts`** (2026-11-05), `extract-profile`,
+`map-categories`, `pair`, `sync`; and the three of the v11 agent connection,
+**live since 2026-11-08 about 03:00 UTC (the night of 2026-11-08 US
+Eastern), at Olisa's go relayed by Marco; redeployed 2026-11-10 about
+06:30 UTC at Marco's "Yes, deploy" as `agent-auth` v5, `mcp` v3,
+`agent-snapshot` v3 with migrations `20261109090000_agent_hardening.sql`
+and `20261109100000_agent_drafts.sql` applied (rate limits, sweeper,
+approve and deny bound to lookup, the drafts backend, the assignment
+context)**; then **`agent-auth` v6 and `mcp` v4 on 2026-11-10 about 07:45 UTC at
+Marco's "Yes, deploy"** (the sign-in page's "Connected to Smooth, returning
+to <agent>" state before the redirect, and explicit annotation hints on every
+read tool; no migration; the 14-step `agent-e2e.mjs` probe, drafts included,
+passed on them); then **`mcp` v5 about 19:00 UTC the same day** (each attachment
+listed once in `get_assignment`); then **`agent-auth` v8, `mcp` v7, `agent-snapshot` v5 about
+20:40 UTC with migration `20261110090000_agent_uploads.sql`** (files from an
+agent in checksummed 16 KB chunks or by one signed PUT, after claude.ai
+refused to transcribe a 57,000-character base64 PDF; the probe's upload leg
+passed on production with 100 KB chunked, one chunk resent, and 50 KB PUT) ; then, after the v11 test sessions, **`agent-auth` v12, `mcp` v11,
+`agent-snapshot` v8 and `delete-account` v15 on 2026-11-11 about 23:05 UTC at
+Marco's "Yes, deploy"** (the three serious findings of
+`docs/V11_TEST_BACKEND_2026-11-11.md`: account deletion now removes draft
+files and uploads, stray staged objects are swept, file names and mime types
+checked), with the front redeployed carrying `CLIENT_IP_SECRET` and the
+matching `LHF_FRONT_CLIENT_IP_SECRET` set on Supabase (the value is in
+`~/lhf-bench/front-client-ip.secret`, mode 600, never printed), so the
+sign-in rate limits are per student address again; then **`agent-auth` v17, `mcp` v16,
+`agent-snapshot` v13 and `delete-account` v20 on 2026-11-16 about 02:48 UTC at
+Marco's "Yes, deploy", from `claude/agent-debug-998a30` `afa64bb` (the sliding
+chunked-upload expiry, Traps; the 14-step probe passed at 02:50 UTC); proven by a bucket keyed
+by the dev Mac's own address filling to 64 from the test session's 61-hit
+probe plus the deploy checks, which is why the probe's authorize step read
+429 from this Mac until the hour was up (`node backend/scripts/deploy-agent.mjs --public-base
+https://smooth-agent.vercel.app/functions/v1`): `agent-auth` (our own OAuth
+authorization server, the phone approves each connection), `mcp` (the
+remote MCP server Claude connects to) and `agent-snapshot` (the opted-in
+student's work list), from `agent/connection-v11`, `backend/PROTOCOL.md` →
+"The agent connection". The first two run with `verify_jwt = false`
+(`config.toml`, `deploy-function.mjs`). Their public face is **the
+connector front, `https://smooth-agent.vercel.app`** (a Vercel Edge
+Function under Marco's account, `backend/connector-front/`), which serves
+the root OAuth discovery documents Claude needs and forwards to the two
+functions; `LHF_AGENT_PUBLIC_BASE` names it, so the issuer and MCP URL are
+`https://smooth-agent.vercel.app/functions/v1/agent-auth` and `.../mcp`. Marco's claude.ai signed in against production on 2026-11-09.
+Written on `claude/v11-backend-645aa0` on 2026-11-10 and **not deployed**:
+the sign-in page's "Connected to Smooth" state and explicit annotation
+hints on the read tools (`agent-auth`, `mcp`; no migration). `extract-facts` (written 2026-11-04 on
 `v10`, **live since 2026-11-05 01:20-01:45 UTC**, the evening of
 2026-11-04 US Eastern; version 1, with the `sync` that serves its facts at
 version 17 and migration `20261104090000_course_facts.sql` applied; the
@@ -188,34 +262,69 @@ tomato/marigold/lemon/teal/cobalt/grape accents, an "after sunset" dark
 mode, the S app mark, and bundled type registered at runtime by
 `SmoothFontRegistry` (`RedesignTokens.swift`):
 - Satoshi (Fontshare FFL).
-- Inter, Familjen Grotesk and Space Mono (all SIL OFL, licence files beside
-  them in `Resources/`).
+- Inter, Familjen Grotesk, Space Mono and Atkinson Hyperlegible Next (all
+  SIL OFL, licence files beside them in `Resources/`).
+- The class code on a card and on the draft review sheet is Atkinson
+  Hyperlegible Next SemiBold (`Font.lhfCourseCode`, 10pt +0.9 on the card,
+  11pt on the sheet) since 2026-11-12, Marco's pick (option B of
+  `docs/FONT_RESEARCH_2026-11-11.md`; Space Mono Bold at 9.5pt read as "like
+  Claude"). The variable file `AtkinsonHyperlegibleNext-Variable.ttf`, from
+  google/fonts; its SemiBold instance resolves as
+  `AtkinsonHyperlegibleNext-SemiBold`. The "NEW" tag, the due value and
+  "late"/"in class" stay Space Mono.
 - Roobert SemiBold for the dashboard title: a commercial face from
   Displaay, cleared for shipping on 2026-09-15 under a personal agreement
   Olisa holds. There is deliberately no licence file in the repo; the
-  agreement is Olisa's to produce if it is ever asked for.
+  agreement is Olisa's to produce if it is ever asked for. **Found
+  2026-11-11 by the font research:** the bundled files are Displaay's
+  trial build (PostScript name `RoobertTRIAL-SemiBold`, which
+  `RedesignTokens.swift` asks for by name), and Displaay's licence says
+  trial fonts are not for public-facing projects. Whether Olisa's
+  agreement covers that file is his to confirm
+  (`docs/NOTE_FOR_OLISA_2026-11-11.md`); if not, the licensed file replaces
+  it and `lhfWordmark` / `lhfHeaderTitle` take the new name.
+  `docs/FONT_RESEARCH_2026-11-11.md` (merged 2026-11-11) names the face that
+  draws the class code (Space Mono Bold, 9.5pt, +1.1) and five shippable
+  alternatives with renders; no font changed.
 
 **Release state.** Live on the App Store: **3.5.0**, from Marco's `v11`
 (stamped 3.5.0 (21) there and on `v13`); the `update-manifest` floor has
 been **3.5.0** since 2026-11-24 06:49 UTC (`b755945`, the workflow's own
 run; before it 3.4.1 from 2026-11-09, `4fdc5ac`), read from the manifest on
 2026-11-26. The exact release time was not read (the iTunes lookup does not
-answer the cloud container). **`degree-progress` is stamped 3.5.0 (20) since
-2026-11-26 only to clear that floor**; it does not contain `v11`'s 3.5.0
-work (Traps, "a branch stamped below the floor"). The history below is
-older and was not re-read that day. Before it: **3.4.0 (build 17)**, released
-2026-10-28 at 21:43 UTC per the public iTunes lookup, read 2026-11-06. **3.4.1
-(build 20) was archived from `v10` `c3a4feb` and uploaded at 16:39 EST (21:39
+answer the cloud container). **Since the merge of `v13` on 2026-11-26 `degree-progress` is stamped
+3.5.0 (21) and contains that release's work** (Branches). What follows is
+`v13`'s own account of the release, written on 2026-11-24 before it was
+read as live here: The next release, **3.5.0 (21)**, is the release line `claude/ambassador-header` (`v11` merged with Olisa's `v12`) **without the agent connection**: Marco decided on 2026-11-17 that it stays on `v11` for later (`FeatureFlags.agentConnection = false` on `claude/v12-isolate-ab8b22`, `docs/V12_ISOLATION_2026-11-17.md`; the backend stays deployed). Everything else on the line ships ("keep all but agent", the same day). **Since 2026-11-18 the line also carries the Sweeper accuracy work**: `claude/v12-isolate-ab8b22` and then `claude/sweeper-build-0a4dd0` were fast-forwarded into it at Marco's "yes", so its tip is `b1a6aa8` (4254/421 green on that tree, unsigned iOS build green, Deno 942). **Since 2026-11-21 the line also carries `origin/v10` `d22ec49` (Olisa's
+tree work of 2026-11-14 to 16: per-intent excerpt budgets, the weekly schedule
+line, the student's own section, dated excerpt labels, the room on the wire,
+the phone half of the Haiku switch) and `origin/v12` `8fc16c8` (his ambassador
+playbook, uploads, feed stills, post results and pull to refresh of 2026-11-18
+to 19), merged at Marco's "merge all of that into one" after the release
+line was found to lack both (`f99e5f6`, `f9712b9`); the merged tree is 4325/434
+green (Test baseline) and its unsigned iOS Debug build succeeded the same hour.** Between the 18th and the merges the line gained the
+Sweeper's poller trace and the two poller fixes (`e22c3ef`, `93533d0`,
+`890bd11`) and the buzz-only rule for unconfirmable work (`3b9d2c8`). The Debug build of `b1a6aa8` was installed on Marco's iPhone 17 Pro at about 23:30 UTC on 2026-11-18 by `scripts/build-to-phone.sh` (build and install succeeded; the launch was refused because the phone was locked), over the `v11` build `dec3c47`: the first build on a phone with the agent connection off and the first with any Sweeper accuracy code. Not pushed, not merged into `v11`, nothing deployed. **Since 2026-11-22 the line also carries `origin/v12`'s anonymous per-school install count** (`FeatureFlags.installCount = true`: one request per install after Canvas connects, the school's Canvas host and `new` or `existing`, no id; the Worker half is live; `docs/PRIVACY.md` → "One anonymous count: which school"; the App Store privacy label and the pasted review-notes line are Olisa's and Marco's to decide). Live on the App Store: **3.4.1 (build 20) since 2026-11-08
+at 22:29 UTC** (public iTunes
+lookup, read 2026-11-10), and the `update-manifest` floor is 3.4.1 (read the
+same day; `sync` refused a 3.4.0 install with 426 at 03:49 UTC on 2026-11-10,
+as designed). Before it, 3.4.0 (build 17), released 2026-10-28 at 21:43 UTC.
+**3.4.1 (build 20) was archived from `v10` `c3a4feb` and uploaded at 16:39 EST (21:39
 UTC) on 2026-11-07** ("Upload succeeded"; it supersedes build 19 (`5bc1a9f`,
 15:38 EST the same day, before the sheet listed every post) and build 18
 (`bd9d20c`, 2026-11-06, before the megaphone redesign and the final-exam
 dedup); attach 20), after 3708/353 Swift, Deno 713 and
 the iOS simulator build on the same tree, and after the facts backend was
 redeployed from the same commit (`sync` v22, `extract-facts` v6, the
-`finish_fact_extraction` migration applied). The Debug build of the same
+`finish_fact_extraction` migration applied). `sync` is at **v25 since 2026-11-10
+about 08:00 UTC** (Marco's "Yes, deploy sync"; v24 was deployed on
+2026-11-06 by someone else, without a note here): v24 plus the rule that a
+client report listing no `file` ids cannot retire a course's file rows,
+which the phone's assignment-PDF pass needs; a throwaway user's manifest
+round trip passed on it. The Debug build of the same
 tree is on Marco's iPhone 17 Pro since 14:06 EST the same day, over the 3.4.0
-(17) store copy, so the App Group container is readable again. Marco creates the 3.4.1 version
-record, attaches build 20, pastes `docs/appstore/LISTING.md` → What's New in
+(17) store copy, so the App Group container is readable again. Marco created the 3.4.1 version
+record (done; live 2026-11-08), attached build 20, pasted `docs/appstore/LISTING.md` → What's New in
 3.4.1 and submits; the floor automation raises `update-manifest` six hours
 after it is live. What 3.4.1 carries beyond 3.4.0 is listed in
 `docs/appstore/CHECKLIST.md` → "3.4.1 (18) submission". Before 3.4.0: **3.3.0
@@ -305,11 +414,22 @@ Screen by screen, as of 2026-10-20 on `v8` (Olisa's `v8` and Marco's
 Test baseline).
 Keep this current. It is the fastest way for a new session to know what exists.
 
-- **Onboarding.** A three-beat intro (`MissionIntroView`: since 2026-10-30
-  the first pane's scattered chips gather into an ordered list 0.9 s after
-  it appears, replaying on re-entry and skipped under Reduce Motion, and
-  the third pane lists Dashboard, Reminders and Ask only; Grade Watcher
-  was dropped from it). Then `OnboardingView`'s walk:
+- **Onboarding.** The animated opening story (`IntroView`: a stick
+  figure stands, is buried in notifications, the storm gathers into the
+  squiggle, and the figure relaxes; since 2026-11-21 the relaxed figure,
+  `RelaxedStudent`, sits leaning back on one arm with a knee up and a leg
+  along the squiggle, redrawn at Marco's word because the old lying pose
+  "doesn't really look that good"; compiled, not yet seen on a phone), then
+  a **two-page** tour (`MissionIntroView`, since 2026-11-21: "Go get the
+  low hanging fruit" with the sample list, then Dashboard / Reminders /
+  Ask; the "We kept losing points on the easy stuff" pane with its
+  gathering chips, `MissionScatter`, was cut because the story already
+  makes that point, at Marco's "make it go a little faster"; the dots
+  derive from `pageCount`). Then `OnboardingView`'s walk (its three
+  progress dots, canvas · gradescope · reminders, show on the "Canvas
+  connected" page, the Gradescope choice and the reminders page since
+  2026-11-21; before that dot 1 was never lit and the Gradescope choice
+  had none, `IntroTourTests`):
   1. university search (220 curated Canvas sites; manual address fallback)
   2. Canvas login (WebKit, the school's own SSO; Penn is PennKey + Duo),
      detection unchanged since 3.3.0
@@ -354,8 +474,23 @@ Keep this current. It is the fastest way for a new session to know what exists.
   opens through "update password" once Penn has rejected a saved password.
 - **Dashboard** (`ContentView`):
   - **Header.** The "Smooth" wordmark and the weekday. Tapping the wordmark
-    ripples its squiggle and sweeps a shine across it. The **megaphone**
-    and a profile button sit beside it, both 48pt squircles
+    ripples its squiggle and sweeps a shine across it; since 2026-11-11 three
+    taps inside 1.5 s flip the wordmark once round its horizontal axis, a
+    0.8 s backflip that ends at the normal pose (`WordmarkTripleTap`; none
+    under Reduce Motion), and the title is as large as the row allows (1pt steps
+    from 29 to 18 through `ViewThatFits`, the spacer before the buttons 2pt
+    instead of 12; Marco: "too small"; "Smooth Wednesday" was 24pt on a
+    402pt phone). The **Sweeper**
+    button (since 2026-11-10 on `v11`; since 2026-11-11 an `alarm.fill`, Marco:
+    "the shovel or sweep emoji sucks"; first on a solid tomato squircle, then,
+    the same day, "far too orange", in the + button's old colours (a 22%
+    tomato wash, the + moved to lemon), and since 2026-11-12 an ink glyph on
+    that tomato wash (Marco: "the alarm should be black instead of red"; a
+    grey wash lasted one build: "Why is the alarm now gray? It should still be
+    red, but the icon should be black"); a small dark-red "new"
+    dot shows only until the Sweeper page has been opened once,
+    `sweeperPageSeenV1`), the **megaphone** and a profile button sit beside it. All
+    three are 42pt squircles with 8pt spacing on `v11` (48pt with two)
     (continuous corners, radius 0.32 × size; owner's call 2026-11-06; the
     control row's filter and + stay round). Since
     2026-10-18 the megaphone is here, where the grades button was, and
@@ -371,24 +506,36 @@ Keep this current. It is the fastest way for a new session to know what exists.
     reconnecting" once a silent renewal has run 3 seconds, "approve the
     duo push on this phone" while a push waits, and the three the student
     must act on: "pennkey password changed · update in profile" (opens
-    Profile), "duo needs you · tap to finish" and "sign in to canvas"
-    (no login and no saved password), both opening the sign-in as a cover
-    over the dashboard, with an xmark to close it (it does not restart
-    onboarding; the lock-out trap below). The 24-hour clock,
+    Profile), "duo needs you · tap to finish — every 30 days, smooth can
+    get signed out" (Marco's wording, 2026-11-21, after his own phone sat
+    on that line for a day; it was "duo needs you · tap to finish") and
+    "sign in to canvas" (no login and no saved password), both opening the
+    sign-in as a cover over the dashboard, with an xmark to close it (it
+    does not restart onboarding; the lock-out trap below). **Since
+    2026-11-21 (blind) a missed Duo push is also a notification**: once the
+    awaiting-Duo latch over an expired session is an hour old, one local
+    notification, "sign in to canvas to keep smooth updated" (`duo:wait`,
+    `DuoWaitNotice`), posted from the foreground pass and the background
+    refresh wake (never the push wake), once per latch
+    (`duoWaitNoticePostedForLatchV1`), removed when the latch clears; a tap
+    opens the same cover once the dashboard is bound. Before it, a student
+    who missed the push had stale cards and one small line for days. The 24-hour clock,
     `canvasSessionExpired`, the confirmed-dead latch, a dead probe and a
     failed, timed-out or landed attempt never produce a line; that is the
     point. A "reconnect gradescope" banner
     (since 2026-10-27, hardening A4) appears only after a real login page
     was seen on two syncs an hour apart, and opens the same cover.
-  - **Control row.** A full-width **todo · all · prev** switch
-    (`DashViewPicker`), then a **class filter** menu (narrows all three
+  - **Control row.** 10pt under the header since 2026-11-12 (14 before;
+    Marco: "can you push the todo, all, prev, that part up a few pixels"). A
+    full-width **todo · all · prev** switch (`DashViewPicker`), then a **class filter** menu (narrows all three
     views, with a clearable chip under the row), **+** (a plain `plus`
     glyph since 2026-10-30, `calendar.badge.plus` before; the add sheet: a
     one-off or weekly assignment, class picked from a grid of per-class
     coloured chips, `CoursePicker`). The **megaphone** used to be a fourth
     control here and moved to the header on 2026-10-18, where its circle
     is marigold (the class filter beside the switch is cobalt: ink glyph on
-    a cobalt fill, like the tomato add button). It opens
+    a cobalt fill; the + is lemon since 2026-11-11, tomato before, when tomato
+    went to the Sweeper button). It opens
     `AnnouncementFindsView`, which since 2026-10-18 is two lists under the
     page header and a class filter (the dashboard's own `ClassFilterMenu`,
     default all classes, not remembered):
@@ -747,7 +894,16 @@ Keep this current. It is the fastest way for a new session to know what exists.
     "no date" does. The old "nothing to submit" caveat line under the
     title is gone. Diagonal stripes were tried on the phone the same day
     and rejected as too busy. VoiceOver hears "nothing to submit" as the
-    card's value.
+    card's value. **Since 2026-11-10 the word is truthful** (Marco: CIS
+    3990's Project 2, handed in on a git server, read "in class"):
+    `NothingToSubmitLabel.text` says "in class" only for Canvas `on_paper`
+    (`onPaperCanvasAssignmentIDsV1`, beside `noSubmissionCanvasAssignmentIDsV1`,
+    same per-item update), an `.event`, or a title naming a quiz or exam, and
+    "off canvas" otherwise. Only the word: reminders, the Sweeper's silence
+    and the auto-file at the due time are unchanged. Compiled and tested on
+    the Mac; not on a phone. The missed PHYS 0151 Quiz 7 of 2026-11-09 was
+    shown in todo and filed at its due time; nothing loud rings for an
+    in-class quiz (`docs/QUIZ_MISSED_2026-11-09.md`).
   - **Where a card came from** ("from announcements", "from ed", "from
     syllabus", `DashItem.sourceText`) shows only in the opened card, under
     the full due date (2026-11-06). The collapsed card's caveat line now
@@ -769,9 +925,38 @@ Keep this current. It is the fastest way for a new session to know what exists.
     a recurring task), each behind a system confirmation (2026-10-10;
     `OwnTaskRemoval`, `AppState.removeManualAssignment` /
     `removeRecurringTask`). Never on feed items or on preview and demo
-    data. Swipe right
-    to complete it, with a small paper-scatter animation. A floating
+    data. Swipe right **or left** to complete it (either way since
+    2026-11-12, Marco: "you can swipe it left or you can swipe it right.
+    Either one works"; `CompletionSwipe.acceptsCompletion`; the intro's
+    practice lesson still teaches swipe-right, at his word, and undo in prev
+    stays a left swipe or a tap), with a small paper-scatter animation that
+    exits the way the card was pulled. A floating
     button opens **ask**.
+  - **Overdue swipe lesson** (2026-11-22, `claude/onboarding-work-f6b7f1`,
+    Marco's ask for 3.5.0; compiled and tested, not yet on a phone). A
+    student who updates with an unfinished item 5 to 60 whole days past
+    its (override-aware) due date (not a calendar event, a nothing-to-submit
+    item or one a fact cancelled; since the test pass of 2026-11-22) is shown, once per install, a full-screen
+    cover over the dashboard (`OverdueSwipeLessonView`): "not now" top
+    right, "swipe right to clear it", "N days late. pull it right once it's
+    done.", then their most overdue card with the practice lesson's nudge;
+    after the swipe "cleared." / "that's all a swipe does." and a "done"
+    button. The swipe is a real swipe: the cover's two closures are the
+    timeline's own `vm.commitCompletion` and `vm.complete` +
+    `rescheduleNotifications()`, so nothing is written that a dashboard
+    swipe does not write. Rules in `OverdueSwipeLesson` (pure; the 5-day
+    boundary, the 60-day cap, most overdue first, `shouldShow`), shown-state in
+    `OverdueSwipeLessonStore` (`overdueSwipeLessonShownV1` in
+    `UserDefaults.lhf`, written at presentation so a kill mid-screen never
+    shows it twice). Never in preview or demo (`isUsingFixtureData`), never
+    while a reconnect cover is up (left undecided and asked again), never
+    during onboarding or behind the wall (the dashboard is not in the tree
+    there), and never on a fresh install that did the practice lesson
+    (`beginCanvasWalkthrough` marks the store shown). `ContentView.
+    decideOverdueLesson()` decides once per process on the first non-empty
+    item list. `-LHFForceOverdueLesson` (DEBUG) forces it with the first
+    unfinished item, or a practice card six days late, without writing the
+    key. Tests: `OverdueSwipeLessonTests`.
   - **Feedback card** (since 3.3.0, 2026-10-27, owner-approved from a
     mockup): under the header, a one-time card ("how's smooth so far?" /
     "takes 2 minutes.", grape speech bubble, ×) styled like the update
@@ -822,7 +1007,13 @@ Keep this current. It is the fastest way for a new session to know what exists.
   - the grade report (`GradeReportView`)
 
   `docs/grades.md` is the design record.
-- **ask / "the tree"** (`AssistantView`). A chat about your classes: the
+- **ask / "the tree"** (`AssistantView`). Since 2026-11-11 the shape
+  cluster above the greeting on an empty screen hovers: each of its four
+  shapes drifts 3 to 6 pt on its own 3 to 6 s loop with a tilt of at most 2
+  degrees (`SmoothShapeHover`, a `TimelineView` local to the cluster), still
+  while the student types and under Reduce Motion; Profile and every other
+  page keep the cluster still (`SmoothFormShapes(hovers:)`, default false).
+  Marco: "the shapes could be hovering in a cool way". A chat about your classes: the
   server path for Penn, with the on-device responder as fallback. Either
   way the search over course material runs on the phone (see "ask:
   retrieval is on the phone" under Architecture). Source chips under an
@@ -1434,6 +1625,35 @@ Keep this current. It is the fastest way for a new session to know what exists.
      facts stay readable off the phone from the App Group plist
      (Commands). A Release build never showed any of it. The
      strings and `SignInHealthTests` remain.
+     **Connected agent (switched off 2026-11-17 with `FeatureFlags.agentConnection`, see "Connect an agent" below; the section is not drawn. 2026-11-11, Marco: "under accounts, in profile, it
+     should have connected agent with a toggle and then list what is
+     connected to your agent"; later the same day: "Connected agent should
+     be a different block in profile under agent"; on 2026-11-12: "I want to
+     say 'Connected Agent'").** Its own section right after accounts (grape
+     background), headed "connected agent" (`AgentConnectionCopy.sectionHeader`;
+     "agent" for a day), behind `canUseAgentConnection`: `ProfileAgentRows`
+     (`ProfileAgentRows.swift`) puts the agent connection there, replacing
+     the "connect an agent · on/off" row and the `AgentConnectionsView`
+     screen it pushed (deleted): a plain `Toggle` labelled "on" (it said
+     "connected agent" until the header did); then, while on,
+     one row per agent (its name only since 2026-11-12, "last used 2h ago" /
+     "never used" removed; a trailing muted "disconnect" and chevron, the
+     whole row a button behind a "disconnect claude?" alert, as the laptop
+     row's "unpair" is), or a muted "none yet"; and "connect another" ("have
+     a code?" until 2026-11-12), which opens
+     `AgentCodeSheet` (the code field and "connect", then the approve
+     sheet over it); last, on or off, a plain "privacy policy" link row to
+     `AgentConnectionCopy.privacyURL` with no sentence beside it (since
+     2026-11-11, Marco: "remove all of the little bullshit text"; the muted
+     line "shares your classes and work list with the agent's provider ·
+     privacy policy" went; the disclosure lives in `docs/PRIVACY.md` →
+     "Connecting an AI assistant", which names the recipient for App Review
+     5.1.2(i) and which `AgentConnectionWiringTests` checks still says what
+     is shared, the never list, who receives it and what off does). Turning
+     it off asks once, "disconnect every agent?"
+     with "disconnect" / "cancel" and no message (added 2026-11-11; before,
+     no confirmation), because it deletes the list and disconnects every
+     agent. Pinned by `AgentConnectionWiringTests`.
   3. appearance (light / dark; there is no "system" option and the
      default is light, whatever this file said before 2026-10-10)
   4. reminders (on/off; 10 minutes, 1 hour, 3 hours, 1 day, 2 days;
@@ -1590,7 +1810,20 @@ Keep this current. It is the fastest way for a new session to know what exists.
      lock-screen card, are not recorded.
      **Smooth Sweeper settings** (2026-10-23, Marco, `codex/sweeper-settings`;
      in 3.2.1 (15), 2026-10-24; build 15 was first stamped 3.2.0): the Sweeper has its own
-     section immediately below reminders (`SweeperSettingsSection`), with
+     section immediately below reminders (`SweeperSettingsSection`; since
+     2026-11-10 on `v11` that section is gone and the Sweeper is its own
+     page, `SweeperView`, opened from the header broom: one title,
+     "Sweeper", then a live countdown card for the next alarm actually set,
+     and no on/off switch (2026-11-11, Marco: the page had two titles,
+     "Sweeper" and a 64pt "on."; it became a plain row, then on 2026-11-12
+     "remove the on toggle ... take it off, get rid of it": his call, so the
+     whole-Sweeper switch, `loudAlertEnabled`, on by default, has no control
+     after onboarding's reminders page; a class can still be switched off on
+     the page and on its own class page, whose plain "on" row stays), the defaults, and a
+     page per class with its own lead time and sound,
+     `notif.sweeperCourseMinutesV1` / `notif.sweeperCourseSoundV1`,
+     resolved by `SweeperPlan.swift`; sketch in
+     `smooth-prototype/sweeper.html`), with
      5/10/15/20/30/60-minute timing (`notif.sweeperMinutes`), four sounds
      (`SweeperSound`: Smooth's clip, `App/sweeper-chime.wav`,
      `App/sweeper-pulse.wav`, both original synthesized audio, and the
@@ -1618,18 +1851,86 @@ Keep this current. It is the fastest way for a new session to know what exists.
      touching the audio session, so the silent switch mutes them and they
      stop other audio (the `AVAudioSession` trap); a 60-minute lead
      suppresses the plain 1-hour reminder for loud items, as 10 minutes did
-     for the 10-minute one; and two capitalised explanatory lines remain in
-     the section. The section's footer (Marco's "A list minute alarm right
+     for the 10-minute one; and two capitalised explanatory lines remained in
+     the section (the section itself is gone since the Sweeper page of
+     2026-11-10; on that page the one explanation, "turn on due-date
+     reminders in profile to use Smooth Sweeper.", is "reminders are off"
+     since 2026-11-11). The section's footer (Marco's "A list minute alarm right
      before your miss an assignment.", corrected on 2026-10-24) was removed
      the same evening at Olisa's word, seeing it on his phone ("Remove the
      text under smooth sweeper"); the section ends at the classes row.
+     **The Sweeper rings only when it should, Release 1 (2026-11-18,
+     `claude/sweeper-build-0a4dd0`, for 3.5.0; compiled and tested, never
+     on a phone; `docs/SWEEPER_BUILD_PLAN_2026-11-18.md`, built from
+     `docs/SWEEPER_ACCURACY_PLAN_2026-11-16.md`).** Marco's rule, verbatim:
+     "no dont want no alarm option as this cd lead to someone missing an
+     assignemnt". So the alarm is still armed days ahead from `plannedAlarms`
+     exactly as before, and the work is the cancel. (1) **Cancel at
+     observation:** the moment a read sees an item submitted, that item's
+     pending reminders (`due:<id>:<offset>`), its three buzzes
+     (`loud:<id>:<n>`) and its AlarmKit alarm under every `(minutes, sound)`
+     the Sweeper can resolve to (`SubmissionObservation.cancellations`) are
+     taken back and a ringing one stopped (`NotificationScheduler.
+     cancelForSubmitted`, inside the `RescheduleSerializer` so it never
+     interleaves with a pass; the replan's diff is now the backstop). Three
+     observation points call it through `AppState.submissionCanceller`:
+     `updateSubmissionState` (the grades fetch, `observedSubmitted` minus
+     the previous set), `applyStructuredSources` (a Planner tick or
+     `submitted` flag newly in `structuredCompletedItemIDs`) and
+     `syncGradescope` (a Gradescope row whose `submitted` went true). Nothing
+     calls `markCompleted`: a Canvas-observed submission is `canvasSubmitted`,
+     never the student's tick (Traps). (2) **Only a confirmed read cancels:**
+     `SubmissionRead` names what a read said (`submitted`, `unsubmitted`,
+     `unknown`) and only `.submitted` cancels; a 401, a 403, a truncated
+     page or an item absent from it is `.unknown`, counted in
+     `sweeperCountsV1.readsUnknown`, and changes nothing (Traps, "an
+     unknown read is not an unsubmitted one"). (3) **Quiet by kind, one
+     rule with a name per reason** (`SweeperQuietReason`,
+     `SweeperSettings.quietReason(for:)`; `qualifies` is that rule plus the
+     date checks, so the planner and the Sweeper page's countdown card can
+     never disagree): in class, off canvas (both the old nothing-to-submit
+     set), recurring, found exam, class off, reminders off. A `.canvas` row
+     rings whatever its URL, a Gradescope row has its id by construction,
+     and **the student's own manual tasks ring exactly as before** (the
+     overseer's correction of 2026-11-18: the swipe that finishes one already
+     cancels its alarm, and silence is the dangerous side). **Unconfirmable
+     work buzzes instead of ringing** (Marco, the evening of 2026-11-18,
+     after the alarm rang for an anonymous survey he had done: "edge cases
+     like these not to have a smooth sweeper, but instead a triple
+     notification at the smooth sweeping time"): `SweeperSettings.isBuzzOnly`
+     names a Canvas item whose `submission_types` is exactly
+     `["external_tool"]` (an outside tool never reports back to Canvas, so
+     no read can ever confirm it; the grades fetch keeps the ids in
+     `externalToolCanvasAssignmentIDsV1` beside the on-paper set, so an item
+     is known only after the first grades fetch that lists it) and a
+     `.canvasModules` row with no Canvas assignment id (which until that
+     evening was fully quiet as `noConfirmableID`; that reason is gone). Such
+     an item stays in `loudAlerts`' selection and the nearest-ten cut, is
+     left out of `plannedAlarms`, and `plannedRequests` returns its three
+     `loud:` buzzes whatever the delivery, so "exactly one of alarm or
+     buzzes" still holds (`BuzzOnlyDeliveryTests`). The buzzes are cancelled
+     by the student's swipe or "turned in" like any other. Two things left
+     as they are, knowingly: the Sweeper page's card still says "rings" for
+     a buzz-only item (the buzzes do ring, three times), and `nextSweep`
+     still counts a buzz-only item as the next ring, so the last-hour poll
+     reads the planner for work the planner cannot confirm: harmless and a
+     few requests. Compiled and tested, on Marco's phone the same night,
+     not yet heard. The plan's
+     zero-points and optional-title rules are not built: the word list
+     needs Marco's word. No new student-facing switch. (4) **The last-hour
+     poll and the server wake:** see Background. The wake is the one thing
+     here that leaves the phone: a device token and at most 24 wake
+     minutes, nothing about which work (`docs/PRIVACY.md` → "A wake-up call
+     for the Sweeper"), deleted when reminders or the Sweeper go off, on
+     Canvas disconnect and with the account.
   5. classes (rename, hide, delete/restore; "add recurring task")
   6. notifications (per-class reminders, lead times, announcements on
      dashboard, items with nothing to submit, the announcement "ai assist"
      opt-out)
   7. sync (iCloud sync, off by default; on macOS, open at login)
   8. ambassador (2026-11-09, written on `claude/new-session-b3ylkg`,
-     merged into `v12` on 2026-11-11 at Olisa's word, not `v11`;
+     merged into `v12` on 2026-11-11 at Olisa's word, and into `v11` on
+     2026-11-12 with the rest of `v12`, so it ships in 3.5.0 (21);
      compiled and tested green on the GitHub runner 2026-11-10, the
      unsigned iOS build included, Test baseline; never on a phone): one row, "ambassador mode", with
      "sign in" or "maya · uva", that pushes `AmbassadorPage`
@@ -1687,12 +1988,111 @@ Keep this current. It is the fastest way for a new session to know what exists.
      would say so), and Ed is never named, because it is read at Penn
      only while the rest is true at any school. Known and not fixed: Yik
      Yak is reported to cap a post at 200 characters, which every post
-     exceeded with its link even before this. **Since 2026-11-11 (Olisa: "clear where they can
+     exceeded with its link even before this. **Since 2026-11-19 none of
+     those posts exist** (Olisa, with the build on his phone: "remove all
+     the AI generated texts we have and put only these 2"). The bank is
+     his two Sidechat posts and nothing else: the question ("What do you
+     guys use to stop missing assignments?") and the ranking with Smooth
+     in the B tier, `[frat]` standing in for names. Neither has a link or
+     a pitch; each carries a reply, "Smooth for Students on the App
+     Store", which the server sends as an optional `reply` beside
+     `today` and each `messages` entry and the app draws under the post
+     with "then reply:" and a "copy reply" button (`replyBlock` in
+     `AmbassadorPage.swift`). Today's post alternates between the two and
+     there is no rest day; the rest-day code stays for an older server.
+     The texts must equal the playbook's examples, which a Worker test
+     holds. The sweeper and Ed wording rules above now bind only posts a
+     founder writes by hand. The web page gained one "copy my link"
+     button under its numbers, because the posts were the only place a
+     tracked share link had been shown. Known: the two posts appear
+     twice on the page, once under "what works" with the score and the
+     reason and once as the thing to copy; and an ambassador is handed
+     the same two posts on alternate days for good, so the playbook's
+     "borrow the format, not the words" is doing the real work. The page
+     also pulls to refresh since the same evening (`.refreshable`, a
+     plain `model.refresh()`), because the plan is cached for half an
+     hour and the posts in it are the server's. Compiled on the runner,
+     not on a phone; the server half went live the same day. **Since
+     2026-11-22 the numbers include "{school} downloads"** (Olisa: "measure
+     the amount of downloads at each school and display that on the
+     ambassador dashboard"). Apple reports nothing by school, and his two
+     posts carry no link, so a campaign tag would miss most of it; he chose
+     the app reporting its school. `InstallCountReporter` (UI) with
+     `InstallCountRule` (Kit, pure) sends `POST /api/install`
+     `{"host","kind"}` once per install from `RootCore` (cold launch and
+     each return to the foreground, after the update check, never behind
+     the wall, never from the background wake, never in preview or demo),
+     behind `FeatureFlags.installCount`. `kind` is `existing` when
+     onboarding was already complete at the first launch of a build with
+     the code (`installCountOnboardedBeforeV1`, the `signupBacklogSeenV1`
+     pattern) and `new` otherwise; a 2xx or a 400 ends it for good
+     (`installCountReportedV1`), anything else retries after six hours. One
+     count per install for the school first connected: a school switch does
+     not report again. The Worker keeps `installs(host, day, kind, n)` and
+     nothing per phone; it counts only hosts in `worker/canvas-hosts.json`
+     (generated from the app's catalog by `scripts/gen-canvas-hosts.mjs`, a
+     test fails when they drift) and caps one network at 300 a day per
+     host with a daily-salted hash kept for that day only. `plan.json`
+     gains `numbers.schoolInstalls` and `schoolInstallsRecent`; the web
+     page has the same tile and the founder page a downloads card and
+     "other schools". What the number is: students who connected Canvas on
+     a build that has the count, so it starts at zero when that build
+     ships and jumps as existing students update. Not a download count in
+     Apple's sense; a typed-in school outside the catalog is not counted. **Since 2026-11-18 the page
+     also teaches what works and collects what each campus looks like**
+     (Olisa, after two of his own Sidechat posts did well with no pitch in
+     them, a question at 22 upvotes and Smooth slipped into a frat ranking
+     at 65: "have these 2 be examples and then encourage the ambassador to
+     scroll through their own anonymous chat page to see what is already
+     viral", "allow for ambassadors to screenrecord the current state of
+     their schools anonymous chat forum", "submit screenshots of how their
+     posts perform"). Three sections, each hidden when the server sends
+     nothing for it: **"what works"**, second on the page (`plan.playbook`:
+     a lead, five steps, the two examples; the ranking example names no
+     real fraternity, `[frat]` stands in, because the repo is public and an
+     ambassador elsewhere has to write their own anyway); **"from the
+     founders"** (`plan.suggested`: posts a founder wrote for that one
+     ambassador on the founder page, with copy buttons); and **"help us
+     help you"** after the posters, two rows. "show us your feed" opens
+     `FeedRecordingSheet`: a `PhotosPicker` for one screen recording, which
+     `FeedRecordingFrames` (Kit, AVFoundation) turns into at most 16 JPEG
+     stills of at most 200,000 bytes on the phone; the stills are sent one
+     by one under one batch id and **the video never leaves the phone**
+     (the site keeps pictures as text in D1, where a video cannot go, and
+     stills are what a founder reads anyway). "how did a post do" opens
+     `PostResultSheet`: one screenshot, the app it was on, the kind of post
+     and the upvotes and views the ambassador types. Both go to
+     `POST /a/{code}/capture`; only founders can see them; the founder page
+     lists recordings and results (with averages by kind of post) and has
+     "send a post to try". Limits are the server's: 32 stills a day and 96
+     stored, 8 results a day and 60 stored, 1,500 pictures across everyone.
+     The website has the same three things, with screenshots where the app
+     takes a recording. `docs/PRIVACY.md` changed in the same commit.
+     Compiled and tested on the runner, reviewed for security, driven in
+     Chromium; never on a phone. **Since 2026-11-11 (Olisa: "clear where they can
      access all posters and view the dashboard", "a clear option to upload
      poster ideas") a "posters" section sits right after today's post**:
      "all posters" opens an in-app gallery of the school's designs as a
      sheet (`AmbassadorPostersView`: two columns, scan counts, tap for
-     full size with "share or save"); "scan dashboard ↗" opens the public
+     full size with "share or save"; **since 2026-11-22 the list is the
+     catalog's offered designs**, `offeredDesignsFor` in
+     `smooth-ambassadors/worker/catalog.js`: `tabard` and `these-two` are
+     `RETIRED` at Marco's word (2026-11-21, "what does that even mean for a
+     non-Penn student?"; a printed code of either still scans and still
+     counts, it is only no longer handed out), and five generic designs he
+     approved from renders the next day are appended (`missed`, `moved`,
+     `one-list`, `sweeper`, `ask`; sources in `smooth-ambassadors/posters/src`,
+     previews in `posters/previews`, rendered by `scripts/render-posters.mjs`
+     with the Mac's Chrome; each carries a dashed slot for the QR sticker
+     from the stickers page instead of a printed code, so one print serves
+     every school). The app changes nothing: it shows what `plan.json`
+     lists. Server side the new designs reach the live Worker only through
+     `scripts/build-sites.mjs`, which since the same day adds them to the
+     host's own `posters` Map and `imageData` (`scripts/lib/add-posters.mjs`;
+     the seventh zip, not built: the Sites archive was not on the Mac, see
+     `docs/deploy.md`). Marco's two "more serious" posters are still to be
+     added: neither of the two unpublished masters in `posters-print/` is
+     one of them, by his word, and he has not yet named them; "scan dashboard ↗" opens the public
      live counts for their school in Safari; "send a poster idea" opens
      `PosterIdeaSheet` (a `PhotosPicker`, a note, send). A row that leaves
      the app carries the arrow, and "my page" became "my web page ↗" for
@@ -1725,6 +2125,134 @@ Keep this current. It is the fastest way for a new session to know what exists.
      model against fakes, the wiring). Never on a phone; the first thing
      to see is that the reminder survives a reschedule and that a cold
      launch from its tap lands on the page.
+     **Since 2026-11-21 (`claude/ambassador-work-c14201`, compiled and
+     tested, not on a phone) the page is four tasks** (Marco, from the build
+     on his phone: "it should be like kind of just the main tasks that they
+     have, which are very limited ... right at the top", "remove as much
+     text as possible"). Everything above in this item that describes the
+     job line, "what works", "from the founders", "help us help you", the
+     messages and tips section and the web-page button as sections of the
+     page is history. Signed in, the page is: **your job** (four rows,
+     `AmbassadorTask` in the Kit: anonymous chats, group chats, posters,
+     feedback; a teal tick when done, today for the anonymous post and
+     within 7 server days for the other three, `AmbassadorTaskLog`,
+     `ambassador.taskLogV1`), then **numbers**, then **reminder** (cadence
+     and time only; the anonymous-app picker moved into the first task),
+     then the account rows (**"my web page ↗"** first, then pause and sign
+     out). Each row opens a sheet (`AmbassadorTaskSheets.swift`): anonymous
+     chats holds today's post, its reply, copy buttons, the anonymous-app
+     picker, the founders' suggested posts, the other messages and the tips,
+     and its "done" is the old "i posted it"; group chats shows the `gc`
+     share link (`plan.links`, additive in `planPayload`, falling back to the
+     App Store link on an older server) with "copy link", and "done" logs a
+     `post` in channel `gc`; posters holds the gallery, the scan dashboard
+     and the poster idea, and "done" is local; feedback is the box and sends
+     tick it. Feed stills and post results (`FeedRecordingSheet`,
+     `PostResultSheet`) are deleted from the app at his word ("what the
+     fuck ... remove that"); the model and Kit halves stay with their tests
+     because the server routes and the founder page still exist. **Sign-in intro** (`AmbassadorIntroView`; once per install until
+     round four of 2026-11-22, when Marco asked for it "right when
+     ambassador is signed in", so now after every successful sign-in; the
+     `ambassador.introSeenV1` key is no longer read): "thanks for being
+     one.", the job in one line, the four tasks, "goal: 100 downloads at
+     <school>" (round four), "you're smooth at your school. bring back what
+     people say.", "let's go". **The reminder** gained a
+     `twiceWeekly` cadence (Monday and Thursday, two reserved slots) and
+     was twice a week by default for a day; since the second round below
+     it is daily again, the picker offers every day / 2 a week / off, and a
+     stored `weekdays` still decodes and schedules but shows no selection. **The dashboard header** puts
+     "Ambassador" first and the medal to its right
+     (`SmoothWordmark.badgeTrailing`); the squiggle, shine and backflip are
+     unchanged. The posters themselves (retiring the Penn-specific designs,
+     adding Marco's two serious ones and new generic ones) are a separate
+     session's branch, `claude/ambassador-posters-f068d6`, and reach the app
+     only through the server's plan once Olisa deploys. Unseen on a phone:
+     the intro, the four sheets, the ticks surviving a relaunch, the
+     twice-weekly reminder firing.
+     **The Worker teaches the anonymous posts since 2026-11-22**
+     (`worker/templates/guidance.json`, sent as `plan.guidance`, additive;
+     Marco's framing relayed by the master session): two kinds of post,
+     `straight` and `misc`, each with a rule, prompts and examples, for one
+     round; **since round three the same day they are `plug smooth` and
+     `sneak smooth in`** (Marco: "one plugging smooth, two sneaking smooth
+     in randomly"; "straight" and the rule/prompt scaffolding dropped, the
+     homecoming example gone), each one example post first (text, copy,
+     reply) and at most one `how` line. **Round four, the same evening,
+     at Marco's word:** plug is "what do you guys use to stay on top of
+     assignments" with the self-reply "i use this app {link}"; sneak is "yo
+     that [thing that happened] was crazy. smooth lowk clutch" with the link
+     as the reply and "put the smooth link in the comments" as the how;
+     `{link}` is the ambassador's share link for their anonymous app,
+     filled by `planPayload` on the server and by
+     `AmbassadorGuidance.filled` on the phone (the bundled copy keeps the
+     literal); the test line is gone and a `footer` closes the guidance:
+     "the idea is just to get the name and link out there without sounding
+     too much like an ad. quantity > quality, use your creativity.". His own
+     example is the Odyssey reply. The two real posts in `messages.json`
+     are untouched. Not deployed (Olisa's zip); the app's half of this is
+     the next commit.
+     **Round two, 2026-11-22 (same branch, compiled and tested, the iOS
+     build green, not yet on a phone; Marco's asks relayed by the master
+     session).** (1) **The page is its own destination**: the header medal,
+     the Profile row (a `Button` calling `AmbassadorModel.requestOpen()`,
+     no longer a `NavigationLink`), a reminder tap and the
+     `smooth://ambassador` link all set `path = [.ambassador]`, so back goes
+     to the dashboard, never to Profile. (2) **The dashboard, ambassadors
+     only**: the date line under "Ambassador" reads the full month and an
+     ordinal day, "November 22nd" (`AmbassadorDateLine`, Kit; Marco's
+     example "ambassador November 12th"), the medal is the header buttons'
+     42pt (`SmoothWordmark.badgeSize` in round two; since round four the
+     same evening the medal is the first of the header's own buttons,
+     drawn with `headerButton` and 8pt from the Sweeper, Marco: "space all
+     the icons evenly"; the wordmark's badge parameters are unused), and a **stats line** takes the
+     date line's place under the title (`AmbassadorStatsLine`; round three
+     the same day put it under the date, then Marco: "remove the date
+     entirely on the dashboard, just the users underneath ambassador, and
+     end that line with so far"; it was a card with a "stats" label between
+     the banners and the control row for one build): a small marigold medal
+     and "n users at <school> so far" in the date line's mono face and muted
+     ink, from `plan.numbers.schoolInstalls`, Olisa's per-school install
+     count ("we'll just start with that"); an ambassador sees no date line
+     at all, and nothing under the title until the server sends a count.
+     `AmbassadorDateLine` ("November 22nd") stays in the Kit with its
+     tests, unused since then. **Founder contacts** (round five, the same
+     evening, Marco: "at the bottom of smooth ambassador have it say:
+     questions, feedback, comments? tell us!" with his and Olisa's phone
+     numbers): the page ends with that header and one tap-to-text row per
+     founder (`contactsSection`, `AmbassadorPlan.Contact`, `sms:`), shown
+     only when `plan.contacts` is non-empty. The numbers are never in the
+     repo (public; `check-no-secrets.mjs` refuses them): the Worker reads
+     the `FOUNDER_CONTACTS` variable (`worker/founder-lines.js`,
+     `[{"name","phone"}]`, at most 4, lenient) and serves them, so the
+     section appears on phones once Olisa's deploy sets the variable with
+     the values Marco gave in chat (`sites/CHANGES_FOR_DEPLOYMENT.md`
+     says so with placeholders). Hardcoding them was offered and not taken
+     up when this was written. (3) **The downloads goal** opens the page
+     (`goalSection`, `AmbassadorGoalLine`): "downloads at <school>", "n of
+     100" and a progress track (`AmbassadorGoals.downloadsTarget = 100`,
+     "100 is super chill"), hidden when the count is unknown. The word is
+     Marco's; what it counts is installs that connected a school
+     (`docs/PRIVACY.md`). (4) **Posters is ongoing**, so it has no done and
+     no tick short of the goal: a `Slider` 0...30 for posters put up
+     (`ambassador.postersPutUpV1`, `AmbassadorGoals.postersTarget = 30`),
+     the row reads "12 of 30" and ticks only at 30. (5) **Anonymous
+     chats**: the sheet opens on "goal: 1 post a day", "streak: n"
+     (`AmbassadorTaskLog.anonStreak`: consecutive posted days counting back
+     from today, or from yesterday while today is unposted; the week dots
+     and "at least 1" line of round two went the same evening, Marco:
+     "remove the min at least 1"; the week helpers stay in the Kit, unread)
+     and the "posted today" done row directly under it, then today's post,
+     the app picker, then the **guidance**
+     (`plan.guidance` from the Worker, else the bundled copy
+     `AmbassadorGuidance.bundled`, which a test keeps byte-equal to
+     `guidance.json`): the test line, then per kind an "example post"
+     caption, the post with copy and reply, and one `how` line, then the founders' posts and the tips; the "more messages" disclosure
+     (the two-post bank, which the guidance now shows) went in round four. The reminder is daily by default again
+     with the body "today's anonymous post. 1 a day.". Group chats and
+     feedback are unchanged at Marco's word ("gas how it is"). The posters
+     themselves came in with `claude/ambassador-posters-f068d6` (retired
+     `tabard` and `these-two`, five generic designs) and reach phones only
+     through Olisa's deploy. Unseen on a phone: everything in this round.
   9. feedback (since 3.3.0, 2026-10-27): one "send feedback ↗" row that
      opens the Google feedback form in Safari (`FeedbackForm.defaultURL`,
      or the live notice's link when the manifest carries one)
@@ -1760,6 +2288,122 @@ Keep this current. It is the fastest way for a new session to know what exists.
   foreground (seen 2026-10-23: twenty silent minutes after an install).
   Marco's `parked/launch-submission-refresh` was the source; merged as
   written it would have run the drains at launch too.
+  **The last-hour planner poll (2026-11-18, Release 1 of the Sweeper
+  accuracy work, blind).** While Smooth is in the foreground and the next
+  Sweeper ring (`NotificationScheduler.nextSweep`) is inside the next 60
+  minutes, `LastHourPoller` (owned by `ContentView`, started on `.active`
+  and at launch, stopped on `.background`) reads
+  `GET /api/v1/planner/items` once a minute for the window `[now − 1 h,
+  now + 2 h]` with the saved Canvas cookies
+  (`CanvasStructuredSourcesClient.fetchPlannerWindow`, the planner leg of
+  the structured-sources run factored out, nothing else in that client
+  changed) and hands the answer to `AppState.applyPlannerWindow`, which
+  applies only `submitted` / `marked_complete` to the additive
+  `structuredCompletedItemIDs` (a student's un-tick override wins) and
+  cancels at observation. It never touches dismissals, section dates or
+  module rows, never calls `refreshCanvasGrades`, and is outside that
+  fetch's 15-minute throttle by construction (`LastHourPoll.cadence` is the
+  pure rule). A 403, a rate-limit answer or `X-Rate-Limit-Remaining` under
+  100 backs the poll off five minutes (`pollsBackedOff`); no saved session
+  backs off the same without counting. **The throttle lift:** a cold
+  launch (`refreshSessionSourcesAtLaunch`), a return to the foreground
+  (`.active`) and a `BGAppRefreshTask` wake each make one planner read at
+  once when a ring is inside the hour
+  (`AppState.pollPlannerWindowIfInsideTheHour`, the one method all four
+  callers share; in the wake it sits after `refreshCanvasGrades` and before
+  `replan`, pinned by `LaunchRefreshStructureTests`). Every read and wake
+  writes a `debugWakeLogV1` line (Commands). The rate-limit headers Penn's
+  Canvas returns to the poll have not been read off a phone yet (Known
+  gaps).
+  **The server wake (2026-11-18, Release 2 of the same work, behind
+  `FeatureFlags.sweeperWake = true`; built to
+  `docs/SERVER_SWEEPER_DESIGN_2026-11-17.md`; compiled and tested, never on
+  a phone, the function never deployed, and no push can arrive until
+  Olisa's steps under Known gaps).** A closed app runs no code of ours at
+  any time, so the phone asks the server to nudge it: after each replan,
+  `AppState.sweeperWakePass` (from `settleAfterFetch`, foreground only, Penn
+  installs with a backend past onboarding, reminders and the Sweeper on, a
+  token known) computes from `plannedAlarms` the minutes it wants to be
+  woken at, `fireDate − 15 min` and `− 3 min` truncated to the minute, UTC,
+  deduplicated, at most 24 inside 48 hours (`SweeperWakePlan.moments`,
+  Kit, pure), and sends `{ action: "put", token, environment, moments,
+  plan }` to `sweeper-wake` (`SweeperWakeClient`; exactly those five keys,
+  pinned) at most every 10 minutes unless the plan hash or the token
+  changed. Nothing about which item: the server holds a device token and
+  minutes. The token comes from `UIApplication.registerForRemoteNotifications()`
+  (`SweeperWakeRegistrar`, at every passing foreground; no permission
+  prompt, a background push needs none) through a minimal
+  `@UIApplicationDelegateAdaptor` in `App/LHFApp.swift` (`LHFAppDelegate`,
+  three callbacks, logic in `LHFSweeperWake`), kept in memory and
+  `sweeperWakeTokenV1`. `{ action: "delete" }` goes when reminders or the
+  Sweeper switch go off (`NotificationScheduler.onSweeperWakeInputOff`), on
+  Canvas disconnect (`withdrawSweeperWakeIfSent`, ungated by the flag), and
+  at a foreground with the flag off, each only if `sweeperWakeEverSentV1`
+  says a row may exist. **The push wake:**
+  `application(_:didReceiveRemoteNotification:fetchCompletionHandler:)` (the
+  completion-handler form, never the async form: Traps) →
+  `LHFBackgroundRefresh.handlePushWake` → `runWake(.push)` inside
+  `PushWakeRace` (25 s, the completion handler called exactly once from
+  whichever path finishes). `.push` does only: `beginWake` (the
+  `.background` context, so nothing latches and no Duo push or password is
+  ever typed), a saved session not clock-expired (else `pushNoSession`,
+  `.noData`), one planner read of the window (`pollPlannerWindow`,
+  unconditional, the server only pushes inside it), the cancel at
+  observation, `replan` with `rescheduleWithoutPrompting`, a `push` log
+  line. No feed sync, no grades fetch, no course material, no Ed, no
+  laptop sync, no notices, no renewal (`PushWakeTests` scans the file for
+  each). `runWake(.refresh)` is the old `run()` unchanged. `UIBackgroundModes`
+  carries `remote-notification` beside `fetch` in both `project.yml` and
+  `App/Info.plist` (`SweeperWakePlistTests`). Not built: the design's
+  Gradescope leg in the push wake (`GradescopeClient` has no one-course
+  scrape outside `syncGradescope`, Olisa's), so a Gradescope-only item is
+  cancelled by a wake only through the `.refresh` wake's full sync. When
+  no push arrives the alarm rings as armed: that is the floor, not a bug.
+
+  **The force-quit check (2026-11-21, `sweeper/force-quit-check`; compiled
+  and tested, never on a phone, the push change never deployed;
+  `docs/SWEEPER_FORCE_QUIT_RESEARCH_2026-11-21.md`).** The push wake above
+  is a background push, which iOS discards for a force-quit app, the one
+  case that rings for work handed in on the website. So the push is now a
+  content-free **alert** (`sendSweepPush`, `_shared/apns.ts`: `alert`,
+  priority 10, the 2-minute expiry; body pinned as `SWEEP_PUSH_BODY`:
+  "checking your next deadline", `mutable-content`, `content-available`
+  kept for a merely suspended app, `passive`, `thread-id: sweeper`,
+  `lhf: "sweep"`), which iOS hands to a **Notification Service Extension**
+  even after a force-quit. `LHFSweeperCheck/` (bundle
+  `com.lhf.lowhangingfruit.sweepercheck`, links only the Kit) reads three
+  things the app leaves it at every foreground pass
+  (`AppState+SweepHandoff.swift`, called from the top of `sweeperWakePass`
+  before the flag guard): a manifest in the App Group
+  (`sweeper-manifest-v1.json`, `SweepManifest`: per planned alarm the item
+  id, Canvas assignment id, title, ring time, every alarm and request id
+  it could be armed under via `SubmissionObservation.ids`), and a copy of
+  the live Canvas cookies (`SweepCookieMirror`: a generic-password item in
+  the App Group access group, after-first-unlock this-device-only, never
+  synced, deleted with the Canvas login in `SessionCookieStore.clear` /
+  `remove(.canvas)`, never erased by an empty live jar). Both are kept only
+  while the wake's own gates pass (`SweeperWakeRules.gatesPass`: Penn,
+  backend, flag, reminders and Sweeper on, a device token), so no copy of
+  the login sits on a phone no push can reach; otherwise both are deleted. It takes the
+  entries ringing within 20 minutes, makes one planner GET (ephemeral
+  session, 10 s / 18 s), believes it only when complete (the app's rule),
+  and `SweepCheck.decide`s: submitted cancels the AlarmKit alarms it
+  holds and the pending `due:`/`loud:` requests, appends to
+  `sweeper-inbox-v1.json`, and rewrites the line to "PS7 is in · alarm
+  off"; unsubmitted says "PS7 · not turned in yet"; **unknown touches
+  nothing**. The app folds the inbox through `applyPlannerWindow` (so the
+  student's overrides hold; the file is left alone when that can't apply)
+  and clears delivered `sweeper` lines at every foreground pass. The drain
+  renames the inbox before reading it, so an append during a drain is kept
+  for the next one. **Whether an extension may cancel an AlarmKit
+  alarm is unproven**; the DEBUG readout is `debugSweepCheckLogV1` in the
+  App Group defaults (`SweepDebugLog`; counts, held-before/after, AlarmKit
+  errors, never a cookie or title), written by the extension and by a
+  DEBUG widget probe that reads `AlarmManager.shared.alarms` per timeline.
+  `-LHFSweepProbe` (DEBUG) arms a test alarm 16 minutes out with a
+  manifest entry the DEBUG extension treats as submitted. Also here:
+  `CanvasPlannerItem.excused`, read as submitted (excused work is never
+  handed in, so the poll could never cancel it).
 - **Widget** (`LHFWidget/`, a separate process). Next-due list in small and
   medium; lock-screen inline, rectangular, and circular ("N due" within 24
   hours). It shows the app's published snapshot whenever one decodes,
@@ -1770,6 +2414,173 @@ Keep this current. It is the fastest way for a new session to know what exists.
   listed.
 - **Mac.** The same app, plus a menu-bar extra that keeps the sync loop
   alive (`LHFScenes.swift`) and open-at-login.
+- **Connect an agent** (**Switched off on 2026-11-17** at Marco's word ("we're not going to actually go with the agent stuff from V11 ... V12 will be solely the ambassador stuff and just some of the other stuff"): `FeatureFlags.agentConnection = false`, so 3.5.0 (21) ships without it. No Profile section, no `smooth://link`, no snapshot or drafts pass, no chip, no review sheet, no notice; a draft cache or attempt record a `v11` build left on a phone is not read (`agentDraftDisplay`, `agentSubmittedNamesByItemID` and the cache seed guard on `agentSurfacesAllowed`, the two readers that leaked past the flag). Nothing deleted; the backend stays deployed; the DEBUG `-LHFDemoAgent*` arguments still draw the screens from invented data. The agent tests that need the flag skip themselves while it is off and `killSwitchOff` runs only then (`docs/V12_ISOLATION_2026-11-17.md`). Everything below describes it as built.
+  Built 2026-11-08, `agent/connection-v11`; behind `FeatureFlags.agentConnection`, Penn installs past
+  onboarding with a backend only). Profile → connected agent holds the
+  on switch and the connected agents (since 2026-11-11 a
+  section of its own after accounts, see Profile above; before, a pushed
+  `AgentConnectionsView` with the whole disclosure on screen). A
+  `smooth://link?c=…` URL (the "Open Smooth" button on the agent's sign-in
+  page) or a typed code ("connect another") looks the pending request up and
+  shows `AgentLinkApproveSheet`, trimmed 2026-11-11 and again that night
+  to the question, the prompt and the buttons: "connect claude?", "pick
+  the matching number", three numbers (a wrong one denies the request on
+  the server), "not now". The agent's host, "reads your classes and work,
+  proposes drafts" and "did you just start this?" are gone.
+  Approving turns the opt-in on if it was off.
+  With it on, `agentSnapshotPass` uploads the work list
+  (`AgentSnapshotBuilder` over `syncWorkList()`, courses, own tasks; no
+  grades, no name) right after `deviceSyncPass` in `ContentView.refresh()`
+  and the launch task, foreground only, at most every 10 minutes, every
+  failure silent. Turning it off, disconnecting Canvas and account deletion
+  delete the server's list and revoke every agent. `docs/PRIVACY.md` →
+  "Connecting an AI assistant" is the student-facing text. Copy in
+  `AgentConnectionCopy`, pinned by `AgentConnectionCopyTests`.
+- **Drafts from an agent, and submitting them** (**switched off on 2026-11-17** with the agent connection above, same flag, same reasons; the review sheet, the chip and prev's "submitted by you · drafted by" are unreachable and a cached draft is not read. Built 2026-11-10, v11 Phases 3
+  and 4, phone half; on `claude/v11-phone-c7aaf2`, compiled and tested,
+  **never on a phone and never against Canvas**). `agentDraftsPass`
+  (`AppState+AgentDrafts.swift`) runs right after `agentSnapshotPass` in
+  `ContentView.refresh()` and the launch task, with the same gates (Penn,
+  backend, opt-in on, foreground only), at most every 5 minutes, failures
+  silent (both passes' gates and throttles: `AgentPassRules.shouldStart`).
+  It also refreshes the connection list (for the line below),
+  re-sends any outcome report the server never acknowledged, and replaces
+  `AppState.agentDrafts` (memory) and `agentDraftsCacheV1` (the same drafts
+  with no body, link, note or signed URL, so a relaunch draws the chips
+  before the first poll). A draft matches a card by equality: its
+  `assignment_id` is the snapshot item id, which is `Assignment.id`. The
+  list decodes one draft at a time (`AgentDraftList`, 2026-11-11): a draft
+  with no id or a non-object is skipped, never the whole list. The card's
+  preview reads only the body's head, and the cache clips the agent's name
+  to the 40 characters the card prints.
+  - **The card.** "drafted by claude" in the collapsed card's caveat line
+    beside cancelled / moved / changed, the chip in grape (`smoothGrapeInk`,
+    the agent's and ask's colour; the exam card's secondary colour on its
+    inverted ground) (`DashItem.caveatText`, `factCaveatText`,
+    `agentChipText`, `DashItem.agentDraft`); the opened card shows two lines
+    of the body, the link, or the file's name and size, and one button drawn
+    like "edit date" (a glyph, then the words): "review and submit" ("check
+    canvas" once a submission went out with no answer). A draft on an item
+    that cannot be submitted online still shows, chip and all; the sheet
+    says why. The first open marks the draft `seen`. Only the newest open
+    draft per item shows. Once the phone sends it and Canvas takes it, the
+    card goes to prev at once (`completeAfterAgentSubmit`: the shown card is
+    found through its own id, a `linkedID` or a hidden twin by
+    `shownAssignment(forItemID:)`, then `markCompleted`, as a swipe would) and reads
+    "submitted by you · drafted by claude" there
+    (`AppState.agentSubmittedNamesByItemID`, from the attempt records, which
+    now keep the agent's name; `DashItem.agentSubmittedBy`).
+  - **The notice.** One local notification per new draft, "Claude drafted
+    Problem Set 7" (`AgentDraftNotices`, remembered in
+    `agentDraftsNotifiedV1`, bounded at 200), only for a draft whose card
+    is on the dashboard, posted with the turned-in notices' rules.
+  - **The review sheet** (`AgentDraftReviewSheet`, redesigned 2026-11-11).
+    Why: on Marco's phone a plain-text draft on PHYS 0151 "Problem Set 7"
+    (Canvas `submission_types` = `online_upload` only) opened, Submit ran the
+    preflight, the preflight refused the text with `.unsupportedType`, and
+    the sheet printed "submit this one in canvas", which read as "review and
+    submit didn't work". Now the sheet **knows what Canvas takes before the
+    student decides**: when it opens, once per draft (memory,
+    `AppState.agentDraftAcceptanceByDraftID`), `agentDraftAcceptance` answers
+    "not online" without asking anyone for an item the phone can never send
+    (no Canvas ids, a quiz, Gradescope, nothing to submit), else uses what
+    the last structured-sources run read off the assignments list
+    (`CanvasOverrideAssignment.submissionRules`: `submission_types`,
+    `allowed_extensions`, `locked_for_user`, kept in memory in
+    `canvasSubmissionRulesByAssignmentID`) **only when it lets the student
+    send**: a list answer that would block (locked, nothing online) can be
+    hours old, so it is confirmed with one live GET and only the live answer
+    blocks (cached once confirmed; a GET that cannot be had blocks nothing
+    and the submit's preflight decides), else runs the submit's own
+    preflight GET early (`CanvasSubmissionClient.fetchRules`; the same request
+    the submit makes first, so no new network call and `docs/PRIVACY.md` is
+    unchanged). `CanvasAcceptance.derive` turns the four fields into text /
+    link / file (with extensions) / nothing online / locked;
+    `DraftSubmitPlan.make` turns (draft kind × that) into the routes on
+    offer, the default, or a block. Top to bottom (trimmed 2026-11-11,
+    Marco: "a lot of needless text in the submission"): the class code in
+    its accent ink and the title (Familjen 24), one header; "drafted by
+    claude" in grape; the agent's note, always behind a collapsed "note"
+    disclosure (since 2026-11-11; a short one was a visible line before); the draft full width (the text in Inter
+    16, selectable; or the rendered pdf pages inline in a PDFKit view, no
+    caption; a link as a ruled 56pt row that opens it; a file as a row with
+    name, size and "preview", QuickLook); **one status line**
+    (`DraftReviewStatus.resolve`, pinned by `DraftReviewStatusTests`): a
+    small spinner, no words, while Canvas is asked; then "canvas takes a
+    pdf or docx" / "canvas takes text" / "can't be submitted online" /
+    "locked in canvas", or in its place a refusal for this draft ("canvas
+    won't take .zip · pdf only", "couldn't make a pdf") or the outcome of the last tap (which
+    always wins), never two; the `SmoothSegmentPicker` "send as text" /
+    "send as pdf" only when both go; then, pinned at the bottom on paper, a
+    filled grape 48pt squircle "submit to canvas" (confirmation names the
+    kind, "send problem set 7 as a pdf?", and no message since 2026-11-11;
+    "goes in under your name" went) and a plain "decline". Blocked, "open in canvas" (a text
+    link to the Canvas app) takes the submit's place.
+    Choice rules: a text draft on a file-only assignment goes as a pdf
+    (**any** text draft, plain or markdown: `DraftDocumentRenderer`
+    renders plain text too, paragraphs on blank lines, single breaks kept,
+    nothing read as markup); on a text-taking assignment "send as text" is
+    the default and the pdf optional, except that a markdown draft where
+    Canvas takes both text and files defaults to "send as pdf"; if the early read failed the draft's
+    own kind is offered (text beside pdf, markdown leaning pdf) and the
+    submit's preflight decides. Results, one short line each since 2026-11-11 (no "try again", no
+    "here"): "no connection", "sign in to canvas first", "locked in canvas"
+    + open in canvas, "may have gone in · check canvas" + open in canvas +
+    done, "couldn't reach canvas", "canvas refused it"; submitted is a full-sheet state (teal tick, "submitted to
+    canvas", done) only when the read-back verified it; unverified, the
+    sheet stays with "submitted · not confirmed" as its one
+    status line, open in canvas and done (the "in at 9:41 pm" line was
+    taken out 2026-11-11). Every string in `AgentConnectionCopy`, pinned by
+    `AgentConnectionCopyTests`; the table and choices by
+    `DraftSubmitPlanTests`.
+  - **Submitting** (`CanvasSubmissionClient`, promoted from the spike, and
+    `AgentDraftSubmitter`): a preflight GET of the assignment decides
+    everything that can refuse (submission types, `allowed_extensions`,
+    locked, `can_submit`, session, CSRF token) before any POST; then the
+    attempt record is written (`AgentSubmitAttemptStore`, its own JSON file
+    under Application Support, written `.atomic` before `begin` returns);
+    then, for a file, Canvas's slot POST, the multipart upload to the slot's
+    URL with no cookie or CSRF header, and a confirm GET on a redirect; then
+    the submission POST, **exactly once, never retried, not even after a
+    422**; then a verify GET of `/submissions/self`. A 2xx with an id is
+    `submitted` (verified or not); a refusal by Canvas or a request that
+    never left the phone is `failed`; a 5xx, a timeout or a lost connection
+    after the POST is indeterminate: the record stays, the card says "check
+    canvas", nothing retries. A draft with a record is never submitted
+    again, whatever the server says, and cannot be declined either.
+    Outcomes are reported with `draft` (`submitted` with
+    `canvas_submission_id` and `attempt`, or `failed` with a short
+    `error_class`). Disconnecting Canvas and turning the opt-in off clear
+    the drafts, the cache, the notice memory, the known-connection ids and
+    the attempt records. Since 2026-11-11 disconnecting Canvas also clears
+    the assignment-PDF pass's memory (`attachmentAttemptsV1`,
+    `lastAttachmentSyncSummaryV1`) and the in-memory Canvas submission
+    rules the review sheet reads first.
+  - **Text as a PDF** (2026-11-10 for markdown; 2026-11-11 for every text
+    draft; compiled and tested, never on a phone). claude.ai will not emit a
+    144,000-character base64 PDF, so a document travels as source text and
+    is rendered on the phone. `DraftDocumentRenderer` (Kit, `Agent/`):
+    `pdfData(forDraftBody:format:)` picks markdown (a heading, list, code
+    fence, emphasis, an explicit first line `<!-- format: markdown -->`, or
+    a `format` field) or plain text (`plainParagraphs`,
+    `attributedString(fromPlainText:)`). Markdown: `AttributedString(markdown:)`
+    to blocks, Inter 11.5 pt body, larger Inter-Bold headings, Space Mono
+    code. Both: US Letter with 1-inch margins through
+    `UIGraphicsPDFRenderer` + `CTFramesetter` behind `#if canImport(UIKit)`
+    (macOS answers nil, and the plan then offers no pdf). `$...$` math stays
+    text. Submit sends it as `<title>.pdf` (`application/pdf`) through the
+    ordinary file path, same attempt record, same never-twice rule. A render
+    failure drops the pdf route with "couldn't make a pdf".
+  - **Connected.** After the right number is picked the approve sheet
+    becomes a confirmation ("connected", done; "go back to claude to
+    finish" taken out 2026-11-11) instead of closing itself a second later; and a
+    connection that appears in the list while the app is open (the
+    connection row is created when Claude trades the code, after the
+    approval) raises a one-line "connected to claude" under the status
+    lines, dismissed with a tap (`AppState.agentConnectionBanner`,
+    `noteAgentConnections`; the first list on an install only records).
+    Marco, 2026-11-09: "there should be some UI that makes it clear when
+    you're connected since it is not that clear."
 - **Pair a laptop** (2026-10-22, never compiled). Scanning the Chrome
   extension's QR code with the iPhone camera opens Smooth
   (`smooth://pair?c=…#k=…`, `.onOpenURL` in `RootCore`) on "pair this
@@ -1857,6 +2668,33 @@ usable without a real Canvas session, and pairs with `-LHFShowSettings`,
 xcrun simctl launch booted com.lhf.lowhangingfruit -LHFDemoData -LHFShowAssistant
 ```
 
+With `-LHFDemoData`, `-LHFDemoAgentState` (2026-11-11, DEBUG only,
+`AppState+AgentDemo.swift`) adds the agent connection in memory: one
+connected agent "claude" last used 2h ago, a text draft on "PSet 6: hashing"
+and a file draft on "Lab report 4", prev's "Recitation worksheet" as
+"submitted by you · drafted by claude". `-LHFDemoAgentOff` is the same with
+the switch off; `-LHFShowCodeSheet` and `-LHFShowApproveSheet` open those
+sheets; `-LHFDraftReviewHarness <state>` opens the review sheet directly in
+one of `text`, `textFileOnly`, `file`, `link`, `locked`, `offline`, `signIn`,
+`submitted`, `unconfirmed`, `failed`. While it is on, `agentAPI` is nil and
+nothing is persisted, so no call reaches the server. The screenshots of
+2026-11-11 (`docs/v11-ui/`) were taken with it.
+
+Since 2026-11-22 the renewal log also carries the Duo trust check's words:
+"duo trust check: entered …", then one of "reading jar", "jar read", and the
+decision ("start", or the refusing guard: "no-trust-cookie", "far Nd",
+"session-expired", "awaiting-duo", "password-disabled", "cannot-auto-login",
+"in-flight", "login-pane", "attempt-spacing", "credential-spacing",
+"failed-spacing", "pending", "cannot-proceed"), "duo jar: N cookies, M duo"
+(counts) on every jar read, and "duo trust renewal: extended | unchanged"
+after a forced attempt.
+
+`-LHFRenewDuoTrustNow` (DEBUG only, 2026-11-21) treats Duo's remembered-device
+trust as about to lapse for that launch and forgets the last forced
+attempt, so the forced re-authentication (`force_login=1`, Stay signed in)
+runs on the first foreground pass; wait ten minutes after any password
+submission first, or the renewer refuses to fill.
+
 `-LHFAgeCanvasSession` (DEBUG only) backdates the saved Canvas cookies'
 `capturedAt` by 25 hours before launch, so the real renew-on-open path runs
 now instead of tomorrow. Every silent-renewal step in a DEBUG build is
@@ -1892,6 +2730,30 @@ every saved Canvas cookie's domain, name, expiry and capture time (never a
 value). It prints `LHF-DIAG` lines and keeps them in `UserDefaults.lhf`
 `debugSessionDiagnosticsV1`. Run it before `-LHFAgeCanvasSession`, or
 together with it (the snapshot is taken first).
+
+Since 2026-11-18 (blind) a DEBUG build also keeps `debugWakeLogV1` in
+`UserDefaults.lhf` (last 50 lines, `DebugWakeLog`): one line per Sweeper
+read or wake, "<time> <source> <outcome> <ms>ms cancelled <n> request(s)
+<m> alarm(s)", where source is `foreground`, `launch`, `poll`, `bg`,
+`push`, `grades`, `gradescope` or `structured`; never a title, id or URL.
+Since the evening of 2026-11-18 the minute loop writes its own trace under
+source `poll`: "poller start" / "poller stop", and "tick nil-ring", "tick
+far-ring", "tick past-ring" or "tick poll" (inside the hour, whether this
+minute polled or waited) only when the word changes from the last tick; and
+a foreground, launch or refresh-pass check that does not poll writes "skip
+unbound" / "skip nil-ring" / "skip far-ring" / "skip past-ring" under its
+source, one per pass, so a long idle stretch fills the 50 lines in a few
+hours. Read the log soon after a test.
+Beside it, in Release and DEBUG alike, `sweeperCountsV1` (`SweeperCounts`):
+`armed`, `cancelledAtObservation.<source>`, `readsUnknown`, `polls`,
+`pollsBackedOff`, `wakes.bg`, `wakes.push`, `moments.sent`, `registerFailed`,
+`putFailed`, `pushNoSession`. Counts only. A `register-failed` line at every
+foreground is what a build without the `aps-environment` entitlement looks
+like (Known gaps), and is expected until Olisa's step.
+Read both off the App Group plist with the `devicectl` copy above. They
+exist because the 2026-11-16 plan says the Sweeper's accuracy is proven by
+counts (`rangSubmitted` to zero), and nothing on a device said before
+which read did the work.
 
 Since 2026-10-19 (blind) the App Group plist also holds one-line summaries of the
 last announcement sync (`lastAnnouncementSyncSummaryV1`: where it exited,
@@ -1935,11 +2797,324 @@ step in App Store Connect; there is no API key on the dev Mac.
 
 ## Test baseline
 
+**Current on `v13` (2026-11-24, `a9384e4`): 4536 tests / 479 suites, all green,
+no known issue, `swift test --no-parallel` on the GitHub macOS runner
+(manual run 45299804944, 116 s), with the unsigned iOS `xcodebuild`, Deno and
+the extension suite (543) green in the same run.** The 3.5.0 (21) gate was
+4491 / 468 with one known issue (R-M1); `v13` adds the McGraw Hill
+groundwork's 42 tests in 10 suites (4533 / 478 at `07045ce`, run
+45298163154), then the test-pass fixes: `AgentOffSwitchCleanupTests` (+1
+suite), `signOutClearsPendingGroupChat` and a pure-rule case, and R-M1's
+`withKnownIssue` removed. One red on the way (`V11PhoneStateTests` key guard,
+the new one-shot's key had no clear path; fixed, not loosened). Nothing from
+`v13` is on a phone.
+
+**On `claude/test-sweeper-signin-1cb733` (2026-11-22, the hostile test pass over
+the Sweeper and sign-in work, off the line's `c694ce7`): filtered runs only,
+never the full suite. The 25 new tests / 8 suites of
+`SweeperSignInTestPassTests.swift` green (`--filter TestPass`); the 20 existing
+suites touching the changed files, 267 tests / 29 suites, green; the unsigned
+iOS Debug build of the tree succeeded. Predicted full count after the merge:
+4400 / 449 (4375 + 25, 441 + 8); read it off the master's run, not this line.
+Other sessions were running filtered suites on the Mac at the time (the
+shared-defaults trap), so nothing here is a baseline.**
+
+**Current on `claude/ambassador-header` (2026-11-22, `0615d3a`: the 3.5.0 test
+pass and its evaluation, the overdue swipe lesson and the founder contacts
+merged): 4491 tests / 468 suites, all green apart from one deliberate known
+issue, `swift test --no-parallel` alone on Marco's Mac (61 s, helper domain
+cleared first). The Debug build of `0615d3a` is on Marco's iPhone, checked by
+him and approved to ship; 3.5.0 (21) is archived from this commit.**
+
+**Current on `claude/ambassador-header` (2026-11-22, `10b8d5b`: ambassador
+round four merged; then `48afea1` adds only the one-line users count,
+`4bb1282`): 4449 tests / 459 suites, all green, `swift test --no-parallel`
+alone on Marco's Mac (100 s, helper domain cleared first) on `10b8d5b`, and
+the unsigned iOS Debug build of it succeeded; on `48afea1` the 88 ambassador
+tests in 20 suites are green. The 3.5.0 (21) archive is to be cut from
+`48afea1` or later.**
+
+**Current on `claude/ambassador-header` (2026-11-22, `1c044bb`: ambassador
+rounds three and four, two plainly named kinds of post and the one-line users
+count under "Ambassador", fast-forwarded in): 4447 tests / 458 suites, all
+green, `swift test --no-parallel` alone on Marco's Mac (94 s, helper domain
+cleared first, load under 4); the unsigned iOS Debug build succeeded. The same
+count as `f43f781`: the two rounds re-pointed existing pins and added none
+net. This is the tree the 3.5.0 (21) archive is to be cut from.**
+
+**Current on `claude/ambassador-header` (2026-11-22, `f43f781`: `origin/v12`'s
+install count merged (`d26d286`) and the ambassador round two
+(`claude/ambassador-work-c14201` at `3d3a61f`, with the posters branch and the
+Worker guidance) merged on top): 4447 tests / 458 suites, all green, `swift test
+--no-parallel` alone on Marco's Mac (94 s, helper domain cleared first, load
+under 12); the unsigned iOS Debug build succeeded. The ambassador session's
+build of `3d3a61f` is on Marco's iPhone (the dormant `LHFSweeperCheck`
+extension left out of that one signed build, because Apple holds a new Program
+License Agreement that only the Account Holder, Olisa, can accept; the project
+file was restored). The same agreement blocks the 3.5.0 archive.**
+
+**Current on `claude/ambassador-header` (2026-11-22, `d77018b`: the four side
+branches merged, `claude/test-sweeper-signin-1cb733` (the Sweeper and sign-in
+test pass, `docs/TEST_SWEEPER_SIGNIN_2026-11-22.md`), `claude/release-review-3766d5`
+(`docs/RELEASE_REVIEW_3.5.0_2026-11-22.md`), `claude/onboarding-work-f6b7f1`
+(the onboarding pass) and `claude/ambassador-work-c14201` (ambassador mode cut
+to four tasks), plus the hidden renewer's app-link guard and the reviews'
+fixes): 4421 tests / 452 suites, all green, `swift test --no-parallel` alone
+on Marco's Mac (96 s, helper domain cleared first, load under 20); the
+unsigned iOS Debug build succeeded. The fuzz suite's time budgets failed at
+`3eb02ef` under a load average of 109 with four sessions compiling, and
+passed here on an idle Mac; read a fuzz timing red as load first. Nothing
+from these merges is on a phone. Left out: `claude/ambassador-posters-f068d6`,
+uncommitted and waiting on Marco.**
+
+**Current on `claude/ambassador-header` (2026-11-22, `sweeper/force-quit-check`
+`43d95f3` merged in at Marco's "merge this when you get the chance"): 4375
+tests / 441 suites, all green, `swift test --no-parallel` alone on Marco's
+Mac (99 s), exactly the predicted sum (4348 + 27, 436 + 5); the unsigned
+iOS Debug build of the merged tree succeeded, the first build with the
+`LHFSweeperCheck` extension target beside the Duo work. One conflict, in
+this file's Test baseline, kept both sides. Nothing on a phone from the
+merge; the extension is dormant until Olisa's push steps (Known gaps).**
+
+**Current on `claude/ambassador-header` (2026-11-21, later: the Duo trust
+renewal and the missed-push notice): 4348 tests / 436 suites, `swift test
+--no-parallel` alone on Marco's Mac (180 s of tests), after one red in the
+full run: `SignInHealthTests` "the latest of two expiries wins" pinned the
+old any-Duo-cookie rule for `duoTrustExpiry` and was re-pinned to the
+trust-cookie rule with a year-long other cookie beside it (+1 test for the
+no-trust-cookie jar), green alone with the two new suites; the unsigned iOS
+Debug build of the same tree succeeded. +23 / +2 over 4325 / 434:
+`DuoTrustRenewalTests` (14), `DuoWaitNoticeTests` (8), the re-pin. Nothing
+on a phone; the force_login question is in Known gaps.**
+
+**Current on `sweeper/force-quit-check` (2026-11-21, the force-quit check
+on top of `claude/ambassador-header` `4bd49bc`): 4352 tests / 439 suites,
+all green, `swift test --no-parallel` on Marco's Mac; Deno 945 passed
+(run without type-checking: `deno task test` fails type-checking before
+any of this work on four `TS2741` errors at `_shared/catalog.ts:861`,
+`CatalogEntryMeetingWire` missing `room`, untouched here).** +27 / +5 over
+the line: `SweeperForceQuitKitTests` (manifest window, the check table,
+inbox, files and its drain race, cookie mirror codec), `SweepHandoffTests`, one
+`SubmissionReadTests` (`excused`), one `SubmissionObservationTests`.
+`BerserkAlarmTests`' pbxproj sound test now checks both extension targets
+(it hard-coded one). iOS Debug and Release and macOS Debug unsigned builds
+green; nothing signed, nothing on a phone.
+
+**Before that, on `claude/ambassador-header` (2026-11-21, the release line with
+`origin/v10` `d22ec49` and `origin/v12` `8fc16c8` merged in): 4325 tests /
+434 suites, all green, `swift test --no-parallel` alone on Marco's Mac
+(107 s of tests, helper domain cleared first, no other run on the machine).**
+The merges' Swift merged itself except `AmbassadorTests.swift`, where git's
+"keep both" put `v12`'s new suites inside the release line's
+`AmbassadorHeaderTests` body (one closing brace short; the first full run
+did not compile) and the file was rebuilt as `v12`'s file plus the header
+suite appended. The count is the sum of the three lines' own additions
+over 4254 / 421: `v10`'s tree work (`AskExcerptBudgetTests`,
+`CanvasOwnSectionsTests`, `PassageSituatingTests`, `CourseKnowledgeHeldSyncTests`
+additions), `v12`'s ambassador playbook and captures suites, and this
+line's `LastHourPollerWiringTests` (+3 since the 18th) and
+`BuzzOnlyDeliveryTests` (+5). The unsigned iOS build result is in the
+Release state paragraph. Nothing on a phone yet from the merges.
+
+**Current on `claude/sweeper-build-0a4dd0` (2026-11-18, the server wake,
+phase 2): 4254 tests / 421 suites, all green, `swift test --no-parallel`
+alone on Marco's Mac (92.8 s, helper domain cleared first), exactly
++41 / +6 over the Release 1 run below: `SweeperWakePlanTests` 9,
+`SweeperWakeRulesTests` 3, `SweeperWakeClientTests` 5,
+`SweeperWakePassTests` 13, `PushWakeTests` 8, `SweeperWakePlistTests` 3;
+nothing removed, no existing test changed. The eight skipped tests are the
+agent and degree ones that skip while their flags are off, as before. The
+unsigned iOS Debug build (`generic/platform=iOS`, `CODE_SIGNING_ALLOWED=NO`)
+of the same tree succeeded, the only compile of `App/LHFApp.swift`'s new
+delegate and of `BackgroundRefresh.swift`'s push wake. Deno 942 (from 902),
+`deno task check` clean, Node 67 (from 51), `sql-check.sh` green on Docker
+with the `pg_cron` / `pg_net` paths skipped. Nothing on a phone, nothing
+deployed.**
+
+**Before it, the same day (Release 1): 4213 tests / 415 suites, `swift test --no-parallel`
+alone on Marco's Mac (92.6 s, helper domain cleared first), with one red on
+the first run, `BackgroundWakeReplanTests` "the re-plan builds its items the
+way the dashboard does", a source scan pinned to `replan`'s old single body
+after the wake's item assembly moved into `dashboardItems(for:)`; re-pinned
+to the two-part shape (nothing loosened) and green alone. +55 / +9 over
+4158 / 406, nothing removed: `SubmissionReadTests`, `LastHourPollTests`,
+`SweeperQuietReasonTests`, `SubmissionObservationTests`, `DebugWakeLogTests`,
+`CancelAtObservationTests`, `PlannerWindowClientTests`,
+`PlannerWindowApplyTests`, `LastHourPollerTests`, and three source-scan
+cases in `LaunchRefreshStructureTests`. The unsigned iOS Debug build
+(`generic/platform=iOS`, `CODE_SIGNING_ALLOWED=NO`) of the same tree
+succeeded. Nothing on a phone.**
+
+**Current on `claude/v12-isolate-ab8b22` (2026-11-17, the agent connection
+switched off for 3.5.0): 4158 tests / 406 suites, all green, `swift test
+--no-parallel` alone on Marco's Mac (91 s, after `defaults delete
+swiftpm-testing-helper` with no other run on the machine); the unsigned iOS
+Debug build (`generic/platform=iOS`, `CODE_SIGNING_ALLOWED=NO`) of the same
+tree succeeded.** +4 / +1 over the 4154 / 405 record, every one accounted
+for: +3 / +1 were already on the release line `claude/ambassador-header`
+above that record and had never been through a full run (`AmbassadorTests`
++1 test and its suite from the ambassador header, `CompletionSwipeTests` +2
+from the either-way swipe); +1 is `AgentDraftsStateTests.killSwitchOff`,
+which runs only while `FeatureFlags.agentConnection` is false. Eight tests
+are counted and skipped: the five `DegreeWiringTests` fixture tests (as
+before) and three agent tests that read what the switch now hides
+(`AgentDraftsStateTests` "the card's view" and "prev: a draft the student
+sent", `V11PhoneStateTests` "a decline is refused once an attempt exists");
+setting the flag back to `true` runs them and skips `killSwitchOff`.
+Nothing deleted.
+
+**Deno on `claude/agent-debug-998a30` (2026-11-12, off the `v12` merge
+`79b3a99`): 902 passed, 0 failed (898 + 4: the sliding upload expiry, its
+ceiling, and the Postgrest `touch`), `deno task check` clean. No Swift
+touched; the Swift count is the line below.**
+
+**Merged on `v11` 2026-11-12 (`origin/v12` `4aadc3c`, Olisa's ambassador mode
+and the switched-off degree progress, merged into `v11-master` `2f49f8d` at
+the commit that carries this line): 4154 tests / 405 suites, all green,
+`swift test --no-parallel` alone on Marco's Mac (92 s), exactly the predicted
+sum (3948 + 206, 379 + 26: `v12`'s 3880 / 377 on the runner less the `v10`
+base 3674 / 351; `v11-master` was 3948, not the 3947 recorded below, because
+`2542c18`, the control row's 4pt lift, added one `DashboardSmallFixesTests`
+case after that record and nobody re-counted). Five of them are `DegreeAppStateTests` fixture tests that
+count and skip themselves while `FeatureFlags.degreeProgress` is false, as on
+`v12`. The first local run of any ambassador or degree code: `v12` had only
+ever compiled on the GitHub runner. The unsigned iOS Debug build
+(`generic/platform=iOS`, `CODE_SIGNING_ALLOWED=NO`) of the same tree
+succeeded, the first iOS compile of the two lines together. The ambassador Worker's own suite (`cd
+smooth-ambassadors && npm test`, Node 22): 45 passed, 31 skipped (the
+Sites-artifact comparisons need `SITES_ORIGINAL` and `SITES_EDITED`), none
+failed; never add it to the Swift or Deno counts.**
+
+**Merged on `v11-master` 2026-11-12 (the UI branch's phone-pass fixes and
+the class-code face, merged at the commit that carries this line): 3947 tests / 379 suites, all green, `swift test --no-parallel` alone on
+Marco's Mac (90 s), exactly the predicted sum (3945 + 2); the iOS Debug build
+(`generic/platform=iOS`, `CODE_SIGNING_ALLOWED=NO`) of the same tree succeeded. The UI branch's own build of `4e06515` is on
+Marco's iPhone 17 Pro since 2026-11-12 afternoon.**
+
+**On `claude/v11-ui-pass-84648c` (2026-11-12, Marco's phone pass and the
+class-code face): 3931 tests / 378 suites, all green, `swift test
+--no-parallel` alone on Marco's Mac (89 s), +2 over 3929: the "last used"
+test went with its strings (-1), the Sweeper order test was rewritten for no
+on row, and `UIPassNov11Tests` gained three font tests (+3). The signed iOS
+Debug device build of the same tree succeeded.**
+
+**Merged on `v11-master` 2026-11-11 (the update-notes branch and the UI pass
+`claude/v11-ui-pass-84648c`, merged at the commit that carries this line):
+3945 tests / 379 suites, all green, `swift test --no-parallel` alone on
+Marco's Mac (54.8 s), exactly the predicted sum (3922 + 16 + 7, 377 + 1 + 1);
+the iOS Debug build (`generic/platform=iOS`, `CODE_SIGNING_ALLOWED=NO`) of the
+same tree succeeded. The signed Debug build of `9399ab3` was installed and
+launched on Marco's iPhone 17 Pro on 2026-11-12 at 13:10 local, over the UI
+branch's `e95f1bc`.**
+
+**On `claude/update-notes-13b416` (2026-11-11, off `v11-master`): 3938 tests /
+378 suites, all green, `swift test --no-parallel` alone on Marco's Mac (94 s),
++16 / +1 over 3922 / 377: `UpdateChangesTests` (the manifest's `changes`
+list). iOS Debug build (`generic/platform=iOS`, `CODE_SIGNING_ALLOWED=NO`)
+succeeded. Not on a phone.**
+
+**On `claude/v11-ui-pass-84648c` (2026-11-11, off `v11-master` `0a78549`):
+3929 tests / 378 suites, all green, `swift test --no-parallel` alone on
+Marco's Mac (54 s), +7 / +1 over 3922 / 377: `UIPassNov11Tests` (the
+triple-tap rule, the backflip, the hover bounds and wiring), one
+`DashboardSmallFixesTests` case (the Sweeper button) and one
+`SweeperOnboardingTests` case (the on row first). The iOS Simulator and
+signed device Debug builds of `3c9d245` succeeded.**
+
+**Merged on `v11-master` 2026-11-11 (the UI trim `5d7d7a5` plus the three
+test-session branches, `claude/v11-test-backend-3b1f1b`,
+`claude/v11-test-phone-e16828`, `claude/v11-extensions-ac4092`, merged at
+`a1c870e`): 3922 tests / 377 suites green after one merge fix (the phone pass's
+no-logs scan named `AgentConnectionsView.swift`, which the trim renamed to
+`ProfileAgentRows.swift`); the full run had that one red and nothing else;
+Deno 898, `deno task check` clean, Node 51.** Note on the trim's own run (`5d7d7a5`): 3867 / 374 with
+one red, the "Fuzz: very long announcement text" 60-second budget missed by
+0.33 s while three other sessions compiled (load average 59); the fuzz
+suites alone on the idle Mac at 18:40 UTC passed in 55.8 s, so the record
+in that commit message ("the suite alone is green") is true as of that
+re-run, not as of the commit.
+
+**2026-11-11, the agent UI trim (on `v11-master` `ee653d9` plus the trim,
+uncommitted when measured): 3866 tests / 374 suites, all green, `swift test
+--no-parallel` (was 3855 / 373); the follow-up decisions the same day added
+one test (`DraftReviewStatusTests`), full run not repeated here.** The
+paragraph below is the older record.
+**Deno on `claude/v11-test-backend-3b1f1b` (2026-11-11, off `v11` `ee653d9`):
+898 passed (889 + 9: the front's client-address header, the stray staged-object
+sweep, the file-name and mime-type checks), `deno task check` clean, `node
+--test backend/scripts/*.test.mjs` 51, `backend/scripts/sql-check.sh` green
+(OrbStack). No Swift touched.**
+**Current on `claude/v11-test-phone-e16828` (2026-11-11, off `v11` `ee653d9`):
+3910 tests / 376 suites, all green, `swift test --no-parallel` alone on
+Marco's Mac (99 s), +55 / +3 over `v11`'s 3855 / 373, nothing removed: the
+v11 phone test pass (`V11SubmitRulesTests` with `V11ProblemSet7Tests`,
+`V11HostileInputTests`, `V11PhoneStateTests`; the report is
+`docs/V11_TEST_PHONE_2026-11-11.md`). One existing scan,
+`AgentConnectionWiringTests` "the drafts pass keeps the snapshot pass's
+gates", now reads the `AgentPassRules.shouldStart` spelling. iOS Debug
+build green. The PDF-only cases ran on an iPhone 17e Simulator
+(`xcodebuild test -scheme LowHangingFruitKit-Package`, 37 / 3 green), the
+first time the paginator itself has been under test.**
+
+**Current on `agent/connection-v11` at the merge of 2026-11-10 (about 06:45
+UTC, 01:45 US Eastern): 3819 tests / 369 suites, all green, `swift test
+--no-parallel` alone on Marco's Mac (55 s). The tree is `agent/connection-v11`
+(the agent connection through the assignment-PDF pass, 3754 / 362) plus three
+session branches merged that night, `claude/quiz-inclass-9d38b8` (+9 / +1:
+`NothingToSubmitLabel`, `CourseKnowledgeHeldSyncTests`),
+`claude/v11-backend-645aa0` (Deno only) and `claude/v11-phone-c7aaf2` (+43 /
++5: drafts, the attempt store, `CanvasSubmissionClient`, the review sheet),
+plus Marco's `origin/v11` (+13 / +1: the Sweeper page and
+`CompletionSwipe.Axis`); every merge was textual in CLAUDE.md and ROADMAP.md
+only and the Swift merged itself, so this run is the first compile of the
+combination. Deno 871, `deno task check` clean, Node 49. The device build of
+this tree went on Marco's phone that night; at its first open (13:15 US
+Eastern, 2026-11-10) the held sync and the PDF pass both worked for the first
+time (Traps, the `.task` entry). The Phase 3 phone half ran for real on 2026-11-11 02:06 UTC: a draft
+from Claude showed on the Problem Set 7 card and the review sheet marked it
+`seen`; the redesigned sheet was approved on the phone the same night and
+Decline reached the server; and at 22:52 ET 2026-11-10 the first real
+Submit went through: Problem Set 7, drafted by Claude from the pooled PDF,
+rendered on the phone, submitted from the review sheet, Canvas submission
+id 357257138, attempt 1. Every phase of v11 has now run end to end on
+Marco's phone.**
+
+**Current on `claude/v11-phone-c7aaf2` (2026-11-10, off `agent/connection-v11`
+`2503a3b`): 3797 tests / 367 suites, all green, `swift test --no-parallel`
+alone on Marco's Mac (98 s), +43 / +5 over the 3754 / 362 below, nothing
+removed: `CanvasSubmissionClientTests` (the CSRF header, the text, URL and
+file bodies, the file two-step with no cookie on the upload, the confirm
+GET, the attempt-before-POST order, one POST never retried, the
+indeterminate branch, verify agreement), `AgentDraftTests`,
+`AgentSubmitAttemptStoreTests`, `AgentDraftSubmitterTests` (never twice),
+`AgentDraftsStateTests`, plus additions to `AgentConnectionClientTests`,
+`AgentConnectionWiringTests` and `AgentConnectionCopyTests` (whose
+`connected("claude")` pin became `connectedHeading` / `connectedNext`).
+Blind: never on a phone, never against Canvas.**
+
+**Before it, on `agent/connection-v11` (2026-11-10, early morning US Eastern):
+3754 tests / 362 suites, all green, `swift test --no-parallel` alone on
+Marco's Mac (88 s), +40 / +4 over the branch's 3714 / 358 of 2026-11-08:
+the snapshot's Canvas ids and the assignment link lines (+7 / +1), and the
+assignment-PDF pass (`AssignmentAttachmentPlannerTests`,
+`CanvasFilesClientTests`, `AssignmentAttachmentWiringTests`, +33 / +3).
+Deno 870 (was 824: the hardening, the drafts backend, the assignment
+context, the file-retirement rule), `deno task check` clean, Node 46. The
+Swift pass is blind: never run against real Canvas.**
+
+**On `claude/quiz-inclass-9d38b8` (2026-11-10): the label fix's filtered runs
+green (`DueValueSecondaryLabelTests` 8, `NoSubmissionCaveatTests` +1, 40 tests
+in 3 suites); full `swift test --no-parallel` alone on Marco's Mac: 3760 / 362, all green
+(55 s), +6 over the 3754 / 362 below. Then the held course-material sync
+(`CourseKnowledgeHeldSyncTests`, +3 / +1): 3763 / 363, all green (85 s). No iOS
+build (no iOS-only code touched).**
+
 **Chrome extension (a separate suite; never add it to the Swift or Deno
-counts): 517 tests, all green, on `v8` (2026-11-04, `cd chrome-extension
+counts): 543 tests, all green, on `v8` (2026-11-12, `cd chrome-extension
 && npm test`, node 22 in the cloud container), plus the closed-loop
-harness `npm run e2e` (real Chromium, fake Ed/Canvas/backend; see
-`docs/CHROME_EXTENSION.md` → Status, 2026-11-04).** The pure core: term,
+harness `npm run e2e` (real Chromium, fake Ed/Canvas/backend; it proves
+the Ed read and the sealed submission feed; see
+`docs/CHROME_EXTENSION.md` → Status, 2026-11-04 onward).** The pure core: term,
 course code, assignment ids, content hash, ICS (74), dedup (64),
 Gradescope parsing (51), the sync snapshot (18, pinned to the shared
 AES-GCM vector the Swift suite also pins), and the course-material
@@ -2070,7 +3245,84 @@ his terminal), the first build on a phone to carry the degree shelf and
 weekly read, the full view and the what-if options row. What it shows is
 not reported yet.
 
-On `v12` the same day: **(2026-11-12, degree progress switched off): 3880 tests /
+**The line this branch was merged with on 2026-11-26 (`v13`'s own baseline, kept as written):**
+
+**Current on `v12` (2026-11-22, the per-school install count): 3915 tests /
+385 suites, all green, `swift test --no-parallel` on the GitHub macOS runner
+in 89 s, with the unsigned iOS `xcodebuild`, Deno and the extension suite
+green in the same run (manual run 44978237573 at `5ad2470`; the commits
+after it change only `smooth-ambassadors/`, `docs/` and notes).** +15 tests
+and +3 suites over 3900 / 382: `InstallCountTests.swift` (the rule's truth
+table, host shapes, the exact body, outcomes; the reporter against a
+`URLProtocol` stub; a scan that `BackgroundRefresh.swift` never names it)
+and two in `AmbassadorTests.swift` (`installNumbers`, `downloadsRow`). It
+compiled at the first attempt. The ambassador Worker's own suite (separate,
+never added to these counts): 85 pass with `npm test`, 68 of 68 with the
+built single-file artifact beside the original site, the rehearsal on the
+real scan backup 22 checks with none failing; 412 posts from 412 IPv6
+addresses in four /64s left four buckets, and the founder page has no
+sideways overflow at 390 points. A security review found no blocker and
+two things that were fixed before the zip (Traps, "a cap per key").
+
+
+**Current on `agent/connection-v11` (2026-11-08, evening): 3714 tests / 358
+suites, all green, `swift test --no-parallel` alone on Marco's Mac (85 s), +40
+/ +6 over `v10`'s 3674 / 352 (`CanvasSubmitSpikeTests` 9; the Phase 2 agent
+connection: `AgentLinkRequestTests`, `AgentSnapshotBuilderTests`,
+`AgentConnectionClientTests`, `AgentConnectionCopyTests`,
+`AgentConnectionWiringTests`, `AgentSnapshotPassTests`); the iOS Debug build
+(`generic/platform=iOS`, `CODE_SIGNING_ALLOWED=NO`) succeeds. Deno 824 passed
+(was 713: the agent connection's store, auth, mcp, tools, snapshot and
+connector-front tests), `deno task check` clean, `node --test
+backend/scripts/*.test.mjs` 30, `backend/scripts/sql-check.sh` green with the
+agent migration applied twice. Nothing from this branch is on a phone or
+deployed.**
+
+Before it: **on `v10` (2026-11-07, evening, every post listed, the 3-day grace):
+**Current on `v11` (2026-11-10): 3687 tests / 352 suites, `swift test
+--no-parallel` on Marco's Mac.** +13 / +1 over `v10`'s 3674 / 351: two
+`CompletionSwipeTests` for the drag-direction rule and the new
+`SweeperOverridesTests` (11). In that run two things failed and both are
+accounted for. `DashboardSmallFixesTests` pinned the 48pt header
+squircle; it now pins 42pt drawn with a 44pt hit area, on purpose. The
+`AnnouncementFuzzTests` 5-second cap was missed while an `xcodebuild` ran
+alongside; alone it passed 2/2. The signed iOS Debug device build of the
+same tree succeeded.
+
+**Current on `v12` (2026-11-12, degree progress switched off): 3880 tests /
+
+**Current on `v12` (2026-11-19, a post's reply and pull to refresh on the
+ambassador page): 3900 tests / 382 suites, all green, `swift test
+--no-parallel` on the GitHub macOS runner in 96 s, with the unsigned iOS
+`xcodebuild`, Deno and the extension suite green in the same run (manual
+run 44429983182 at `5079c65`; the commit after it changes only notes).** +4
+over 3896, all in `AmbassadorTests.swift`: `replies` and `replyRoundTrip`
+in the plan suite, `replyShown` and `pullToRefresh` in the wiring suite
+(3899 at `471158b`, run 44428456247, before the last). Both compiled at the
+first attempt. The ambassador Worker's own suite (separate,
+never added to these counts) after the bank was cut to two posts: 70 pass
+with `npm test`, 54 of 54 with the built single-file artifact beside the
+original site, the rehearsal on the real scan backup 22 checks with none
+failing, and both copy buttons driven in Chromium.
+
+Before it: **on `v12` (2026-11-18, the ambassador playbook and uploads): 3896
+tests / 382 suites, all green, `swift test --no-parallel` on the GitHub
+macOS runner in 111 s, with the unsigned iOS `xcodebuild`, Deno and the
+extension suite green in the same run (manual run 44416363502 at
+`9299202`; the commits after it change only `smooth-ambassadors/` and
+notes).** +16 tests and +5 suites over 3880 / 377, all in
+`AmbassadorTests.swift`: the three new plan keys decoding (and a malformed
+one not costing the plan), `FeedRecordingFrames.sampleTimes` and the batch
+id, the two request bodies, the model's feed and result paths against the
+fake, and the page-order scan. It took two runs: the first failed on
+`AmbassadorPlan.swift` alone, where an edit had pasted the new types between
+two of `Poster`'s properties. No test cuts stills from a real video; that
+needs a phone. The ambassador Worker's own suite (separate, never added to
+these counts): 68 pass with `npm test`, and 54 of 54 with the built
+single-file artifact beside the original site (`test/sites.test.mjs`), plus
+the rehearsal on the real scan backup, 22 checks, none failing.
+
+Before it: **on `v12` (2026-11-12, degree progress switched off): 3880 tests /
 377 suites, all green, `swift test --no-parallel` on the GitHub macOS runner
 in 116 s, with the unsigned iOS `xcodebuild`, Deno and the extension suite
 green in the same run (manual run 43287443467 at `1ed52b2`; the commits
@@ -2254,7 +3506,48 @@ the unsigned iOS build), after two fixture strings in
 `AmbassadorTests.swift` moved to the public `/r/{ref}` link shape. The
 count was not read off that run; no test was added or removed.
 
-Before it: **on `v10` (2026-11-07, evening, every post listed, the 3-day grace):
+
+**Current on `v10` (2026-11-16, Penn's real section names): 3711 tests /
+358 suites, all green, `swift test --no-parallel` alone on Olisa's Mac (34 s
+of tests).** +1 over 3710: `CanvasOwnSectionsTests.pennRealNames`. The first
+full run had one red, `LedgerSchemaRehearsalTests` "the widget's door refuses
+a store older than its schema…" (a store file's bytes compared before and
+after); it passed three times alone and in the full rerun, and nothing here
+touches the ledger, so it is a flake to watch, not a regression.
+
+**Before it, on `v10` (2026-11-15, the own-section read, Olisa's Mac, macOS
+27.0, Xcode 27.2): 3710 tests / 358 suites, all green, `swift test
+--no-parallel` alone on the machine, 35.8 s of tests, 87 s wall; the iOS
+Debug `xcodebuild` for `generic/platform=iOS` with `CODE_SIGNING_ALLOWED=NO`
+succeeded.** +10 tests and +2 suites over 3700 / 356: `CanvasOwnSectionsTests`
+(the decoder, the section-number rule, the paged read) and
+`CanvasOwnSectionsSummaryTests` (the name's number wins; the read fills a
+name with none). Not on a phone yet.
+
+**Before it, on `v10` at `e40e58f` (2026-11-15, Olisa's Mac, Mac18,1, macOS
+27.0, Xcode 27.2): 3700 tests / 356 suites, all green, `swift test
+--no-parallel` alone on the machine (`pgrep` empty first), 35.5 s of tests,
+92 s wall with the build.** The same count as the runner at `0aab3af`
+(the commits since touch only docs). The iOS Debug `xcodebuild` for
+`generic/platform=iOS` with `CODE_SIGNING_ALLOWED=NO` succeeded (373 compile
+steps, the widget included), so the iOS-only files and the widget compile
+too; the signed Debug device build of the same tree (3.4.1 (20)) succeeded
+and was installed on Olisa's iPhone 17 (iOS 26.6.2) at 17:59 UTC. Nothing
+needed fixing.
+
+**Before it, on `v10` at `0aab3af` (2026-11-15): 3700 tests / 356 suites, all
+green, `swift test --no-parallel` on the GitHub macOS runner (101 s, run
+43740178602); Deno 716; extension green.** The first compile of the
+2026-11-14 tree work: Marco's held course-material sync (`c5f8d2a`), the room
+on `ClassMeeting` (`9fdf8b4`), dated excerpt labels (`ec12121`), per-intent
+budgets, the weekly-schedule line and the due list (`0f093a6`). Two runner
+rounds were red on the way: the indexed situating line let old posts back
+into class-meeting blocks and broke the Ed/announcement and file/page
+scoring parity, so it was removed (`429df16`, `0aab3af`; -2 tests that
+pinned it), and a wrong "fix" of mine for `CourseSummary.section` was
+reverted (`7883f94`). No iOS `xcodebuild`, no phone.
+
+**Current on `v10` (2026-11-07, evening, every post listed, the 3-day grace):
 3674 tests / 351 suites, all green, `swift test --no-parallel` on Marco's Mac
 (85 s); the signed iOS Debug device build (3.4.1 (20)) is on his phone and
 launched.** -26 over 3700 / 351 on purpose: 31 tests that pinned the 7-day
@@ -2935,6 +4228,26 @@ The manifest may also carry an optional `feedback` object (3.3.0+, the
 dashboard's feedback card, What the app does). It is decoded with `try?` so
 a bad one can never cost `minimumVersion`, and older builds ignore the key.
 
+Since 2026-11-11 (on `claude/update-notes-13b416`, compiled, never on a phone)
+it may also carry an optional `changes` array, Marco's "very, very concise
+list of the things that are changed": `"changes": ["sweeper button and page",
+"connect an agent", "drafts you review and submit"]`. The wall
+(`UpdateRequiredView`) and the banner (`UpdateAvailableBanner`) show it under
+their existing line, one "· item" per row in the secondary ink
+(`UpdateChangeList`), with no heading and no sentence; an absent or empty
+array adds nothing. Decoded with `try?`, so a number, an object or a string
+there costs the list and never the floor; inside the array a non-string item
+is skipped on its own. Sanitized in `UpdatePolicy.sanitizedChanges`: each line
+trimmed, control characters and whitespace runs collapsed to one space,
+lowercased, and dropped (never cut) when empty, over 40 characters, or
+carrying a link (`://`, `www.`, or anything `NSDataDetector` reads as one);
+then the first 6 kept. Cached with the rest of the policy. The `update-floor`
+workflow keeps every other key when it raises the floor, so the list set at
+release rides along; it is also left in place for the next release, so
+replace it each time. Older builds ignore the key. The wrong design is a
+"what's new" heading or a release-notes paragraph: that is the padding Marco
+asked not to have, and `UpdateChangesTests` scans both screens' strings for it.
+
 The rest of the lock, in builds after 3.2.1: below the floor `RootCore` renders
 only the wall (not an overlay, so `ContentView`, its sheets and its sync loop
 are gone), the store clears pending and delivered notifications, and writes
@@ -2963,7 +4276,14 @@ end) or pass `-LHFForceUpdateWall`.
 
 ### ask: the model, the hedge, and the loop that tunes them
 
-`backend/supabase/functions/ask/index.ts` streams the answer. Primary
+`backend/supabase/functions/ask/index.ts` streams the answer. **Since
+2026-11-15 17:25 UTC the primary is `anthropic/claude-haiku-5.5`** (`ask`
+v24 from `v10`, then the secrets `LHF_MODEL=anthropic/claude-haiku-5.5` and
+`LHF_ASK_REASONING={"enabled":false}`, both at Olisa's tap). A tagged
+production probe right after (`prod-haiku-check`, 3 runs of `meeting`):
+3/3 answered from the Ed post, 0 reasoning tokens, 22,605 of 23,111 prompt
+tokens cached from the second request, first word 2.7 s cold and 1.3-1.6 s
+warm. To go back, delete `LHF_MODEL` (no redeploy). Before it: primary
 model `openai/gpt-4.1-mini` (`LHF_MODEL`), no reasoning field; if it has
 produced no content delta by 5 s, `z-ai/glm-5.3-flash` at
 `reasoning.effort: low` (`LHF_ASK_FALLBACK_MODEL`) starts alongside and
@@ -3054,6 +4374,30 @@ fixed hedge delay, because Haiku's first word takes 3 to 6 s and the owner's
 rule is ten seconds, not five; `probe.hedgeAfterMs` still wins. Nothing the
 phone sends changed. After deploying, read `usage.cachedTokens` on a canary
 run: it should be well above zero from the second request on.
+
+**2026-11-14/15: Haiku 5.5 measured with caching live, and the answer is
+reasoning off.** `ask-canary` v18 (deployed 2026-11-14 17:39 UTC from
+`ec12121` at Olisa's tap: the cache breakpoint, the reasoning default and
+the hedge env of 2026-11-05, plus that day's prompt pass) was probed from
+the runner with `probe.model = anthropic/claude-haiku-5.5` and
+`hedgeAfterMs 30000`, ten runs per set. With the default `{effort: low}`:
+`cachedTokens` 22,606 of ~23,100 on every request after the first (the
+breakpoint works), but first word still 4.0 s mean, about 400 hidden
+reasoning tokens per answer; the three citations answers that happened to
+reason little started in 1.0-1.3 s, which is what pointed at reasoning and
+away from the prompt read. With `--reasoning {"enabled":false}`: first word
+**1.1 s mean** (0.9-2.1 s), total about 2 s, 0 reasoning tokens, `meeting`
+10/10 from the post and 0/10 from the schedule, `citations` 10/10 with a
+known title in the sources. That is faster than `gpt-4.1-mini` live (2.9 s
+first word over the last 14 days of real traffic) and keeps Haiku's better
+answers. OpenRouter accepts `enabled: false` for Haiku (it refused it for
+`glm-5.3-flash`, an always-thinking model, on 2026-09-14). The production
+switch: deploy `ask` from `v10` with `--production`, **then** set
+`LHF_MODEL=anthropic/claude-haiku-5.5` and `LHF_ASK_REASONING={"enabled":false}`
+(in that order: the live `ask` v21 predates the env readers and the cache
+marker, so the secrets alone would run Haiku uncached and thinking). The
+5-second hedge can stay at its default; `LHF_HEDGE_AFTER_MS` is not needed.
+The fallback keeps `glm-5.3-flash` at low effort.
 
 **2026-11-02: the citation contract and the recording fixes went live,
 at Olisa's go.** `ask-canary` v8 (deployed with `--also ask` from `v8`
@@ -3353,6 +4697,37 @@ itself.
 - **Failure handling.** One rejected password disables auto-login outright
   rather than retrying, so a typo or a changed password can't lock the
   PennKey account; Profile → accounts then shows "update password".
+- **Duo's trust is renewed before it lapses (2026-11-21, blind; never on a
+  phone).** Duo's remembered-device cookie lives 30 days from the last pass
+  through Duo, and a daily user never passes through Duo again: the
+  keepalive keeps Canvas alive, so no sign-in runs, so the trust expires
+  unnoticed, and the first day away after that ends on a push nobody
+  approves (Marco's phone, 2026-11-20/21: trust gone since the 2 November
+  Duo test, 28 hours away, "duo needs you" for a day; Olisa never saw it
+  only because he has not yet had a day away after his trust lapsed). So
+  `AppState.renewDuoTrustIfDue` (from `settleAfterFetch`, foreground, Penn,
+  `canAutoLoginSilently`) runs one hidden sign-in with
+  `force_login=1` on the SAML start URL (`CanvasSessionRenewer.startURL(for:
+  forceReauthentication:)`; without it Canvas lands on the dashboard and
+  Duo is never reached) while the trust has under 5 days left and the
+  session is alive (`shouldRenewDuoTrust`: never once the trust is gone,
+  which would send a push for nothing; at most once a week,
+  `duoTrustRenewalAttemptAtV1`, written only for an attempt that ran; outside
+  the 10-minute credential spacing and the 60-minute failed-submission
+  clock). The trust expiry is read from the remembered-device cookie alone
+  (`duoTrustExpiry`, the `browsertrust` purpose tag; the old "latest Duo
+  cookie" rule read a year-long cookie beside it and would never have
+  fired). A forced attempt that ends on Duo or on the login page records
+  its summary and latches nothing (no awaiting-Duo, no confirmed-dead, no
+  stand-down, no landing count, `applyRenewalOutcome(forced:)`), because it
+  ran over a live session and says nothing about it; `.renewed`,
+  `.passwordRejected` and `.timedOut` are handled as for any attempt.
+  Unproven until a phone runs it: whether Penn honours `force_login` by
+  re-asking the password and re-issuing Duo's trust silently, and whether
+  the live Canvas session survives a timed-out forced attempt.
+  `-LHFRenewDuoTrustNow` (DEBUG) treats the trust as about to lapse for one
+  launch; read "duo trust renewal: extended" or "unchanged" in
+  `debugRenewalLogV1` afterwards.
 - **Duo: the credential never reaches it; the app taps its buttons.**
   The stored credential only ever reaches the IdP's password field, never a
   Duo prompt. Since 2026-11-02, in a FOREGROUND attempt only, the hidden
@@ -3519,6 +4894,260 @@ itself.
   tell was the conflict count itself: 36 ids varied, far too many for
   noise.
 
+- **A planner row for a plain assignment has no `plannable.assignment_id`;
+  its id is `plannable_id`** (2026-11-22, the hostile test pass,
+  `docs/TEST_SWEEPER_SIGNIN_2026-11-22.md` H1). `SubmissionRead.verdicts`,
+  the one function the last-hour poll, the push wake and the force-quit
+  extension all read Canvas's planner through, keyed a read on
+  `plannable.assignment_id` alone, which is a quiz's or a graded discussion's
+  pointer to the assignment that backs it. The full structured run
+  (`CanvasStructuredSourcesReconciler`) had always keyed an `assignment` row
+  by `plannable_id`. So a problem set handed in inside the last hour was read
+  every minute, produced no read, counted nothing, and the alarm would have
+  rung; only the grades fetch, under its 15-minute throttle, could cancel. It
+  sat under 4,375 green tests because every planner fixture, for assignments
+  too, put `assignment_id` inside `plannable`. `SubmissionRead.canvasAssignmentID(of:)`
+  now resolves the id the reconciler's way, and the new fixtures use Canvas's
+  own shape. The wrong fix is reading `plannable_id` for every type: a quiz's
+  is a quiz id, another id space (the reconciler's own comment). The lesson
+  about fixtures: when two readers of one payload exist, feed the new one the
+  old one's fixtures, not fixtures written from the new one's assumptions.
+- **The 2026-11-22 test pass's high finding: a plain assignment's planner
+  row was never read** (`docs/TEST_SWEEPER_SIGNIN_2026-11-22.md` H1, fixed
+  on the line). `SubmissionRead.verdicts` keyed a read on
+  `plannable.assignment_id`, which only a quiz or graded discussion carries;
+  a plain assignment is `plannable_type == "assignment"` with its id in
+  `plannable_id`. So the last-hour poll, the push wake and the force-quit
+  extension read the window every minute and cancelled nothing for a
+  problem set; only the 15-minute grades fetch could. Every fixture had put
+  `assignment_id` on assignments too, which is why 4,375 tests were green
+  over it. The tell: `polls` rising in `sweeperCountsV1` with no
+  `cancelledAtObservation.poll` after a real submission. The same pass found
+  the push wake's own gate reading only the clock-gated jar (M2, fixed the
+  same night: it now asks `AutoSyncCoordinator.canvasCookies`, which warms
+  the store first, M1).
+- **A non-default `WKWebsiteDataStore` answers an empty cookie jar in a cold
+  process until a web view is attached to it** (2026-11-22, Marco's phone).
+  `refreshDuoRememberSummary` asked `LoginDataStores.canvas.httpCookieStore`
+  for all cookies at launch and got none, while the jar on disk (read off
+  the phone with `devicectl`) held Duo's remembered-device cookie an hour
+  old. WebKit loads an identifier store's jar into its network process
+  lazily, when a web view first uses the store; the hidden renewer creates
+  one only during an attempt, so every read made before an attempt was
+  empty: the Duo trust renewal refused with "no-trust-cookie" three builds
+  running, and Profile's "duo remembers this phone" line (DEBUG) has been
+  reading "no remembered-device cookie" in every cold process since
+  2026-09. `LoginDataStores.warmCanvasStore()` now attaches a hidden,
+  never-loaded web view once per process before the read. The tells: a
+  count of zero where the on-disk jar is not empty, and a value that is
+  right only after a sign-in ran in the same process. The wrong fix is
+  reading the binary jar file directly: WebKit owns it.
+- **An unknown read is not an unsubmitted one, and neither arms or disarms
+  anything** (2026-11-18, named when the Sweeper's reads got faster). The
+  planner answers a page or less for a two-hour window, so an item missing
+  from a truncated or rate-limited page, a 401 after the session lapsed, a
+  403 under Canvas's leaky bucket, or a timed-out GET all look, to code that
+  diffs sets, like "not submitted"; and a page that lists the item without a
+  `submissions` object looks like nothing. `SubmissionRead.verdict` makes the
+  three answers distinct and `cancels` is true for `.submitted` alone;
+  `applyPlannerWindow` applies nothing when `completed`, `rateLimited` or
+  `sessionExpired` say the page cannot be trusted, and counts
+  `readsUnknown`. The wrong fixes, both tempting once a poll runs every
+  minute: treating a missing item as unsubmitted (which would re-arm an
+  alarm a swipe took back) or treating a 403 as submitted (which would
+  silence a real deadline). A snapshotted "has a Canvas id" flag defaulting
+  to false was the same trap from the other side: every `DashItem` built
+  without it went quiet (Marco's rule forbids silence by accident), so the
+  quiet rule reads the assignment itself.
+- **A fixed 30-minute expiry on a chunked upload threw away a finished
+  upload** (2026-11-12, Marco's PHYS 0151 Worksheet 10.1 from a Claude cloud
+  session; fixed on `claude/agent-debug-998a30`, Deno 902, **live since
+  2026-11-16 02:48 UTC as `mcp` v16**, at Marco's "Yes, deploy" with a token
+  from his own Supabase account).
+  `agent_uploads.expires_at` was stamped once at `begin_file_upload`, and
+  `UploadService.live()` deleted the row and every chunk on the first call
+  after it. The sandbox's egress proxy refuses `supabase.co` (a `CONNECT`
+  403, nothing we can change), so Claude typed five 22,000-character base64
+  chunks; all five landed (`missing: []`), and `finish_file_upload` itself
+  answered "expired". Now each accepted chunk moves `expires_at` to now plus
+  30 minutes, two hours after `begin` at most (`UPLOAD_MAX_LIFE_MS`), and the
+  message says "expired with N of M chunks received". The wrong fix is a
+  longer fixed window. The deeper lesson is in the tool text: a document the
+  model *wrote* should be a `text` draft in Markdown, which the phone already
+  renders into a PDF when Canvas wants a file; `propose_submission` and
+  `begin_file_upload` now say so, because Claude did not know and compiled
+  LaTeX to a PDF instead. Also seen that day: the Management token in
+  `~/lhf-bench/supabase.token` answers 401 on a plain project listing, so no
+  log was read and nothing can be deployed from this Mac until a new token
+  replaces it.
+- **Supabase's gateway rewrites `x-forwarded-for`, so behind a proxy every
+  caller is the proxy** (2026-11-11, `docs/V11_TEST_BACKEND_2026-11-11.md`).
+  `agent-auth` limits `/authorize` and `/register` "per ip" from the first
+  `x-forwarded-for` entry, and the connector front copies the header
+  through, which looked like per student. Measured: a spoofed value sent
+  straight to `supabase.co` is replaced by the caller's real address (good),
+  and every request through the front lands in one bucket keyed by Vercel's
+  egress address, whatever the client sent. So the school shared 60 sign-ins
+  an hour. The fix is a header of our own with a shared secret
+  (`x-smooth-client-ip`, `x-smooth-front-secret`, `LHF_FRONT_CLIENT_IP_SECRET`).
+  The wrong fix is trusting any client-visible header without the secret:
+  a direct caller of `supabase.co` would pick a fresh bucket per request. To
+  check which address a limit counts, hash the address and look for
+  `<route>:<sha256>` in `agent_rate_limits`.
+- **A Storage signed upload URL outlives what it was for** (2026-11-11). It
+  lives about two hours and cannot be revoked; the upload behind it ends at
+  finish, at a replacing begin or after 30 minutes. A late PUT answered 200
+  and left `<user>/uploads/<id>/<name>` with no row, and the opt-out, which
+  removed staged objects by row, never saw it. Clean a prefix by listing
+  it, never by the rows that should name it. A shorter URL is not a fix
+  (supabase-js fixes its validity, and any length leaves a window).
+- **A function that bundles `_shared/` code is stale until it is deployed
+  itself** (2026-11-11). The agent half of account deletion lives in
+  `_shared/db.ts` and `_shared/agentDrafts.ts`, but `deploy-agent.mjs`
+  deployed only the three agent functions, so production `delete-account`
+  stayed at v13 of 2026-10-22 and deleted no draft file. Read the functions'
+  versions (`GET /v1/projects/<ref>/functions`) against the dates of the
+  shared code they import before trusting a claim that production does
+  something.
+- **A switch-off that races a network call in flight** (found 2026-11-11 by
+  the v11 test pass, read from the code, never seen on a phone). Turning
+  the agent connection off (or disconnecting Canvas) sends `delete` while a
+  snapshot `put` may still be in flight; a put replaces the server's row
+  whole, so if it lands second the work list is back on the server after
+  the student was told it was deleted (the agents are revoked either way).
+  Likewise the drafts pass re-checked the opt-in only after `listDrafts`,
+  then awaited the outcome reports and applied the list, which could put
+  back drafts, the cache and notices the opt-out had just cleared. Now the
+  snapshot pass deletes again when it finds the opt-in off after its put,
+  and the drafts pass checks again right before applying. Both passes'
+  gates are one pure rule, `AgentPassRules.shouldStart`, pinned with a fixed
+  clock. The wrong fix is making the switch wait for the pass: it must
+  answer at once.
+
+- **Field-by-field leniency is undone one level up by a plain array**
+  (found 2026-11-11 by the v11 test pass, `docs/V11_TEST_PHONE_2026-11-11.md`).
+  `AgentDraft` decodes every optional field with `try?`, but the drafts
+  list decoded as `[AgentDraft]`, so one element with no `id` (or an id that
+  is a number, or a value that is not an object) threw for the whole array,
+  the pass's `try?` turned that into "no drafts", and the outcome reports
+  the pass re-sends were skipped too. Nothing on the phone said why. Now
+  `AgentDraftList` decodes element by element. The wrong fix is making `id`
+  optional: a draft with no id cannot be matched to an attempt record.
+
+- **A view's `.task` cancelling the course-material sync read as "manifest
+  failed"** (2026-11-10, diagnosed by the backend session, blind fix). The
+  server logged Marco's manifest calls as 200 in 4.4 s; the phone recorded
+  "manifest failed · partial 5 · pages 5". The chain runs from
+  `ContentView`'s `.task`, SwiftUI cancels that task when the scene changes,
+  and a cancelled task cancels the URLSession requests it awaits, which
+  `BackendClient.send` maps to `.transport`. `refreshCourseKnowledge` now
+  runs the work in one task held in `AppState.pendingCourseKnowledgeSync`
+  that later callers join (the `startSilentCanvasRenewal` pattern), and the
+  summary says `manifest failed (cancelled | transport | http N | decoding
+  (<path>))`. The wrong fix is a retry inside the same cancelled task.
+  **Proven on Marco's phone on 2026-11-10 at 13:15 US Eastern**, the first
+  open of the merged build: `manifest ok · uploaded 45` after days of
+  `manifest failed`, and the assignment-PDF pass then ran for the first
+  time: `planned 9 · fetched 9 · pooled 8 · skipped 1` (PHYS 0151: Problem
+  Set 7, HW6 and HW7 with their numerical solutions, two tables, two
+  worksheets); `get_assignment` for Problem Set 7 returned the full problem
+  text through the agent connection a minute later.
+- **"manifest failed" on the phone can be a 200 on the server, and the
+  Management API's logs moved** (2026-11-10). Marco's summary said the
+  manifest failed for days, which reads as a `sync` bug. The function log
+  said 200 both times, and the same request replayed by a throwaway user
+  decoded cleanly, so the phone gave up on its own (most likely a cancelled
+  task; `docs/MANIFEST_FAILURE_2026-11-10.md`). The wrong fix is changing
+  `sync`, or retrying the manifest (a cancelled task cancels the retry). To
+  read the logs: `GET /v1/projects/<ref>/analytics/endpoints/logs` with
+  `select … from logs where source = 'function_edge_logs'` (or
+  `'function_logs'`), fields through `log_attributes['response.status_code']`
+  and the like, never `select *`, with `iso_timestamp_start` and `_end`.
+  `from function_edge_logs` answers "Table does not exist", which cost three
+  queries. `response.headers.content_length` is the compressed size.
+- **A deleted draft file still downloads through a signed URL handed out
+  earlier** (2026-11-10, found by `agent-e2e.mjs`). After a draft moved to
+  submitted, its object was gone from `storage.objects` and `file_path` was
+  cleared, yet the same signed URL (even with an extra query parameter)
+  answered 200 for 20 s more, and 400 only after its 120-second life ended.
+  The deletion is right; Storage's edge serves an issued URL until it
+  expires. The wrong fixes are "the remove failed, retry it" (it did not
+  fail) and asserting the URL dies at once in a probe. The real bound is the
+  URL's life, which is why it is 120 seconds and why PROTOCOL.md says so.
+
+- **Supabase's runtime strips `/functions/v1` from the path it hands a
+  function, so a root derived from the request path is wrong for every
+  browser** (2026-11-09, the first claude.ai sign-in). `agent-auth` built
+  its nonce cookie's `Path` and the authorize page's status URL from
+  `url.pathname` up to `agent-auth`, which inside the runtime is
+  `/agent-auth`, while the browser sat at
+  `<front>/functions/v1/agent-auth/authorize`. The page polled
+  `/agent-auth/status` on the front (a 404 there) with a cookie scoped to
+  a path it never visited; Marco approved twice on his phone (two
+  `approved` rows, `auth_code_hash` null) and the page never moved. The
+  dev tunnel and the handler tests both used the full public path and hid
+  it. Fixed by deriving the root from `LHF_AGENT_PUBLIC_BASE`'s path, which
+  is what every caller sees; deployed alone as `agent-auth` v3 from a
+  scratch worktree at the deployed commit, so the undeployed hardening did
+  not ride along. The wrong fix is a path rewrite in the front: a direct
+  caller of `supabase.co` would still get the stripped root. The tell: an
+  approval that lands in the table while `status?go=1` never does.
+- **Supabase's gateway serves an Edge Function's HTML as `text/plain` with
+  a sandbox CSP** (2026-11-08, the first production probe of `agent-auth`).
+  The function sends `Content-Type: text/html; charset=utf-8` and its own
+  CSP; what `<ref>.supabase.co` returns is `content-type: text/plain`,
+  `content-security-policy: default-src 'none'; sandbox` and `nosniff`,
+  so a browser shows the authorize page as source. The dev tunnel never
+  showed it because it never went through that gateway, and the Deno tests
+  cannot see it. It is Supabase's anti-phishing rule for their own domain,
+  not a bug of ours, and custom headers pass through untouched, so
+  `agent-auth` also sends `X-Smooth-Content-Type` and `X-Smooth-CSP` and the
+  connector front restores the real headers on `/agent-auth` responses
+  (never on `/mcp`). The wrong fixes: serving the page from the front
+  itself (two copies of the page to keep equal) or sniffing the body for
+  `<!doctype html>` (the marker is explicit and costs nothing).
+- **A card's swipe `DragGesture` attached with `.gesture` steals the
+  scroll** (2026-11-10, Marco: "if you're clicking on an assignment and
+  you try to scroll, it's buggy"). `AssignmentCardView` and `DoneView`
+  put `DragGesture(minimumDistance: 18)` on every card inside the
+  dashboard's `ScrollView`. Their `onChanged` returned early for vertical
+  movement, which looked like "vertical belongs to the ScrollView", but
+  the gesture had already claimed the touch, so a scroll that began on a
+  card stuck or stuttered, and an opened card covers most of the screen.
+  Fixed with `.simultaneousGesture` plus a direction decided once per drag
+  (`CompletionSwipe.Axis`), so the scroll always gets the touch and a
+  drifting scroll never moves the card. The wrong fix is a bigger
+  `minimumDistance`: it only delays the theft and makes the swipe late.
+
+- **A cap per key is not a cap when the caller chooses the key.** The
+  install count (2026-11-22) limited one network to a number of counts per
+  host per day, and separately capped the distinct hosts it would store at
+  2,000. Each new host was a fresh bucket, so one phone could have filled
+  all 2,000 slots with invented names in a minute, after which no real new
+  school could ever be counted. Found in my own review of the builder's
+  diff before any test or deploy. The same shape came back from the
+  security reviewer an hour later through a different key: the bucket
+  hashed the whole IPv6 address, and one /64 is 2^64 keys. The fixes close
+  the key space instead of counting inside it: only hosts from the app's
+  own school catalog are stored, and an IPv6 address is reduced to its /64
+  before hashing. The wrong fix is a bigger or smaller number. When a
+  limit is keyed on something the request supplies, ask how many distinct
+  keys one caller can make. Pair of it: the salted marks were pruned only
+  on a counted write, so a quiet week kept old salts beside their hashes,
+  which is enough to recover addresses by trying all of IPv4; deletion
+  that depends on traffic of one kind has to run on the other kinds too.
+- **A strict check on a value that was trimmed first is not strict.** The
+  founder routes refuse any id that is not plain digits
+  (`/^[1-9][0-9]{0,9}$/`), a rule added on 2026-11-11 after `-1` and `1e3`
+  were coerced into row 1. On 2026-11-18 the verifier posted `id="1 "` to
+  the new `capture-delete` and a row was deleted: `form()` trims every
+  value on the way in, so the check saw `"1"`. The same was true of every
+  older founder action. Ids are now checked against the raw, untrimmed
+  value (`rawId` in `smooth-ambassadors/worker/ambassadors.js`), and text
+  fields keep their trimming. The wrong fix is adding `\s*` to the pattern
+  or dropping the trim for everything: the first makes the check agree with
+  the bug, the second changes what a pasted feedback box stores. When a
+  rule is about what was sent, apply it to what was sent.
 - **A count and then an insert is not a limit.** Poster ideas
   (2026-11-11) were capped at five a day per ambassador by reading the
   count and inserting if it was under five. The verifier sent twenty at
@@ -3868,7 +5497,12 @@ itself.
 - **`xcodegen generate` deletes Info.plist content** unless it lives in
   `project.yml`'s `info.properties`. The widget dependency must be
   `platformFilter: iOS` — case-sensitive; `platforms:` is silently discarded.
-  Don't regenerate unless a build actually demands it.
+  Don't regenerate unless a build actually demands it. When one does (a new
+  target, 2026-11-21): xcodegen 2.45.4 also renames the app's product
+  reference in the pbxproj from `Smooth.app` to `LowHangingFruit.app` (three
+  places: the file reference, the Products group, `productReference`) and
+  reorders entries. Rename it back by hand and check that `git diff` of
+  every Info.plist and entitlements file is empty before building.
 - **iOS names an app from `CFBundleDisplayName`; macOS does not.** The Mac
   build called itself "LowHangingFruit" for every version of the Smooth
   rename, in the application menu beside the Apple logo, in About, and under
@@ -4056,6 +5690,13 @@ itself.
   a POST body on that request, so the SAML POST would arrive empty. The
   guard rebuilds the POST from the identity provider's form in the page
   before re-issuing it, and allows the navigation unchanged when it cannot.
+  **The hidden renewer needed the same guard** (2026-11-22): on Marco's
+  phone a forced hidden sign-in reached Duo, passed, and its return hop to
+  Canvas opened the Canvas Student app in front of him; the renewer's
+  delegate had allowed every navigation on purpose. The pure guard is now
+  `AppLinkGuard`, shared by both (Stay signed in, Known gaps). The 2026-10-08
+  observation that the Canvas app "did not take the hidden renewer's return
+  hop" was one phone on one day, not a rule.
 - **`NLEmbedding.sentenceEmbedding(for:)` blocks the calling thread while
   iOS downloads the asset.** On a fresh install (2026-09-12, the first
   Smooth build, the app deleted and reinstalled for the icon) the first
@@ -4576,14 +6217,23 @@ itself.
 
 ## Branches
 
-**You are on `degree-progress`** (2026-11-12): `v12` at `4aadc3c` with
-degree progress switched back on, where the degree work continues while
-`v12` goes to Marco with ambassador mode. See its row in the table.
+**You are on `degree-progress`** (2026-11-12): cut from `v12` at `4aadc3c` with
+degree progress switched back on. **Since 2026-11-26 it also contains `v13`**
+(the line after 3.5.0 (21): `v11` with the Sweeper page and the rest of
+that release, merged with `v12`), merged in at Olisa's "fix it to look like
+the most recent app store version right now" after his build showed the
+old look. See its row in the table. The line's own account follows.
 
-`v12` is the line (2026-11-09): `v10` plus the degree-progress feature
-(below), **which is switched off there since 2026-11-12**, plus ambassador mode.
-On 2026-11-12 Olisa handed this `v12` to Marco for the finishing touches;
-`docs/HANDOFF_V12_MARCO_2026-11-12.md` is where to start. Before it, `v10` (2026-11-03): `v9` plus `origin/v8` `7e004c5` plus
+`v11` (2026-11-10): `v10` `4c136b2` plus the Sweeper page (header broom,
+per-class lead time and sound) and the scroll fix for cards
+(`CompletionSwipe.Axis`). Pushed at Marco's request; not merged into
+`v10`. The unpushed `agent/connection-v11` work is separate and has not
+been merged into it.
+`v12` (2026-11-09 to 2026-11-12) was Olisa's line, `v10` plus the degree-progress
+feature (below), **which is switched off since 2026-11-12**, plus ambassador mode;
+on 2026-11-12 he handed it to Marco (`docs/HANDOFF_V12_MARCO_2026-11-12.md`, rewritten whole on 2026-11-22: the playbook, the two posts and the download count)
+and it was merged into `v11` the same day (see the `v12` row). Before both, `v10`
+(2026-11-03): `v9` plus `origin/v8` `7e004c5` plus
 `phase0/extract-facts-bench`. Start at `docs/HANDOFF_V10_2026-11-04.md`
 (it replaces the 2026-11-03 one). The 2026-11-04 composed-day work
 (Phases 1-3) is committed on `v10`.
@@ -4601,10 +6251,22 @@ it holds work that exists nowhere else.
 
 | Branch | What |
 |---|---|
-| `degree-progress` | **Where degree work continues (2026-11-12 onward).** Cut from `v12` `4aadc3c` at Olisa's ask: "keep v12 for the ambassador mode and work further on this in another branch". It differs from `v12` in one constant (`FeatureFlags.degreeProgress = true`), the "switched off" line removed from `docs/PRIVACY.md` and `docs/site/privacy.html`, its own name added to the `tests` workflow's push branches, and these notes. Everything else, ambassador mode included, is `v12`'s as of that commit. Later ambassador work lands on `v12` and has to be merged in here from time to time (`git merge origin/v12`; expect the flag, the privacy line and these notes to be the conflicts, and keep this branch's side of all three). Merging this branch back into the line switches degree progress on there, so do that only when Olisa says the feature is ready. Build it onto a phone with `git checkout degree-progress && git pull && bash scripts/build-to-phone.sh`. |
-| `v13` | **Found on the remote on 2026-11-26, not read.** Tip `1c5c4f6` of 2026-11-24, stamped 3.5.0 (21); its last commit records "v13's first green run: 4536 / 479", and its recent subjects name both the agent connection and ambassador mode, so it looks like the merge of `v11` and `v12`. Whether it is now the line, and whether degree progress is on or off there, has to be read from its own notes before `degree-progress` is merged anywhere. |
-| `v12` | **Current line (2026-11-09 onward).** `v10` at `4c136b2` plus the degree-progress research (`docs/DEGREE_PROGRESS_RESEARCH_2026-11-09.md`) and the degree feature. Built on 2026-11-09 against a guessed Degree Works host; rewritten on 2026-11-10 against what Olisa captured from his own Path@Penn session: `Degree/` in the Kit (`PathAuditDecoder`, `PathBridge`, `PathDegree`, `PathWhatIf`), `PathPortal`, `AppState+Degree`, `DegreeProgressView`, `DegreeWhatIfSheet`, `FeatureFlags.degreeProgress`. Green on the `tests` workflow, which runs on pushes to it, and built for iOS with `xcodebuild` on Olisa's Mac (Xcode 27.2) on 2026-11-10 (Test baseline); the Debug build of `d2f37a0` read a real audit on Olisa's iPhone 17 the same day (Known gaps). It does **not** contain `v11` (next row), which branched from the same `v10` commit; the two have to be merged before either ships with the other's work. **Since 2026-11-11 it also carries ambassador mode and `smooth-ambassadors/`** (the `claude/new-session-b3ylkg` row below; What the app does → Profile → 8). |
-| `v11` | **Marco's line since 2026-11-07, found on the remote on 2026-11-10** (this file said "there is no `v11`" until then, which was wrong). Off `v10` at `4c136b2`, the same commit `v12` started from, and 46 commits on by 2026-11-10 (`06250d0`): the "agent connection" (an `agent-auth` / `mcp` / `agent-snapshot` backend, a connector front on Vercel, the phone's opt-in, approve sheet and snapshot upload) and a DEBUG Canvas submit spike; its own notes say "`v11` is the line". Read only from the commit subjects and a file list here, not reviewed. It and `v12` both edit `CLAUDE.md`, `ROADMAP.md`, `docs/PRIVACY.md`, `AppState.swift`, `ContentView.swift` and `FeatureFlags.swift`; none of the degree files is touched by it. Nobody has merged the two or decided which is the base. |
+| `degree-progress` | **Where degree work continues (2026-11-12 onward).** Cut from `v12` `4aadc3c` at Olisa's ask: "keep v12 for the ambassador mode and work further on this in another branch". It differs from `v12` in one constant (`FeatureFlags.degreeProgress = true`), the "switched off" line removed from `docs/PRIVACY.md` and `docs/site/privacy.html`, its own name added to the `tests` workflow's push branches, and these notes. Everything else, ambassador mode included, was `v12`'s as of that commit. **On 2026-11-26 `v13` (`1c5c4f6`) was merged in** (`git merge origin/v13`: four files conflicted, `tests.yml`, `project.yml` and the two notes files; `AppState.swift` and `FeatureFlags.swift` merged without a marker and were read; the build number became 21), so it now carries the 3.5.0 (21) look and features with degree progress on. Later ambassador work lands on `v12` and has to be merged in here from time to time (`git merge origin/v12`; expect the flag, the privacy line and these notes to be the conflicts, and keep this branch's side of all three). Merging this branch back into the line switches degree progress on there, so do that only when Olisa says the feature is ready. Build it onto a phone with `git checkout degree-progress && git pull && bash scripts/build-to-phone.sh`. |
+| `v13` | **The line after 3.5.0 (21), from 2026-11-24.** Cut from `v11` `141ac20` (the 3.5.0 (21) archive commit `0615d3a` plus two docs commits). Carries the McGraw Hill reader's groundwork ported from `feature/mcgraw-hill-reader` (no Sweeper exemption: the buzz-only rule covers Connect), the Chrome extension's 0.1.3 and 0.1.4 fixes and the harness from `v8` (`v8`'s four commits not in `v11`), and the five deferred 3.5.0 test-pass findings fixed (`docs/TEST_RELEASE_3.5.0_2026-11-22.md` → Closed on `v13`). Green on the runner 4536 / 479 at `a9384e4`, iOS build green, never on a phone. Not stamped: the version is chosen at release. Olisa works it from his own Mac. |
+| `feature/mcgraw-hill-reader` | 2026-11-02, off `v8`, draft PR #20 into `v8`; superseded by `v13`, which carries its code. Do not merge it. |
+| `claude/sweeper-build-0a4dd0` | **2026-11-18, off `claude/ambassador-header` `65d3558` with `claude/server-sweeper-3dea9b` merged in, local, not pushed; fast-forwarded into `claude/ambassador-header` the same day at Marco's word (equal to it at `b1a6aa8`).** The Sweeper accuracy work for 3.5.0, both releases of `docs/SWEEPER_ACCURACY_PLAN_2026-11-16.md` in the order of `docs/SWEEPER_BUILD_PLAN_2026-11-18.md`: the pure rules (`0233970`), cancel at observation and the last-hour poll (`ac4c6d1`), the `sweeper-wake` backend (`0916393`, hardened after review in `d612ed5`), the phone's registration and push wake (`2b846bc`). 4254/421 Swift, Deno 942, both iOS builds green; nothing deployed, nothing on a phone, no `aps-environment` entitlement until Olisa enables Push Notifications on the App ID. Merges into the release line at Marco's word. |
+| `sweeper/force-quit-check` | **2026-11-21, off `claude/ambassador-header` `4bd49bc`, local, not pushed; merges into the release line at Marco's word.** The force-quit check built at Marco's "build it": the alert push (not deployed), the `LHFSweeperCheck` notification extension, the manifest and cookie copy, `excused`. 4352/439 green, unsigned iOS and macOS builds green, never on a phone. The other session on `claude/ambassador-header` was editing `AppState.swift`, `ContentView.swift` and the notification files uncommitted at the time, so this branch touches none of them; expect `project.pbxproj` to conflict with any hand edit there (regenerate, then restore `Smooth.app`). |
+| `research/sweeper-force-quit` | **2026-11-21, off `claude/ambassador-header` `279b14f`, local; committed `48eea48` and cherry-picked onto `sweeper/force-quit-check`.** Research only: `docs/SWEEPER_FORCE_QUIT_RESEARCH_2026-11-21.md` (an alert push and a Notification Service Extension as the force-quit-proof cancel; AlarmKit-from-an-extension evidence and the two-hour device test that settles it; the planner `excused` gap) and its `ROADMAP.md` → Next entry. No code. |
+| `claude/v12-isolate-ab8b22` | **2026-11-17, off `claude/ambassador-header` `05ee0a8`, local, not merged.** The agent connection switched off for 3.5.0 (`FeatureFlags.agentConnection = false`), its two leaks closed, its tests skipping while off, the review notes, listing and privacy text without it; `docs/V12_ISOLATION_2026-11-17.md` has the inventory and the route comparison. The session that started it merges at Marco's word. |
+| `claude/ambassador-header` | **The release line for 3.5.0 (21) since 2026-11-17; since 2026-11-18 at `b1a6aa8` with the agent switch-off and the Sweeper accuracy work fast-forwarded in (Release state, above); local, not pushed, not merged into `v11`.** Began 2026-11-12, off the `v12` merge `82bea86`, as a design change waiting on Marco's approval. While signed in as an ambassador the dashboard title is a marigold medal and "Ambassador" with the wordmark's squiggle under it, in place of "Smooth {weekday}" (`ContentView.ambassadorTitle`; Marco's ask that day). Before sign-in nothing changes. The Debug build of `1a4ceaa` is on Marco's iPhone 17 Pro since 15:16 local, over the pre-stamp 3.4.1 (20) build of `f03dce0`; so the merged `v12` tree first reached his phone through this branch. 20 targeted tests green; the full gate was run on its base, not on it. |
+| `claude/font-research-22067c` | 2026-11-11, off `v11-master`, docs only, merged into `v11-master` at `fee63ba`. The class-code font research and renders (`docs/FONT_RESEARCH_2026-11-11.md`). Safe to delete. |
+| `claude/v11-ui-pass-84648c` | **2026-11-11, off `v11-master` `0936f29`, local, not merged.** Marco's UI pass: one Sweeper title with the switch row, the header button as an alarm glyph with a once-only new dot, the agent in its own Profile "agent" section, the slop cut; then the five asks of the same afternoon (the + and Sweeper swap colours, the "on" row under the title, hovering shapes on ask, a triple-tap backflip of the wordmark, a slightly larger header title), with Simulator photos in `docs/v11-ui/` and `docs/V11_UI_PHOTOS_2026-11-11.md`. The session that started it merges. |
+| `claude/v11-test-backend-3b1f1b` | **2026-11-11, off `v11` `ee653d9`, local, not pushed, not merged.** The hostile test of the v11 backend (`docs/V11_TEST_BACKEND_2026-11-11.md`) and its fixes: the front's client-address header, the stray upload sweep, file-name and mime-type checks, `delete-account` in the agent runbook. Deno 898 green. Nothing deployed. The session that started it merges. |
+| `claude/v11-phone-c7aaf2` | **2026-11-10, off `agent/connection-v11` `2503a3b`, local, not pushed, not merged.** The phone halves of v11 Phases 3 and 4: drafts polled onto the card, the review sheet, `CanvasSubmissionClient` with the attempt store, the "connected" confirmation and dashboard line (What the app does → "Drafts from an agent"). Compiled and tested; never on a phone, never against Canvas. The session that started it merges. |
+| `v11` | **The line since 2026-11-10 (about 07:30 UTC, at Marco's "Yes, push to v11").** `origin/v11` was fast-forwarded from Marco's two commits (the Sweeper page, `CompletionSwipe.Axis`) to the merged tree `f8330ab`: all of `agent/connection-v11` (below) plus the night's three session branches. Marco's other thread pushes to it too; fetch before merging and never force-push. New work branches from here. |
+| `agent/connection-v11` | **2026-11-08, off `research/agent-connection-v11` (so off `v10` `4c136b2`); pushed to origin under its own name on 2026-11-10 and merged into `v11` the same morning (equal to it at `f8330ab`).** The build session's branch: the Canvas submit spike (`f5da516`), the Phase 1 backend (`7ca84a5`: `agent-auth`, `mcp`, `agent-snapshot`, migration `20261108090000_agent_connection.sql`, the `AgentStore` contract with PostgREST and memory implementations, `scripts/serve-agent.ts`), the docs. A Claude Code sign-in completed end to end against the dev tunnel the same day (research §8). Never push to or merge into `v10` without Marco's approval. |
+| `research/agent-connection-v11` | 2026-11-07/08, docs only, off `v10` `4c136b2`: the v11 agent-connection plan (`docs/AGENT_CONNECTION_PLAN_V11_2026-11-07.md`, revised to cloud-first and phone-submits on Marco's word), the research write-up (`docs/AGENT_CONNECTION_RESEARCH_2026-11-08.md`) and the brief for the build session (`docs/AGENT_CONNECTION_SESSION_PROMPT.md`). Supersedes `research/agent-canvas-via-smooth` (2026-10-30, also docs only). Nothing built. |
+| `v12` | **Olisa's line, 2026-11-09 to 2026-11-12; merged into `v11` on 2026-11-12 at `4aadc3c` (the merge commit carries this line), `v11` the base.** `v10` at `4c136b2` plus the degree-progress research (`docs/DEGREE_PROGRESS_RESEARCH_2026-11-09.md`) and the degree feature. Built on 2026-11-09 against a guessed Degree Works host; rewritten on 2026-11-10 against what Olisa captured from his own Path@Penn session: `Degree/` in the Kit (`PathAuditDecoder`, `PathBridge`, `PathDegree`, `PathWhatIf`), `PathPortal`, `AppState+Degree`, `DegreeProgressView`, `DegreeWhatIfSheet`, `FeatureFlags.degreeProgress`. Green on the `tests` workflow, which runs on pushes to it, and built for iOS with `xcodebuild` on Olisa's Mac (Xcode 27.2) on 2026-11-10 (Test baseline); the Debug build of `d2f37a0` read a real audit on Olisa's iPhone 17 the same day (Known gaps). It did not contain `v11`, which branched from the same `v10` commit; the merge of 2026-11-12 (five documented conflicts, keep both; six Swift files read around every hunk, nothing out of place) brought it into `v11`, and 3.5.0 (21) ships with it. **Since 2026-11-11 it also carries ambassador mode and `smooth-ambassadors/`** (the `claude/new-session-b3ylkg` row below; What the app does → Profile → 8). **2026-11-22: `origin/v12` `8fc16c8`+ (the anonymous per-school install count) was merged into the release line `claude/ambassador-header`; `v12` itself is Olisa's and stays his.** |
 | `claude/new-session-b3ylkg` | **2026-11-09, `v10` `4c136b2` plus two commits, meant to become `v11`.** (1) `smooth-ambassadors/`: the poster-scan tracker plus the campus ambassador system as a Cloudflare Worker + D1 (private pages per ambassador, tracked links, a founder view with a digest generator, 17 Miniflare tests), drafted here to move to a private repo. (2) **Ambassador mode in the app** (What the app does → Profile → 8): a code-based sign-in in Profile, today's post, a daily local reminder, the planner carve-out. 3697/357 green on the GitHub runner at `85d4234` and the unsigned iOS `xcodebuild` green at `674b89b` (2026-11-10, Test baseline); never on a phone, server not deployed. The Worker's legacy routes were matched to the live site the same day (dashboard byte-identical, `/api/stats` rows identical). Olisa or Marco creates `v11` from it. **2026-11-10, later:** the Sites source arrived as an archive; `scripts/build-sites.mjs` folds the ambassador system into the real single-file Worker (two edits to its `fetch`, a generated section, images byte-identical), `test/sites.test.mjs` runs the original and the edited artifact side by side (14 of 14; `npm test` 28 pass), and the public `/r/{ref}` links replaced the token-bearing ones (Traps). A zip went to Olisa for the ChatGPT session that deploys Sites. **2026-11-11:** deployed to the live Sites project by that session; existing routes and totals checked from here (Known gaps). **Merged into `v12` on 2026-11-11** ("do this in v12", Olisa): `v12` was merged into this branch first (two conflicts, both "each side added a line here": the `DashRoute` cases and these notes), the merged tree was run on the runner, and only then was `v12` moved to it. The "meant to become `v11`" above is history: `v11` is Marco's line and none of this is in it. **Later on 2026-11-11:** school-prefixed codes, then posters, the dashboard link, poster-idea uploads and the Smooth restyle of the ambassador website, all landed on `v12` once compiled (Test baseline). `scripts/build-to-phone.sh` came from the same day. **2026-11-12:** that update is live on the Sites project and was checked read-only from here (Known gaps). |
 | `v10` | **Current line (2026-11-03 onward).** `v9` (the no-banner sign-in, the onboarding polish, the composed-day research) plus `origin/v8` `7e004c5` (the tree's recency and follow-up work) plus `phase0/extract-facts-bench`. The merge's Swift run is recorded under Test baseline. |
 | `phase0/extract-facts-bench` | 2026-11-03, off `v9`: the extract-facts bench, prompt, schema and parser; the model decision (Haiku 5.5, `docs/EXTRACT_FACTS_BENCH_2026-11-03.md`). In `v10`. |
@@ -4725,6 +6387,260 @@ none is a ship line.
   section reaching `courses.section` on the server, and the tree then naming
   Tue/Thu 8:30 in JMHH 240.
 
+- **Nothing about McGraw Hill has been seen** (2026-11-24, `v13`). The
+  host list in `McGrawHillTool` (`mheducation.com`, `aleks.com`,
+  `mcgraw-hill.com`, `mhcampus.com`) is the research's guess, no reader
+  client exists, and whether Canvas ever records `submitted_at` for
+  finished Connect work is unknown. Brief 1 (`docs/mcgraw-hill/MARCO_BRIEFS.md`)
+  is ready: Olisa runs it on his Mac with a friend who has a Connect class.
+- **Two 3.5.0 test-pass findings left for a phone** (2026-11-22,
+  `docs/TEST_RELEASE_3.5.0_2026-11-22.md` → Decisions). R-I1: a card drag
+  that SwiftUI cancels never runs `onEnded`, so `swipeAxis` can stay
+  `.horizontal` until the next drag on that card ends normally; not
+  reproducible under `swift test`, and the swipe is proven on a phone, so it
+  waits for a device check (fix: `@GestureState`). R-I3: with the agent flag
+  off in 3.5.0, a phone that ran a `v11` build keeps its server work-list
+  snapshot and its claude.ai connection live, and 3.5.0 has no control to
+  turn them off short of a Canvas disconnect; Marco should disconnect the
+  agent in claude.ai or have the row deleted. The same night's fixes (the
+  anonymous post's retry, the overdue lesson's filters and 60-day cap, the
+  practice cards, the install-count host and clock rules, the update list's
+  bare-domain filter, contact ids and extensions, "1 user") are compiled and
+  tested on the Mac only.
+
+- **The install count (2026-11-22) has never run on a phone and is not in
+  any released build; its server half is live.** Compiled and tested on the
+  runner; the Worker half tested under Miniflare, beside the original site
+  and against the scan backup, and reviewed for security. **Deployed the
+  same day by the ChatGPT session**, which reported that live GET and POST
+  requests to `/api/install` reached the Worker with `cf-connecting-ip`
+  set by the platform (so the shared `noip` bucket is not in use and the
+  300-a-day limit is per network as designed), scan totals unchanged and
+  no test install recorded. Read from here afterwards, GETs only: `GET
+  /api/install` is 405; a UVA ambassador's `plan.json` carries
+  `numbers.schoolInstalls` 0 and `schoolInstallsRecent` 0; the page has
+  the "uva downloads" tile; `/` and `/api/stats` answer with the same two
+  totals above the 2026-11-10 backup as before and none below. A counted
+  POST was deliberately not sent from here: there is no route that removes
+  one. What is still unsettled: that `URLSession`'s request reaches the
+  route from a phone; and the first real numbers, which should jump at Penn in the days after release
+  as existing students update (`existing`) and then grow by `new`. Known
+  limits: the number can be inflated by anyone who can script requests
+  (300 a day per network per school; acceptable while it only motivates,
+  not if anything is ever paid on it, where App Attest is the answer); a
+  reinstall counts again; a student who typed a Canvas address outside the
+  220-school catalog is not counted; a new catalog host needs
+  `npm run gen:hosts` and a redeploy before it counts. Open decisions for
+  Olisa and Marco before the build is submitted: the App Store privacy
+  label (`docs/appstore/LISTING.md` → App Privacy) and the pasted review
+  notes line (`REVIEW_NOTES.md`, top). `docs/site/privacy.html` carries
+  the new section; whether the published policy page updates on a push or
+  by hand was not checked.
+- **Release 1 of the Sweeper accuracy work is on Marco's phone since
+  2026-11-18, and its first live test failed: the alarm rang on work he had
+  submitted with Smooth on screen, and no planner read ran.** At 21:48 UTC
+  Marco edited Bonus Worksheet 10.3 (PHYS 0151) to 22:19, submitted it at
+  about 21:55 with the dashboard open, and the Sweeper rang at 21:59. The
+  phone's `sweeperCountsV1` had no `polls` and no `readsUnknown`, so
+  `pollPlannerWindow` was never reached in eleven minutes inside the hour.
+  `LastHourPollerWiringTests` (added the same evening) rebuilds the case
+  through the real `LastHourPoller.start(state:scheduler:vm:)`, scheduler
+  and view model, and polls on the first tick, so the rule is sound and the
+  fault is in how the device runs the loop. Not found yet. Two things went
+  on the phone that night (the Debug build that followed `ab5e592`): a
+  DEBUG trace in the loop (Commands) and a backstop, every `settleAfterFetch`
+  pass inside the hour makes one planner read (`pollInsideTheHour(source:
+  .foreground)`, pinned by `LaunchRefreshStructureTests`), so a refresh pass
+  reads even if the minute loop does not. The next test's `debugWakeLogV1`
+  says what the loop saw. The "foreground register-failed" lines in that
+  log are written by the refresh pass, not by a scene change, so they do
+  not show whether the app was on screen. **Read on 2026-11-19 at 20:55
+  UTC, the trace found the shape:** "poller stop" at 19:47:42 with no start
+  after it, while two refresh passes ran at 20:53 (the same at 04:26 the
+  day before), so the app was alive and refreshing with the poller stopped.
+  `.onChange(of: scenePhase)` stopped it on `.inactive` (a system overlay,
+  Face ID, the alarm's own alert, the app switcher) and nothing restarted
+  it while the scene stayed inactive, or the later `.active` was never
+  delivered. Since that evening (committed with this line) the poller
+  stops only on `.background`, every `settleAfterFetch` pass restarts it if
+  it is not running (`start` is idempotent), and the trace words carry the
+  reason ("poller start active | task | settle", "poller stop background").
+  Pinned by `LaunchRefreshStructureTests.pollerStopsOnlyInBackground`;
+  installed on Marco's phone on 2026-11-21. **The second fault, read off
+  the phone on 2026-11-21 at 20:50 UTC:** on 2026-11-21 at 03:54 UTC the
+  loop logged "tick poll" and then nothing for 46 minutes while
+  `readsUnknown` rose to 9 and `polls` stayed absent, so every read ended
+  in `fetchPlannerWindowForPoll` returning nil: its guard was
+  `hasCanvasCredentials`, which reads the clock-gated persisted jar
+  (`SessionCookieStore.load`, empty a day after the last save), while the
+  grades fetch guards on the live WebKit cookies merged with the jar
+  (`AutoSyncCoordinator.canvasCookies(forHost:)`, `!cookies.isEmpty ||
+  hasCanvasCredentials`). At night the poll decided it had no login and
+  gave up, silently. Fixed the same day (the commit carrying this line):
+  the poll fetches the live cookies first and uses the grades fetch's rule,
+  and the nil branch writes "planner no-session" to the trace. Pinned by
+  `LastHourPollerWiringTests.pollGuardShape` (a source scan; the WebKit
+  store cannot be driven on the Mac). Not yet on a phone with an alarm
+  inside the hour. The same read showed `wakesBG` 27 in a day and two
+  cancellations at observation (one `grades`, one `structured`), so the
+  background wake and the cancel path both run on a real phone. To see on Marco's
+  phone, in this order: a DEBUG build with an item due inside the hour and
+  an alarm set (the Sweeper page's countdown); submit it on canvas.upenn.edu
+  with Smooth open; within about a minute `debugWakeLogV1` gains a `poll`
+  line with `cancelled 1 request(s)` or more and the countdown card is gone,
+  without waiting for the 15-minute grades throttle. Then the same with
+  Smooth in the background for a `bg` line (a wake has never been watched on
+  a phone; the plan's Phase 4 measurement, three lines in 48 hours, stands).
+  Read `X-Rate-Limit-Remaining` and `X-Request-Cost` off the first real
+  planner response and write them here. Unbuilt on purpose: the plan's
+  zero-points and optional-title quiet rules (Marco's word list). The floor
+  the plan names stays: a force-quit app with a website submission inside
+  the last hour rings once; "turned in" on the alarm silences it.
+- **The force-quit check has never run** (2026-11-21,
+  `sweeper/force-quit-check`; What the app does → "The force-quit check").
+  Unproven: whether a notification extension may cancel an AlarmKit alarm
+  (the DEBUG widget probe gives a first answer without any push), whether
+  `UNUserNotificationCenter` in the extension removes the app's pending
+  requests, and how often the copied Canvas session is still alive when
+  the push lands (an expired one is an unknown read, so the alarm rings).
+  What a real test needs, beyond the server wake's own steps below: the new
+  bundle id `com.lhf.lowhangingfruit.sweepercheck` registered (automatic
+  signing does it), Push Notifications on the App ID and `aps-environment`
+  in the app's entitlements, then one push from Apple's Push Notifications
+  Console with `SWEEP_PUSH_BODY` to a DEBUG build launched with
+  `-LHFSweepProbe` and force-quit, and the result read off the phone from
+  `debugSweepCheckLogV1`. The alert push is not deployed; deploying
+  `sweeper-wake` with it is a production change. Without Apple's filtering
+  entitlement every check leaves a passive line until the app is next
+  opened.
+- **The server wake (Release 2) is built on both sides and verified on
+  neither** (2026-11-18, `claude/sweeper-build-0a4dd0`; Deno 942, Swift
+  green, the unsigned iOS build green). Nothing here has met Apple, a live
+  Supabase project or a phone, and nothing can until these happen, in this
+  order. **Olisa:** make the two APNs authentication keys in the developer
+  portal (one Production, one Sandbox; Apple now scopes team keys per
+  environment), set the Supabase function secrets `LHF_APNS_KEY_P8_PRODUCTION`,
+  `LHF_APNS_KEY_ID_PRODUCTION`, `LHF_APNS_KEY_P8_SANDBOX`,
+  `LHF_APNS_KEY_ID_SANDBOX`, `LHF_APNS_TEAM_ID` (`24A3TDB277`),
+  `LHF_APNS_TOPIC` (`com.lhf.lowhangingfruit`) and `LHF_SWEEPER_TICK_SECRET`
+  (a random value); enable Push Notifications on the App ID
+  `com.lhf.lowhangingfruit`, then add `aps-environment` = `development` to
+  `App/LHFApp.entitlements` beside the Time Sensitive key (deliberately
+  not in this tree: without the capability the signed phone build would
+  fail; Xcode rewrites it to `production` at archive, check the archived
+  `.app` with `codesign -d --entitlements -`). **Marco or Olisa, on the
+  project:** enable the `pg_cron` and `pg_net` extensions (Integrations →
+  Cron), create the two Vault secrets `sweeper_wake_tick_url` (the
+  function's `/tick` URL) and `sweeper_wake_tick_secret` (the same value as
+  `LHF_SWEEPER_TICK_SECRET`), then at Marco's go run `node
+  backend/scripts/deploy-sweeper.mjs` (the migration, `sweeper-wake`,
+  `delete-account`) and `node backend/scripts/sweeper-wake-e2e.mjs`, whose
+  first question is whether the Edge runtime's `fetch` reaches Apple over
+  HTTP/2 (a fake token answering `400 BadDeviceToken` is yes; a status 0 is
+  no, and then the send moves to the Vercel front, not built). **Marco, in
+  App Store Connect:** the privacy label gains Identifiers → Device ID,
+  "App Functionality", "Linked to the user", "not used for tracking"; the
+  review notes carry the two silent-push sentences already. **Then the
+  phone:** a Debug build registers (`environment: development`), the
+  Sweeper page shows an alarm 20 minutes out, `sweeperCountsV1.moments.sent`
+  rises, and `debugWakeLogV1` gains a `push` line within a minute of each
+  of the two moments, or does not, which is also the measurement; then the
+  laptop-submit case with Smooth closed but not force-quit. Until the
+  entitlement exists every foreground logs `register-failed` and the app
+  runs as Release 1; with the flag on nothing else changes. Known limits
+  by design: the push wake has no Gradescope leg; `put` has no rate limit
+  (PROTOCOL → Limitations); the cron job and the Vault reads have run on
+  no database (postgres:16 in the Docker check has neither extension).
+- **The agent connection is off in 3.5.0 (2026-11-17), and the off state has only been compiled and tested, not seen on a phone.** What to look at on a phone that ran a `v11` build (Marco's): no "drafted by claude" chip on Problem Set 7's card, no "submitted by you · drafted by claude" in prev, no "connected agent" section in Profile, and `smooth://link?c=…` opening nothing. The phone's `agentConnectionEnabledV1`, draft cache and attempt record stay on disk unread until a Canvas disconnect. The server still holds Marco's snapshot and connection; turning the feature back on later reads them as before. The entries below about the agent connection describe `v11`, where it stays.
+- **The sliding upload expiry is live; a real cloud-session upload under it
+  has not been watched** (deployed 2026-11-16 02:48 UTC from
+  `claude/agent-debug-998a30` `afa64bb`: `agent-auth` v17, `mcp` v16,
+  `agent-snapshot` v13, `delete-account` v20, the four agent migrations
+  re-applied idempotent; the 14-step `agent-e2e.mjs` passed on production at
+  02:50 UTC, uploads leg included). The versions jumped by more than one
+  each since the 2026-11-11 record (`mcp` was v11), so someone deployed in
+  between without a note here. Still to see by hand: a draft from a Claude
+  cloud session, which should now arrive as a text draft (the tool text says
+  so) or, as a slow chunked file, finish instead of expiring. The Management
+  token in `~/lhf-bench/supabase.token` is Marco's own since 2026-11-15
+  (mode 600, never printed); Olisa's old one is dead.
+- **v11 backend, tested hostile on 2026-11-11, three deploys owed**
+  (`docs/V11_TEST_BACKEND_2026-11-11.md`; branch `claude/v11-test-backend-3b1f1b`,
+  nothing deployed). About 220 checks against production matched
+  `backend/PROTOCOL.md`; the exceptions: (1) production `delete-account` is
+  v13 of 2026-10-22, older than the agent connection, so account deletion
+  and Canvas disconnect leave every open draft's file and staged upload in
+  Storage (rows cascade; measured with a throwaway), against `docs/PRIVACY.md`;
+  (2) behind the Vercel front every student shares one `/authorize` and
+  `/register` rate-limit bucket (Supabase's gateway rewrites
+  `x-forwarded-for` to Vercel's egress), so 60 requests an hour from anyone
+  block every sign-in; (3) a PUT to the signed upload URL after the upload
+  ended stores an object no row names, which survived the opt-out. (3), and
+  `..` file names and unchecked `mime_type`, are fixed on the branch; (2) is
+  fixed in code but needs `LHF_FRONT_CLIENT_IP_SECRET` and the front's
+  `CLIENT_IP_SECRET` set; (1) needs only the deploy (`deploy-agent.mjs` now
+  includes `delete-account`). Left as design items: the 20-open-draft cap
+  overshoots under concurrency (70 at once made 25), `Retry-After: 60` on a
+  fixed-hour window, no rate limit on `mcp`, a replayed code does not revoke
+  the first redemption's tokens, and a lost refresh response costs the
+  connection.
+- **The agent connection is live and proven with one real client; the
+  phone half of drafts, the submit itself and ChatGPT are not** (state on
+  2026-11-10; `agent/connection-v11`, plus `claude/v11-backend-645aa0` on
+  top of it, neither pushed). Live: the connector front
+  (`smooth-agent.vercel.app`, 2026-11-08), `agent-auth` v5, `mcp` v3,
+  `agent-snapshot` v3 with the hardening and drafts migrations
+  (2026-11-10). Proven: Marco's claude.ai connected on 2026-11-09, his
+  iPhone approved with the typed code, and Claude read his courses and work
+  list; `backend/scripts/agent-e2e.mjs` walks the whole server path against
+  production with a throwaway user, drafts included since 2026-11-10 (13 of
+  13 steps: propose text and file, list and download, seen, declined,
+  submitted, 409, opt-out). **Written and not deployed** (branch
+  `claude/v11-backend-645aa0`): the sign-in page's "Connected to Smooth"
+  state (Marco's ask) and explicit annotation hints on the read tools; no
+  migration, `deploy-agent.mjs` then `agent-e2e.mjs`. **Untried:** the
+  `smooth://link` tap from a phone, ChatGPT (whose plan rules are
+  unconfirmed; `docs/CONNECTOR_LISTING_CHECKLIST_2026-11-10.md`), the Phase
+  3 phone half (polling, the "drafted by Claude" chip, the review sheet),
+  the submit spike (`-LHFSubmitSpike`, never run against Canvas), and what a
+  model actually sends as `file_base64`. A finished draft's signed URL keeps
+  serving the file for the rest of its 120 seconds (Traps). The assignment
+  PDFs Claude needs to read a problem set are pooled by the phone since
+  2026-11-10, but that pass has never run on Marco's phone because his
+  manifest fails on the phone side (next entry). `agent-auth` never ships
+  ahead of its migration (`deploy-agent.mjs` applies them first). The plan's
+  "Open asks for Marco" (2026-11-10) is the list, and its first item is to
+  tell Olisa about the 2026-11-10 sync changes.
+- **Marco's course-material sync fails at the manifest on the phone,
+  while the server answers 200** (2026-11-05 onward; read 2026-11-10,
+  `docs/MANIFEST_FAILURE_2026-11-10.md`). Both manifest calls of
+  2026-11-10 (03:53 and 05:45 UTC) were 200 in about 4.5 s with
+  byte-identical 6 KB bodies, and the same request from a throwaway user
+  decodes under every strict rule of `SyncManifestResponse`. So
+  `BackendClient.send` throws after the server is done, most likely
+  because the calling task is cancelled (the 11-05 run's "cancel…" error,
+  every later Canvas call failing, `partial 5`). The reason sits only in
+  memory (`trace.manifestError`); the summary line says `manifest failed`.
+  Not fixed: the phone should write the error case into the summary, then
+  hold the sync in an `AppState` task that a view's cancellation cannot
+  reach. Handed to the dashboard-investigation session. Until then nothing
+  uploads from his phone and the assignment-PDF pass never runs there.
+- **The phone halves of Phases 3 and 4 are built, compiled and tested
+  (2026-11-10, `claude/v11-phone-c7aaf2`, merged here), never on a phone and
+  never against Canvas.** Phase 2 (the phone side) is on Marco's phone and
+  worked; the phone halves of Phases 3 and 4 (drafts on the card, the review
+  sheet, `CanvasSubmissionClient`, the attempt store, the "connected" state)
+  are **built, compiled and tested (2026-11-10), never on a phone and never
+  against Canvas** (What the app does, "Drafts from an agent"). Before any
+  real submit: a Canvas sandbox course and assignment (text, URL and file) for
+  the first run, never a graded assignment; open questions there: whether
+  Canvas accepts the JSON body with `X-CSRF-Token` from URLSession at all (the
+  spike never ran), whether `_csrf_token` is in the saved jar or only in the
+  preflight's `Set-Cookie`, what Penn's upload slot answers (inst-fs 201 with
+  an id, or a redirect), and whether `can_submit` is sent. Known limits: only
+  the newest draft per item shows; a draft for an item not on the dashboard
+  has no card and no notice; a definite failure (a 422, a refused upload) ends
+  the draft for good, and the student asks the agent for another.
 - **Ambassador mode (2026-11-09) has signed in on one phone, and little
   else is checked.** The Debug build of `v12` `76bc6a0` went onto
   Olisa's iPhone with `scripts/build-to-phone.sh` on 2026-11-12 (built,
@@ -4735,7 +6651,58 @@ none is a ship line.
   `plan.json` decodes on a device. He reported nothing about the posters
   section, the gallery or an idea upload. The job-first layout that
   followed (checklist removed, web page on top) and its website twin
-  compiled on the runner and are not yet on the phone or deployed. Unseen:
+  compiled on the runner and are not yet on the phone or deployed. **Read
+  on 2026-11-18: the live site is still the second deploy**; the zip of
+  2026-11-12 never went up, and the zip of 2026-11-18 replaces it. Until
+  that one is deployed the app shows the old posts and none of the
+  2026-11-18 sections, which is the correct quiet behaviour against an
+  older server and also means nobody can try them. **On 2026-11-19 the
+  Debug build of `v12` `7498f4d` went onto Olisa's iPhone** with
+  `scripts/build-to-phone.sh` (built, installed, launched, per his
+  terminal), and the live site read the same day was still the second
+  deploy (`plan.json` had no `playbook`, `suggested` or `captures`; the
+  page had no job box). So that build shows the job-first layout and the
+  old posts, and hides every 2026-11-18 section; his first remark was that
+  the messages still lacked his two posts, which is this and nothing in
+  the app. **Later on 2026-11-19 the ChatGPT session deployed that zip**
+  (its report: uploads, post results, the playbook and suggested posts
+  passed live checks, test data removed). Read from here right after,
+  read-only, no scan or `/r/` link opened: `plan.json` carries
+  `playbook` (both examples, five steps), `suggested` and `captures`; the
+  page has the job box and "what works"; `/` and `/api/stats` answer,
+  with the same two totals above the 2026-11-10 backup as before and none
+  below; `POST /` is 405 and an unknown code 404. So the build already on
+  his phone shows those sections from its next plan fetch. **The
+  two-posts change of the same day is a sixth zip, not deployed**: until
+  it is, the live `messages` are still the six written ones and "today"
+  is still a written post, which is exactly what he asked to be rid of.
+  The app half of it (the reply row) needs a rebuild onto the phone.
+  **That sixth zip went live within the hour** (read from here: `messages`
+  is `question` and `list`, each with `reply`; `today` is one of the two
+  with its reply; six tips). Olisa's phone still showed the six written
+  messages minutes later and he asked twice for them to go: the app keeps
+  a fetched plan for 30 minutes (`AmbassadorModel.staleAfter`) and had no
+  way to ask again short of an action that refetches (changing the
+  anonymous-app picker does). The page now has pull to refresh. The tell
+  for next time: texts on the phone older than the live `plan.json` are a
+  cached plan, not a failed deploy; and `refresh()` swallows every error,
+  a decode failure included, so if a pull ever changes nothing, compare
+  the live JSON's field types with `AmbassadorPlan.init(from:)` (done by
+  hand that evening: they matched).
+  **The 2026-11-18 sections have still not been reported on from a
+  phone.** What only a phone settles: that the photo
+  picker hands a screen recording over as a file (`PickedMovie`'s
+  `FileRepresentation` was written without a compiler and has only been
+  compiled, never run); that `AVAssetImageGenerator` cuts readable stills
+  from a real iOS screen recording, and how long sixteen take on a
+  two-minute clip (nothing shows progress while it reads beyond a
+  spinner); that a still of a dark feed at 1200 pixels and 200 KB is
+  legible; and the two sheets in dark mode. The stills are evenly spaced,
+  not chosen: a fast scroll can land between posts, and near-duplicates
+  are not dropped. On the website the upload script ran in desktop
+  Chromium only, so iOS Safari and HEIC screenshots are untried. The
+  founder page has no way to see how full the picture store is short of
+  the 429. Unseen:
   the
   daily notification firing and surviving the next reschedule pass (the
   carve-out is unit-tested, the center is not), a cold launch from its
@@ -4975,6 +6942,46 @@ none is a ship line.
   (`docs/research/degree-progress/04-privacy-and-app-store.md`) and whether
   Penn ISC has a position; the privacy label and `REVIEW_NOTES.md` need a
   degree section before any upload.
+- **ask could not give the owner his accounting class time, because the
+  site's name carries no section number** (2026-11-15, Olisa's iPhone 17, a
+  screen recording of the tree; the recording itself could not be read from
+  the Mac, macOS blocks the Messages folder). His ACCT 1010 site is named
+  "ACCT 1010 (Hail) - Fall 2026"; `CourseCode.parse` found no section, so
+  `courses.section` stayed empty and ask's COURSE STRUCTURE block listed all
+  eight ACCT 1010 lectures (Penn Labs' 2026C entry, read from the Mac the
+  same day) at four time slots with none marked as his. Hail teaches 001
+  (Tue/Thu 8:30-9:59) and 002 (10:15-11:44), both JMHH 240, so the
+  instructor narrows it to two and no further. Fixed the same day, not on a
+  phone: `CanvasOwnSections` reads `GET /api/v1/courses?include[]=sections
+  &enrollment_state=active` with the student's session from
+  `refreshCourseIntel`, keeps a number only when the student's sections
+  name this site's own code and settle on exactly one number, and
+  `canvasCourseSummaries` uses it only when the name has none
+  (`canvasOwnSectionByCourseIDV1`, cleared on disconnect). Penn names the
+  sections "8:30amACCT1010-001-Fall2026" (read off the phone 2026-11-16 with
+  a one-off DEBUG record): the meeting time glued to the code, which the
+  first parser's leading word break missed, so the pattern is now built from
+  the site's own code (`sectionRegex(for:)`). On the `degree-progress` build
+  the phone then read ACCT 1010 → 001 and LGST 1010 → 002 (Hail's 001 is
+  Tue/Thu 8:30-9:59, JMHH 240). It reaches the server only through the
+  manifest; not yet seen there or in an answer.
+- **The course-material manifest failed on Olisa's phone, every Canvas
+  request cancelled** (2026-11-15; explained 2026-11-16: the phone was
+  running a `degree-progress` build, which lacked Marco's `c5f8d2a`; with it
+  cherry-picked there, the next sync read `manifest ok · uploaded 200`). The summary at 13:54 Eastern
+  read `ok · courses 8 · fetched 0 · partial 8 · docs 1319 · manifest
+  failed · uploaded 0 · errors 25 · error kinds: assignments 8 · modules 8 ·
+  pages 8 · announcements 1 · ed notes 1 · ed: matched 0 · read 0 ·
+  restored 8 · dropped 0 · first failure other · couldn't read ed account:
+  cancelled`, the same shape as 11:37 on the previous build. Every endpoint
+  of every course failing at once with `cancelled` reads as the whole run's
+  task being cancelled, not as eight servers failing; not investigated,
+  and no fix guessed. Caveat: at 13:12 another session switched the shared
+  checkout to `degree-progress`, so which build ran the 13:54 sync (the v10
+  Debug build installed at 12:59, or a later `degree-progress` one) is not
+  certain. A separate puzzle: the 12:51 run on the old build saved the
+  knowledge file but its summary line kept only an "already syncing" skip.
+
 - **A finished item whose completion is Canvas's alone has no swipe back
   in prev** (since 2026-11-06, `AppState.completionIsLockedByCanvas`,
   `DashItem.canMarkActive`). Before that the swipe was offered, did nothing
@@ -5158,19 +7165,48 @@ none is a ship line.
   `debugRenewalLogV1` for "finished: <host> <path>", "login form check",
   "credential fill result", "duo push sent" and "duo push approved"; the
   per-navigation lines are DEBUG-only and were added for this check.
+- **The Duo trust renewal ran once on Marco's phone and worked (2026-11-22
+  00:57 UTC, `-LHFRenewDuoTrustNow`); the missed-push notice has not been
+  seen.** The forced sign-in typed the saved PennKey at +1 s, reached Duo at
+  +4 s, was handed back to Penn at +6 s with no push, and the trust cookie's
+  expiry moved forward ("duo trust renewal: extended"): Penn honours
+  `force_login=1` and Duo re-issues the 30-day trust silently. Two things
+  to look at next time: the attempt ended `landedOnLoginPage` through a
+  `WebKitErrorDomain/102` (frame load interrupted) on the hop back to
+  Canvas, harmless under the forced rule (nothing latched) but the Canvas
+  cookies were not re-saved by it, and the app left the foreground in the
+  same second, which is what a universal-link hand-off to the Canvas
+  Student app looks like (Traps). **Marco confirmed it: the Canvas Student
+  app opened.** So since 2026-11-22 (blind) the hidden renewer carries the
+  visible pane's app-link guard (`AppLinkGuard`, the pure parts moved out of
+  `LoginNavigationObserver` with its tests unchanged; `RenewalNavigationDelegate`
+  cancels a cross-host main-frame arrival at the Canvas host and re-issues
+  it itself, the POST rebuilt from the IdP's form, capped per attempt,
+  DEBUG lines "app-link guard: reissued POST | reissued GET | form not
+  found, allowed | cap reached, allowed"; `RenewalAppLinkGuardTests`). The
+  renewer's "never re-navigate" rule now names this one exception. Not yet
+  run on a phone: the next forced attempt should log "reissued POST" and
+  the Canvas app should stay closed; if the attempt then ends `.renewed`,
+  the Canvas cookies are re-saved too, which the 00:57 run did not do. It took three builds to see any of this, because the
+  cookie read came back empty in a cold process (the next Trap). The notice
+  has not been seen (post it by letting a latch age an hour, or read the
+  pending requests). Not built: a trust renewal for a student whose trust
+  is already gone (by design: that is the ordinary sign-in and a push).
 - **Duo passcode autofill is unverified.** `DuoPasscodeAutofill`
   (2026-10-30) is tested only as a string; whether Duo's Universal Prompt
   field gets matched, and whether iOS then offers the SMS code, needs a
   real Penn login with a texted passcode on a phone.
 
-- **The extension's Ed read is proven only against a fake Ed** (2026-11-04).
-  Until that day it had never read Ed at all (every live run `ed: none`,
-  see `docs/CHROME_EXTENSION.md` → Status for the cause and fix). The
-  harness in `chrome-extension/e2e/` proves everything but a real Ed
-  login; the first store install that opens edstem.org and then shows
-  `collector = 'extension'` rows of kind `ed` on the server is the live
-  proof. Expect few: a phone that reads the same board uploads the same
-  ids and hashes first, and the planner skips what the server holds.
+- **The extension's Ed read and submission feed are proven live**
+  (2026-11-12, the owner's new laptop, store build 0.1.3): `ed: "in"`,
+  126 assignments seen as submitted, 12 `ed` rows from the extension on
+  the server, the first ever. Until 2026-11-04 it had never read Ed at
+  all (`docs/CHROME_EXTENSION.md` → Status, 2026-11-04 to 11-12, for the
+  causes: no token at run time, then a hang with no timeouts, then a
+  token arriving mid-pass). Nothing in the extension is unproven live
+  any more except the 0.1.4 queued run, which is the fix for that last
+  cause and is harness-proven. (Carried onto `v13` from `v8` `588df6c`
+  on 2026-11-24.)
 - **No anonymous Ed post reached the pool through the extension**
   (checked 2026-10-29: every live `ed` row, 622, has `collector =
   'phone'`). Had one, it would have stayed: `ed` is a window kind
@@ -5457,9 +7493,17 @@ none is a ship line.
     (`performSilentCanvasRenewal`) doesn't either. Background code is off
     limits. **Bit Marco on 2026-11-03** (a reminder fifteen minutes after
     he submitted): the fix is planned in
-    `docs/REMINDER_SUBMISSION_FIX_SESSION_PROMPT.md` (`ROADMAP.md` → Now);
+    `docs/SWEEPER_ACCURACY_PLAN_2026-11-16.md` (`ROADMAP.md` → Now; it
+    supersedes `docs/REMINDER_SUBMISSION_FIX_SESSION_PROMPT.md`);
     `LHFBackgroundRefresh.run()` does replan since the hardening work,
-    unverified on a phone, and hits the same 15-minute throttle.
+    unverified on a phone, and hits the same 15-minute throttle. **Since
+    2026-11-18 (Release 1, blind):** every read that sees a submission
+    cancels the item's reminders, buzzes and alarm at once, the foreground
+    polls the planner every minute inside the last hour, and the launch,
+    the foreground return and the background wake each read the planner
+    past the grades throttle when a ring is inside the hour (What the app
+    does → Profile → reminders, and → Background). The closed-app case
+    waits for the server wake (phase 2 of the same branch).
   - **Canvas partial failure.** When one site of a class fails and another
     succeeds, the 15-minute throttle arms for both and the failed one keeps
     its old snapshot (`GradeWatcherStore` `fetchedAny`).
@@ -5629,13 +7673,14 @@ none is a ship line.
   for the CIS courses; if candidates stay candidates, the next suspects
   are the verification rule (code and term in the first 3,000 characters)
   and the convention guesser (no `github.io`), plan item 2's server half.
-- **ask cannot read Canvas Files.** Slides, readings and any PDF not
-  named like a syllabus are never ingested; only the 40 most recently
-  updated pages get their bodies; module items contribute titles only.
-  This is probably the largest remaining reason "it's in the class
-  files but ask can't find it". Ingesting Files changes what is pooled
-  on the server (instructors' files) and `docs/PRIVACY.md`, so it needs
-  a decision, not just code.
+- **ask reads only the PDFs linked from assignment descriptions, not
+  Canvas Files at large.** Assignment-linked PDFs are pooled by the phone
+  since 2026-11-10 (blind, never run against real Canvas; open question:
+  PDFKit text, first 20 pages, against the extension's pdf.js text for the
+  same file, so the two collectors' hashes can differ). Module files, the
+  Files tab and non-PDF types (slides, docs) still are not ingested by the
+  phone; only the 40 most recently updated pages get their bodies; module
+  items contribute titles only. The extension fills some of the rest in.
 - **A half-failed course-material sync no longer erases documents, and
   a 403 is one course's problem** (2026-10-23, `course-sync-salvage`,
   blind, ported from Marco's `parked/ask-course-sync-fixes` without its
@@ -5970,10 +8015,25 @@ then tap it or swipe left in "prev" to bring it back. The undo lands
 straight on the first feature card (lists); a "You've got it, tap Next"
 pause sat between them until 2026-10-30, when the owner cut it because it
 did nothing. The `.ready` end state is seen only while the first sync is
-still running ("Almost there."). The fixtures live
-inside the guide; nothing reaches `AppState` or the ledger, and the login
-WebView stays mounted underneath. A failed sync returns to the retained
-login view.
+still running ("Almost there."). Nothing reaches `AppState` or the ledger,
+and the login WebView stays mounted underneath. A failed sync returns to
+the retained login view. **Since 2026-11-21 (Marco: testers said "I'm not
+taking those classes"; compiled and tested, not yet on a phone) the cards
+are the student's own**: `PracticeCards.items(from:now:)` (pure, in the
+guide's file) picks up to three upcoming assignments from the just-synced
+`state.canvasItems`, one per class first, soonest first, chosen once when
+the lesson opens (`OnboardingView.practiceItems`) so they cannot change
+under the student's finger; with nothing upcoming (and in the
+`-LHFCompletionGuideHarness`) three generic cards stand in (BIO 101,
+ECON 101, WRTG 101; `SampleData` is untouched, preview mode keeps its
+own). The practice card **nudges** 22pt in the swipe's direction and eases
+back, with a rest at home, until the first touch (`.phaseAnimator` on a
+wrapper outside the card, never inside it, since the card owns its drag;
+one branch only, so the first touch cannot re-create the card mid-swipe;
+re-armed for the prev card; off under Reduce Motion). A "skip" at the top
+right (`DashboardPracticeProgress.skip()`, to `.ready` from any step)
+leaves the lesson; the sync gate on Continue still holds. The two
+practice titles are "swipe right to finish" and "swipe left to undo".
 
 **Connect, then confirm.** Once the connect starts, a "Canvas connected"
 confirmation (no progress dots; its button reads "Syncing Canvas…" and is
@@ -6053,7 +8113,9 @@ an empty answer row. (6) `AssistantSavedChat` has no schema version; a
 non-optional field added later makes old chats undecodable. (7) "Add
 Gradescope" has no back to the choice screen, only Skip.
 
-DEBUG review flags: `-LHFFullOnboardingReview` replays the full first run
+DEBUG review flags: `-LHFForceOverdueLesson` opens the one-time overdue
+swipe lesson over the dashboard whatever the dates (2026-11-22, "Overdue
+swipe lesson" under What the app does). `-LHFFullOnboardingReview` replays the full first run
 in memory for that launch without touching the saved connections,
 `-LHFSkipIntro` (with it) skips the three-beat intro so the school search is
 the first screen, and `-LHFCompletionGuideHarness` opens the practice lesson

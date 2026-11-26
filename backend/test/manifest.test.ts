@@ -21,6 +21,7 @@ import {
   parseFactsSince,
   parseSyncClient,
   profileStaleCourses,
+  reportListsFiles,
   retirableCollector,
   validateCourse,
   validateDocument,
@@ -741,4 +742,23 @@ Deno.test("factsResponse: a seq that arrives as a numeric string is coerced; a n
   assertEquals(factsCursor, 9);
   assertEquals(typeof factsCursor, "number");
   assertEquals(facts.map((f) => f.seq), [1, 9]);
+});
+
+Deno.test("complete-set: file rows are retired only by a report that lists files", () => {
+  const live = [
+    { id: "page:1:1", kind: "page", collector: "phone" },
+    { id: "file:1:2", kind: "file", collector: "phone" },
+    { id: "file:1:3", kind: "file", collector: "phone" },
+    { id: "file:1:4", kind: "file", collector: "extension" },
+  ];
+  // phone, no files listed: file rows kept
+  assertEquals(liveIDsRetirableBy(live, "phone", reportListsFiles(["page:1:1"])), ["page:1:1"]);
+  // phone listing one file: the other phone file rows are retirable
+  const listed = ["page:1:1", "file:1:2"];
+  assertEquals(goneIDs(liveIDsRetirableBy(live, "phone", reportListsFiles(listed)), listed), ["file:1:3"]);
+  // extension, no files listed: every file row kept
+  assertEquals(liveIDsRetirableBy(live, "extension", reportListsFiles(["page:1:1"])), ["page:1:1"]);
+  // extension listing files: retires as before
+  assertEquals(liveIDsRetirableBy(live, "extension", true), ["page:1:1", "file:1:2", "file:1:3", "file:1:4"]);
+  assertEquals(reportListsFiles([]), false);
 });

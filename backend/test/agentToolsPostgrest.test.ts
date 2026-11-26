@@ -1,0 +1,595 @@
+// Pins what `PostgrestToolBackend` sends to PostgREST and how it maps rows
+// back: the real supabase-js client builds the requests, only `fetch` is
+// replaced (as in agentStorePostgrest.test.ts).
+import { strict as assert } from "node:assert";
+import { createClient } from "npm:@supabase/supabase-js@2.115.0";
+import { MemoryAgentStore } from "../supabase/functions/_shared/agentStoreMemory.ts";
+import { attachmentRefs, canvasAssignmentID, excerptAround, PostgrestToolBackend } from "../supabase/functions/_shared/agentToolsPostgrest.ts";
+
+const NOW = new Date("2026-11-10T12:00:00.000Z");
+const USER = "u1";
+
+interface Seen {
+  method: string;
+  table: string;
+  q: URLSearchParams;
+}
+
+type Tables = Record<string, unknown[] | ((q: URLSearchParams) => unknown[])>;
+
+async function withBackend<T>(
+  tables: Tables,
+  run: (backend: PostgrestToolBackend, seen: Seen[], store: MemoryAgentStore) => Promise<T>,
+): Promise<T> {
+  const original = globalThis.fetch;
+  const seen: Seen[] = [];
+  globalThis.fetch = ((input: Request | URL | string, init?: RequestInit) => {
+    const request = input instanceof Request ? input : new Request(String(input), init);
+    const url = new URL(request.url);
+    const table = url.pathname.replace("/rest/v1/", "");
+    seen.push({ method: request.method, table, q: url.searchParams });
+    const t = tables[table];
+    return Promise.resolve(
+      new Response(JSON.stringify(typeof t === "function" ? t(url.searchParams) : t ?? []), { status: 200, headers: { "content-type": "application/json" } }),
+    );
+  }) as typeof fetch;
+  try {
+    const client = createClient("http://supabase.test", "service-key", { auth: { persistSession: false, autoRefreshToken: false } });
+    const store = new MemoryAgentStore();
+    return await run(new PostgrestToolBackend({ client, store, now: () => NOW }), seen, store);
+  } finally {
+    globalThis.fetch = original;
+  }
+}
+
+const enrolled = [{ course_id: "2002" }, { course_id: "1001" }];
+const courses = [
+  { course_id: "1001", code: "PHYS 0151", name: "Mechanics" },
+  { course_id: "2002", code: "CIS 2400", name: "Machine Programming" },
+];
+const doc = (over: Record<string, unknown> = {}) => ({
+  id: "announcement:1001:a1",
+  course_id: "1001",
+  course_code: "PHYS 0151",
+  kind: "announcement",
+  title: "Exam moved",
+  text: "The midterm exam moved to Thursday.",
+  url: "https://canvas.upenn.edu/courses/1001/discussion_topics/9",
+  posted_at: "2026-11-09T10:00:00Z",
+  updated_at: "2026-11-09T11:00:00Z",
+  fetched_at: "2026-11-09T12:00:00Z",
+  ...over,
+});
+const only = (seen: Seen[], table: string) => seen.filter((s) => s.table === table);
+const AGE_OUT = "kind.not.in.(announcement,ed),updated_at.gte.2026-07-13T12:00:00.000Z,and(updated_at.is.null,fetched_at.gte.2026-07-13T12:00:00.000Z)";
+
+Deno.test("listCourses: the snapshot's courses, else the enrolled ones", async () => {
+  await withBackend({ enrollments: enrolled, courses }, async (backend, seen, store) => {
+    const fallback = await backend.listCourses(USER);
+    assert.deepStrictEqual(fallback.map((c) => c.code).sort(), ["CIS 2400", "PHYS 0151"]);
+    assert.deepStrictEqual(fallback.find((c) => c.code === "PHYS 0151"), { code: "PHYS 0151", name: "Mechanics", canvasId: "1001" });
+    assert.strictEqual(only(seen, "enrollments")[0].q.get("user_id"), "eq.u1");
+    assert.strictEqual(only(seen, "enrollments")[0].q.get("select"), "course_id");
+    assert.strictEqual(only(seen, "courses")[0].q.get("course_id"), "in.(1001,2002)");
+
+    await store.upsertSnapshot({
+      userId: USER,
+      courses: [{ courseID: "3003", code: "MATH 1410", name: "Calc" }],
+      workList: [],
+      manual: [],
+      writtenAt: NOW.toISOString(),
+    });
+    seen.length = 0;
+    assert.deepStrictEqual(await backend.listCourses(USER), [{ code: "MATH 1410", name: "Calc", canvasId: "3003" }]);
+    assert.strictEqual(seen.length, 0);
+  });
+});
+
+Deno.test("listWork: nothing without a snapshot; views over work plus manual with one", async () => {
+  await withBackend({}, async (backend, seen, store) => {
+    assert.deepStrictEqual(await backend.listWork(USER, "todo", undefined, NOW), []);
+    assert.strictEqual(seen.length, 0);
+    await store.upsertSnapshot({
+      userId: USER,
+      courses: [],
+      workList: [
+        { id: "canvas:1", course: "PHYS 0151", title: "HW4", kind: "assignment", dueAt: "2026-11-11T12:00:00Z", done: false, noSubmission: false, url: null, source: "canvas" },
+        { id: "canvas:2", course: "CIS 2400", title: "P1", kind: "assignment", dueAt: "2026-11-11T13:00:00Z", done: false, noSubmission: false, url: null, source: "canvas" },
+      ],
+      manual: [{ id: "m1", course: "PHYS 0151", title: "Pset review", dueAt: "2026-11-10T20:00:00Z", repeatsWeekly: false }],
+      writtenAt: NOW.toISOString(),
+    });
+    const all = await backend.listWork(USER, "todo", undefined, NOW);
+    assert.deepStrictEqual(all.map((i) => i.id), ["m1", "canvas:1", "canvas:2"]);
+    assert.deepStrictEqual(all[0], { id: "m1", course: "PHYS 0151", title: "Pset review", kind: "other", dueAt: "2026-11-10T20:00:00Z", done: false, noSubmission: false, url: null, source: "manual" });
+    assert.deepStrictEqual((await backend.listWork(USER, "todo", "cis-2400", NOW)).map((i) => i.id), ["canvas:2"]);
+    assert.strictEqual(seen.length, 0);
+  });
+});
+
+Deno.test("searchCourseMaterial: enrolled courses only, full text, live, aged out, paged", async () => {
+  const rows = Array.from({ length: 11 }, (_, i) => doc({ id: `d${i}`, text: `${"x".repeat(900)} Midterm ${i}` }));
+  await withBackend({ enrollments: enrolled, course_documents: rows }, async (backend, seen) => {
+    const page = await backend.searchCourseMaterial(USER, "midterm exam", undefined, "announcement", 2);
+    const docs = only(seen, "course_documents")[0];
+    assert.strictEqual(docs.method, "GET");
+    assert.strictEqual(docs.q.get("text"), "wfts(english).midterm exam");
+    assert.strictEqual(docs.q.get("course_id"), "in.(1001,2002)");
+    assert.strictEqual(docs.q.get("gone_at"), "is.null");
+    assert.strictEqual(docs.q.get("kind"), "eq.announcement");
+    assert.strictEqual(docs.q.get("or"), `(${AGE_OUT})`);
+    assert.strictEqual(docs.q.get("order"), "updated_at.desc.nullslast");
+    assert.strictEqual(docs.q.get("offset"), "10");
+    assert.strictEqual(docs.q.get("limit"), "11");
+    assert.ok(!(docs.q.get("select") ?? "").includes("collector"));
+    assert.strictEqual(page.page, 2);
+    assert.strictEqual(page.hasMore, true);
+    assert.strictEqual(page.items.length, 10);
+    const first = page.items[0];
+    assert.strictEqual(first.documentId, "d0");
+    assert.strictEqual(first.course, "PHYS 0151");
+    assert.strictEqual(first.excerpt.length, 600);
+    assert.strictEqual(first.postedAt, "2026-11-09T10:00:00Z");
+  });
+});
+
+Deno.test("searchCourseMaterial: a course the caller is not enrolled in is never queried", async () => {
+  await withBackend({ enrollments: enrolled, courses, course_documents: [doc()] }, async (backend, seen) => {
+    await backend.searchCourseMaterial(USER, "exam", "PHYS 0151");
+    assert.strictEqual(only(seen, "course_documents")[0].q.get("course_id"), "in.(1001)");
+    seen.length = 0;
+    // Named by id, but not enrolled: nothing is queried at all.
+    const none = await backend.searchCourseMaterial(USER, "exam", "9999");
+    assert.deepStrictEqual(none, { items: [], page: 1, hasMore: false });
+    assert.strictEqual(only(seen, "course_documents").length, 0);
+    // Unknown code, same.
+    assert.deepStrictEqual((await backend.searchCourseMaterial(USER, "exam", "MATH 1410")).items, []);
+    assert.strictEqual(only(seen, "course_documents").length, 0);
+  });
+  await withBackend({ enrollments: [], course_documents: [doc()] }, async (backend, seen) => {
+    assert.deepStrictEqual((await backend.searchCourseMaterial(USER, "exam")).items, []);
+    assert.strictEqual(only(seen, "course_documents").length, 0);
+  });
+});
+
+Deno.test("excerptAround: 600 characters around the first hit, case-insensitive", () => {
+  const text = "a".repeat(1000) + "NEEDLE" + "b".repeat(1000);
+  const ex = excerptAround(text, "needle");
+  assert.strictEqual(ex.length, 600);
+  assert.ok(ex.includes("NEEDLE"));
+  assert.strictEqual(excerptAround(text, "absent"), text.slice(0, 600));
+  assert.strictEqual(excerptAround("short", "hort"), "short");
+});
+
+Deno.test("getAnnouncements: live, aged out, within days, newest first, 10 per page", async () => {
+  const rows = Array.from({ length: 11 }, (_, i) => doc({ id: `a${i}`, text: "y".repeat(9000) }));
+  await withBackend({ enrollments: enrolled, course_documents: rows }, async (backend, seen) => {
+    const page = await backend.getAnnouncements(USER, undefined, 7, 1);
+    const q = only(seen, "course_documents")[0].q;
+    assert.strictEqual(q.get("kind"), "eq.announcement");
+    assert.strictEqual(q.get("course_id"), "in.(1001,2002)");
+    assert.strictEqual(q.get("gone_at"), "is.null");
+    assert.deepStrictEqual(q.getAll("or"), [
+      `(${AGE_OUT})`,
+      "(posted_at.gte.2026-11-03T12:00:00.000Z,and(posted_at.is.null,updated_at.gte.2026-11-03T12:00:00.000Z),and(posted_at.is.null,updated_at.is.null,fetched_at.gte.2026-11-03T12:00:00.000Z))",
+    ]);
+    assert.strictEqual(q.get("order"), "posted_at.desc.nullslast,updated_at.desc.nullslast");
+    assert.strictEqual(q.get("offset"), "0");
+    assert.strictEqual(q.get("limit"), "11");
+    assert.strictEqual(page.items.length, 10);
+    assert.strictEqual(page.hasMore, true);
+    assert.strictEqual(page.items[0].text.length, 8000);
+    assert.deepStrictEqual(
+      { ...page.items[0], text: "" },
+      { documentId: "a0", course: "PHYS 0151", kind: "announcement", title: "Exam moved", text: "", postedAt: "2026-11-09T10:00:00Z", url: "https://canvas.upenn.edu/courses/1001/discussion_topics/9" },
+    );
+  });
+});
+
+Deno.test("getEdPosts: kind ed, no days window, one course by code", async () => {
+  await withBackend({ enrollments: enrolled, courses, course_documents: [doc({ kind: "ed", posted_at: null })] }, async (backend, seen) => {
+    const page = await backend.getEdPosts(USER, "cis 2400");
+    const q = only(seen, "course_documents")[0].q;
+    assert.strictEqual(q.get("kind"), "eq.ed");
+    assert.strictEqual(q.get("course_id"), "in.(2002)");
+    assert.deepStrictEqual(q.getAll("or"), [`(${AGE_OUT})`]);
+    assert.strictEqual(page.hasMore, false);
+    assert.strictEqual(page.items[0].postedAt, "2026-11-09T11:00:00Z"); // falls back to updated_at
+  });
+});
+
+const fact = (seq: number, over: Record<string, unknown> = {}) => ({
+  seq,
+  course_id: "1001",
+  document_id: "announcement:1001:a1",
+  content_hash: "h1",
+  fact_type: "reschedule",
+  target_source_id: "555",
+  title: "Exam moved to Thursday",
+  due_at: null,
+  kind: null,
+  quote: "The midterm exam moved to Thursday.",
+  confidence: "high",
+  posted_at: "2026-11-09T10:00:00Z",
+  created_at: "2026-11-09T10:05:00Z",
+  course_documents: { content_hash: "h1", gone_at: null },
+  ...over,
+});
+
+Deno.test("getFacts: enrolled courses, seq order, limit 200, since on posted_at, stale documents dropped", async () => {
+  const rows = [
+    fact(1),
+    fact(2, { title: null, fact_type: "note", target_source_id: null, posted_at: null }),
+    fact(3, { course_documents: { content_hash: "other", gone_at: null } }),
+    fact(4, { course_documents: { content_hash: "h1", gone_at: "2026-11-09T00:00:00Z" } }),
+  ];
+  await withBackend({ enrollments: enrolled, courses, course_facts: rows }, async (backend, seen) => {
+    const facts = await backend.getFacts(USER, undefined, 1_700_000_000);
+    const q = only(seen, "course_facts")[0].q;
+    assert.strictEqual(q.get("course_id"), "in.(1001,2002)");
+    assert.strictEqual(q.get("order"), "seq.asc");
+    assert.strictEqual(q.get("limit"), "200");
+    assert.strictEqual(q.get("or"), "(posted_at.is.null,posted_at.gte.2023-11-14T22:13:20.000Z)");
+    assert.deepStrictEqual(facts, [
+      { id: "fact-1", course: "PHYS 0151", kind: "reschedule", text: "reschedule: Exam moved to Thursday", assignmentId: "555", createdAt: Math.floor(Date.parse("2026-11-09T10:00:00Z") / 1000) },
+      { id: "fact-2", course: "PHYS 0151", kind: "note", text: "note: The midterm exam moved to Thursday.", assignmentId: null, createdAt: Math.floor(Date.parse("2026-11-09T10:05:00Z") / 1000) },
+    ]);
+    seen.length = 0;
+    await backend.getFacts(USER);
+    assert.strictEqual(only(seen, "course_facts")[0].q.get("or"), null);
+  });
+  await withBackend({ enrollments: enrolled, courses, course_facts: rows }, async (backend, seen) => {
+    await backend.getFacts(USER, "PHYS 0151");
+    assert.strictEqual(only(seen, "course_facts")[0].q.get("course_id"), "in.(1001)");
+  });
+});
+
+Deno.test("getAssignment: snapshot item, pooled description and facts by Canvas id", async () => {
+  const tables = {
+    enrollments: enrolled,
+    courses,
+    course_documents: [{ text: "D".repeat(25_000) }],
+    course_facts: [fact(7)],
+  };
+  await withBackend(tables, async (backend, seen, store) => {
+    assert.strictEqual(await backend.getAssignment(USER, "canvas:555"), null);
+    await store.upsertSnapshot({
+      userId: USER,
+      courses: [],
+      workList: [
+        { id: "canvas:555", course: "PHYS 0151", title: "HW4", kind: "assignment", dueAt: null, done: false, noSubmission: false, url: "https://canvas.upenn.edu/courses/1001/assignments/555", source: "canvas" },
+        { id: "syllabus:x", course: "PHYS 0151", title: "Reading", kind: "other", dueAt: null, done: false, noSubmission: true, url: null, source: "syllabus" },
+      ],
+      manual: [],
+      writtenAt: NOW.toISOString(),
+    });
+    const found = await backend.getAssignment(USER, "canvas:555");
+    assert.ok(found);
+    assert.strictEqual(found.entry.title, "HW4");
+    assert.strictEqual(found.description.length, 12_000);
+    assert.strictEqual(found.facts.length, 1);
+    assert.strictEqual(found.facts[0].text, "reschedule: Exam moved to Thursday");
+    const d = only(seen, "course_documents")[0].q;
+    assert.strictEqual(d.get("course_id"), "in.(1001)");
+    assert.strictEqual(d.get("kind"), "eq.assignment");
+    assert.strictEqual(d.get("source_id"), "eq.555");
+    assert.strictEqual(d.get("gone_at"), "is.null");
+    const f = only(seen, "course_facts")[0].q;
+    assert.strictEqual(f.get("course_id"), "in.(1001)");
+    assert.strictEqual(f.get("target_source_id"), "eq.555");
+
+    seen.length = 0;
+    const plain = await backend.getAssignment(USER, "syllabus:x");
+    assert.deepStrictEqual(plain?.facts, []);
+    assert.strictEqual(plain?.description, "");
+    assert.strictEqual(only(seen, "course_documents").length, 0);
+    assert.strictEqual(await backend.getAssignment(USER, "nope"), null);
+  });
+});
+
+Deno.test("canvasAssignmentID: link first, then canvas: prefix, leniently", () => {
+  assert.strictEqual(canvasAssignmentID({ id: "x", url: "https://c/courses/1/assignments/42?x=1" }), "42");
+  assert.strictEqual(canvasAssignmentID({ id: "canvas:77", url: null }), "77");
+  assert.strictEqual(canvasAssignmentID({ id: "canvas-ics:88", url: null }), "88");
+  assert.strictEqual(canvasAssignmentID({ id: "manual-abc", url: null }), null);
+});
+
+Deno.test("canvasAssignmentID: calendar rows, override ids, the explicit field", () => {
+  assert.strictEqual(canvasAssignmentID({ id: "canvas:event-assignment-15044550", url: null }), "15044550");
+  assert.strictEqual(canvasAssignmentID({ id: "canvas:event-assignment-override-1236169", url: null }), null);
+  assert.strictEqual(canvasAssignmentID({ id: "canvas:event-assignment-override-1236169", url: null, canvasAssignmentID: "99" }), "99");
+  assert.strictEqual(canvasAssignmentID({ id: "canvas:5", url: "https://c/courses/1/assignments/42", canvasAssignmentID: "99" }), "99");
+  assert.strictEqual(canvasAssignmentID({ id: "canvas:5", url: null, canvasAssignmentID: null }), "5");
+});
+
+Deno.test("attachmentRefs: links, page links, bare file lines, deduped and capped at four", () => {
+  const refs = attachmentRefs([
+    "Due: Wed",
+    "Problem Set 7.pdf",
+    "- HW7 numerical solutions.pdf",
+    "see https://canvas.upenn.edu/courses/1946718/files/164695272/download?x=1 and /courses/5/pages/lab-guide-2",
+    "again /files/164695272",
+    "notes.pptx",
+    "extra.zip",
+    "In prob. 10, the time should be 7.41 ns.",
+  ].join("\n"));
+  assert.deepStrictEqual(refs.map((r) => r.name), ["Problem Set 7.pdf", "HW7 numerical solutions.pdf", "file 164695272", "lab-guide-2"]);
+  assert.strictEqual(refs[2].fileID, "164695272");
+  assert.strictEqual(refs[2].url, "https://canvas.upenn.edu/courses/1946718/files/164695272/download");
+  assert.strictEqual(refs[3].pageSlug, "lab-guide-2");
+  assert.strictEqual(refs[3].url, null);
+});
+
+Deno.test("attachmentRefs: bare names plus link lines of the same files are two attachments, clean urls", () => {
+  const refs = attachmentRefs([
+    "Problem Set 7.pdf",
+    "HW7 numerical solutions.pdf",
+    "Problem Set 7.pdf: https://canvas.upenn.edu/courses/1949400/files/165796317?wrap=1",
+    "HW7 numerical solutions.pdf: https://canvas.upenn.edu/courses/1949400/files/165796319?wrap=1",
+  ].join("\n"));
+  assert.strictEqual(refs.length, 2);
+  assert.deepStrictEqual(refs.map((r) => r.fileID), ["165796317", "165796319"]);
+  assert.deepStrictEqual(refs.map((r) => r.url), [
+    "https://canvas.upenn.edu/courses/1949400/files/165796317",
+    "https://canvas.upenn.edu/courses/1949400/files/165796319",
+  ]);
+  assert.deepStrictEqual(refs.map((r) => r.name), ["Problem Set 7.pdf", "HW7 numerical solutions.pdf"]);
+});
+
+Deno.test("attachmentRefs: bare names alone stay name-keyed", () => {
+  const refs = attachmentRefs("a.pdf\nA.PDF\nb.pdf");
+  assert.deepStrictEqual(refs.map((r) => [r.name, r.fileID ?? null]), [["a.pdf", null], ["b.pdf", null]]);
+});
+
+const PS7_TEXT = "Due: Wed, Nov 11 at 11:59 PM\nPoints: 10\nProblem Set 7.pdf\nHW7 numerical solutions.pdf\nIn prob. 10, the time should be 7.41 ns.";
+const twoSites = [{ course_id: "1949400" }, { course_id: "1946718" }, { course_id: "2002" }];
+const twoSiteCourses = [
+  { course_id: "1949400", code: "PHYS 0151", name: "Mechanics" },
+  { course_id: "1946718", code: "PHYS 0151", name: "Mechanics lab" },
+  { course_id: "2002", code: "CIS 2400", name: "Machine Programming" },
+];
+const ps7 = (over: Record<string, unknown> = {}) => ({
+  id: "canvas:event-assignment-15044550", course: "PHYS 0151", title: "Problem Set 7", kind: "assignment",
+  dueAt: null, done: false, noSubmission: false, url: null, source: "canvas", ...over,
+});
+
+Deno.test("getAssignment: PS7 calendar id, bare-name attachments, one pooled under the other site", async () => {
+  const tables: Tables = {
+    enrollments: twoSites,
+    courses: twoSiteCourses,
+    course_facts: [],
+    course_documents: (q) => {
+      if (q.get("kind") === "eq.assignment") return [{ text: PS7_TEXT }];
+      if (q.get("title") === "ilike.Problem Set 7.pdf") return [{ id: "file:1946718:9", title: "Problem Set 7.pdf", url: "https://canvas.upenn.edu/courses/1946718/files/9", text: "P".repeat(15_000) }];
+      return [];
+    },
+  };
+  await withBackend(tables, async (backend, seen, store) => {
+    await store.upsertSnapshot({ userId: USER, courses: [], workList: [ps7()], manual: [], writtenAt: NOW.toISOString() });
+    const found = await backend.getAssignment(USER, "canvas:event-assignment-15044550");
+    assert.ok(found);
+    assert.strictEqual(found.description, PS7_TEXT);
+    assert.deepStrictEqual(found.attachments, [
+      { name: "Problem Set 7.pdf", url: "https://canvas.upenn.edu/courses/1946718/files/9", documentId: "file:1946718:9", text: "P".repeat(12_000) },
+      { name: "HW7 numerical solutions.pdf", url: null, documentId: null, text: null },
+    ]);
+    const docs = only(seen, "course_documents");
+    assert.strictEqual(docs[0].q.get("course_id"), "in.(1946718,1949400)");
+    assert.strictEqual(docs[0].q.get("source_id"), "eq.15044550");
+    assert.strictEqual(docs[1].q.get("course_id"), "in.(1946718,1949400)");
+    assert.strictEqual(docs[1].q.get("kind"), "eq.file");
+    assert.ok(!Object.keys(found.entry).includes("canvasAssignmentID"));
+  });
+});
+
+Deno.test("getAssignment: explicit ids win; a link names the file and the page", async () => {
+  const text = "See https://canvas.upenn.edu/courses/1946718/files/164695272 and /courses/1946718/pages/lens-lab";
+  const tables: Tables = {
+    enrollments: twoSites,
+    courses: twoSiteCourses,
+    course_facts: [],
+    course_documents: (q) => {
+      if (q.get("kind") === "eq.assignment") return [{ text }];
+      if (q.get("url") === "ilike.%/files/164695272%") return [{ id: "f1", title: "Lenses PL.pdf", url: "https://canvas.upenn.edu/courses/1946718/files/164695272", text: "lens text" }];
+      return [];
+    },
+  };
+  await withBackend(tables, async (backend, seen, store) => {
+    await store.upsertSnapshot({
+      userId: USER, courses: [],
+      workList: [{ ...ps7({ id: "canvas:event-assignment-override-1" }), canvasAssignmentID: "777", canvasCourseID: "1949400" }],
+      manual: [], writtenAt: NOW.toISOString(),
+    });
+    const found = await backend.getAssignment(USER, "canvas:event-assignment-override-1");
+    assert.ok(found);
+    const docs = only(seen, "course_documents");
+    assert.strictEqual(docs[0].q.get("course_id"), "in.(1949400)");
+    assert.strictEqual(docs[0].q.get("source_id"), "eq.777");
+    assert.deepStrictEqual(found.attachments, [
+      { name: "Lenses PL.pdf", url: "https://canvas.upenn.edu/courses/1946718/files/164695272", documentId: "f1", text: "lens text" },
+      { name: "lens-lab", url: null, documentId: null, text: null },
+    ]);
+    assert.strictEqual(docs[2].q.get("url"), "ilike.%/pages/lens-lab%");
+  });
+});
+
+Deno.test("getAssignment: an override id with no explicit id finds nothing", async () => {
+  await withBackend({ enrollments: twoSites, courses: twoSiteCourses }, async (backend, seen, store) => {
+    await store.upsertSnapshot({ userId: USER, courses: [], workList: [ps7({ id: "canvas:event-assignment-override-1236169" })], manual: [], writtenAt: NOW.toISOString() });
+    const found = await backend.getAssignment(USER, "canvas:event-assignment-override-1236169");
+    assert.deepStrictEqual([found?.description, found?.attachments], ["", []]);
+    assert.strictEqual(only(seen, "course_documents").length, 0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Drafts: PostgREST and Storage both stubbed at `fetch`.
+
+interface Call {
+  method: string;
+  path: string;
+  q: URLSearchParams;
+  body: string;
+}
+
+async function withDrafts<T>(
+  opts: { openCount?: number; insertFails?: boolean; uploadFails?: boolean; rows?: unknown[] },
+  run: (backend: PostgrestToolBackend, calls: Call[]) => Promise<T>,
+): Promise<T> {
+  const original = globalThis.fetch;
+  const calls: Call[] = [];
+  globalThis.fetch = (async (input: Request | URL | string, init?: RequestInit) => {
+    const request = input instanceof Request ? input : new Request(String(input), init);
+    const url = new URL(request.url);
+    const body = request.method === "GET" || request.method === "HEAD" ? "" : await request.text();
+    calls.push({ method: request.method, path: url.pathname, q: url.searchParams, body });
+    const jsonHeaders = { "content-type": "application/json" };
+    if (url.pathname.startsWith("/storage/v1/object/sign/")) {
+      return new Response(JSON.stringify({ signedURL: `/object/sign/agent-drafts/x?token=t` }), { status: 200, headers: jsonHeaders });
+    }
+    if (url.pathname.startsWith("/storage/v1/object/agent-drafts/") && request.method === "POST") {
+      return opts.uploadFails
+        ? new Response(JSON.stringify({ message: "boom", error: "boom", statusCode: "500" }), { status: 500, headers: jsonHeaders })
+        : new Response(JSON.stringify({ Key: "agent-drafts/x" }), { status: 200, headers: jsonHeaders });
+    }
+    if (url.pathname.startsWith("/storage/v1/object/agent-drafts") && request.method === "DELETE") {
+      return new Response("[]", { status: 200, headers: jsonHeaders });
+    }
+    if (url.pathname === "/rest/v1/agent_drafts") {
+      if (request.method === "HEAD") {
+        return new Response(null, { status: 200, headers: { "content-range": `*/${opts.openCount ?? 0}` } });
+      }
+      if (request.method === "POST") {
+        return opts.insertFails
+          ? new Response(JSON.stringify({ message: "insert failed" }), { status: 500, headers: jsonHeaders })
+          : new Response(null, { status: 201 });
+      }
+      return new Response(JSON.stringify(opts.rows ?? []), { status: 200, headers: jsonHeaders });
+    }
+    return new Response("[]", { status: 200, headers: jsonHeaders });
+  }) as typeof fetch;
+  try {
+    const client = createClient("http://supabase.test", "service-key", { auth: { persistSession: false, autoRefreshToken: false } });
+    return await run(new PostgrestToolBackend({ client, store: new MemoryAgentStore(), now: () => NOW }), calls);
+  } finally {
+    globalThis.fetch = original;
+  }
+}
+
+const inserted = (calls: Call[]) => JSON.parse(calls.find((c) => c.method === "POST" && c.path === "/rest/v1/agent_drafts")!.body);
+
+Deno.test("proposeSubmission: a text draft is one row, status proposed, with the client's name", async () => {
+  await withDrafts({}, async (backend, calls) => {
+    const made = await backend.proposeSubmission(USER, "conn1", "Claude", { assignmentId: "canvas:1", kind: "text", body: "answer", note: "n" });
+    assert.match(made.id, /^smd_[A-Za-z0-9_-]{22}$/);
+    assert.strictEqual(made.bytes, undefined);
+    const row = inserted(calls);
+    assert.deepStrictEqual(
+      { ...row, id: "-" },
+      {
+        id: "-", user_id: USER, connection_id: "conn1", client_name: "Claude", assignment_id: "canvas:1", kind: "text",
+        status: "proposed", body: "answer", url: null, note: "n", file_path: null, file_name: null, mime_type: null, file_bytes: null,
+      },
+    );
+    assert.ok(!calls.some((c) => c.path.startsWith("/storage/")), "no storage call for text");
+  });
+});
+
+Deno.test("proposeSubmission: a url draft", async () => {
+  await withDrafts({}, async (backend, calls) => {
+    await backend.proposeSubmission(USER, "c", "Claude", { assignmentId: "canvas:1", kind: "url", url: "https://example.com/x" });
+    assert.strictEqual(inserted(calls).url, "https://example.com/x");
+  });
+});
+
+Deno.test("proposeSubmission: a file is decoded, uploaded to <user>/<draft>/<clean name>, then inserted", async () => {
+  await withDrafts({}, async (backend, calls) => {
+    const made = await backend.proposeSubmission(USER, "c", "Claude", {
+      assignmentId: "canvas:1", kind: "file", fileBase64: btoa("hello"), fileName: "My Essay (final).pdf", mimeType: "application/pdf",
+    });
+    assert.strictEqual(made.bytes, 5);
+    const upload = calls.find((c) => c.method === "POST" && c.path.startsWith("/storage/v1/object/agent-drafts/"))!;
+    assert.strictEqual(decodeURIComponent(upload.path), `/storage/v1/object/agent-drafts/${USER}/${made.id}/My_Essay_final_.pdf`);
+    const order = calls.map((c) => (c.path.startsWith("/storage/") ? "storage" : "rest")).filter((_, i, a) => a[i] !== a[i - 1]);
+    assert.deepStrictEqual(order, ["rest", "storage", "rest"], "count, upload, insert");
+    const row = inserted(calls);
+    assert.strictEqual(row.file_path, `${USER}/${made.id}/My_Essay_final_.pdf`);
+    assert.strictEqual(row.file_name, "My Essay (final).pdf");
+    assert.strictEqual(row.mime_type, "application/pdf");
+    assert.strictEqual(row.file_bytes, 5);
+  });
+});
+
+Deno.test("proposeSubmission: 20 open drafts refuses before any write", async () => {
+  await withDrafts({ openCount: 20 }, async (backend, calls) => {
+    let name = "";
+    try {
+      await backend.proposeSubmission(USER, "c", "Claude", { assignmentId: "canvas:1", kind: "text", body: "x" });
+    } catch (e) {
+      name = (e as Error).name;
+    }
+    assert.strictEqual(name, "DraftLimitError");
+    assert.ok(!calls.some((c) => c.method === "POST" || c.method === "DELETE"));
+  });
+  await withDrafts({ openCount: 19 }, async (backend) => {
+    await backend.proposeSubmission(USER, "c", "Claude", { assignmentId: "canvas:1", kind: "text", body: "x" });
+  });
+});
+
+Deno.test("proposeSubmission: the open count looks at proposed and seen of this user only", async () => {
+  await withDrafts({}, async (backend, calls) => {
+    await backend.proposeSubmission(USER, "c", "Claude", { assignmentId: "canvas:1", kind: "text", body: "x" });
+    const head = calls.find((c) => c.method === "HEAD")!;
+    assert.strictEqual(head.q.get("user_id"), "eq.u1");
+    assert.strictEqual(head.q.get("status"), "in.(proposed,seen)");
+  });
+});
+
+Deno.test("proposeSubmission: a failed insert removes the uploaded object and rethrows", async () => {
+  await withDrafts({ insertFails: true }, async (backend, calls) => {
+    let threw = false;
+    try {
+      await backend.proposeSubmission(USER, "c", "Claude", { assignmentId: "canvas:1", kind: "file", fileBase64: btoa("hi"), fileName: "a.txt", mimeType: "text/plain" });
+    } catch {
+      threw = true;
+    }
+    assert.ok(threw);
+    const removal = calls.find((c) => c.method === "DELETE" && c.path.startsWith("/storage/"))!;
+    assert.match(removal.body, new RegExp(`${USER}/smd_`));
+  });
+});
+
+Deno.test("proposeSubmission: a failed upload writes no row; bad base64 is an InvalidBase64Error", async () => {
+  await withDrafts({ uploadFails: true }, async (backend, calls) => {
+    let threw = false;
+    try {
+      await backend.proposeSubmission(USER, "c", "Claude", { assignmentId: "canvas:1", kind: "file", fileBase64: btoa("hi"), fileName: "a.txt", mimeType: "text/plain" });
+    } catch {
+      threw = true;
+    }
+    assert.ok(threw);
+    assert.ok(!calls.some((c) => c.method === "POST" && c.path === "/rest/v1/agent_drafts"));
+  });
+  await withDrafts({}, async (backend, calls) => {
+    let name = "";
+    try {
+      await backend.proposeSubmission(USER, "c", "Claude", { assignmentId: "canvas:1", kind: "file", fileBase64: "!!!!", fileName: "a.txt", mimeType: "text/plain" });
+    } catch (e) {
+      name = (e as Error).name;
+    }
+    assert.strictEqual(name, "InvalidBase64Error");
+    assert.ok(!calls.some((c) => c.path.startsWith("/storage/")));
+  });
+});
+
+Deno.test("draftStatus: the row's status for this user, null otherwise", async () => {
+  await withDrafts({ rows: [{ id: "smd_a", status: "seen" }] }, async (backend, calls) => {
+    assert.deepStrictEqual(await backend.draftStatus(USER, "smd_a"), { id: "smd_a", status: "seen" });
+    const q = calls.find((c) => c.method === "GET")!.q;
+    assert.strictEqual(q.get("user_id"), "eq.u1");
+    assert.strictEqual(q.get("id"), "eq.smd_a");
+  });
+  await withDrafts({ rows: [] }, async (backend) => {
+    assert.strictEqual(await backend.draftStatus(USER, "smd_a"), null);
+  });
+});

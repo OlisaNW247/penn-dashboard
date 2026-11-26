@@ -167,16 +167,18 @@ public struct Assignment: Sendable, Hashable, Identifiable {
     /// else's submission status as this student's own.
     public var canvasAssignmentID: String? {
         guard source == .canvas || source == .canvasModules else { return nil }
-        if let url {
-            if let id = Self.firstMatch(Self.urlPathAssignmentPattern, in: url.absoluteString) {
-                return id
-            }
-            if let id = Self.firstMatch(Self.urlFragmentAssignmentPattern, in: url.absoluteString) {
-                return id
-            }
-        }
+        if let url, let id = Self.canvasAssignmentID(inURL: url.absoluteString) { return id }
         guard source == .canvas else { return nil }
         return Self.firstMatch(Self.uidAssignmentPattern, in: sourceID)
+    }
+
+    /// The URL half of `canvasAssignmentID`, shared with the agent snapshot
+    /// so there is one rule: `/assignments/<id>` in the path, else the
+    /// calendar event's `#assignment_<id>` fragment. Never reads a uid, whose
+    /// number may be an override id (a different id space).
+    public static func canvasAssignmentID(inURL text: String) -> String? {
+        if let id = firstMatch(urlPathAssignmentPattern, in: text) { return id }
+        return firstMatch(urlFragmentAssignmentPattern, in: text)
     }
 
     // The three expressions behind `canvasAssignmentID`, compiled once. They were

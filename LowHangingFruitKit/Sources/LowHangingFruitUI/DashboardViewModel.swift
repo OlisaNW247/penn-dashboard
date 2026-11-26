@@ -22,6 +22,14 @@ struct DashItem: Identifiable, Equatable {
     /// construction site (`SampleData`, tests) keeps compiling and previews
     /// render exactly as before unless a fixture opts a specific item in.
     var requiresNoSubmission: Bool = false
+    /// Canvas says the no-submission work is handed in on paper
+    /// (`AppState.submitsOnPaper`): the one case "in class" is true for a
+    /// Canvas assignment. Snapshotted at `reload` like the field above.
+    var submitsOnPaper: Bool = false
+    /// Canvas says the only submission type is an external tool
+    /// (`AppState.isExternalTool`): nothing can confirm it, so the Sweeper
+    /// buzzes for it rather than ringing an alarm. Snapshotted at `reload`.
+    var isExternalTool: Bool = false
     /// What the opened card offers to take away (`OwnTaskRemoval`): "delete" on
     /// the student's own one-off task, "stop repeating" on an occurrence of a
     /// recurring one, nil for everything else. Snapshotted at `reload` time for
@@ -37,6 +45,15 @@ struct DashItem: Identifiable, Equatable {
     /// (`AppState.completionIsLockedByCanvas`), so prev offers no swipe back.
     /// Defaulted so every other construction site is untouched.
     var canMarkActive: Bool = true
+    /// An agent's open draft for this item (`AppState.agentDraftDisplay`):
+    /// the "drafted by claude" chip and the opened card's preview and button.
+    /// Snapshotted at reload like `fact`. Nil for sample data and every card
+    /// with no draft.
+    var agentDraft: AgentDraftDisplay? = nil
+    /// The agent whose draft the student sent from the phone, on a completed
+    /// card (`AppState.agentSubmittedNamesByItemID`): prev says "submitted by
+    /// you · drafted by claude". Nil everywhere else.
+    var agentSubmittedBy: String? = nil
 
     /// A fact cancelled it: off todo and reminders, still listed in all.
     var isFactCancelled: Bool { fact?.cancelled == true }
@@ -84,6 +101,14 @@ struct DashItem: Identifiable, Equatable {
     /// reminder-toggle scopes stay exactly as they were.
     var showsNothingToSubmit: Bool { requiresNoSubmission || assignment.kind == .event }
 
+    /// The word under the due value for a card with nothing to submit
+    /// (`NothingToSubmitLabel.text`), nil for every other card.
+    var nothingToSubmitLabel: String? {
+        guard showsNothingToSubmit else { return nil }
+        return NothingToSubmitLabel.text(
+            isEvent: assignment.kind == .event, submitsOnPaper: submitsOnPaper, title: assignment.title)
+    }
+
     /// True for a task the Announcement Watcher extracted from an
     /// announcement's text rather than one Canvas lists as an assignment.
     /// Surfaced as a small caveat on the card because these are the app's
@@ -112,9 +137,32 @@ struct DashItem: Identifiable, Equatable {
     /// opened (moved there 2026-11-06 at the owner's call, to keep collapsed
     /// cards one height). "Nothing to submit" is not here either: the card
     /// shows it as "in class" under the due value (`showsNothingToSubmit`).
+    ///
+    /// An agent's draft adds "drafted by claude" here too, on the collapsed
+    /// card (v11 plan, "The card": a provenance chip). It is provenance, which
+    /// otherwise lives in the opened card, but it is also the one thing the
+    /// student has to act on, and a chip only on the opened card would be
+    /// found by nobody. It is a word on the same line, so the card stays one
+    /// height.
     var caveatText: String? {
-        let parts: [String] = fact?.caveatWords ?? []
+        let parts = [factCaveatText, agentChipText].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " \u{00B7} ")
+    }
+
+    /// The fact words alone ("cancelled · moved"), drawn in the card's
+    /// secondary colour.
+    var factCaveatText: String? {
+        let words = fact?.caveatWords ?? []
+        return words.isEmpty ? nil : words.joined(separator: " \u{00B7} ")
+    }
+
+    /// The agent's chip, drawn in grape, the agent's colour (2026-11-11):
+    /// "drafted by claude" on an open draft, "submitted by you · drafted by
+    /// claude" in prev once the student sent it.
+    var agentChipText: String? {
+        if let draft = agentDraft { return AgentConnectionCopy.draftedBy(draft.agentName) }
+        if isCompleted, let name = agentSubmittedBy { return AgentConnectionCopy.submittedByYou(name) }
+        return nil
     }
 
     /// Where a task came from, for the opened card only. A task found in an
@@ -248,6 +296,17 @@ final class DashboardViewModel: ObservableObject {
         items = SampleData.items()
     }
 
+    #if DEBUG
+    /// The agent screenshot seam (AppState+AgentDemo.swift): lays the demo's
+    /// draft chips and prev's "submitted by you" onto the sample cards.
+    func applyDemoAgentState(drafts: [String: AgentDraftDisplay], submittedBy: [String: String]) {
+        for i in items.indices {
+            if let draft = drafts[items[i].id] { items[i].agentDraft = draft }
+            if let name = submittedBy[items[i].id] { items[i].agentSubmittedBy = name }
+        }
+    }
+    #endif
+
     func reload(preservingEdits: Bool = false) {
         guard let state = appState else { return }
 
@@ -276,8 +335,11 @@ final class DashboardViewModel: ObservableObject {
                                   isCompleted: false,
                                   completedAt: nil,
                                   requiresNoSubmission: state.requiresNoSubmission(a),
+                                  submitsOnPaper: state.submitsOnPaper(a),
+                                  isExternalTool: state.isExternalTool(a),
                                   removal: OwnTaskRemoval.offered(for: a, isUsingFixtureData: isFixture),
-                                  fact: state.factDisplay[a.id]))
+                                  fact: state.factDisplay[a.id],
+                                  agentDraft: state.agentDraftDisplay(forItemID: a.id)))
         }
 
         // Completed pool: reconstruct from the source feeds, since the grouped
@@ -291,6 +353,7 @@ final class DashboardViewModel: ObservableObject {
         // pulling from the raw feeds put the Canvas copy and the Gradescope copy
         // in Done as two separate cards — one tap, two entries.
         let pool = state.mergedCoursework + state.manualAssignments.map { $0.asAssignment() }
+        let agentSubmitted = state.agentSubmittedNamesByItemID()
         var seen = Set(active.map { $0.id })
         // Respect the class picker here too, so a hidden course's completed work
         // doesn't linger on the Done tab after the user turned the course off.
@@ -301,7 +364,10 @@ final class DashboardViewModel: ObservableObject {
                                   isCompleted: true,
                                   completedAt: state.completedAt(a) ?? priorByID[a.id]?.completedAt,
                                   requiresNoSubmission: state.requiresNoSubmission(a),
-                                  canMarkActive: !state.completionIsLockedByCanvas(a)))
+                                  submitsOnPaper: state.submitsOnPaper(a),
+                                  isExternalTool: state.isExternalTool(a),
+                                  canMarkActive: !state.completionIsLockedByCanvas(a),
+                                  agentSubmittedBy: agentSubmitted[a.id]))
         }
 
         items = built

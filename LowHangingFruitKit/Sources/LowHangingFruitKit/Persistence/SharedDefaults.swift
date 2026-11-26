@@ -29,6 +29,11 @@ public enum SharedDefaults {
     public static let deletedCoursesKey = "deletedCourseKeys"
     public static let courseNameOverridesKey = "courseNameOverrides"
 
+    /// The student's opt-in to uploading a work-list snapshot for a connected
+    /// agent (`AppState+AgentConnection`). Off until they switch it on or
+    /// approve a first agent. App-process only.
+    public static let agentConnectionEnabledKey = "agentConnectionEnabledV1"
+
     /// The sign-up backlog decision (`SignupBacklogStore`): a cutoff instant
     /// (seconds since 1970; `0` means "decided, hide nothing"), written once,
     /// and the student's "show older assignments" switch beside it. Listed here

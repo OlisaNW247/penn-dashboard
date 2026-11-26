@@ -47,6 +47,14 @@ public struct GradeItem: Sendable, Hashable, Codable, Identifiable {
     /// Canvas `submission_types` — e.g. `["online_upload"]`, `["none"]`,
     /// `["on_paper", "online_upload"]`. nil/empty when Canvas didn't say.
     public let submissionTypes: [String]?
+    /// The host of Canvas `external_tool_tag_attributes.url`, lowercased, for
+    /// an assignment that launches an LTI tool; nil for every other
+    /// assignment. Only the host is kept (a launch URL can carry
+    /// resource-link ids and tokens). Read by `McGrawHillTool` to recognise
+    /// Connect and ALEKS work, the rows the McGraw Hill enrichment may touch.
+    /// Optional with a default, so a snapshot encoded before 2026-11-02 still
+    /// decodes.
+    public let externalToolHost: String?
 
     public init(
         id: String,
@@ -57,7 +65,8 @@ public struct GradeItem: Sendable, Hashable, Codable, Identifiable {
         isExcused: Bool = false,
         omitFromFinalGrade: Bool = false,
         dueAt: Date? = nil,
-        submissionTypes: [String]? = nil
+        submissionTypes: [String]? = nil,
+        externalToolHost: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -68,6 +77,7 @@ public struct GradeItem: Sendable, Hashable, Codable, Identifiable {
         self.omitFromFinalGrade = omitFromFinalGrade
         self.dueAt = dueAt
         self.submissionTypes = submissionTypes
+        self.externalToolHost = externalToolHost
     }
 
     /// True when Canvas expects no online submission for this assignment —
@@ -78,6 +88,27 @@ public struct GradeItem: Sendable, Hashable, Codable, Identifiable {
     public var requiresNoSubmission: Bool {
         guard let submissionTypes, !submissionTypes.isEmpty else { return false }
         return submissionTypes.allSatisfy { ["none", "on_paper", "not_graded"].contains($0) }
+    }
+
+    /// True when the no-submission work is handed in on paper (`on_paper` is
+    /// among the types), which is the one case the dashboard card may call
+    /// "in class". `none` and `not_graded` say only that Canvas takes nothing:
+    /// CIS 3990's Project 2 is handed in on the course's own git server, and
+    /// the card read "in class" for it (Marco, 2026-11-10). The wrong fix was
+    /// widening "in class" to every `requiresNoSubmission` item, which is how
+    /// the card came to say it.
+    public var submitsOnPaper: Bool {
+        requiresNoSubmission && (submissionTypes?.contains("on_paper") ?? false)
+    }
+
+    /// True when the only way to hand this in is an external tool (a survey, a
+    /// publisher's site): `submission_types == ["external_tool"]`. Such a tool
+    /// never reports back to Canvas, so no read can ever confirm it, and the
+    /// Sweeper gives it the three buzzes instead of an alarm
+    /// (`SweeperSettings.isBuzzOnly`). `["external_tool", "online_upload"]` is
+    /// not this: Canvas can confirm the upload.
+    public var isExternalToolOnly: Bool {
+        submissionTypes == ["external_tool"]
     }
 }
 

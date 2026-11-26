@@ -1,5 +1,6 @@
 import Foundation
 import WebKit
+import LowHangingFruitKit
 
 /// Per-service, PERSISTENT, isolated `WKWebsiteDataStore`s for the Canvas and
 /// Gradescope login WebViews (docs/CANVAS_LOGIN_DIAGNOSIS.md / group 2a).
@@ -47,4 +48,26 @@ enum LoginDataStores {
     // POST), so the identifier store is not what breaks the IdP handshake.
     static let canvas = WKWebsiteDataStore(forIdentifier: canvasStoreID)
     static let gradescope = WKWebsiteDataStore(forIdentifier: gradescopeStoreID)
+
+    /// A hidden, never-loaded web view attached to the Canvas store, kept for
+    /// the process. WebKit loads a non-default store's cookie jar into its
+    /// network process lazily, once a web view uses the store; before that,
+    /// `httpCookieStore.getAllCookies` can answer with nothing while the jar
+    /// on disk is full (2026-11-22, Marco's phone: the Duo trust check read
+    /// "no cookies" an hour after a sign-in had written the remembered-device
+    /// cookie). The renewer only builds a web view during an attempt, so a
+    /// read made from a cold launch had nothing to attach to. Creating one
+    /// here, with no load, is enough. Main actor, like every WKWebView.
+    @MainActor
+    static func warmCanvasStore() {
+        // Never under `swift test`: the runner must not open a WebKit process.
+        guard !SharedDefaults.isTestRunner else { return }
+        if warmCanvasView == nil {
+            let configuration = WKWebViewConfiguration()
+            configuration.websiteDataStore = canvas
+            warmCanvasView = WKWebView(frame: .zero, configuration: configuration)
+        }
+    }
+
+    @MainActor private static var warmCanvasView: WKWebView?
 }

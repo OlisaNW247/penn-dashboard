@@ -22,6 +22,9 @@ struct UpdateRequiredView: View {
     let minimum: AppVersion
     let message: String?
     let appStoreURL: URL?
+    /// The manifest's sanitized change list (`UpdatePolicy.changes`). Empty
+    /// adds nothing.
+    var changes: [String] = []
 
     /// Shown when the hosted policy didn't set a `message` — which is
     /// itself expected to be rare (a maintainer publishing a `minimumVersion`
@@ -66,6 +69,15 @@ struct UpdateRequiredView: View {
                     .foregroundStyle(Color.v2DateText)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 36)
+
+                // What changed, one short line each, straight under the line
+                // above it. No heading and no lead-in sentence on purpose:
+                // Marco asked for "very, very concise", and a "what's new"
+                // title or a "this update includes" line is exactly the
+                // padding he meant. `UpdateChangeList` is shared with the
+                // banner so the two never drift.
+                UpdateChangeList(changes: changes, alignment: .center, size: 14)
                     .padding(.horizontal, 36)
 
                 // A wall with a button that does nothing is worse than a
@@ -114,5 +126,31 @@ struct UpdateRequiredView: View {
         #elseif canImport(AppKit)
         NSWorkspace.shared.open(url)
         #endif
+    }
+}
+
+/// The bare change list under the update wall's and the banner's line: one
+/// "· item" per row in the secondary ink, nothing else. Renders nothing at
+/// all for an empty list, so a manifest without `changes` leaves both screens
+/// exactly as they were. `Text(verbatim:)` because the lines come from the
+/// network (see the message above).
+struct UpdateChangeList: View {
+    let changes: [String]
+    let alignment: HorizontalAlignment
+    let size: CGFloat
+
+    var body: some View {
+        if !changes.isEmpty {
+            VStack(alignment: alignment, spacing: 2) {
+                ForEach(Array(changes.enumerated()), id: \.offset) { _, line in
+                    Text(verbatim: "· \(line)")
+                        .font(.lhfSans(size))
+                        .foregroundStyle(Color.v2DateText)
+                        .multilineTextAlignment(alignment == .center ? .center : .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .accessibilityElement(children: .combine)
+        }
     }
 }

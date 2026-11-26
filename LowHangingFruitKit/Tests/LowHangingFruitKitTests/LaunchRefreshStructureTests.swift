@@ -130,6 +130,8 @@ struct LaunchRefreshStructureTests {
             "vm.reload(preservingEdits: true)",
             "state.refreshAnnouncementBadge()",
             "scheduler.reschedule(from: vm.items)",
+            "pollInsideTheHour(source: .foreground)",
+            "SweeperWakeRegistrar.registerIfNeeded",
         ]
         let positions = try calls.map { call in try #require(settle.range(of: call), "missing \(call)").lowerBound }
         #expect(zip(positions, positions.dropFirst()).allSatisfy(<))
@@ -146,6 +148,69 @@ struct LaunchRefreshStructureTests {
             from = r.upperBound
         }
         return found
+    }
+
+    // MARK: The last-hour planner read (the throttle lift)
+
+    private static let pollCall = "pollInsideTheHour(source:"
+
+    @Test("the launch and foreground planner reads sit before the grades fetch, and go through the shared method")
+    func plannerReadPrecedesGradesFetch() throws {
+        let source = Self.codeOnly(try Self.uiSource("ContentView.swift"))
+        // Launch: inside refreshSessionSourcesAtLaunch, before fetchSessionSources().
+        let launch = try Self.body(ofFunctionDeclaredWith: "func refreshSessionSourcesAtLaunch()", in: source)
+        let launchPoll = try #require(launch.range(of: "\(Self.pollCall) .launch)"))
+        let launchFetch = try #require(launch.range(of: "await fetchSessionSources()"))
+        #expect(launchPoll.lowerBound < launchFetch.lowerBound)
+
+        // Foreground: in the .active branch, before refresh().
+        let onChange = try #require(source.range(of: ".onChange(of: scenePhase)"))
+        let tail = source[onChange.upperBound...]
+        let fgPoll = try #require(tail.range(of: "\(Self.pollCall) .foreground)"))
+        let fgRefresh = try #require(tail.range(of: "await refresh()"))
+        #expect(fgPoll.lowerBound < fgRefresh.lowerBound)
+
+        // Both go through the one AppState method.
+        let helper = try Self.body(ofFunctionDeclaredWith: "func pollInsideTheHour(", in: source)
+        #expect(helper.contains("state.pollPlannerWindowIfInsideTheHour("))
+        #expect(!source.contains("fetchPlannerWindow("), "the view never builds its own read")
+    }
+
+    @Test("the poller stops only in background, and every settle pass revives it")
+    func pollerStopsOnlyInBackground() throws {
+        let source = Self.codeOnly(try Self.uiSource("ContentView.swift"))
+        let stops = Self.ranges(of: "lastHourPoller.stop(", in: source)
+        #expect(stops.count == 1)
+        let stop = try #require(stops.first)
+        let before = String(source[..<stop.lowerBound].suffix(60))
+        #expect(before.contains("phase == .background"), "inactive must not stop the poller")
+        let settle = try Self.body(ofFunctionDeclaredWith: "func settleAfterFetch() async", in: source)
+        #expect(settle.contains("lastHourPoller.start("))
+        #expect(settle.contains("scenePhase != .background"))
+    }
+
+    @Test("the wake's planner read sits after refreshCanvasGrades and before the replan, through the shared method")
+    func wakeReadBetweenGradesAndReplan() throws {
+        let source = Self.codeOnly(try Self.uiSource("BackgroundRefresh.swift"))
+        let run = try Self.body(ofFunctionDeclaredWith: "private static func run()", in: source)
+        let grades = try #require(run.range(of: "refreshCanvasGrades(state: state)"))
+        let poll = try #require(run.range(of: "pollPlannerWindowIfInsideTheHour(nextRing: ring, source: .bg)"))
+        let replan = try #require(run.range(of: "await replan(scheduler: scheduler, state: state)"))
+        #expect(grades.lowerBound < poll.lowerBound)
+        #expect(poll.lowerBound < replan.lowerBound)
+    }
+
+    @Test("the three observation points call the canceller")
+    func observationPoints() throws {
+        let appState = Self.codeOnly(try Self.uiSource("AppState.swift"))
+        let structured = Self.codeOnly(try Self.uiSource("AppState+StructuredSources.swift"))
+        let update = try Self.body(ofFunctionDeclaredWith: "func updateSubmissionState()", in: appState)
+        #expect(update.contains("noteSubmittedIDs(observedSubmitted.subtracting(previousSubmittedIDs), source: .grades)"))
+        #expect(structured.contains("noteSubmittedIDs(newlyCompleted, source: .structured)"))
+        let gradescope = try Self.body(ofFunctionDeclaredWith: "func syncGradescope(cookies: [HTTPCookie], reportErrors: Bool)", in: appState)
+        let reconcile = try #require(gradescope.range(of: "reconcileGradescopeFetch(fetched, into: store)"))
+        let note = try #require(gradescope.range(of: "source: .gradescope)"))
+        #expect(reconcile.lowerBound < note.lowerBound)
     }
 
     /// The text between the braces of the function whose declaration contains

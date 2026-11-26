@@ -38,6 +38,19 @@ ideas, the posters section and the restyled pages. Checked afterwards the
 same read-only way, plus the font route, a prefixed code's `plan.json`
 and the page itself mirrored with its real posters.
 
+**Not deployed as of 2026-11-18:** the fourth zip (2026-11-12: the job box,
+no checklist, the rewritten posts) was handed over and never went up; the
+live site read that day still had none of it. The fifth zip (2026-11-18)
+contains the fourth plus the playbook, posts to try from the founders, and
+the feed and post-result uploads, so it is the only one to deploy. Its
+`CHANGES_FOR_DEPLOYMENT.md` has the checks to run afterwards.
+
+**Seventh zip, 2026-11-22:** two designs retired, five generic designs
+added. The first zip that changes the Maps and `imageData` (see
+`sites/CHANGES_FOR_DEPLOYMENT.md`). The Sites archive it is built from was
+not on the dev Mac that day; it needs a fresh export from the ChatGPT
+session (step 1) before steps 2 to 5 can run.
+
 ## Step by step
 
 1. **Get the current Sites source** (the archive ChatGPT exports, with
@@ -46,9 +59,13 @@ and the page itself mirrored with its real posters.
 2. **Fold the ambassador system in.**
    `node scripts/build-sites.mjs <copy>/repository` makes two small edits to
    the real `fetch` (ask the ambassador handler first; log a scan to
-   `scan_events` after its counter is saved) and appends the bundled
-   ambassador code between two markers. It refuses to write if the real
-   file no longer looks the way it expects, and a second run changes nothing.
+   `scan_events` after its counter is saved), adds any catalog design the
+   host's `posters` Map does not have yet (its name there, its preview from
+   `posters/previews/` in `imageData` for every school) and appends the
+   bundled ambassador code between two markers. It refuses to write if the
+   real file no longer looks the way it expects, the image dictionary
+   included (`scripts/lib/add-posters.mjs` reads its shape rather than
+   assuming one), and a second run changes nothing.
 3. **Prove nothing moved.** In `<copy>/repository`: `node --check
    worker/index.js && bash scripts/build.sh && node
    scripts/validate-artifact.mjs`. Then here:

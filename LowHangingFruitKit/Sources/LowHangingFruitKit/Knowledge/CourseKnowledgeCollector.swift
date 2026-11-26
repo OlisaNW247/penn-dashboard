@@ -315,7 +315,11 @@ public struct CourseKnowledgeCollector: Sendable {
             courses: courses,
             documents: documents,
             resyncedCourseIDs: synced,
-            preservingKinds: [.ed],
+            // `.file` for the same reason as `.ed`: the collector never
+            // produces file documents (the phone's attachment pass and the
+            // Chrome extension do), so it has no say over them, and a
+            // complete-set merge would delete every PDF on each re-sync.
+            preservingKinds: [.ed, .file],
             syncedAt: now
         )
         try store.save(knowledge)

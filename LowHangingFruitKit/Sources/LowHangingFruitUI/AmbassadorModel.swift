@@ -55,6 +55,12 @@ final class SystemAmbassadorNotificationCenter: AmbassadorNotificationCenter {
     }
 }
 
+/// How far a feed recording's upload has got, for "sent 3 of 12".
+struct FeedProgress: Equatable {
+    var sent: Int
+    var total: Int
+}
+
 /// Ambassador mode's state: signed in or not, the plan the server last gave
 /// (cached, so the page opens instantly and works offline), the reminder
 /// settings, and the one-shot "open the ambassador page" that a notification
@@ -90,9 +96,21 @@ final class AmbassadorModel: ObservableObject {
     @Published private(set) var authStatus: UNAuthorizationStatus = .notDetermined
     /// The day index (the server's) the student last marked "posted".
     @Published private(set) var postedDayIndex: Int?
+    /// True while a group-chat drop is ticked on the phone but its log never
+    /// reached the server; the next `refresh()` sends it again.
+    private(set) var groupChatLogPending = false
     /// Set by a reminder tap or an `smooth://ambassador` link; the dashboard
     /// pushes Profile → ambassador and calls `consumePendingOpen()`.
     @Published private(set) var pendingOpen = false
+    /// Non-nil only while a recording's stills are going up.
+    @Published private(set) var feedProgress: FeedProgress?
+    /// True from a first sign-in until the intro sheet is dismissed.
+    @Published private(set) var introPending = false
+    /// Which of the four tasks is ticked, and for how long (`AmbassadorTaskLog`).
+    @Published private(set) var taskLog = AmbassadorTaskLog()
+    /// How many posters the ambassador says they have put up, of 30. Theirs
+    /// to set with the slider; never sent anywhere.
+    @Published private(set) var postersPutUp: Int = 0
     /// When the plan was last fetched from the server, for `refreshIfStale`.
     private(set) var planFetchedAt: Date?
 
@@ -103,6 +121,9 @@ final class AmbassadorModel: ObservableObject {
     private let saveCode: (String) -> Void
     private let removeCode: () -> Void
     private let timeZone: TimeZone
+    /// The clock the day index reads. A seam for tests only; the app uses the
+    /// real one.
+    private let now: () -> Date
 
     static let planCacheKey = "ambassador.planCache"
     static let cadenceKey = "ambassador.cadence"
@@ -111,6 +132,13 @@ final class AmbassadorModel: ObservableObject {
     static let anonAppKey = "ambassador.anonApp"
     static let postedDayKey = "ambassador.postedDayIndex"
     static let fetchedAtKey = "ambassador.planFetchedAt"
+    /// Written once the intro has been shown. Sign-out leaves it alone: the
+    /// intro is for a first sign-in on this install, not for every code.
+    static let introSeenKey = "ambassador.introSeenV1"
+    static let taskLogKey = "ambassador.taskLogV1"
+    static let postersPutUpKey = "ambassador.postersPutUpV1"
+    /// Set while a group-chat drop has ticked but the server has not logged it.
+    static let groupChatPendingKey = "ambassador.groupChatLogPendingV1"
     /// A plan older than this is fetched again when the app becomes active
     /// or the page opens. Half an hour: the numbers move slowly, and the post
     /// changes once a day.
@@ -136,7 +164,9 @@ final class AmbassadorModel: ObservableObject {
          loadCode: @escaping () -> String?,
          saveCode: @escaping (String) -> Void,
          removeCode: @escaping () -> Void,
-         timeZone: TimeZone = .current) {
+         timeZone: TimeZone = .current,
+         now: @escaping () -> Date = Date.init) {
+        self.now = now
         self.defaults = defaults
         self.client = client
         self.center = center
@@ -152,6 +182,12 @@ final class AmbassadorModel: ObservableObject {
         self.reminderMinute = minute.map { max(0, min(59, $0)) } ?? AmbassadorReminders.defaultMinute
         self.anonApp = AmbassadorAnonApp(rawValue: defaults.string(forKey: Self.anonAppKey) ?? "") ?? .fizz
         self.postedDayIndex = defaults.object(forKey: Self.postedDayKey) as? Int
+        self.groupChatLogPending = defaults.bool(forKey: Self.groupChatPendingKey)
+        self.postersPutUp = max(0, min(AmbassadorGoals.postersTarget, defaults.integer(forKey: Self.postersPutUpKey)))
+        if let data = defaults.data(forKey: Self.taskLogKey),
+           let log = try? JSONDecoder().decode(AmbassadorTaskLog.self, from: data) {
+            self.taskLog = log
+        }
         if let data = defaults.data(forKey: Self.planCacheKey), let cached = try? AmbassadorPlan.decode(data) {
             self.plan = cached
         }
@@ -170,12 +206,13 @@ final class AmbassadorModel: ObservableObject {
         return "\(plan.firstName.lowercased()) \u{00B7} \(plan.schoolLabel)"
     }
 
-    /// Whether today's post has been marked posted. Compared on the server's
-    /// day index so the phone's midnight and the server's agree (the plan was
-    /// fetched with the phone's own offset).
+    /// Whether today's post has been marked posted. Compared on the phone's
+    /// own day index (`todayIndex`, the server's formula with the phone's
+    /// offset), never on a cached plan's, which can be 30 minutes or a whole
+    /// offline stretch old.
     var postedToday: Bool {
-        guard let today = plan?.today, let postedDayIndex else { return false }
-        return today.dayIndex == postedDayIndex
+        guard plan?.today != nil, let postedDayIndex else { return false }
+        return todayIndex == postedDayIndex
     }
 
     // MARK: Signing in and out
@@ -198,6 +235,7 @@ final class AmbassadorModel: ObservableObject {
             code = candidate
             saveCode(candidate)
             store(plan: fetched)
+            introPending = true
             await ensureReminders()
             return true
         } catch AmbassadorClientError.unknownCode {
@@ -208,6 +246,11 @@ final class AmbassadorModel: ObservableObject {
         return false
     }
 
+    /// The intro sheet was dismissed. It returns at the next sign-in.
+    func finishIntro() {
+        introPending = false
+    }
+
     /// Forgets the code, the cached plan and the local settings, and takes
     /// the reminders back. Nothing is sent to the server: the founder's
     /// roster row is theirs, and "left" is a word for the founders to set.
@@ -216,9 +259,13 @@ final class AmbassadorModel: ObservableObject {
         plan = nil
         planFetchedAt = nil
         postedDayIndex = nil
+        groupChatLogPending = false
+        taskLog = AmbassadorTaskLog()
+        postersPutUp = 0
+        introPending = false
         lastError = nil
         removeCode()
-        for key in [Self.planCacheKey, Self.postedDayKey, Self.fetchedAtKey] { defaults.removeObject(forKey: key) }
+        for key in [Self.planCacheKey, Self.postedDayKey, Self.fetchedAtKey, Self.taskLogKey, Self.postersPutUpKey, Self.groupChatPendingKey] { defaults.removeObject(forKey: key) }
         NotificationScheduler.reservedForeignSlots = 0
         Task { await removeAllReminders() }
     }
@@ -233,6 +280,7 @@ final class AmbassadorModel: ObservableObject {
             let fetched = try await client.plan(code: code, anonApp: anonApp, tzOffsetMinutes: tzOffset())
             store(plan: fetched)
             lastError = nil
+            await resendGroupChatLogIfPending()
         } catch AmbassadorClientError.unknownCode {
             // The founders removed this ambassador. The cached plan stays
             // readable; the next action will say the code no longer works.
@@ -247,6 +295,24 @@ final class AmbassadorModel: ObservableObject {
         guard isSignedIn else { return }
         if let planFetchedAt, now.timeIntervalSince(planFetchedAt) < Self.staleAfter, plan != nil { return }
         await refresh()
+    }
+
+    /// A group-chat drop whose log failed is sent again on the next refresh
+    /// that reaches the server; the flag clears only when the send succeeds.
+    private func resendGroupChatLogIfPending() async {
+        guard groupChatLogPending, let code else { return }
+        do {
+            try await client.send(code: code, action: "post", body: ["channel": "gc", "place": "group chats"])
+            setGroupChatLogPending(false)
+        } catch {
+            // Still offline or refused: stays pending for the next refresh.
+        }
+    }
+
+    private func setGroupChatLogPending(_ pending: Bool) {
+        groupChatLogPending = pending
+        if pending { defaults.set(true, forKey: Self.groupChatPendingKey) }
+        else { defaults.removeObject(forKey: Self.groupChatPendingKey) }
     }
 
     private func store(plan fetched: AmbassadorPlan) {
@@ -275,13 +341,86 @@ final class AmbassadorModel: ObservableObject {
         defer { isWorking = false }
         do {
             try await client.send(code: code, action: "post", body: ["channel": channel, "place": "daily"])
-            postedDayIndex = today.dayIndex
-            defaults.set(today.dayIndex, forKey: Self.postedDayKey)
+            let day = todayIndex
+            postedDayIndex = day
+            defaults.set(day, forKey: Self.postedDayKey)
             lastError = nil
             return true
         } catch {
             lastError = "couldn\u{2019}t reach smooth"
             return false
+        }
+    }
+
+    // MARK: The four tasks
+
+    /// The phone's own day index, the server's formula
+    /// (`floor((ms - tz*60000)/86400000)`, tz being `tzOffsetMinutes`, so
+    /// the offset is added in seconds here). Never read from the cached
+    /// plan: a plan fetched at 23:50 would file a 00:05 tick under yesterday
+    /// (3.5.0 test pass, R-M1), while the server logs the post on its today.
+    private var todayIndex: Int {
+        let date = now()
+        let local = date.timeIntervalSince1970 + Double(timeZone.secondsFromGMT(for: date))
+        return Int((local / 86_400).rounded(.down))
+    }
+
+    func isDone(_ task: AmbassadorTask) -> Bool {
+        // Posters are ongoing: ticked only at the goal, never by the log.
+        if task == .posters { return postersPutUp >= AmbassadorGoals.postersTarget }
+        if task == .anonChats, postedToday { return true }
+        return taskLog.isDone(task, todayIndex: todayIndex)
+    }
+
+    func setPostersPutUp(_ value: Int) {
+        postersPutUp = max(0, min(AmbassadorGoals.postersTarget, value))
+        defaults.set(postersPutUp, forKey: Self.postersPutUpKey)
+    }
+
+    /// Posts logged in the last seven days (today included).
+    var anonPostsThisWeek: Int { taskLog.anonPostsInLastWeek(todayIndex: todayIndex) }
+    var anonWeeklyMinimumMet: Bool { taskLog.anonWeeklyMinimumMet(todayIndex: todayIndex) }
+    var anonStreak: Int { taskLog.anonStreak(todayIndex: todayIndex) }
+    var anonWeekDots: [Bool] { taskLog.anonPostedDays(todayIndex: todayIndex) }
+
+    private func tick(_ task: AmbassadorTask) {
+        taskLog.markDone(task, todayIndex: todayIndex)
+        if let data = try? JSONEncoder().encode(taskLog) { defaults.set(data, forKey: Self.taskLogKey) }
+    }
+
+    /// Ticks `task` at once, on the phone, then tells the server where it has
+    /// something to count: the anonymous post (the existing daily log) and a
+    /// group-chat drop (a `post` in the `gc` channel). Posters and feedback
+    /// send nothing from here (a poster idea and feedback have their own
+    /// calls). The anonymous post ticks only once the server has logged it:
+    /// a tick on a failed log turned the done button into a check, so the
+    /// post could never be logged again and the founders' count missed it
+    /// (3.5.0 test pass, R-M2). With nothing to log (no plan yet, a rest
+    /// day) it ticks as before. A group-chat drop still ticks first and
+    /// sends quietly; a failed send is kept as a pending flag and resent on the next refresh.
+    func markDone(_ task: AmbassadorTask) async {
+        if task == .anonChats {
+            if plan?.today?.channel == nil {
+                tick(task)
+            } else if await markPostedToday() {
+                tick(task)
+            }
+            return
+        }
+        tick(task)
+        switch task {
+        case .anonChats:
+            break
+        case .groupChats:
+            guard let code else { return }
+            do {
+                try await client.send(code: code, action: "post", body: ["channel": "gc", "place": "group chats"])
+            } catch {
+                // Ticked already; remember the log is owed and resend on refresh.
+                setGroupChatLogPending(true)
+            }
+        case .posters, .feedback:
+            break
         }
     }
 
@@ -313,6 +452,7 @@ final class AmbassadorModel: ObservableObject {
         do {
             try await client.send(code: code, action: "feedback", body: ["body": body])
             lastError = nil
+            tick(.feedback)
             return true
         } catch {
             lastError = "couldn\u{2019}t reach smooth"
@@ -369,6 +509,88 @@ final class AmbassadorModel: ObservableObject {
         return true
     }
 
+    /// The words for a failed upload, the same ones the idea path uses.
+    private static func uploadErrorLine(_ error: Error) -> String {
+        switch error as? AmbassadorClientError {
+        case .unknownCode?: return "this code no longer works"
+        case .tooLarge?: return "that picture is too big"
+        case .limitReached?: return "that\u{2019}s the limit for today"
+        default: return "couldn\u{2019}t reach smooth"
+        }
+    }
+
+    /// The feed recording and post result sheets went on 2026-11-21 at Marco's
+    /// word (the page is four tasks now), but the server still has both routes
+    /// and the founder page reads what they stored, so these two methods, the
+    /// client's `sendCapture` and `FeedRecordingFrames` stay, tested, for the
+    /// day a sheet comes back.
+    ///
+    /// Uploads the stills of one screen recording, in order, under one new
+    /// batch id (the server groups by it) with `seq` 0...n-1, at most 16. Stops
+    /// at the first refusal: a daily limit or a dead code will not get better
+    /// by trying the next still, and the ones already sent stay sent. The
+    /// stills were already shrunk and re-encoded by `FeedRecordingFrames`, so
+    /// nothing is re-encoded here. On success the plan is fetched again so
+    /// "3 of 96" moves.
+    @discardableResult
+    func sendFeedFrames(_ frames: [Data]) async -> Bool {
+        guard let code else { return false }
+        let batch = Array(frames.prefix(16))
+        guard !batch.isEmpty else {
+            lastError = "couldn\u{2019}t read that recording"
+            return false
+        }
+        isWorking = true
+        defer { isWorking = false }
+        lastError = nil
+        let id = FeedRecordingFrames.newBatchID()
+        feedProgress = FeedProgress(sent: 0, total: batch.count)
+        for (index, jpeg) in batch.enumerated() {
+            do {
+                try await client.sendCapture(code: code, fields: AmbassadorClient.feedFrameBody(batch: id, seq: index, jpeg: jpeg))
+            } catch {
+                lastError = Self.uploadErrorLine(error)
+                feedProgress = nil
+                return false
+            }
+            feedProgress = FeedProgress(sent: index + 1, total: batch.count)
+        }
+        feedProgress = nil
+        await refresh()
+        lastError = nil
+        return true
+    }
+
+    /// Sends one screenshot of how a post did, with where it was posted, which
+    /// kind of post it was and the numbers if the student gave them. Shrunk off
+    /// the main actor exactly as `sendPosterIdea` does.
+    @discardableResult
+    func sendPostResult(imageData: Data, platform: String, style: String,
+                        upvotes: Int?, views: Int?, note: String) async -> Bool {
+        guard let code else { return false }
+        isWorking = true
+        defer { isWorking = false }
+        lastError = nil
+        let jpeg = await Task.detached(priority: .userInitiated) {
+            PosterIdeaImage.prepared(from: imageData, maxDimension: 1200, maxBytes: 300_000)
+        }.value
+        guard let jpeg else {
+            lastError = "couldn\u{2019}t read that picture"
+            return false
+        }
+        let text = String(note.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500))
+        do {
+            try await client.sendCapture(code: code, fields: AmbassadorClient.resultBody(
+                jpeg: jpeg, platform: platform, style: style, upvotes: upvotes, views: views, note: text))
+        } catch {
+            lastError = Self.uploadErrorLine(error)
+            return false
+        }
+        await refresh()
+        lastError = nil
+        return true
+    }
+
     /// Clears a line left by an earlier action, for a sheet that opens fresh.
     func clearError() {
         lastError = nil
@@ -381,7 +603,7 @@ final class AmbassadorModel: ObservableObject {
         guard let code else { return }
         do {
             try await client.send(code: code, action: "pause", body: ["weeks": String(weeks)])
-            await setCadence(weeks > 0 ? .off : .daily)
+            await setCadence(weeks > 0 ? .off : .twiceWeekly)
             await refresh()
         } catch {
             lastError = "couldn\u{2019}t reach smooth"
@@ -471,6 +693,12 @@ final class AmbassadorModel: ObservableObject {
 
     /// The student tapped the daily reminder.
     func noteReminderTapped() {
+        requestOpen()
+    }
+
+    /// Asks the dashboard to open the page as its own destination (the
+    /// Profile row, the reminder tap and the link all come through here).
+    func requestOpen() {
         pendingOpen = true
     }
 

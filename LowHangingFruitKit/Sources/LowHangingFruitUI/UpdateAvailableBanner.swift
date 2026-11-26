@@ -25,6 +25,8 @@ import LowHangingFruitKit
 /// .lhf`, never `.standard`); this view only calls `dismiss()`.
 struct UpdateAvailableBanner: View {
     let latest: AppVersion
+    /// The manifest's sanitized change list; empty adds nothing.
+    var changes: [String] = []
     let dismiss: () -> Void
 
     var body: some View {
@@ -42,6 +44,8 @@ struct UpdateAvailableBanner: View {
                     .font(.lhfSans(12))
                     .foregroundStyle(Color.v2DateText)
                     .fixedSize(horizontal: false, vertical: true)
+                UpdateChangeList(changes: changes, alignment: .leading, size: 12)
+                    .padding(.top, 2)
             }
 
             Spacer(minLength: 8)

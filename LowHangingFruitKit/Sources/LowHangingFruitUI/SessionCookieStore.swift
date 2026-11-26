@@ -39,6 +39,19 @@ enum SessionCookieStore {
         /// is the authoritative signal for that, so an Ed cookie is trusted
         /// until Ed says otherwise.
         case ed
+        /// McGraw Hill's session (Connect, later ALEKS), for the reader of
+        /// the student's own assignments (`FeatureFlags.mcgrawHillReader`).
+        /// Nothing writes it yet (2026-11-02): which cookies hold the session,
+        /// and whether they come from a hidden LTI launch through Canvas (Ed's
+        /// road) or a visible McGraw Hill sign-in (Gradescope's), waits on
+        /// `docs/mcgraw-hill/RECON.md`. Its own item, so a McGraw Hill purge
+        /// can never touch Canvas, Gradescope or Ed, and the reverse; deleted
+        /// by `clear()` with the rest. Like `.ed` it has no 24-hour rule
+        /// (`maxAge(for:)`): McGraw Hill's own sign-in page, seen twice an
+        /// hour apart, is the only evidence of a dead session
+        /// (`McGrawHillReauthRule`). Any short-lived token minted from it is
+        /// held in memory for one sync and never stored here.
+        case mcgrawHill
     }
 
     private static func service(for s: Service) -> String {
@@ -455,7 +468,7 @@ enum SessionCookieStore {
     static func maxAge(for service: Service) -> TimeInterval? {
         switch service {
         case .canvas: return sessionCookieMaxAge
-        case .gradescope, .ed: return nil
+        case .gradescope, .ed, .mcgrawHill: return nil
         }
     }
 
@@ -475,6 +488,12 @@ enum SessionCookieStore {
     /// Removes every service's persisted cookies.
     static func clear() {
         for s in Service.allCases { KeychainItem.delete(baseQuery(service: s)) }
+        // Disconnecting must delete the Sweeper's copies too: the mirrored
+        // cookies and the manifest the notification extension reads. A
+        // reconnect purge lands here as well, which is fine: the next
+        // foreground pass writes a fresh copy.
+        SweepCookieMirror.deleteAll()
+        SweepFiles.deleteManifest()
     }
 
     /// Removes only `service`'s persisted cookies, leaving every other
@@ -482,6 +501,11 @@ enum SessionCookieStore {
     /// domain (e.g. both flowing through `upenn.edu` Penn SSO).
     static func remove(service: Service) {
         KeychainItem.delete(baseQuery(service: service))
+        if service == .canvas {
+            // Same reason as `clear()`: the Sweeper's copies go with the login.
+            SweepCookieMirror.deleteAll()
+            SweepFiles.deleteManifest()
+        }
     }
 
     #if DEBUG

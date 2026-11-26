@@ -50,6 +50,7 @@ import {
   parseFactsSince,
   parseSyncClient,
   profileStaleCourses,
+  reportListsFiles,
   retirableCollector,
   validateCourse,
   validateDocuments,
@@ -399,6 +400,7 @@ async function handleUpload(
       serviceClient,
       course.courseID,
       retirableCollector(client),
+      reportListsFiles(course.documentIDs),
     );
     const idsToMarkGone = goneIDs(liveIDsNow, course.documentIDs);
     await markDocumentsGone(serviceClient, idsToMarkGone);

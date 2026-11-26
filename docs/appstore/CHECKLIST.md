@@ -1,5 +1,40 @@
 # App Store submission checklist — LHF (iOS + macOS)
 
+## 3.5.0 (21) submission, drafted 2026-11-22 (not yet archived; Marco reviews, then ships)
+
+The release line is `claude/ambassador-header`: `v11` plus Olisa's `v12`
+(ambassador mode; degree progress off), the agent connection switched off
+(`FeatureFlags.agentConnection = false`), the Sweeper accuracy work (cancel
+at observation, the last-hour poll, buzz-only for unconfirmable work, the
+undeployed server wake), Olisa's `origin/v10` tree work and `origin/v12`
+ambassador playbook, the force-quit check (a notification service extension,
+dormant until the push backend), and the Duo work of 2026-11-21/22 (trust
+renewed before it lapses, a notification for a missed push). Stamped 3.5.0
+(21) in `project.yml` and `project.pbxproj`. Attach **21**.
+
+In order, once Marco has reviewed:
+
+1. The side-session branches (ambassador work, onboarding work, the two
+   review sessions) merged into the line, each at Marco's word, with the
+   full suite run alone on the Mac and the unsigned iOS build after the last
+   merge; the count and the date go in CLAUDE.md → Test baseline.
+2. The phone: the Sweeper retest (a submission with Smooth open, the card
+   gone within a minute) and the missed-push notification, both unseen so
+   far; the Duo trust renewal ran once and passed (2026-11-22 00:57 UTC).
+3. `git fetch origin && git merge origin/v11` into the line (never
+   force-push), then push the line and fast-forward `v11` to it.
+4. Archive from the line's tip (Release, `generic/platform=iOS`,
+   `-allowProvisioningUpdates`; the new `LHFSweeperCheck` extension may ask
+   for its provisioning profile on the first archive) and export with
+   `docs/appstore/ExportOptions.plist`. Write the archived commit here.
+5. Marco in App Store Connect: create 3.5.0, attach 21, paste
+   `docs/appstore/LISTING.md` → "What's New in 3.5.0", re-read the privacy
+   label against `REVIEW_NOTES.md` (no new data type: the force-quit
+   extension's push carries nothing and is dormant), submit.
+6. Once live: the `update-floor` workflow raises the floor six hours later;
+   set the manifest's `changes` list from LISTING.md by hand on the
+   `update-manifest` branch at the same time.
+
 ## 3.4.1 (20) submission, 2026-11-07 (supersedes builds 18 and 19; Marco submits)
 
 Marco's "push to appstore" after the megaphone's third and fourth rounds
@@ -225,6 +260,13 @@ dev Mac has none, Olisa's environment injects it)
     after the App Store starts serving it. If the new build misbehaves, set
     the repository variable `UPDATE_FLOOR_HOLD` to `true` within those six
     hours; clear it again afterwards.
+    **Set `changes` before the floor rises** (since 2026-11-11): in
+    `lhf-update.json` on the `update-manifest` branch, replace the
+    `changes` array with the two to four shortest true lines for this
+    release, lowercase, 40 characters at most each, no links, e.g.
+    `"changes": ["sweeper button and page", "connect an agent", "drafts you review and submit"]`.
+    The wall and the banner show them as "· line" rows; the workflow keeps
+    the key when it raises the floor, so an old list stays until replaced.
 22. Delete merged branches: `parked/*`, `fix/ed-posts-durable`,
     `v8-merge-marco`, `fix/relevance-backfill`, `codex/automatic-canvas-login`.
 

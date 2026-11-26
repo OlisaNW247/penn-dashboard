@@ -44,12 +44,18 @@ protocol BerserkAlarmBackend: AnyObject {
     /// Stops one alarm (the student's own stop from inside the app). Stop,
     /// then cancel, errors ignored.
     func stopAlarm(id: UUID)
+    /// Cancels exactly these alarms, idle or ringing, errors ignored. For work
+    /// confirmed submitted (`NotificationScheduler.cancelForSubmitted`), which
+    /// removes an alarm days ahead of its ring. Defaulted so the Mac and the
+    /// fakes that do not care keep compiling.
+    func cancel(ids: Set<UUID>)
 }
 
 extension BerserkAlarmBackend {
     func alertingAlarmIDs() -> [UUID]? { [] }
     func alertingUpdates() -> AsyncStream<[UUID]> { AsyncStream { $0.finish() } }
     func stopAlarm(id: UUID) {}
+    func cancel(ids: Set<UUID>) {}
 }
 
 /// Where a reschedule puts its notifications: the notification center in the
@@ -305,7 +311,14 @@ extension NotificationScheduler {
             // first pass after they were scheduled would remove them. They
             // reserve their slots out of the budget instead
             // (`NotificationScheduler.reservedForeignSlots`).
-            let stale = pending.filter { !plannedIDs.contains($0) && !AmbassadorReminders.isAmbassadorIdentifier($0) }
+            // The Duo notice (`duo:wait`) is spared the same way. It is posted
+            // for delivery at once, so it is rarely pending at all; one slot
+            // against the 60-slot budget needs no reservation (the cap has
+            // headroom), so `reservedForeignSlots` is unchanged.
+            let stale = pending.filter {
+                !plannedIDs.contains($0) && !AmbassadorReminders.isAmbassadorIdentifier($0)
+                    && !DuoWaitNotice.isDuoIdentifier($0)
+            }
             if !stale.isEmpty {
                 sink.removePending(identifiers: stale)
                 result.staleRemoved = stale.count

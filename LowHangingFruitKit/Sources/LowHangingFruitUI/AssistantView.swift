@@ -97,7 +97,12 @@ struct AssistantView: View {
             Color.v2Bg.ignoresSafeArea()
             if conversation.isFresh {
                 VStack(spacing: 22) {
-                    SmoothFormShapes(accent: .smoothTeal, spark: .smoothGrape)
+                    // Hovers while the screen is idle (Marco, 2026-11-11);
+                    // still while typing, as the greeting stops rotating, and
+                    // under Reduce Motion. The cluster is only shown on a
+                    // fresh screen, so a conversation never hovers.
+                    SmoothFormShapes(accent: .smoothTeal, spark: .smoothGrape,
+                                     hovers: !composerFocused && !reduceMotion)
                     titleBlock
                 }
                 .padding(.horizontal, 24)

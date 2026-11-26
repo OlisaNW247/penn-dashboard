@@ -617,3 +617,19 @@ struct CourseSearchTests {
         #expect(hits.map(\.document.id) == again.map(\.document.id))
     }
 }
+
+@Suite struct AssignmentDocumentLinkTests {
+    @Test func sameHostFileAndPageLinksAreListed() throws {
+        let json = """
+        [{"id": 7, "name": "Problem Set 7", "due_at": null,
+          "html_url": "https://canvas.upenn.edu/courses/1234/assignments/7",
+          "description": "<p>Do <a href=\\"/courses/1234/files/99?wrap=1\\">Problem Set 7.pdf</a>, see <a href=\\"https://canvas.upenn.edu/courses/1234/pages/hints\\">hints</a> and <a href=\\"https://example.com/files/x\\">outside</a> and <a href=\\"https://canvas.upenn.edu/courses/1234/quizzes/3\\">quiz</a>.</p>"}]
+        """
+        let list = try CourseContentAPI.decoder().decode([CourseContentAssignment].self, from: Data(json.utf8))
+        let doc = CourseDocumentBuilder.assignment(from: try #require(list.first), course: CourseContentAPITests.course)
+        #expect(doc.text.contains("Problem Set 7.pdf: https://canvas.upenn.edu/courses/1234/files/99?wrap=1"))
+        #expect(doc.text.contains("hints: https://canvas.upenn.edu/courses/1234/pages/hints"))
+        #expect(!doc.text.contains("example.com"))
+        #expect(!doc.text.contains("quizzes/3"))
+    }
+}

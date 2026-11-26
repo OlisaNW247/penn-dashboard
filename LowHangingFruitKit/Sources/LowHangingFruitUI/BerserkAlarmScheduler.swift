@@ -101,6 +101,10 @@ final class BerserkAlarmScheduler: BerserkAlarmBackend, BerserkAlarmStore {
         BerserkAlarmEngine.stopRinging(among: finished, in: self)
     }
 
+    func cancel(ids: Set<UUID>) {
+        BerserkAlarmEngine.cancel(ids: ids, in: self)
+    }
+
     // MARK: BerserkAlarmStore (AlarmKit, one call each)
 
     func storedAlarms() throws -> [StoredAlarm] {

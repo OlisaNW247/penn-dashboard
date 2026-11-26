@@ -664,18 +664,26 @@ struct BerserkAlarmTests {
         #expect(holders.count == 1)
         #expect(holders.values.first?["path"] as? String == "App")
 
-        func resourceFiles(ofProductType productType: String) throws -> [String] {
+        // The union over every target of that product type: there is one
+        // application, and two app extensions (the widget and the Sweeper's
+        // notification service extension), and neither extension may carry
+        // the sound.
+        func resourceFiles(ofProductType productType: String, targetCount: Int) throws -> [String] {
             let targets = objects.values.filter {
                 $0["isa"] as? String == "PBXNativeTarget" && $0["productType"] as? String == productType }
-            #expect(targets.count == 1, "\(productType)")
-            let phases = try #require((targets.first?["buildPhases"] as? [String])?.compactMap { objects[$0] })
-            let resources = phases.filter { $0["isa"] as? String == "PBXResourcesBuildPhase" }
-            #expect(resources.count == 1, "\(productType)")
-            return resources.first?["files"] as? [String] ?? []
+            #expect(targets.count == targetCount, "\(productType)")
+            var files: [String] = []
+            for target in targets {
+                let phases = try #require((target["buildPhases"] as? [String])?.compactMap { objects[$0] })
+                let resources = phases.filter { $0["isa"] as? String == "PBXResourcesBuildPhase" }
+                #expect(resources.count == 1, "\(productType)")
+                files += resources.first?["files"] as? [String] ?? []
+            }
+            return files
         }
-        #expect(try resourceFiles(ofProductType: "com.apple.product-type.application").contains(buildFileID))
-        #expect(try !resourceFiles(ofProductType: "com.apple.product-type.app-extension").contains(buildFileID),
-                "the widget extension must not carry the sound")
+        #expect(try resourceFiles(ofProductType: "com.apple.product-type.application", targetCount: 1).contains(buildFileID))
+        #expect(try !resourceFiles(ofProductType: "com.apple.product-type.app-extension", targetCount: 2).contains(buildFileID),
+                "no extension may carry the sound")
     }
 
     @Test("The alarm glue asks the main bundle for the sound and passes the choice to the configuration")

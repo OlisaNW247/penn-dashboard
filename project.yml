@@ -35,6 +35,11 @@ targets:
       - target: LHFWidgetExtension
         embed: true
         platformFilter: iOS
+      # The Sweeper's notification service extension, embedded the same way
+      # (and for the same reason `platformFilter: iOS` is spelled this way).
+      - target: LHFSweeperCheck
+        embed: true
+        platformFilter: iOS
     info:
       path: App/Info.plist
       properties:
@@ -114,8 +119,15 @@ targets:
         # the permitted-identifiers list must match
         # `LHFBackgroundRefresh.taskID` exactly or registration/submission
         # silently fail against each other.
+        # `remote-notification` is the mode Apple requires before a silent
+        # push may wake the app ("To receive background notifications, you
+        # must add the remote notifications background mode"): the Sweeper's
+        # server wake (docs/SERVER_SWEEPER_DESIGN_2026-11-17.md). The
+        # `aps-environment` entitlement is deliberately NOT in
+        # App/LHFApp.entitlements yet; that is Olisa's step.
         UIBackgroundModes:
           - fetch
+          - remote-notification
         BGTaskSchedulerPermittedIdentifiers:
           - com.lhf.lowhangingfruit.refresh
     settings:
@@ -147,7 +159,7 @@ targets:
         # with Smooth.app, and has to re-pin it.
         PRODUCT_NAME: Smooth
         MARKETING_VERSION: "3.5.0"
-        CURRENT_PROJECT_VERSION: "20"
+        CURRENT_PROJECT_VERSION: "21"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "6.0"
@@ -203,10 +215,55 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lhf.lowhangingfruit.widget
         MARKETING_VERSION: "3.5.0"
-        CURRENT_PROJECT_VERSION: "20"
+        CURRENT_PROJECT_VERSION: "21"
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "6.0"
         GENERATE_INFOPLIST_FILE: NO
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 24A3TDB277
         CODE_SIGN_ENTITLEMENTS: LHFWidget/LHFWidget.entitlements
+
+  # The Sweeper's force-quit check: a notification service extension the
+  # server's alert push wakes even after the app was force-quit. iOS-only, and
+  # it links ONLY the Kit product, never LowHangingFruitUI (an extension has a
+  # small memory budget and no business with SwiftUI or AppState). It reads
+  # the manifest and cookie copy the app leaves behind and cancels alarms for
+  # work already handed in. See docs/SWEEPER_FORCE_QUIT_RESEARCH_2026-11-21.md.
+  LHFSweeperCheck:
+    type: app-extension
+    supportedDestinations: [iOS]
+    sources:
+      - path: LHFSweeperCheck
+        excludes:
+          - "*.entitlements"
+    dependencies:
+      - package: LowHangingFruitKit
+        product: LowHangingFruitKit
+    # Everything the bundle needs lives here, not only in the .plist on disk:
+    # `xcodegen generate` rewrites that file from `properties` (see the widget
+    # target above), and version keys left out default to "1.0" against the
+    # app's own version, an App Store validation failure.
+    info:
+      path: LHFSweeperCheck/Info.plist
+      properties:
+        CFBundleDisplayName: Smooth
+        CFBundleName: Smooth
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        # The extension cancels AlarmKit alarms; AlarmKit wants the string in
+        # every bundle that talks to it. Same text as the app's.
+        NSAlarmKitUsageDescription: "The Smooth Sweeper rings an alarm before work you haven't turned in, at the time you choose."
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.usernotifications.service
+          NSExtensionPrincipalClass: "$(PRODUCT_MODULE_NAME).NotificationService"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lhf.lowhangingfruit.sweepercheck
+        MARKETING_VERSION: "3.5.0"
+        CURRENT_PROJECT_VERSION: "21"
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 24A3TDB277
+        CODE_SIGN_ENTITLEMENTS: LHFSweeperCheck/LHFSweeperCheck.entitlements

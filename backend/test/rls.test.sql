@@ -1070,4 +1070,32 @@ begin
 end $$;
 rollback;
 
+begin;
+set local role authenticated;
+do $$
+declare
+  n int;
+begin
+  begin
+    select count(*) into n from public.sweeper_wakes;
+    raise exception 'authenticated could read sweeper_wakes';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+rollback;
+
+begin;
+set local role anon;
+do $$
+declare
+  n int;
+begin
+  begin
+    select count(*) into n from public.sweeper_wakes;
+    raise exception 'anon could read sweeper_wakes';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+rollback;
+
 \echo 'rls.test.sql: all checks passed'

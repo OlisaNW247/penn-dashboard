@@ -12,7 +12,15 @@ file; when they disagree, this file wins and the code is wrong.
 2. **Only course-level material is shared.** Syllabus, pages, modules,
    assignment descriptions, announcements. Never grades, completions,
    submission state, the work list, the student's name, or transcripts of
-   questions. `CourseDocument.submitted` is stripped before upload.
+   questions, **unless the student turns on an agent connection**, in which
+   case exactly the fields listed under `agent-snapshot` are stored for that
+   student alone, in `agent_snapshots`, and deleted on opt-out, Canvas
+   disconnect and account deletion, **or the Sweeper wake schedule**
+   (`sweeper_wakes`: a device token and a list of minutes, nothing else),
+   kept while reminders and the Sweeper are on and deleted when they are
+   turned off, on Canvas disconnect and on account deletion.
+   `CourseDocument.submitted` is stripped
+   before upload.
 3. **The sharing key is the Canvas numeric course id.** Every student in the
    same Canvas site sees identical material. Section ids are recorded on the
    enrollment row for later scoping but do not partition documents in v1.
@@ -75,7 +83,8 @@ CourseFactWire      { seq, courseID, documentID, contentHash,
                       postedAt: string | null }
 CatalogEntryWire    { courseID, catalogCode, title, credits,
                       meetings: [{ sectionID, activity, weekday,
-                                   startMinutes, endMinutes }],
+                                   startMinutes, endMinutes,
+                                   room: string | null }],
                       components: [{ activity, credits, sectionIDs }] }
 CourseProfileWire   { courseID,
                       gradingWeights: [{ name, percent, expectedCount?, dropLowest? }],
@@ -83,6 +92,10 @@ CourseProfileWire   { courseID,
                       examDates: [{ name, date?, text }],
                       extractedAt }
 ```
+
+`CatalogEntryWire.meetings[].room` (2026-11-14) is the meeting's room or
+null (online or unlisted); the phone decodes it with `decodeIfPresent`, so
+an older server's manifest without it still loads.
 
 `CatalogEntryWire.meetings[].weekday` is 1 (Sunday) through 7 (Saturday) --
 the same convention `Foundation`'s `Calendar` uses on the iOS side. Penn
@@ -138,6 +151,14 @@ sends at most the newest 150 window-kind rows per course in `download`;
 the rest. Live-document reads are paginated (500 rows a page, ordered by
 `id`) because the project's PostgREST `max_rows` is 1000 and a larger
 single select is silently truncated.
+
+`file` rows follow a third rule (2026-11-10): a complete-set report retires a
+course's `file` rows only when that report itself lists at least one `file`
+id for the course. A client that collects no files (an older phone build, or
+the extension for a course whose Files tab is hidden) has no view of them and
+cannot vouch for their absence; without this rule it would retire, every
+sync, the files another client or a newer build pooled. A report that does
+list files speaks for the files of its collector scope as before.
 
 `CourseSummaryWire.section` is the Canvas SIS section number for *this
 Canvas course site* (e.g. `"401"`), at most 8 characters matching
@@ -1411,6 +1432,798 @@ across every model-calling function, not a separate counter per function.
 A cache hit, or a `mapping: null` response, never calls
 `checkAndConsumeQuota` at all.
 
+## The agent connection (agent-auth, mcp, agent-snapshot)
+
+A student can connect an agent (Claude first) to Smooth as a remote MCP
+connector. The agent reads the student's work list and the pooled course
+material through `mcp`; it signs in through `agent-auth`, where the student's
+phone approves; the phone uploads what the agent may see through
+`agent-snapshot`. The standing rule: **the agent gets no submit tool.** Its
+only write is `propose_submission`, which makes a draft the student reviews
+and submits from the app (see "Drafts" below). The
+server never talks to Canvas (principle 1 stands): the work list comes from
+the phone, the course material from the tables the phone already fills.
+
+Code: `functions/agent-auth`, `functions/mcp`, `functions/agent-snapshot`,
+and `_shared/agent*.ts`. Migration `20261108090000_agent_connection.sql`.
+**Live since 2026-11-08 night** (each function at version 1, the migration
+applied), behind the connector front `https://smooth-agent.vercel.app`
+(`backend/connector-front/`), which is `LHF_AGENT_PUBLIC_BASE`'s host: the
+issuer is `https://smooth-agent.vercel.app/functions/v1/agent-auth` and the
+MCP URL `.../functions/v1/mcp`. Supabase's gateway serves any HTML an Edge
+Function returns as `text/plain` with a sandbox CSP, so `agent-auth`'s pages
+also carry `X-Smooth-Content-Type` and `X-Smooth-CSP`, which the front turns
+back into the real headers; a direct call to `supabase.co` still gets the
+rewrite, by Supabase's choice.
+Design: `docs/AGENT_CONNECTION_PLAN_V11_2026-11-07.md`; the reasons behind the
+OAuth choices: `docs/AGENT_CONNECTION_RESEARCH_2026-11-08.md` §3 and §7.
+
+### Discovery
+
+`<base>` is `LHF_AGENT_PUBLIC_BASE` when set, else `SUPABASE_URL` +
+`/functions/v1` (never the request's `Host`: the value ends up inside
+documents clients compare exactly). The issuer is `<base>/agent-auth`; the
+MCP URL, which is also the token audience (RFC 8707 `resource`), is
+`<base>/mcp`. `_shared/agentMetadata.ts` builds both documents so they cannot
+disagree.
+
+`GET <base>/agent-auth/.well-known/oauth-authorization-server` (also
+`/.well-known/openid-configuration`; `Cache-Control: public, max-age=300`):
+
+```
+{ issuer, authorization_endpoint: "<issuer>/authorize",
+  token_endpoint: "<issuer>/token", revocation_endpoint: "<issuer>/revoke",
+  registration_endpoint: "<issuer>/register",
+  response_types_supported: ["code"], response_modes_supported: ["query"],
+  grant_types_supported: ["authorization_code", "refresh_token"],
+  code_challenge_methods_supported: ["S256"],
+  token_endpoint_auth_methods_supported: ["none"],
+  revocation_endpoint_auth_methods_supported: ["none"],
+  scopes_supported: ["read", "draft", "offline_access"],
+  client_id_metadata_document_supported: true,
+  authorization_response_iss_parameter_supported: true,
+  service_documentation: <docs/PRIVACY.md on GitHub> }
+```
+
+`GET <base>/mcp/oauth-protected-resource` (also
+`/mcp/.well-known/oauth-protected-resource`; same cache header):
+
+```
+{ resource: "<base>/mcp", authorization_servers: ["<issuer>"],
+  scopes_supported: ["read", "draft", "offline_access"],
+  bearer_methods_supported: ["header"], resource_name: "Smooth",
+  resource_documentation: <docs/PRIVACY.md on GitHub> }
+```
+
+A `POST <base>/mcp` without a usable token is `401` with the body
+`{ "error": "unauthorized" }` and
+
+```
+WWW-Authenticate: Bearer resource_metadata="<base>/mcp/oauth-protected-resource", scope="read draft"
+```
+
+When a token was presented and refused, the body is `{ "error":
+"invalid_token" }` and the header gains `error="invalid_token"` first and
+`error_description="token is not valid for this server"` last. The words are
+the same for unknown, expired, wrong-audience and revoked, so a response never
+says which. A token without scope `read` is `403 { "error":
+"insufficient_scope" }` with `error="insufficient_scope"` in the challenge.
+The `resource_metadata` URL is how Claude finds the authorization server (it
+ignores the header on a 200), and `scope` is what it asks for.
+
+**Found 2026-11-08, with Claude Code 2.1.314 and MCP Inspector 2.14 against a
+tunnel.** SDK-based clients' *health check* accepts the path-appended
+`<issuer>/.well-known/openid-configuration` as a fallback, which the function
+serves. Claude Code's *sign-in* step does not: it probes only the RFC 9728 and
+RFC 8414 root forms, `/.well-known/oauth-protected-resource/functions/v1/mcp`
+and `/.well-known/oauth-authorization-server/functions/v1/agent-auth`, and a
+root `/register`. An Edge Function on `<ref>.supabase.co` cannot answer at that
+host's root, so **production needs a host whose root we control in front of the
+two functions.** This is an open item in the plan. `scripts/serve-agent.ts`
+shows what that front answers (the two root documents, then the two functions
+under `/functions/v1/…`).
+
+### Sign-in (pairing as authorization)
+
+Students have no login, so "authorize" is pairing: the agent's sign-in tab
+shows a code and a number, the phone approves, the tab proceeds. `agent-auth`
+is deployed `verify_jwt = false` (a browser's unauthenticated GET has to get
+through); only `/phone` authenticates, itself, with `requireUser`. Clients are
+public (`none`); PKCE `S256` is mandatory; there are no client secrets.
+
+1. **`GET /authorize`** with `client_id`, `redirect_uri`, `response_type=code`,
+   `code_challenge` (43 to 128 characters of `[A-Za-z0-9._~-]`),
+   `code_challenge_method=S256`, optional `resource` (must equal the MCP URL
+   up to a trailing slash), `scope` (space separated; unknown scopes dropped;
+   a scope that names only unknown things is `invalid_scope`; absent means
+   `read draft offline_access`), optional `state` (at most 512 characters).
+   `client_id` is one of two kinds.
+   - **CIMD**: an https URL on a public name (no fragment, userinfo, IP
+     literal, `localhost` or single-label host). The server fetches it
+     (5 s, 64 KB, https only, public addresses only, no host allow-list) and
+     requires `client_id` to equal the URL, `redirect_uris` to contain the
+     requested URI, `token_endpoint_auth_method` absent or `none`, and
+     `grant_types` absent or containing `authorization_code`. `client_name`
+     (trimmed, 80 characters) is shown; absent, the host is.
+   - **Registered**: `smc_` + 22 base64url characters from `/register`; the
+     requested URI must match a stored one.
+   A redirect URI matches exactly, except that for `http://localhost`,
+   `127.0.0.1` and `[::1]` the port is ignored (RFC 8252 §7.3; Claude Code picks
+   its port at run time) while scheme, host, path and query must match.
+
+   On success: `200` HTML (`no-store`, a CSP of `default-src 'none'` plus inline
+   style and script and `connect-src 'self'`, `X-Frame-Options: DENY`,
+   `Referrer-Policy: no-referrer`) showing the client's name and host, an
+   8-letter code in two groups of four from the alphabet
+   `BCDFGHJKLMNPQRSTVWXZ` (RFC 8628's consonants: no words, nothing to misread),
+   a two-digit match number, an "Open Smooth" button to
+   `smooth://link?c=<id>` (`<id>` is 128 random bits, base64url, 22
+   characters), and a script that polls `/status` every 2 s (and at once when
+   the tab becomes visible again). When the poll reads `approved` the page
+   replaces itself with "Connected to Smooth / Returning to <client>…" and a
+   tick, waits 1.5 s, then navigates to `status?go=1`; a hidden tab navigates
+   at once, because browsers throttle timers there and nobody is watching.
+   `denied` and `expired` (or a 4xx from the poll) show "Not connected" and
+   "This request expired" with a sentence naming the client (since
+   2026-11-10; live since 2026-11-11). The response sets
+   the browser nonce: `Set-Cookie: sa_<id>=<nonce>; HttpOnly; Secure;
+   SameSite=Lax; Max-Age=600; Path=<agent-auth root>`. A unique code is drawn
+   up to 5 times against the live-code index, then `503 code_unavailable`.
+   The pending row lives 5 minutes.
+
+   Errors. If `client_id` or `redirect_uri` is unusable, or the client's
+   metadata cannot be fetched or does not vouch for the redirect URI, the
+   answer is a `400` page and **never a redirect**: that URI is exactly the
+   thing that was not verified, and bouncing to it would be an open redirect
+   (RFC 9700 §4.1). Every other error (`unsupported_response_type`,
+   `invalid_request`, `invalid_scope`, `invalid_target`) is a `302` to the
+   redirect URI with `error`, `error_description`, `state` (when sent) and
+   `iss`, but only after the metadata has vouched for that URI, so the document
+   is fetched for errors too.
+
+2. **The phone** receives the deep link (`smooth://link?c=<id>`) or the typed
+   code, and calls `POST /phone` (below): `lookup`, then `approve` with the
+   number the student picked from three.
+
+3. **`GET /status?p=<id>`** (the page's poll). Bound to the browser: the
+   `sa_<id>` cookie's sha256 must equal the stored nonce hash (constant-time),
+   else `403 { "error": "forbidden" }`, the same for an unknown id. Answers
+   `200 { "state": "pending" | "approved" | "denied" | "expired" }`
+   (`no-store`). With `&go=1` and state `approved`, it mints the one-time
+   authorization code (`smt_c_…`, valid 60 seconds, stored as a hash) and
+   answers `302` to `redirect_uri` with `code`, `state` and `iss`. `go=1` in any
+   other state is `400 { "error": "not_approved" }`; after the pending row's
+   5 minutes it is `400 { "error": "expired" }` even if the phone said yes in
+   time; a second code for the same authorization is `409 { "error":
+   "already_issued" }`. The phone approves, but only the browser that started
+   the flow may be handed the code, which is why the code is minted here and not
+   at approval.
+
+4. **`POST /token`**, `application/x-www-form-urlencoded`, at most 16 KB. Every
+   answer is `Cache-Control: no-store`, `Pragma: no-cache`. Errors are `400
+   { "error", "error_description" }`.
+   - `grant_type=authorization_code`: `code`, `code_verifier`, `redirect_uri`,
+     `client_id` required (else `invalid_request`), `resource` optional. The
+     code is **burnt first** (an atomic approved -> consumed), then checked: not
+     past its 60 seconds, `client_id` and `redirect_uri` equal to the
+     authorization's, `resource` equal when sent, PKCE verifies. **Every failure
+     is `invalid_grant`**, so a guess learns nothing and a stolen code that
+     fails once is gone. On success a connection row is created for the
+     approving student.
+   - `grant_type=refresh_token`: `refresh_token` required. Unknown, expired,
+     wrong-kind or revoked-connection is `invalid_grant`. `client_id`, when
+     sent, must equal the connection's (else `invalid_grant`). `resource` that
+     differs is `invalid_target`; `scope` must be a subset of the original
+     grant (else `invalid_scope`), and narrows it when sent. **Rotation**: each
+     refresh token redeems once and the response carries a new pair. **Reuse
+     detection**: presenting a redeemed refresh token again means two parties
+     hold it, so the whole connection is revoked and the answer is
+     `invalid_grant`.
+   - Other grant types: `unsupported_grant_type`. Other content types:
+     `invalid_request`.
+
+   ```
+   200 { access_token, token_type: "Bearer", expires_in: 3600,
+         refresh_token, scope: "read draft offline_access" }
+   ```
+
+5. **`POST /revoke`** (RFC 7009), form field `token`. An access token is
+   deleted; a refresh token revokes its whole connection. Unknown, malformed
+   or missing tokens change nothing. Always `200 {}`, so the caller learns
+   nothing about what exists.
+
+6. **`POST /register`** (RFC 7591), JSON, at most 16 KB, for SDK-based clients
+   (Claude Code's SDK, MCP Inspector) that do not use a metadata document.
+   `redirect_uris`: 1 to 10 strings, each https or loopback http, no fragment
+   or userinfo. `token_endpoint_auth_method` absent or `none`; `grant_types`
+   within `authorization_code`, `refresh_token`; `response_types` within
+   `code`; `client_name` a string (trimmed to 80, default "MCP client"). Anything
+   else is `400 { "error": "invalid_client_metadata", "error_description" }`:
+   refused, never quietly downgraded. Answers `201`:
+
+   ```
+   { client_id: "smc_<22>", client_name, redirect_uris,
+     token_endpoint_auth_method: "none",
+     grant_types: ["authorization_code", "refresh_token"],
+     response_types: ["code"], client_id_issued_at }
+   ```
+
+7. **`POST /phone`**, JSON, `Authorization: Bearer <Supabase JWT>` (a linked
+   device acts as its owner, as everywhere), minimum-version header optional.
+   `{ "action": ... }`; anything else is `400 bad_request`.
+   - `lookup { "c": id }` or `{ "code": "BCDF-GHJK" }` (case, spaces and
+     dashes ignored; not 8 letters of the alphabet is `404`). Answers
+     `{ id, clientName, clientHost, scopes, choices: [n, n, n], expiresAt }`.
+     `choices` is the right number and two others, shuffled; the right one is
+     not marked. `clientHost` is the client's host name, or "registered client".
+   - `approve { "c": id, "picked": number }`. Only for a request this student
+     has looked up (the same `claimed_by` binding as `deny`; otherwise the
+     same `404`, and nothing is decided, so a stranger's wrong pick cannot
+     deny the real student's request). If `picked` is not the page's
+     number the authorization is **denied** and the answer is `200 { "approved":
+     false, "reason": "match" }`: a relayed code (QRLJacking) reaches a phone
+     whose owner is not looking at the page that started it, and that student
+     cannot pick the right number. Otherwise the row is bound to the student:
+     `200 { "approved": true, "clientName" }`; a row someone else decided in the
+     meantime is `409 already_decided`.
+   - `deny { "c": id }`: `200 { "denied": bool }`. Only for a request this
+     student has looked up (`lookup` records the caller as `claimed_by`, last
+     lookup wins); an unknown id, or one nobody or another student looked up,
+     is the same `404 not_found`. Last lookup wins, so a stranger who looks
+     the code up after the student takes the binding and the student's
+     `approve` or `deny` answers `404` until they look it up again, which the
+     phone's flow does anyway. The phone already does lookup first, so its
+     wire is unchanged.
+   - `list`: `{ "connections": [{ id, clientName, clientHost, scopes,
+     createdAt, lastUsedAt }] }`, the caller's live connections.
+   - `revoke { "id" }`: `200 { "revoked": bool }`, only the caller's own.
+   - `revokeAll`: `200 { "revoked": n }`.
+
+   `lookup` and `approve` answer one `404 { "error": "not_found" }` for unknown,
+   expired and already-decided ids, so ids cannot be probed.
+
+   **Rate limits** (`agent_rate_check`, Postgres, one hour windows, keys hold a
+   sha256 of the address, user id, connection id or code): `/authorize` 60 per
+   ip (the student's own browser); `/register` 60 per ip; `/token` per
+   subject, because a hosted connector calls it from a few shared egress
+   addresses and a per-ip cap would throttle every student at once: 30 an hour
+   per connection for `refresh_token` grants (counted only once the token is
+   known and live), 5 an hour per authorization code, and a per-ip ceiling of
+   1,200 as a DoS backstop only; `/phone` `lookup` 20 and `approve` 10 per
+   student.
+   The ip is the first `x-forwarded-for` entry, else `cf-connecting-ip`, else
+   one shared "unknown". **Measured 2026-11-11**
+   (`docs/V11_TEST_BACKEND_2026-11-11.md`): Supabase's gateway replaces
+   `x-forwarded-for` with the address that connected to it, so a direct
+   caller is counted by its own address (a spoofed header is overwritten),
+   but through the connector front every request is counted by Vercel's
+   egress address, a handful of addresses shared by every student: 60
+   `/authorize` requests an hour from anyone blocked every sign-in. Since
+   then (live since 2026-11-11) the front sends the address Vercel saw as
+   `x-smooth-client-ip` with `x-smooth-front-secret`, and `agent-auth` uses
+   it only when the secret equals `LHF_FRONT_CLIENT_IP_SECRET` (the front's
+   `CLIENT_IP_SECRET`); the front never passes either header from a caller.
+   Until both secrets are set, behaviour is as before.
+   Over the limit: `429 { "error": "slow_down" }` with `Retry-After: 60`
+   (RFC 6749 §5.2 has no rate-limit code; `slow_down` is RFC 8628's). The
+   window is a fixed hour from its first hit, so a client that waits the 60
+   seconds and retries is refused until that hour is over (and each retry
+   still counts, harmlessly). A check that throws fails open.
+
+   **Sweeping** (`agent_sweep_expired`): about one `/authorize` in fifty
+   deletes pending rows two minutes past expiry (a code minted just before
+   expiry lives 60 s longer), tokens a day past expiry, rate rows idle a
+   day and registered clients older than 30 days that no connection or pending
+   row names. Failure is ignored; the log line carries the count only.
+
+### Tokens
+
+Opaque strings, not JWTs: `smt_a_` (access), `smt_r_` (refresh), `smt_c_`
+(authorization code), then 256 random bits as 43 base64url characters. Only
+the sha256 (hex) of the whole string is stored, so a database read never yields
+a usable credential; a string of another shape is refused before any lookup.
+
+```
+access token        1 hour
+refresh token       60 days, rotated on every use
+pending authorization  5 minutes
+authorization code  60 seconds
+scopes              read, draft, offline_access
+```
+
+`offline_access` is what makes Claude ask for a refresh token. Why opaque: a
+student revokes a connection from Profile and expects the agent to stop reading
+at once; a self-contained JWT keeps working until it expires unless the
+resource server consults a list anyway, at which point the signature bought
+nothing, while an opaque token is one row lookup and deleting the row is the
+revocation (`_shared/agentTokens.ts`).
+
+### `mcp`
+
+The remote MCP server, `POST <base>/mcp`, deployed `verify_jwt = false`
+because it checks its own bearer token. **Stateless** (`legacy: 'stateless'`):
+no session is ever created and no `Mcp-Session-Id` minted; `GET` and `DELETE`
+are `405 { "error": "method_not_allowed" }` with `Allow: POST`; a path below
+`/mcp` other than the metadata is `404`. A request whose `Origin` is present
+and not `https://` is `403 forbidden_origin` (a host list was rejected: Claude's
+egress is a published range and a list would turn into initialize timeouts).
+
+The SDK's handler verifies nothing, so the bearer is checked here, in this
+order, every failure the same `401 invalid_token` described under Discovery:
+the header parses and the string has the shape of an access token; its hash is
+found; the row is an access token; it is not expired; its `resource` equals the
+MCP URL; its connection exists and is not revoked; then the scope `read` (a
+`403`, not a `401`). The connection's `last_used_at` is touched and the
+principal (student, connection, client name) is passed to the tools. Logs carry
+error classes only.
+
+Every tool result is plain text (Claude documents text and image results only).
+Long material is paged with a trailing line "page N of more; call again with
+page=N+1" rather than a link the model would have to fetch. One result is cut
+at `MAX_RESULT_CHARS` = 120,000 characters (claude.ai and Desktop accept about
+150,000), ending "[truncated; narrow with course or page]". Execution
+failures are results with `isError: true`, never protocol errors. `course` is a
+course code such as `PHYS 0151` (case, spaces and dashes ignored) or a Canvas
+course id; a course the student is not enrolled in matches nothing rather than
+erroring. Pooled reads apply `is_enrolled` by hand (the service role bypasses
+RLS): `course_id in (the caller's enrolled ids)`, live documents only
+(`gone_at is null`), the window kinds' 120-day age-out, and never `collector`.
+
+| tool | arguments | reads | caps |
+|---|---|---|---|
+| `list_courses` | none | the snapshot's `courses`; with no snapshot, the caller's enrolled courses from `courses` | |
+| `list_work` | `view` (`todo` \| `all` \| `prev`, default `todo`), `course?` | the snapshot's `workList` plus `manual` tasks (shown as kind `other`, source `manual`); with no snapshot, nothing | |
+| `get_assignment` | `id` (a work item's id) | the snapshot item; the `assignment` document whose `source_id` is the item's Canvas assignment id (the item's `canvasAssignmentID`, else `/assignments/<n>` in its link, else an id `canvas:<n>`, `...event-assignment-<n>` or ending `:<n>`; never `event-assignment-override-<n>`, which is an override id), in the item's course site (`canvasCourseID`, else the link's, else every enrolled site with the same course code; a code can have two sites, e.g. PHYS 0151 lecture and lab), the attachments its text names, and the facts targeting it | description 12,000 characters; at most 4 attachments, 12,000 characters each. Output: work line, `link:`, `source:`, description, `attachments:` (`- <name> — <url or no link>; in the course material, N chars / not in the course material`), each pooled attachment's text under `--- <name> ---`, `facts:`, and when any attachment is not pooled the line "Files that are not in the course material cannot be read through this connection; the student can open them in Canvas." |
+| `search_course_material` | `query`, `course?`, `kind?`, `page?` | `course_documents.text` by PostgREST websearch with the `english` config, newest `updated_at` first; `kind` is one of home, syllabus, assignment, module, page, announcement, ed, website, file | 10 per page, 600-character excerpt starting a third before the first hit |
+| `get_facts` | `course?`, `since?` (Unix seconds) | `course_facts` of enrolled courses, by `seq`; `since` compares `posted_at`, and a fact with none is always included; facts of a gone or since-edited document are dropped, as in the manifest | 200 facts |
+| `get_announcements` | `course?`, `days` (1 to 365, default 14), `page?` | `announcement` documents, newest `posted_at` first | 10 per page, 8,000 characters a post |
+| `get_ed_posts` | `course?`, `page?` | `ed` documents, newest first | 10 per page, 8,000 characters a post |
+| `propose_submission` | `assignment_id`, `kind` (`text` \| `url` \| `file`), `body?`, `url?`, `file_base64?`, `file_name?`, `mime_type?`, `note?` | writes a draft (see Drafts below) | body 100,000 characters; note 2,000; file name 200 with no path separator, no control character and not only dots or spaces; `mime_type` `type/subtype` in RFC 6838 token characters, at most 127 (both since 2026-11-11, live the same day); file 1,572,864 bytes (1.5 MB) decoded, judged from the base64 length without decoding, but the tool description tells the model `file_base64` is for files under about 24 KB (claude.ai will not emit a 144,000-character argument) and that larger files go through the upload tools; url https only; the SDK's own 4 MiB body limit applies on top |
+| `draft_status` | `id` | a draft's state | |
+| `begin_file_upload` | `assignment_id`, `file_name`, `mime_type`, `total_bytes`, `sha256` | `{ upload_id, chunk_bytes: 16384, chunks, upload_url, upload_method: "PUT", upload_headers }` as a JSON first line, then the "fastest: PUT ..." guidance | scope `draft`; same name and `mime_type` rules and unknown-assignment refusal as `propose_submission`; `total_bytes` 1 to 1,572,864; `sha256` 64 hex |
+| `append_file_chunk` | `upload_id`, `index`, `data_base64`, `sha256` | `{ received, missing: [...] }` | scope `draft`; a chunk is exactly 16384 bytes except the last; a wrong checksum is "chunk <i> checksum mismatch; resend it"; an index outside `0..chunks-1` is refused; re-sending an index replaces it |
+| `finish_file_upload` | `upload_id`, `note?` | `draft <id> proposed (<n> bytes decoded in <ms> ms)`, as `propose_submission` | scope `draft`; see Chunked uploads below |
+
+**Drafts** (`_shared/agentDrafts.ts`). `propose_submission` needs scope
+`draft` ("this connection cannot propose drafts"), checks its arguments, and
+checks that the assignment exists. It then refuses when the student already
+has 20 open drafts (status `proposed` or `seen`: "too many open drafts; the
+student must review them in Smooth first"). The cap is a count then an
+insert, so simultaneous proposals overshoot it: 70 at once against an empty
+list made 25 open drafts on 2026-11-11 (`docs/V11_TEST_BACKEND_2026-11-11.md`),
+not "one". Through the API alone the phone's 50-draft listing cap is
+therefore out of reach. A `file` draft
+is decoded from base64 and uploaded with the service role to the private
+Storage bucket `agent-drafts` at `<user id>/<draft id>/<sanitized file name>`
+(`upsert: false`; the original name is kept in `file_name`); then one
+`agent_drafts` row is inserted with status `proposed`, `client_name`,
+`connection_id`, the fields, `file_path` and `file_bytes`. If the insert fails
+the object is removed (best effort) and the error surfaces. Draft ids are
+`smd_` + 22 base64url characters. `draft_status` answers the row's status for
+that student, "no such draft" otherwise.
+
+**Chunked uploads** (`_shared/agentUploads.ts`). `begin_file_upload` ->
+(`append_file_chunk` x N, or one PUT) -> `finish_file_upload`. All three need
+scope `draft` and are annotated like `propose_submission` (not read-only; the
+`destructiveHint` follows the same knob). Caps: 1,572,864 bytes, at most 100
+chunks (the byte cap is 96), one open upload per connection (a new `begin`
+deletes the unfinished one, its chunks and its staged object). **Expiry
+(changed 2026-11-12; live since 2026-11-16 as `mcp` v16):** an upload expires 30 minutes after its
+last accepted chunk (after `begin` when none has come), and never more than
+2 hours after `begin`; each accepted chunk moves `expires_at` forward, and a
+later call on an expired upload says "upload expired with N of M chunks
+received". Before, it was a fixed 30 minutes from `begin`. Why: a sandboxed
+client that cannot reach the signed URL types every chunk's base64 itself, and
+a 74 KB file took a Claude cloud session longer than 30 minutes; it got
+`missing: []` and was then told "expired" at finish, a finished upload thrown
+away. A longer fixed window was the wrong fix (it still discards a slow
+finished upload and keeps garbage longer). A document the model wrote should
+go as a text draft and be rendered to PDF on the phone, which the tool texts
+now say. No migration: `agent_sweep_expired` deletes at `expires_at <= now()`,
+which stays right because the column is what moves. Staging
+is the table `agent_uploads` (`id` `smu_` + 22 base64url characters, `user_id`,
+`connection_id`, `assignment_id`, `file_name`, `mime_type`, `total_bytes`,
+`sha256`, `chunk_bytes`, `chunks`, `created_at`, `expires_at`) and
+`agent_upload_chunks` (`upload_id` cascade, `index`, `data` bytea, `sha256`,
+primary key `(upload_id, index)`), created by
+`20261110090000_agent_uploads.sql`, service role only. PostgREST carries
+bytea as `\x` + hex. `agent_sweep_expired` deletes expired uploads (chunks
+cascade) but cannot reach Storage, so an expired upload's staged object stays
+until the sweep below; opt-out (`agent-snapshot` `delete`) and `deleteUserData` delete the
+student's uploads and every staged object under `<user id>/uploads/`.
+
+**Stray staged objects** (found 2026-11-11, fixed, live the same day): the signed
+upload URL lives about two hours and cannot be revoked, while the upload ends
+at finish, at a replacing begin, or after 30 minutes. A PUT after that answers
+200 and stores the file again under an upload id no row names; production
+kept such an object through both the opt-out and `delete-account`. Every
+`begin_file_upload` and `finish_file_upload` now removes the student's staged
+objects whose upload row is gone (listing first, then reading rows, so a live
+upload is never taken), and the opt-out removes all of them. A stray made
+after the student's last upload waits for the next upload, the opt-out or
+account deletion; there is no global job.
+
+Path A, chunks: `append_file_chunk` decodes `data_base64`, hashes the decoded
+bytes and refuses a mismatch with `sha256`; the store then checks the upload
+exists and is live, the index range and the chunk's length; it answers how many
+chunks are held and which indexes are missing.
+
+Path B, direct (clients with a shell or HTTP tool): `begin` also returns
+`upload_url`, a Supabase Storage signed upload URL into the private
+`agent-drafts` bucket at `<user id>/uploads/<upload id>/<sanitized file name>`
+(`createSignedUploadUrl`; Supabase fixes its validity, currently 2 hours, so
+the 30-minute upload expiry is what bounds it), `upload_method: "PUT"` and
+`upload_headers` (`content-type` the file's mime type, `x-upsert: false`; the
+token is in the URL's query). The text result then says: "fastest: PUT the raw
+bytes to <url> (e.g. `curl -X PUT --upload-file <path> -H 'Content-Type:
+<mime>' '<url>'`), then call finish_file_upload; otherwise send chunks with
+append_file_chunk". If no URL could be made the text says to send chunks.
+
+`finish_file_upload`: if the staged object exists it is downloaded
+server-side and its size and sha256 are checked against `begin`; a mismatch is
+refused naming it ("uploaded object is N bytes but begin_file_upload said M" or
+"... does not match the sha256 ..."), and the object is deleted so the URL can
+be used again. Otherwise the chunks are assembled in order: missing chunks are
+refused by index, a total that is not `total_bytes` is refused, and a
+whole-file sha256 mismatch is refused; chunks are kept for a resend. The bytes
+then become the draft exactly as `propose_submission(kind: "file")` makes it
+(same row, same object path under `<user id>/<draft id>/`, same 20-open cap
+checked first, same result), and the staging (row, chunks, staged object) is
+deleted. Any refusal or failure, including the cap, keeps the staging. No
+logging of names, bytes or URLs. Retention is that of drafts, so
+`docs/PRIVACY.md` is unchanged.
+
+Annotations: every read tool carries `readOnlyHint: true`, `destructiveHint:
+false` and `openWorldHint: false`, all explicit (since 2026-11-10, live since 2026-11-11;
+OpenAI's app submission guidelines require all three on every tool, see
+`docs/CONNECTOR_LISTING_CHECKLIST_2026-11-10.md`).
+`propose_submission` carries `readOnlyHint: false`, `idempotentHint: false`,
+`openWorldHint: false`, and `destructiveHint` set by `LHF_MCP_PROPOSE_HINT`:
+`none` omits it, `true` sets it, anything else (the default) sets `false`. It
+is a knob because what Claude shows for each setting is a Phase 0
+measurement, not a known fact.
+
+**`list_work` views** (`workView` in `_shared/agentSnapshot.ts`; the
+dashboard's three lists, flattened):
+- `todo`: not done, with a due date that is overdue or within the next 48
+  hours (inclusive). Undated items are not in it. Most overdue first, then
+  soonest.
+- `all`: not done, due now or later, or undated. Soonest first, undated last.
+- `prev`: done, and either undated or due within the last 150 days
+  (`TERM_DAYS`, standing in for the dashboard's term start, which the snapshot
+  does not carry). **The snapshot carries no completion time**, so `prev` is
+  newest *due date* first, not newest completion first as on the dashboard.
+
+`course` narrows first. The dashboard's cancelled-fact rule is not applied:
+facts are served separately by `get_facts`.
+
+### `agent-snapshot`
+
+The phone's side, called with the student's own Supabase JWT (`verify_jwt =
+true`; a linked device acts as its owner). POST only, `{ "action": ... }`.
+Logs counts and outcome codes, never ids, titles or bodies. Table
+`agent_snapshots`: one row per opted-in student, replaced whole on every `put`.
+
+- `put { "snapshot": { courses, workList, manual? } }` answers `{ "writtenAt",
+  "items" }` (`items` = work plus manual entries).
+- `status` answers `{ "hasSnapshot": bool, "writtenAt": string | null, "items":
+  n }`.
+- `drafts` answers `{ "drafts": [...] }`: the caller's drafts with status
+  `proposed` or `seen`, newest first, at most 50, each with `id`,
+  `assignment_id`, `kind`, `body`, `url`, `file_name`, `mime_type`,
+  `file_bytes`, `note`, `client_name`, `status`, `created_at`, optionally
+  `format` (`markdown` | `text`; the phone detects markdown when absent) and, for a
+  `file` draft, `file_url`: a Storage signed URL good for 120 seconds.
+- `draft { "id", "status": "seen" | "declined" | "submitted" | "failed",
+  "canvas_submission_id"?, "attempt"?, "error_class"? }` moves the caller's
+  own draft and answers `{ "id", "status" }`. Allowed: proposed to seen;
+  proposed or seen to declined, submitted or failed. Nothing leaves a
+  terminal state, and the check is part of the UPDATE (`status in (...)`), so
+  two phones cannot both win: otherwise `409 conflict`. Another student's
+  draft, or an unknown id, is `404 not_found`. `submitted` requires
+  `canvas_submission_id` (at most 64 characters); `failed` requires
+  `error_class` (at most 64 characters); `attempt` is an integer 0 to 1000;
+  otherwise `400 bad_request`. At declined, submitted or failed the file's
+  object is deleted from Storage (best effort) and `file_path` cleared.
+  A signed URL already handed out keeps serving the file until it expires,
+  even after the object is gone (measured 2026-11-10: a URL fetched 20 s
+  after the object left `storage.objects` answered 200, and 400 at 135 s).
+  So "deleted" means "unreachable within 120 seconds", not at once.
+  `backend/scripts/agent-e2e.mjs` walks all of this against production with
+  a throwaway user (propose a text and a 20 KB file draft, list, download
+  and compare bytes, seen, declined, `400` without `canvas_submission_id`,
+  submitted, `409` on a second move, then the opt-out's `delete`).
+- `delete` removes the snapshot **and revokes every agent connection** of the
+  student, answering `{ "deleted": true, "revoked": n }`. It also deletes the
+  student's drafts and their Storage objects. A student with no
+  snapshot has nothing for an agent to read, so opting out leaves no live
+  connection behind.
+
+The snapshot, rebuilt field by field (unknown keys are dropped):
+
+```
+courses  ≤ 60   { courseID (digits, ≤ 40), code (1-40), name (1-200) }
+workList ≤ 2000 { id (1-200), course (1-40), title (1-300),
+                  kind: "assignment" | "quiz" | "discussion" | "event" | "other",
+                  dueAt: ISO 8601 with offset | null, done: bool,
+                  noSubmission: bool, url: Canvas link | null, source (1-40),
+                  canvasAssignmentID?: 1-20 digits | null,   -- optional; old phones send none
+                  canvasCourseID?: 1-20 digits | null }      -- anything else refuses the snapshot
+manual   ≤ 500  { id (1-200), course (0-40), title (1-300),
+                  dueAt: ISO 8601 | null, repeatsWeekly: bool }   -- optional array
+```
+
+That is everything an agent can learn about the student's own state. There is
+no grade, score, points, name, email or submission content. **Forbidden
+fields:** a key named `score`, `grade`, `points`, `firstName` or `email`
+(compared lower-cased) anywhere, or `name` on a work or manual item (a course
+has a `name` by design), refuses the whole snapshot with `400 bad_request` and
+reason `forbidden_field` rather than trimming it: the phone does not send them,
+so one arriving is a bug or an attack. Other violations are `400` with the
+failing path in the message.
+
+**Canvas URL rule.** `url` must be https, at most 2000 characters, without
+userinfo, on a host ending `.instructure.com` or starting `canvas.`, or with
+`/courses/` in its path. A `/feeds/calendars/` path, or a `user_` segment
+followed by 8 or more token characters, is refused whatever the host: a Canvas
+calendar feed URL is a bearer credential, and whoever holds one reads the
+student's calendar with no login.
+
+Size: a body over 1 MB (`MAX_SNAPSHOT_BYTES` = 1,048,576) is `413
+payload_too_large`, judged by `Content-Length` and again on what was read, since
+a chunked body declares none.
+
+### Tables
+
+All six are service role only: RLS on, no policy for `anon` or `authenticated`,
+all privileges revoked from them and granted to `service_role`. Nothing but
+these three functions reads or writes them. Of the six, **`agent_snapshots` is
+the one that holds a student's own data**; deleted on opt-out (`agent-snapshot`
+`delete`), on Canvas disconnect, and on account deletion (`deleteUserData`; the
+row also cascades from `auth.users`).
+
+- `agent_pending_auth`: an authorization a browser started and a phone has not
+  finished. Holds the typed code (unique among live rows), the match number and
+  choices, the nonce hash, the request's parameters, the code hash.
+- `agent_clients`: `smc_` clients from `/register`.
+- `agent_connections`: one per connected agent; revoking sets `revoked_at` and
+  deletes its tokens, and the row stays so Profile can show what was connected.
+- `agent_tokens`: access and refresh tokens as hashes, with `rotated_from` and
+  `used_at` for rotation; they die with their connection.
+- `agent_snapshots`: as above.
+- `agent_drafts`: the drafts of "Drafts" above and `agent-snapshot`'s `drafts`
+  and `draft` actions; columns `client_name`, `seen_at` and `decided_at` were
+  added by `20261109100000_agent_drafts.sql`, which also creates the private
+  bucket `agent-drafts` (1,572,864-byte limit, no policy for `anon` or
+  `authenticated`: only the service role reads or writes it). Survives a
+  revoked connection (`connection_id` set null), because the student may
+  still want it. Deleted on opt-out, Canvas disconnect and account deletion
+  (`deleteUserData` removes the `agent-drafts/<user id>/` objects first, best
+  effort, never failing the deletion). A file's object is deleted from
+  Storage the moment the student decides; the row stays, so `draft_status`
+  still answers. **Not live for account deletion as of 2026-11-11**:
+  production `delete-account` was v13 of 2026-10-22, older than the agent
+  connection, so its `deleteUserData` has no agent half; the rows still go
+  (every agent table cascades from `auth.users`) but every open draft's file
+  and staged upload stayed in Storage (measured with a throwaway user,
+  `docs/V11_TEST_BACKEND_2026-11-11.md`). Redeploying `delete-account`
+  (`deploy-agent.mjs` now includes it) makes this paragraph true.
+
+## The Sweeper wake (`sweeper-wake`)
+
+A phone cannot be relied on to wake itself a few minutes before a Sweeper
+alarm, so it uploads the minutes at which it would like a silent nudge, and a
+job on the server sends that nudge through Apple's push service. The nudge
+carries nothing. On waking, the phone looks at Canvas itself and cancels an
+alarm for work already handed in; the server never learns which work, which
+class, or whether anything was handed in.
+
+One function, two callers. `verify_jwt = false` (`config.toml`,
+`deploy-function.mjs` `PUBLIC_SLUGS`): pg_cron's POST carries no student JWT,
+so the gateway check is off and the student's routes verify the bearer in
+code through `requireUser`, the way `agent-auth` and `mcp` do. POST only.
+Logs counts and outcome codes only: never a token, a user id or a moment.
+
+### Student routes: `POST /`
+
+Called by the phone with the student's own Supabase JWT and
+`X-Smooth-Version`. **The version header is required** (a new function has no
+old callers): a missing header is `426 update_required`, as is a version
+below the update floor. Bodies are JSON, at most 16 KB, `{ "action": ... }`.
+
+- `put { "action": "put", "token", "environment", "moments", "plan"? }`
+  upserts the row for `token` for the caller. A token that moves to another
+  anonymous account (a reinstall can do that) follows the new owner. Answers
+  `{ "stored": n, "nextMoment": iso | null }`, `n` being the moments kept
+  after past ones were dropped; `nextMoment` is the earliest, `null` when
+  none. With `LHF_SWEEPER_WAKE_DISABLED=1` it validates, writes nothing and
+  answers `{ "stored": 0, "disabled": true }`.
+- `delete { "action": "delete" }` deletes every row of the caller and answers
+  `{ "deleted": n }`. Idempotent: a second call answers 0. The body is
+  `{ "action": "delete" }` and nothing else: an extra key is `400
+  forbidden_field`, as for `put`.
+- Any other `action`, a body that is not JSON, or a body over 16 KB is `400
+  bad_request` (`413 payload_too_large` over 16 KB). No bearer is 401.
+
+### Validation of `put`
+
+Every refusal is `400 { "error": "bad_request", "message": <reason> }` and
+writes nothing.
+
+| Field | Rule | Reason on refusal |
+|---|---|---|
+| (keys) | only `action`, `token`, `environment`, `moments`, `plan`; anything else is refused, never trimmed, so a client bug shows as a counted 400 | `forbidden_field` |
+| `token` | the APNs device token, 64 to 200 hex characters (upper case accepted, stored lower case) | `invalid_token` |
+| `environment` | `"production"` or `"development"`: which APNs host the token belongs to | `invalid_environment` |
+| `moments` | an array of full ISO 8601 instants (`YYYY-MM-DDTHH:MM[:SS[.fff]]` and `Z` or an offset; a date alone, a time without a zone or free text is refused before parsing), at most 24 | `invalid_moments`, `invalid_moment`, `too_many_moments` |
+| each moment | truncated to the minute; one at or before now is **dropped silently**; one more than 48 hours ahead **refuses the request**; duplicates collapse | `moment_beyond_horizon` |
+| `plan` | 16 hex characters, or absent; a hash of the moments the phone can compare | `invalid_plan` |
+
+### `POST /tick` (pg_cron only)
+
+Requires the header `x-sweeper-tick-secret` equal to the function secret
+`LHF_SWEEPER_TICK_SECRET` (compared in constant time); a wrong, missing or
+unconfigured secret is `403 forbidden`, counted in a log line. A dedicated
+secret, not the service-role key: any role that can log in to the database can
+read a Vault value while the request waits, and a secret that can only trigger
+a tick is the smaller blast radius. With `LHF_SWEEPER_WAKE_DISABLED=1` the
+tick answers `200 { "disabled": true }` and does nothing.
+
+Otherwise: claim, answer, send.
+
+1. Claim the rows due in the minute just before and in this minute (the
+   earlier first, so a late tick is forgiven), at most 2,000 each, through
+   `claim_sweeper_wakes` (below). A token claimed in both is sent to once.
+2. Answer `202 { "claimed": n }`.
+3. Send one push per claimed row inside `EdgeRuntime.waitUntil`, with a
+   concurrency of 32, so the answer stays inside `pg_net`'s timeout and the
+   function's CPU cap (the sends are I/O).
+4. Act on each Apple answer (below), then drop moments more than 5 minutes
+   old from the claimed rows (`prune_sweeper_moments`, in place).
+   Before the sends the tick also deletes rows whose `updated_at` is more
+   than 30 days old (a phone that is alive re-uploads at least every ten
+   minutes while open, so that is a dead install).
+5. Log one line: `sweeper-wake tick <iso minute>: claimed n, sent s, status
+   {"200":a,"400":b,...}, unreachable u, deleted d, aged a, store errors e,
+   took t ms`. `sent` counts requests Apple answered; a send that never
+   reached Apple is `unreachable`; `aged` is the 30-day deletions; a store
+   call that failed (a bump, a delete, a reset, a prune) is counted in
+   `store errors` and its error class named once, never its message, and
+   the tick carries on.
+
+### The clock
+
+`pg_cron` job `sweeper-wake-tick`, every minute, posting through `pg_net`
+(`timeout_milliseconds := 5000`) to the URL in Vault secret
+`sweeper_wake_tick_url` with the header from Vault secret
+`sweeper_wake_tick_secret`; the second is the same value as the function
+secret `LHF_SWEEPER_TICK_SECRET`. Both Vault secrets are created by hand once
+and never appear in a migration. Run history is `cron.job_run_details`, the
+first place to look when a tick seems to have missed. The migration enables
+both extensions inside blocks that tolerate their absence (so the check in
+`backend/scripts/sql-check.sh`, on a bare `postgres:16`, still passes) and
+schedules the job only when both exist; `cron.schedule` replaces a job of the
+same name, so re-running is safe.
+
+### Table: `sweeper_wakes`
+
+Service role only: RLS on, no policy for `anon` or `authenticated`, all
+privileges revoked from them and granted to `service_role`. One row per
+device token.
+
+| Column | |
+|---|---|
+| `device_token text` primary key | the APNs token, hex |
+| `user_id uuid` | `references auth.users on delete cascade`; indexed |
+| `environment text` | `production` or `development` (check constraint) |
+| `moments timestamptz[]` | at most 24, minute grain, at most 48 hours ahead (enforced by the function) |
+| `plan_hash text` | the phone's 16 hex characters |
+| `updated_at timestamptz` | |
+| `last_sent_for timestamptz` | the newest minute a push was claimed for |
+| `failures smallint` | failed sends in a row; a 200 for the row or an upload resets it |
+
+**No column may hold a course, assignment, title, URL, grade, completion or
+submission state; the moments are the only per-student fact, and they are
+never logged.** `test/sweeper_wake.test.sql` pins the column list, so a later
+migration cannot add one quietly. Deleted on `delete`, on Canvas disconnect,
+on account deletion (`deleteUserData` removes it first; the row also
+cascades from `auth.users`), when the tick finds the token dead, and after 30 days without an upload.
+
+### The claim, and idempotency
+
+`claim_sweeper_wakes(at_minute timestamptz, max_rows int)`, `security
+definer`, executable by the service role only, is one statement:
+
+```sql
+update sweeper_wakes set last_sent_for = at_minute
+ where device_token in (select device_token from sweeper_wakes
+                         where at_minute = any (moments)
+                           and (last_sent_for is null or last_sent_for < at_minute)
+                         order by device_token limit max_rows for update skip locked)
+   and (last_sent_for is null or last_sent_for < at_minute)
+returning device_token, environment, user_id;
+```
+
+So a row is handed out once per minute however many ticks overlap: the
+second tick waits on the row lock and then re-checks `last_sent_for`, which
+the first has moved. (The test is `<`, not "is distinct from": a late claim
+for an older minute can never re-claim a row already claimed for a newer
+one.) A tick that dies half way leaves its unsent rows claimed and lost for
+that minute, which is the right trade: a nudge two minutes late is no nudge,
+and the next moment is its own claim.
+
+### The APNs request
+
+One request per claimed row, HTTP/2 over TLS, exactly:
+
+```
+POST https://api.push.apple.com/3/device/<token>          (environment production)
+POST https://api.sandbox.push.apple.com/3/device/<token>  (environment development)
+authorization:   bearer <ES256 JWT>
+apns-push-type:  alert
+apns-priority:   10
+apns-topic:      com.lhf.lowhangingfruit
+apns-expiration: <unix seconds, now + 120>
+content-type:    application/json
+
+{"aps":{"alert":{"title":"smooth","body":"checking your next deadline"},"mutable-content":1,"content-available":1,"interruption-level":"passive","thread-id":"sweeper"},"lhf":"sweep"}
+```
+
+The JWT is the provider token: header `{"alg":"ES256","kid":<key id>}`, claims
+`{"iss":<team id>,"iat":<start of the current 20-minute window, unix seconds>}`
+(so isolates that mint in the same window agree on `iat` and Apple sees no
+token "update", even when a cold isolate serves every minute's tick), signed with the team's `.p8` key
+through `crypto.subtle` (no library). Minted once per isolate per key and
+reused until its `iat` is 50 minutes old (Apple: no more than one new token per 20 minutes, none
+older than 60). Two keys, because Apple scopes a team key to one environment.
+Whether the Edge runtime's `fetch` reaches Apple over HTTP/2 is settled by
+`backend/scripts/sweeper-wake-e2e.mjs`: a fake token answered `400
+BadDeviceToken` proves it, a status of 0 (a connection-level failure) says it
+does not, and the send then moves to the connector front.
+
+### The tick's other writes
+
+`prune_sweeper_moments(tokens text[], before timestamptz)` and
+`bump_sweeper_failure(token text) returns smallint` are `security definer`
+SQL functions, service role only, each one statement acting on the row as it
+is now: a prune that read the moments and wrote them back could overwrite,
+with a stale list, one the phone uploaded in between.
+
+### Apple's answers
+
+| Status, reason | Outcome | What the tick does |
+|---|---|---|
+| 200 | `ok` | accepted, not delivered |
+| 400 `BadDeviceToken`, `DeviceTokenNotForTopic` | `badToken` | `failures + 1`; at 3 the row is deleted |
+| 200 | `ok` | also sets the row's `failures` back to 0 (one `UPDATE`) |
+| 403 `ExpiredProviderToken`, `InvalidProviderToken` | `remint` | forget the cached JWT (once per environment per tick), mint a new one, retry that send once; a second 403 fails the whole tick loudly and deletes nothing |
+| 400 `BadTopic`, `TopicDisallowed`, `MissingTopic`, `BadCertificate`, `BadCertificateEnvironment`; 403 `Forbidden`, `MissingProviderToken` | `config` | our setup is wrong for every row: fail the whole tick loudly and count nothing against any row |
+| 410 (`Unregistered`; the body's timestamp is milliseconds since the epoch) | `unregistered` | delete the row now |
+| 429 `TooManyRequests` | `tooMany` | leave the row alone this tick |
+| 429 `TooManyProviderTokenUpdates` | `providerTokenAbuse` | our remint logic is wrong: fail the tick loudly |
+| 5xx | `serverError` | `failures + 1`, no retry inside the tick (the moment would be over); at 3 the row is deleted |
+| anything else, including an unknown reason | `failed` | as `badToken` |
+
+A send that never reached Apple (status 0, or a missing function secret) is
+not the row's fault: it is counted in the log line (`unreachable`, or
+`"error"` in the status map) and the row is neither failed nor deleted. A deleted row is recreated by the phone's
+next upload.
+
+### Kill switch and secrets
+
+`LHF_SWEEPER_WAKE_DISABLED=1`: `/tick` is a no-op that answers 200, and `put`
+answers `{ "stored": 0, "disabled": true }` without writing, so nothing
+accumulates and an older build keeps working. It touches no alarm.
+
+Function secrets (names only; no value is ever in the repository):
+`LHF_APNS_KEY_P8_PRODUCTION`, `LHF_APNS_KEY_ID_PRODUCTION`,
+`LHF_APNS_KEY_P8_SANDBOX`, `LHF_APNS_KEY_ID_SANDBOX`, `LHF_APNS_TEAM_ID`,
+`LHF_APNS_TOPIC` (default `com.lhf.lowhangingfruit`),
+`LHF_SWEEPER_TICK_SECRET`, `LHF_SWEEPER_WAKE_DISABLED`. A missing one is an
+error naming the variable, never a value. Deploy with
+`backend/scripts/deploy-sweeper.mjs` (secrets check, the migration, then
+`sweeper-wake` and `delete-account`, then the Vault check).
+
 ## `pair` — link the Chrome extension to a phone
 
 Request `{ "action": ... }`, all POST, all authenticated as the caller's own
@@ -1461,7 +2274,9 @@ that it is base64 and within the size cap.
 
 Request `{}`. From an owner (any user that is not a linked device): deletes
 the caller's `enrollments` and `ask_usage` rows, every linked device's auth
-user, the device links and every sync blob, then the auth user. Shared
+user, the device links and every sync blob, and the caller's `sweeper_wakes`
+rows (first: a push token is the one row that can still reach their phone),
+then the auth user. Shared
 course material is untouched (it is not the user's data). Response
 `{ "deleted": true }`.
 
@@ -1535,3 +2350,37 @@ a 502 on a real phone while a 53-word one succeeded.
   custom URL scheme can in principle hand to another app on the phone. It is
   useless without the phone's own approval and token (`claim`), and links
   only the claiming phone's account.
+- The typed code is guessable in theory: 20^8 (about 2.6e10) codes, live five
+  minutes, and attempts limited to 20 an hour per student (see "Rate limits" and
+  "Sweeping" under the agent connection). What stops a guessed code being
+  enough is the match number: `approve` needs the number the page shows, and a
+  wrong pick denies the authorization.
+- Expired rows are swept opportunistically (about one `/authorize` in fifty),
+  not on a schedule, so on a quiet project they linger until the next
+  authorize. `pg_cron` calling `agent_sweep_expired()` would be better; it
+  needs enabling in the Supabase dashboard, which a migration cannot do.
+- Rate-limit keys use the first `x-forwarded-for` entry. A caller who can
+  reach the function directly (not through the front) could spoof that header
+  to dodge the per-ip limits; the per-student phone limits do not depend on it.
+- Any https host can act as a CIMD client, so a stranger's page can start an
+  authorization that reads as "Claude". The page and the phone therefore show
+  the client's host beside its self-declared name, and the match number is the
+  defence: the student must be looking at the page that started the flow.
+- `search_course_material` has no full-text index yet (a GIN index on
+  `to_tsvector('english', text)`); the query scans the caller's enrolled
+  courses' live documents. Fine at today's pool size; add the index before it is
+  not.
+- Delivery of the Sweeper wake is Apple's best effort. The push is an alert
+  with `mutable-content` (it was a background push until 2026-11-21, which iOS
+  drops for a force-quit app), so a Notification Service Extension can run
+  even then; it is still not guaranteed and may be throttled or held. The server never knows whether a push woke the
+  phone (there is no acknowledgement): a 200 from APNs is acceptance, not
+  delivery. The only honest delivery number is the one the phone counts.
+- A tick of the Sweeper wake that dies after claiming leaves its rows claimed
+  for that minute; they are not retried, because a nudge two minutes late is
+  over.
+- `sweeper-wake` `put` has no rate limit. A tampered anonymous account can
+  create rows whose fake tokens each cost one refused APNs request per due
+  minute, bounded by the 2,000-row claim. A caller who knows another
+  install's token can take its row over (the row follows the latest
+  uploader), which is also how a reinstall follows its new owner.

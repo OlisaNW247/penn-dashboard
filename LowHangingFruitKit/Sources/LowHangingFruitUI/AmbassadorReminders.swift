@@ -2,18 +2,27 @@ import Foundation
 import UserNotifications
 import LowHangingFruitKit
 
-/// How often the ambassador wants the daily nudge.
+/// How often the ambassador wants the nudge. Every day by default since
+/// 2026-11-22 (Marco: a daily notification about the anonymous chats, one a
+/// day), with "2 a week" and "off" beside it. `.weekdays` stays
+/// in the enum only so a phone that stored it still decodes and keeps its
+/// five reminders; the picker no longer lists it (`offered`).
 enum AmbassadorReminderCadence: String, CaseIterable, Codable, Sendable, Identifiable {
     case daily
     case weekdays
+    case twiceWeekly
     case off
 
     var id: String { rawValue }
+
+    /// What the picker shows, in order.
+    static var offered: [AmbassadorReminderCadence] { [.daily, .twiceWeekly, .off] }
 
     var label: String {
         switch self {
         case .daily: return "every day"
         case .weekdays: return "weekdays"
+        case .twiceWeekly: return "2 a week"
         case .off: return "off"
         }
     }
@@ -60,6 +69,7 @@ enum AmbassadorReminders {
         switch cadence {
         case .daily: return 1
         case .weekdays: return 5
+        case .twiceWeekly: return 2
         case .off: return 0
         }
     }
@@ -82,9 +92,12 @@ enum AmbassadorReminders {
             components.hour = hour
             components.minute = minute
             return [request(identifier: identifierPrefix + "daily", components: components, firstName: firstName)]
-        case .weekdays:
-            // Monday (2) to Friday (6) in `Calendar`'s weekday numbering.
-            return (2...6).map { weekday in
+        case .weekdays, .twiceWeekly:
+            // Monday (2) to Friday (6) in `Calendar`'s weekday numbering, or
+            // Monday and Thursday for twice a week. The same identifier
+            // scheme, so a change of cadence replaces in place.
+            let days = cadence == .weekdays ? Array(2...6) : [2, 5]
+            return days.map { weekday in
                 var components = DateComponents()
                 components.weekday = weekday
                 components.hour = hour
@@ -111,8 +124,8 @@ enum AmbassadorReminders {
     /// true every day.
     nonisolated static func body(firstName: String?) -> String {
         if let firstName, !firstName.isEmpty {
-            return "today's post is written, \(firstName.lowercased()). tap to copy it."
+            return "today's anonymous post, \(firstName.lowercased()). 1 a day."
         }
-        return "today's post is written. tap to copy it."
+        return "today's anonymous post. 1 a day."
     }
 }

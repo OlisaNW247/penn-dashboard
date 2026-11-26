@@ -297,6 +297,13 @@ public enum CourseDocumentBuilder {
         // for the student's own use lives in the ledger, not in documents.
         let description = HTMLText.plainText(from: assignment.description ?? "")
         if !description.isEmpty { lines.append(description) }
+        // Plain text drops every <a href>, so "Problem Set 7.pdf" survived as a
+        // bare name with no file id. Same-host file and page links are listed
+        // after the text, one per line. This changes every assignment
+        // document's content hash once: a one-time re-upload of assignment
+        // documents on the next sync.
+        lines.append(contentsOf: canvasLinkLines(in: assignment.description ?? "",
+                                                 base: course.url ?? assignment.htmlURL))
 
         return CourseDocument(
             courseID: course.courseID,
@@ -312,6 +319,23 @@ public enum CourseDocumentBuilder {
             pointsPossible: assignment.pointsPossible,
             submitted: assignment.submission?.isSubmitted
         )
+    }
+
+    /// `"<text>: <absolute href>"` for each link in `html` that points at the
+    /// base's own Canvas host (relative hrefs resolve against `base`; skipped
+    /// without one) and whose path holds `/files/` or `/pages/`.
+    static func canvasLinkLines(in html: String, base: URL?) -> [String] {
+        guard let host = base?.host?.lowercased() else { return [] }
+        var seen = Set<String>()
+        return HTMLText.links(in: html).compactMap { link in
+            let href = link.href.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let url = URL(string: href, relativeTo: base)?.absoluteURL,
+                  url.scheme?.lowercased() == "https", url.host?.lowercased() == host,
+                  url.path.contains("/files/") || url.path.contains("/pages/"),
+                  seen.insert(url.absoluteString).inserted else { return nil }
+            let text = link.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return "\(text.isEmpty ? "link" : text): \(url.absoluteString)"
+        }
     }
 
     public static func page(from page: CourseContentPage, course: CourseSummary, now: Date = Date()) -> CourseDocument {
