@@ -29,6 +29,8 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+      - name: Probe Path@Penn's public program and course endpoints
+        run: node scripts/penn-catalog/probe-path.mjs
       - name: Planner dry run on live Penn data
         run: deno run --allow-net --allow-read --allow-env scripts/penn-catalog/dry-run.ts
       - name: Fetch
