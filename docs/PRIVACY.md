@@ -203,7 +203,7 @@ audit.
   server, not the language model, can work out the plan; to do that the
   server asks Penn Labs' catalogue and Penn's public CIS elective list for
   course, subject and requirement-attribute codes, and nothing about you
-  goes with them. Since 2026-11-26 (written, not yet live) the server also
+  goes with them. Since 2026-11-26 the server also
   reads Penn's public rules for your programs, which Smooth keeps as files
   on GitHub; the request names the program (for example the computer
   science BSE) and nothing about you. Asked for an email to your advisor, the chat drafts one

@@ -967,7 +967,8 @@ Kept so nobody rebuilds them blind.
 ## Done recently
 
 - **2026-11-26, later.** "Do all 3 in order" (`degree-progress`,
-  `b54981b`..`5e3e133`; not deployed). The 73 unverified degree rules were
+  `b54981b`..`2b8a3a9`; live as `degree-advisor` version 10 the same
+  evening, at Olisa's go). The 73 unverified degree rules were
   checked against 579 of Penn's own pages from a runner: 44 verified, 20
   partly, 4 corrected, 1 real conflict, 4 not found. Five planner rules
   were wrong and are fixed (summer limit, the refused flex petition, the

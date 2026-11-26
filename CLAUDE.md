@@ -151,7 +151,7 @@ with the backend unreachable, ask answers on-device:
 items, retrieves policy and content answers from synced course materials
 (`CourseKnowledgeCollector` → `CourseKnowledgeStore`), and on iOS 26 /
 macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
-(`OnDeviceLanguageModel`). A twelfth function, `degree-advisor`, is in the tree on `degree-progress` and **live since 2026-11-14 at about 17:49 UTC** (version 1 from `b5b0762`; **version 2 since about 18:40 UTC the same day, from `1b92d58`**, the what-if round trip, both at Olisa's go **version 5 since 2026-11-15 about 17:35 UTC, from `d2e0a49`**, the picks, at his go (versions 3 and 4 were not deployed from this session; `ask` read 24 and `sync` 31 at the same moment); **version 6 since 2026-11-15 about 18:20 UTC, from `335ec9a`**, the rounds, at his go; **version 7 since 2026-11-16, from `4083bc0`**, the deterministic planner, at his go; **version 9 since later on 2026-11-16, from `9c45e21`**, area lists, the best case and no MBA courses, at his go (version 8 was not deployed from this session; `ask` read 25 and `sync` 32 at the same moment)); Degree → Plan with AI); only a `degree-progress` build calls it. Eleven Edge Functions are in
+(`OnDeviceLanguageModel`). A twelfth function, `degree-advisor`, is in the tree on `degree-progress` and **live since 2026-11-14 at about 17:49 UTC** (version 1 from `b5b0762`; **version 2 since about 18:40 UTC the same day, from `1b92d58`**, the what-if round trip, both at Olisa's go **version 5 since 2026-11-15 about 17:35 UTC, from `d2e0a49`**, the picks, at his go (versions 3 and 4 were not deployed from this session; `ask` read 24 and `sync` 31 at the same moment); **version 6 since 2026-11-15 about 18:20 UTC, from `335ec9a`**, the rounds, at his go; **version 7 since 2026-11-16, from `4083bc0`**, the deterministic planner, at his go; **version 9 since later on 2026-11-16, from `9c45e21`**, area lists, the best case and no MBA courses, at his go (version 8 was not deployed from this session; `ask` read 25 and `sync` 32 at the same moment); **version 10 since 2026-11-26 about 21:56 UTC, from `2b8a3a9`**, the corrected policy and Penn's program packs, at his go (`ask` 25 and `sync` 32 unchanged)); Degree → Plan with AI); only a `degree-progress` build calls it. Eleven Edge Functions are in
 `backend/supabase/functions/` (all eleven are deployed; `extract-facts` was
 the last, on 2026-11-05): `ask`,
 `ask-canary`, `delete-account`, `device-sync`, `discover-websites`,
@@ -1281,8 +1281,10 @@ Keep this current. It is the fastest way for a new session to know what exists.
     names, enrollment restrictions and `prereqs_from_cim` (filled for some
     courses only). Nothing in the planner used any of it that morning.
     **Rules verified, policy corrected, packs wired in (2026-11-26, later;
-    `b54981b` onward; Deno 902 / 0 in the cloud container; NOT
-    deployed, `degree-advisor` is still version 9).** Olisa: "do all 3 in
+    `b54981b` onward; Deno 902 / 0 in the cloud container; **live as
+    `degree-advisor` version 10 since 2026-11-26 about 21:56 UTC, from
+    `2b8a3a9`, at Olisa's go**; it answers `OPTIONS` 200 and an unsigned
+    POST 401, and no real question has been asked of it yet).** Olisa: "do all 3 in
     order". (1) `scripts/penn-catalog/verify-rules.mjs` crawled 579
     official pages from a runner (Wharton's undergraduate site by its
     sitemap and the 2025-26 handbook PDF, the Engineering handbook, the
@@ -4574,7 +4576,9 @@ none is a ship line.
 ## Known gaps
 
 - **The pack-driven planner (2026-11-26) is tested on synthetic audits
-  only and is not deployed.** What a real audit will settle: whether the
+  only; it is live (version 10, 2026-11-26) and no real question has been
+  asked of it.** The first one should be read in the function log: the
+  `packs` field names the programs it joined, `pack_error` says why not. What a real audit will settle: whether the
   phone's block ids are Penn's `Req_id`s (then the join is exact; today it
   is by title, and a student on an older catalog year gets the current
   template's sharing rules with a note saying so); whether rule labels in
