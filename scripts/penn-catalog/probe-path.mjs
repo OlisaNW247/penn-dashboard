@@ -50,7 +50,14 @@ for (const p of programs) {
 }
 console.log(`code endings: ${[...byEnd].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([k, v]) => `${k}:${v}`).join(" ")}`);
 
-for (const code of ["CSCI-BSE", "MGMT-BS", "FNCS-BS", "ECON-BA", "NURS-BSN", "MATH-MINOR"]) {
+// Which codes exist for the programs a first probe guessed wrong (CSCI-BSE,
+// MGMT-BS and ECON-BA answered "{}"): print every code that starts with them.
+for (const stem of ["CSCI", "MGMT", "ECON", "CMPE", "NETS"]) {
+  console.log(`codes ${stem}: ${programs.filter((p) => String(p.code).startsWith(stem + "-")).map((p) => p.code).join(" ")}`);
+}
+const pick = (stem, want) => programs.map((p) => String(p.code)).find((c) => c.startsWith(stem + "-") && want.test(c));
+const wanted = [pick("CSCI", /BSE/), pick("MGMT", /-BS/), "FNCS-BS", pick("ECON", /-BA/)].filter(Boolean);
+for (const code of wanted) {
   const info = await call("programs-v2-info", { srcdb: TERM, programCode: code });
   if (!info) continue;
   const xml = String(info.audit_xml ?? "");
@@ -83,5 +90,20 @@ if (first) {
     for (const k of ["hours_html", "attributes_detail", "registration_restrictions", "clssnotes", "xlist", "description", "prerequisites", "restrict_info", "eval_links"]) {
       if (d[k] !== undefined) console.log(`  ${k}: ${String(d[k]).replace(/\s+/g, " ").slice(0, 500)}`);
     }
+  }
+}
+
+// Prerequisites: the details answer carries `prereqs_from_cim`, which the
+// first probe did not print. Penn Labs' own `prerequisites` field is empty for
+// most courses, so this may be the only machine source of them.
+for (const kw of ["CIS 4710", "STAT 4310", "ACCT 1020", "ASLD 0200", "CIS 4000", "FNCE 2050"]) {
+  const s2 = await call("search", { other: { srcdb: TERM }, criteria: [{ field: "keyword", value: kw }] });
+  const hit = (s2?.results ?? []).find((r) => r.code === kw) ?? null;
+  if (!hit) { console.log(`  ${kw}: not in ${TERM} (${s2?.count ?? "?"} results)`); continue; }
+  const d = await call("details", {
+    group: `code:${hit.code}`, key: `crn:${hit.crn}`, srcdb: TERM, matched: `crn:${hit.crn}`, userWithRolesStr: "!!!!!!",
+  });
+  for (const k of ["prereqs_from_cim", "xlist", "registration_restrictions", "attributes_detail", "hours_html", "notes_sapr", "registration_options"]) {
+    if (d?.[k] !== undefined) console.log(`  ${kw} ${k}: ${String(d[k]).replace(/\s+/g, " ").slice(0, 700)}`);
   }
 }
