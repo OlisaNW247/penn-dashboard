@@ -151,7 +151,7 @@ with the backend unreachable, ask answers on-device:
 items, retrieves policy and content answers from synced course materials
 (`CourseKnowledgeCollector` → `CourseKnowledgeStore`), and on iOS 26 /
 macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
-(`OnDeviceLanguageModel`). A twelfth function, `degree-advisor`, is in the tree on `degree-progress` and **live since 2026-11-14 at about 17:49 UTC** (version 1 from `b5b0762`; **version 2 since about 18:40 UTC the same day, from `1b92d58`**, the what-if round trip, both at Olisa's go **version 5 since 2026-11-15 about 17:35 UTC, from `d2e0a49`**, the picks, at his go (versions 3 and 4 were not deployed from this session; `ask` read 24 and `sync` 31 at the same moment); **version 6 since 2026-11-15 about 18:20 UTC, from `335ec9a`**, the rounds, at his go; **version 7 since 2026-11-16, from `4083bc0`**, the deterministic planner, at his go; **version 9 since later on 2026-11-16, from `9c45e21`**, area lists, the best case and no MBA courses, at his go (version 8 was not deployed from this session; `ask` read 25 and `sync` 32 at the same moment); **version 10 since 2026-11-26 about 21:56 UTC, from `2b8a3a9`**, the corrected policy and Penn's program packs, at his go (`ask` 25 and `sync` 32 unchanged)); Degree → Plan with AI); only a `degree-progress` build calls it. Eleven Edge Functions are in
+(`OnDeviceLanguageModel`). A twelfth function, `degree-advisor`, is in the tree on `degree-progress` and **live since 2026-11-14 at about 17:49 UTC** (version 1 from `b5b0762`; **version 2 since about 18:40 UTC the same day, from `1b92d58`**, the what-if round trip, both at Olisa's go **version 5 since 2026-11-15 about 17:35 UTC, from `d2e0a49`**, the picks, at his go (versions 3 and 4 were not deployed from this session; `ask` read 24 and `sync` 31 at the same moment); **version 6 since 2026-11-15 about 18:20 UTC, from `335ec9a`**, the rounds, at his go; **version 7 since 2026-11-16, from `4083bc0`**, the deterministic planner, at his go; **version 9 since later on 2026-11-16, from `9c45e21`**, area lists, the best case and no MBA courses, at his go (version 8 was not deployed from this session; `ask` read 25 and `sync` 32 at the same moment); **version 10 since 2026-11-26 about 21:56 UTC, from `2b8a3a9`**, the corrected policy and Penn's program packs, at his go (`ask` 25 and `sync` 32 unchanged); **version 11 since 2026-11-26 about 22:49 UTC, from `7f93bcc`**, registered courses counted as load and `slotIds` on scheduled courses, at his go (`ask` 25 and `sync` 32 unchanged)); Degree → Plan with AI); only a `degree-progress` build calls it. Eleven Edge Functions are in
 `backend/supabase/functions/` (all eleven are deployed; `extract-facts` was
 the last, on 2026-11-05): `ask`,
 `ask-canary`, `delete-account`, `device-sync`, `discover-websites`,
@@ -1343,7 +1343,8 @@ Keep this current. It is the fastest way for a new session to know what exists.
     only the school-wide blocks from a pack.
     **The first plan from version 10, and what it showed (2026-11-26,
     22:28 UTC, Olisa's phone; fixed in `8bbeac2` server and `299c116`
-    phone, green on the runner, the server half NOT deployed).** The
+    phone, green on the runner; the server half is live as version 11
+    since about 22:49 UTC the same day, at his go).** The
     second try reached the planner (the first could not read the what-if
     audit, Known gaps): log `engine_ms 6294 slots 20 remaining 19 chosen
     approved finish 202810 packs CSCI-BSE-NCON/MGMT-BS-GEN`, so both packs
@@ -1967,8 +1968,8 @@ passed, 0 failed) and the extension suite green in the same run (manual run
 suite over 4060 / 386: `DegreePlanSummaryTests` (slot ids, the projection
 with them, the with-plan share, the summary line and its drop on a hand edit,
 the over-limit rule, the scenario row, label stripping). No existing test was
-changed. Deno +6 over 902: `degree_registered_load.test.ts`. Not on a phone,
-and the server half is not deployed.
+changed. Deno +6 over 902: `degree_registered_load.test.ts`. Not on a phone; the
+server half went live as `degree-advisor` version 11 the same evening.
 
 Before it, **on `degree-progress` (2026-11-16, the held course-material sync
 and the student's own section): 4060 tests / 386 suites, all green, `swift
@@ -4646,11 +4647,11 @@ none is a ship line.
 
 ## Known gaps
 
-- **The plan-drawing fix of 2026-11-26 is compiled and unseen, and its
-  server half is not live.** Until `degree-advisor` is redeployed from
-  `8bbeac2` or later, the live version 10 still stacks new courses onto
-  registered semesters and sends no `slotIds`, so a new phone build draws as
-  the old one did (it needs both). Unseen on a device: the rings and bars
+- **The plan-drawing fix of 2026-11-26 is compiled and unseen on a phone;
+  its server half is live (version 11) and unasked.** The build on Olisa's
+  phone predates `299c116`, so until he rebuilds, a new plan respects his
+  registered semesters but is still drawn the old way (the phone needs the
+  new build to read `slotIds`). Unseen on a device: the rings and bars
   after a plan, the summary line, the tomato cu figure. Known limits: a slot
   whose id names a parent rule (the four-part form) may resolve to a rule the
   layout does not count, and then adds nothing; the degree part of a slot id

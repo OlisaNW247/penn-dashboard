@@ -974,7 +974,8 @@ Kept so nobody rebuilds them blind.
   term's load (`8bbeac2`, Deno 908), and the phone draws the plan from the
   planner's own slot assignments, with a summary line above the table
   (`299c116`, 4075 / 387 and the iOS build green on the runner). The server
-  half waits for Olisa's go to deploy; nothing is on a phone.
+  half is live as `degree-advisor` version 11 (his go, about 22:49 UTC);
+  the phone half is not on a phone yet.
 - **2026-11-26, later.** "Do all 3 in order" (`degree-progress`,
   `b54981b`..`2b8a3a9`; live as `degree-advisor` version 10 the same
   evening, at Olisa's go). The 73 unverified degree rules were
