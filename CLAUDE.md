@@ -4602,6 +4602,25 @@ none is a ship line.
 
 ## Known gaps
 
+- **The first question to version 10 never reached the planner: the phone
+  could not read the what-if audit (2026-11-26, about 22:22 UTC, Olisa's
+  phone, the 3.5.0-stamped Debug build of `4869115`).** "plan out my classes
+  to graduate by spring 2028 with cs degree and mgmt Wharton degree": the
+  function log shows one request, `round 1 intent plan`, 4,016 ms, the
+  primary model, so the server asked for `MGMT-BS-GEN`; about 80 seconds
+  later the chat read "couldn't read path@penn's audit for management
+  (general)". The same read worked on 2026-11-15. The cause is not read yet.
+  The line covers five endings in `runWhatIf` / `fetchDegreeAdvisorWhatIf`
+  (sign-in timed out, Duo not approved, no Canvas session, the PennKey fill
+  held by the shared ten-minute budget, no audit from Penn), and the chat
+  shows none of them. The guess that fits the timing: it was the build's
+  first launch in ten days, the silent Canvas sign-in spent the PennKey
+  budget at launch, and the portal's 60-second sign-in wait ran out behind
+  it. `scripts/read-degree-log.sh` (new that day, device half never run)
+  prints `debugDegreeLogV1` and settles it. Whatever it shows, the chat
+  should say the reason and what to do, not one generic line; not changed
+  yet. The engine, the packs and the corrected policy are therefore still
+  unasked on a real audit.
 - **The pack-driven planner (2026-11-26) is tested on synthetic audits
   only; it is live (version 10, 2026-11-26) and no real question has been
   asked of it.** The first one should be read in the function log: the
