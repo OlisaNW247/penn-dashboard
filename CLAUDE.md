@@ -1582,6 +1582,30 @@ Keep this current. It is the fastest way for a new session to know what exists.
     nothing kept, when its read is seven days old (`degreeStaleAfter`; it
     was twelve hours, a hidden sign-in and possibly a Duo push twice a day),
     or on pull to refresh. Green on the runner, not on a phone.
+  - **When it may type the PennKey, and Duo** (2026-11-26, `32bfbdd` and
+    `8f0b774`, green on the runner, not on a phone; Olisa: "that duo push
+    going unanswered thing shouldn't happen", "I want to have to enter my
+    own password and manually deal with duo as little as possible"). The
+    degree portal's own rule, `PathPortal.mayFillCredential`; the Canvas
+    renewer's is untouched. An **automatic** attempt (the screen opening,
+    `loadDegreePrograms`, `ensureAllDegreeAudits`) types the saved PennKey
+    only while a live Duo `browsertrust` cookie exists, and then under the
+    renewer's foreground rule; without trust it stops at Penn's form at
+    once (`.needsStudentSignIn`, status "tap to sign in to path@penn"),
+    types nothing and stamps no clock. The **student's own** tap or ask
+    (pull to refresh, the status tap, a chip, a what-if, a chat message)
+    may type unless Penn rejected the password or auto-login is off, never
+    within 90 s of the last typing, and without the hour after a failed
+    submission, until two submissions in a row have failed
+    (`pathFailedSubmissionStreakV1`), when the hour applies to it too. One
+    typing per chat ask. Any attempt that reaches Duo sets "approve the duo
+    push on this phone" live and buzzes; the chat shows that line whenever
+    a push is waiting. An attempt that may not type ends at once. The chat
+    reuses a kept what-if audit for seven days (`keptWhatIf`, through
+    `DegreeOptionScore.goals`) instead of reading Penn per question, says
+    which of five things failed, and offers "try again" with the question
+    kept. The degree log gains "duo: push sent", "duo: trust tapped",
+    "duo: approved".
   - **How it reads.** `PathPortal` keeps one hidden `WKWebView` on
     `https://courses.upenn.edu/` for the app run, on the Canvas login data
     store so the PennKey session and Duo trust carry over. The page opens
@@ -3135,7 +3159,19 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `degree-progress` (2026-11-26, after the merge of `v13`): 4717
+**Current on `degree-progress` (2026-11-26, the degree sign-in rule): 4732
+tests / 491 suites, all green, `swift test --no-parallel` on the GitHub macOS
+runner in 127 s, with the unsigned iOS `xcodebuild`, Deno (1140) and the
+extension suite green in the same run (manual run 45909720824 at `8f0b774`).**
++15 tests and +5 suites over the merge's 4717 / 486: `DegreeSignInAskTests`
+(the fill-rule truth table, the failure lines, the kept what-if lookup, the
+ceiling, source pins) and one status test in `DegreeWiringTests`. Two pins
+were rewritten on purpose: `agreesWithRenewer` (the portal's automatic rule is
+now the renewer's rule AND Duo trust, and never without trust) and the
+`joinsAndReloads` text pin. `32bfbdd`, the commit before the review fixes, was
+4729 / 490 green (run 45909231599). Not on a phone at the time of writing.
+
+Before it, **on `degree-progress` (2026-11-26, after the merge of `v13`): 4717
 tests / 486 suites, all green, `swift test --no-parallel` on the GitHub macOS
 runner in 108 s, with the unsigned iOS `xcodebuild`, Deno (1140 passed, 0
 failed) and the extension suite green in the same run (manual run 45907745896
@@ -4864,6 +4900,28 @@ itself.
 
 ## Traps that have already bitten
 
+- **A Duo push nobody asked for locks every later sign-in out for an
+  hour, and the screen that caused it is not the one the student is on.**
+  Read off Olisa's phone on 2026-11-26 with `scripts/read-degree-log.sh`:
+  the degree chat said "couldn't read path@penn's audit for management
+  (general)" three times. The portal log read "credential fill skipped:
+  within budget / sign-in timed out" each time, and before them "duo not
+  approved in time". `lastCredentialSubmissionAtV1` was 22:21:06 UTC, forty
+  seconds before his chat message reached the server: opening the degree
+  screen had started an automatic sign-in that typed the PennKey and sent a
+  push while he was already in the chat sheet, which showed nothing. The
+  unanswered push stamped the shared failed-submission clock
+  (`lastFailedCredentialSubmissionAtV1`), so for an hour every fresh launch
+  (each rebuild restarts the app and drops Penn's in-memory session) refused
+  to type and gave up. The one success in between was a session still alive
+  in the running app. Two guesses made before the log was read were wrong:
+  that the Canvas renewer had spent the budget at launch (its last attempt
+  was a day earlier), and that a second try would simply work. The wrong
+  fixes: a longer Duo wait or a notification (still a push nobody asked
+  for), and shortening the hour for automatic attempts. The rule is under
+  Degree → "When it may type the PennKey, and Duo". The same log said Duo
+  does not remember the phone ("no-trust-cookie"), which is why every
+  sign-in cost a push; why is still unknown (Known gaps).
 - **A branch stamped below the floor is locked out of its own build, and
   of the backend.** On 2026-11-26 Olisa rebuilt `degree-progress` onto his
   phone to try the new planner and got only "time for an update". Nothing
@@ -6334,6 +6392,27 @@ none is a ship line.
   still lands on the what-if tab under "switch to management, bs", which
   read as confusing in the recording and is not changed; a registered course
   neither the audit nor the catalogue can price counts as 1 cu.
+- **The degree sign-in rule of 2026-11-26 is compiled, reviewed and unseen
+  on a phone.** To watch for: the status "tap to sign in to path@penn" on
+  opening Degree (expected while Duo does not remember the phone); a tap
+  typing the PennKey, the buzz and "approve the duo push on this phone" on
+  the degree screen and in the chat; the answer continuing by itself after
+  the approval; "using path@penn's audit for … from today" on a second
+  question; "try again". **Duo does not remember Olisa's phone** (the
+  renewal log's "no-trust-cookie (trust none)" at 14:42 and 18:25 UTC that
+  day), so until it does every sign-in is a push; after the next approved
+  push read the degree log for "duo: trust tapped". If it is absent, Penn's
+  prompt did not offer the remember step or `DuoPromptAutoTap`'s pattern
+  missed it in the portal's popup; if present and the trust check still says
+  none, the `browsertrust` tag is the suspect. Limits, from the review: a
+  trust cookie Duo no longer honours still lets an automatic attempt type
+  and push (then the hour applies, as before); `loadDegreePrograms` is
+  automatic, so with no trust the what-if sheet's program list stays empty
+  until the status line is tapped, and that tap does not reload the list;
+  the rule that an ask types once rests on the ten-minute spacing of the
+  automatic rule, not on a flag of its own. Not done, his call: keeping
+  Penn's session cookie across launches in the Keychain, which would spare
+  most sign-ins and needs a `docs/PRIVACY.md` change.
 - **The first question to version 10 never reached the planner: the phone
   could not read the what-if audit (2026-11-26, about 22:22 UTC, Olisa's
   phone, the 3.5.0-stamped Debug build of `4869115`).** "plan out my classes

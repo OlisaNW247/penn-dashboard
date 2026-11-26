@@ -1221,6 +1221,16 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-26, night.** `v13` (the line after 3.5.0) merged into
+  `degree-progress` at Olisa's ask, so his build has the App Store look
+  (`78b5e7b`, 4717 / 486 green). Then the degree sign-in: his phone's log
+  showed an automatic sign-in sending a Duo push he never saw, which locked
+  the chat's Penn reads for an hour. An automatic attempt now types the
+  PennKey only while Duo remembers the phone, his own tap always may (two
+  failures in a row bring the hour back), the chat shows the Duo wait and
+  reuses a kept audit for a week (`32bfbdd`, `8f0b774`, 4732 / 491 green,
+  independently reviewed). Next: his look at it, and why Duo does not
+  remember his phone.
 - **2026-11-26, evening.** The first real plan from `degree-advisor`
   version 10, read from Olisa's screen recording. The planner ran and both
   program packs joined, but it put 6.5 cu of new courses on top of five
