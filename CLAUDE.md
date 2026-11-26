@@ -1279,7 +1279,50 @@ Keep this current. It is the fastest way for a new session to know what exists.
     (ShareWith), `MAXCLASS`, `MAXCREDIT`, `MINRES` and pass/fail
     qualifiers, and the course `details` route returns attributes with
     names, enrollment restrictions and `prereqs_from_cim` (filled for some
-    courses only). Nothing in the planner uses any of it yet.
+    courses only). Nothing in the planner used any of it that morning.
+    **Rules verified, policy corrected, packs wired in (2026-11-26, later;
+    `b54981b`..`5e3e133`; Deno 893 / 0 in the cloud container; NOT
+    deployed, `degree-advisor` is still version 9).** Olisa: "do all 3 in
+    order". (1) `scripts/penn-catalog/verify-rules.mjs` crawled 579
+    official pages from a runner (Wharton's undergraduate site by its
+    sitemap and the 2025-26 handbook PDF, the Engineering handbook, the
+    College's pages through the archive because the live site answers a
+    runner 403, the Nursing handbook, the catalog read live with a browser
+    User-Agent) and searched all of them for every quoted fragment of the
+    73 unverified rules; `RULES.md` now has 108 rules: 79 verified (22
+    scribe, 10 CIS, 47 page), 20 partly, 4 corrected, 1 conflicting, 4
+    not found. Five things in `policy.ts` were wrong and are fixed
+    (`fc6ed1a`): Engineering's summer limit is 4 cu a summer, 2 a
+    session, with no total across summers (the planner's "4 in all" was
+    invented); Technology/Innovation/Analytics and Global Economy courses
+    "may not be counted toward any other requirement" and "no petitions
+    will be considered", so the flex + concentration petition is gone,
+    **which also removes an assumption of the hand-made best case of
+    2026-11-16 (MGMT 2670 for both)**; a Wharton + Engineering student
+    meets the Wharton capstone with the BSE senior design project, so
+    that slot is left out with a note; any dual degree with Engineering
+    needs 46 cu (a row and a note when the plan ends short; no filler is
+    scheduled); a load above 5.5 names who decides in each school. (2)
+    `docs/research/degree-data/capture-audit-shape.js` is a console
+    snippet for Olisa's own signed-in audit that prints field names only
+    (tested against a fake page seeded with marker secrets); not yet run
+    by him. (3) `fetch-programs.mjs` pulls 398 undergraduate templates
+    (388 real, 10 are Penn's `<errors>` answer) to the orphan branch
+    `penn-data-raw`; `xml.ts` + `pack.ts` parse them (5 of 4,041 course
+    lists unread, one text); `build-packs.ts` writes one pack per program
+    to the branch `penn-data` (a template is resolved for its own
+    program, so one block id differs between programs: 36 of 254);
+    `packJoin.ts` joins an audit to its pack (block id, else type and
+    title; rule by label) and `policy.withinDegree` asks Penn's ShareWith
+    data first, the hand rules only for a slot no pack covers. The engine
+    reads the packs from `raw.githubusercontent.com` at the commit pinned
+    in `packData.ts` (`PENN_DATA_REF`, `94f31d7`), never throws, and
+    plans with the hand policy on any failure. On the synthetic audits
+    every slot joins by title; nine pairs change, all from refused to
+    allowed (an area list shares with every slot of the major block;
+    cross-cultural with language). The live dry run on the runner loaded
+    both packs and planned in 1.4 s. The publish jobs run only for a
+    commit whose message contains `[programs]` or `[verify-rules]`.
     **The add sheet's list is grouped** (`DegreeContribution.grouped`): "both
     degrees" first, then each degree under its name, ranked inside. Ranked by
     points alone, his five engineering rows (+2% each) sat above two Wharton
@@ -2294,6 +2337,7 @@ Before it, on the two lines that merged:
 **Previous: 3399 tests / 327 suites on `v8` at `8b691b6` (2026-10-29, `swift test --no-parallel`, on Olisa's Mac, 61 s): two failures and the SEC-10 known issue.** The first run of `30c4132` did not compile: `GradescopeSessionKeepTests` wrote an offset as `15 * 60` in a tuple array, typed `Int` (fixed in `8b691b6`, `hour / 4`). The two failures were `OwnTaskRemovalTests`' stop-repeating tests counting all ten weekly occurrences where the dashboard's term cap (`AppState.withinTermCap`) keeps nine once ten weeks from late October passes the term's end; the tests now count what the cap keeps (`fbb0296`). SEC-10 is fixed in the extension (`decide()` drops anonymous threads after private, as `EdThreadFilter` does) and its `withKnownIssue` wrapper removed, so `EdFilterParityTests` now asserts parity outright. Both fixes are blind until the next Mac run. The iOS Debug device build of `30c4132` succeeded and was installed on Olisa's iPhone 17 at 13:57 local the same day.
 
 **Previous: 3402 tests / 328 suites on `onboarding-polish-2026-10` (`origin/v8` `019e1a5` plus the 2026-10-30 onboarding polish; 2026-10-30, `swift test --no-parallel`, on Marco's Mac, 109 s), all green after two source-pinning tests were updated to the new intent (`ReconnectCoverTests` now expects the preview door on the school pane and not on the Canvas pane; `SweeperOnboardingTests` expects one line). +3 tests / +1 suite over 3399/327: `DuoPasscodeAutofillTests`. The first run of this tree had exactly those two tests red and nothing else; the practice-guide tests were rewritten with the `.finished` step's removal and stayed green.** The iOS Debug device build (3.4.0 (17)) of the same tree was installed on Marco's iPhone 17 Pro the same afternoon and launched onto the intro. Before that: **Current: 3399 tests / 327 suites on `v8` at `8b691b6` (2026-10-29, `swift test --no-parallel`, on Olisa's Mac, 61 s): two failures and the SEC-10 known issue.** The first run of `30c4132` did not compile: `GradescopeSessionKeepTests` wrote an offset as `15 * 60` in a tuple array, typed `Int` (fixed in `8b691b6`, `hour / 4`). The two failures were `OwnTaskRemovalTests`' stop-repeating tests counting all ten weekly occurrences where the dashboard's term cap (`AppState.withinTermCap`) keeps nine once ten weeks from late October passes the term's end; the tests now count what the cap keeps (`fbb0296`). SEC-10 is fixed in the extension (`decide()` drops anonymous threads after private, as `EdThreadFilter` does) and its `withKnownIssue` wrapper removed, so `EdFilterParityTests` now asserts parity outright. Both fixes are blind until the next Mac run. The iOS Debug device build of `30c4132` succeeded and was installed on Olisa's iPhone 17 at 13:57 local the same day.
+**Deno on `degree-progress` (2026-11-26): 893 passed, 0 failed** (`/opt/node22/bin/deno test --no-check --allow-env --allow-net --allow-read=test/fixtures test/` in the cloud container; `deno check --no-lock` clean on `degree-advisor/index.ts` and `scripts/penn-catalog/dry-run.ts`). 842 at version 9's deploy, +24 `degree_pack.test.ts`, +7 for the five policy corrections, +20 `degree_pack_join.test.ts`. Restore `backend/deno.lock` after a run.
 Deno on `phase0/extract-facts-bench` (2026-11-03): 626 passed, 0 failed, `deno task check` green; +12 for `facts.test.ts`.
 
 
@@ -3369,6 +3413,30 @@ itself.
   wait ten minutes between hidden-login tests.
 
 ## Traps that have already bitten
+
+- **A petition the planner offered was one the school's page refuses in
+  so many words.** `policy.ts` listed "a Wharton flex fundamental counted
+  toward the concentration" as something an advisor sometimes approves,
+  and the hand-made best case of 2026-11-16 leaned on it. Wharton's own
+  pages for both categories say the courses "may not be counted toward any
+  other requirement" and "(no petitions will be considered)" (read
+  2026-11-26). Penn's template says the same in data: Business
+  Fundamentals shares only with minors. The rule had come from one
+  conversation about one student, and the research that followed quoted
+  search summaries, which a cloud session cannot check (67 of 105 rules).
+  The wrong fix is a longer hand-written list. A sharing rule comes from
+  the program's template (`penn-data`), a limit from a page a runner has
+  read (`verify-rules.mjs`, `RULES.md` status VERIFIED (page)), and a
+  petition is offered only when no page refuses it.
+- **A block id in Penn's templates is not one block.** The first pack
+  build kept one copy per `Req_id` and counted 222 "conflicts": a template
+  is the audit resolved for its own program, so the Bachelor of Arts
+  degree block carries 32, 33, 34, 36 or 40 cu under one id, a major block
+  is resolved for its concentration, and the sector blocks say which
+  sector the major fulfils. Keeping the first copy would have handed most
+  College programs another program's numbers. Packs are per program. The
+  tell was the conflict count itself: 36 ids varied, far too many for
+  noise.
 
 - **A count and then an insert is not a limit.** Poster ideas
   (2026-11-11) were capped at five a day per ambassador by reading the
@@ -4480,6 +4548,8 @@ it holds work that exists nowhere else.
 | `origin/v8` (as of 2026-10-08) | Olisa's Ed Discussion work (four commits, 2026-10-02), on top of `origin/V7`; not merged. It rewrites the staleness line inside `SessionCookieStore.load` and adds a `.ed` service, so a sign-in fix that edits `load` will conflict with it. `origin/V7` is also one commit ahead of the 3.0.0 (11) source (`9769286`, DEBUG owner rows in Settings). Marco's note of 2026-10-08, kept for its dates; since 2026-10-10 `v8` is the line and carries all of it (see its row above). |
 | `v8-dice-toggle` | `V7` as of 2026-09-24 with the dashboard's dice "pick one for me" button (`PickAssignmentSheet`, `DashboardViewModel.pickCandidates`). Kept on purpose, not for merging as-is; see `ROADMAP.md` → Tried and parked. |
 | `v8-features`, `V7-polish` | Feature branches, fully merged into `V7` (fast-forward). Safe to delete. |
+| `penn-data` | **Orphan branch, never merge (2026-11-26).** One JSON pack per undergraduate program (`packs/<CODE>.json`, `programs.json`), parsed from Path@Penn's public templates by `scripts/penn-catalog/build-packs.ts` on a runner. It keeps its history so a commit shows what Penn changed. The `degree-advisor` function reads it at the commit pinned in `_shared/degreePlanner/packData.ts`; moving the pin is a deploy and needs a person's go. |
+| `penn-data-raw` | **Orphan branch, never merge (2026-11-26).** The raw templates (`programs/<CODE>.xml`), replaced whole (force-pushed) by each `[programs]` run. Fetch it to develop the parser: `git fetch origin penn-data-raw && git archive FETCH_HEAD \| tar -x -C <dir>`. |
 | `update-manifest` | **Orphan branch, never merge.** Holds `lhf-update.json`, the live update policy the shipped app fetches from raw.githubusercontent.com; edit it from GitHub's web UI to lift or set a version floor. |
 | `v6` | The line from 2026-09-16 to 2026-09-23: `v5` plus the gated Canvas access-token plumbing and stay-signed-in. In `V7`. |
 | `v5` | The **App Store submission line** that uploaded 3.0.0 builds 7–9 (2026-09-06 to 2026-09-16): `assistant-ui` + `v3.5` + the ask knowledge engine, the backend, the Locust onboarding, the update gate, the Smooth redesign and dark mode. In `V7`. |
@@ -4494,6 +4564,26 @@ it holds work that exists nowhere else.
 none is a ship line.
 
 ## Known gaps
+
+- **The pack-driven planner (2026-11-26) is tested on synthetic audits
+  only and is not deployed.** What a real audit will settle: whether the
+  phone's block ids are Penn's `Req_id`s (then the join is exact; today it
+  is by title, and a student on an older catalog year gets the current
+  template's sharing rules with a note saying so); whether rule labels in
+  a real audit match the template's (every synthetic one does). Olisa's
+  run of `capture-audit-shape.js` answers the first. Known limits: the
+  46-cu floor adds a row and a note but schedules no filler, so the finish
+  term can be optimistic when it binds; block-level `maxClasses` on a
+  share (27 in the packs) is ignored; an overlay shares with every slot of
+  its block including another overlay; the pack's exact eligibility lists
+  and `Except` courses are not yet used to tighten a slot (the audit's own
+  text still decides what a course may fill); caps (`MaxCredits 1 in
+  ACCT @`) are not read from packs, the breadth rule is still the hand
+  one; College, Nursing, minors and second majors join but no plan for
+  them has been looked at; coordinated programs (M&T, LSM, Huntsman, NHCM)
+  have no pack variant. `penn-data` is refreshed only by a `[programs]`
+  commit; nothing watches Penn for changes yet. 4 rules in `RULES.md`
+  were not found on any page read, and 20 are only partly verified.
 
 - **The course-material sync failed on every run on `degree-progress` until
   2026-11-16, and the student's section was unknown for a renamed Canvas

@@ -966,6 +966,18 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-26, later.** "Do all 3 in order" (`degree-progress`,
+  `b54981b`..`5e3e133`; not deployed). The 73 unverified degree rules were
+  checked against 579 of Penn's own pages from a runner: 44 verified, 20
+  partly, 4 corrected, 1 real conflict, 4 not found. Five planner rules
+  were wrong and are fixed (summer limit, the refused flex petition, the
+  capstone met by senior design, the 46-cu floor, who approves a load). A
+  console snippet for Olisa's own audit prints field names only. Penn's
+  templates for 388 programs are parsed into packs on the `penn-data`
+  branch, and the planner asks them whether two requirements may share a
+  course, falling back to the hand rules. Deno 893. Next: Olisa's go to
+  deploy, his capture, then the pack's eligibility lists and caps, a
+  refresh schedule with a diff a person reads, and the College.
 - **2026-11-26.** Degree-data research (`degree-progress`, `795e210`,
   `b6e23cf`; `docs/research/degree-data/`): 35 sources, 105 rules (67
   still unverified, because the session could not reach Penn's hosts), a
