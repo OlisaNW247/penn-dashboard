@@ -88,3 +88,34 @@ jobs:
           git add -A
           git commit -q -m "Path@Penn program templates, fetched $(date -u +%F)"
           git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" penn-data-raw
+      # The packs are what the planner reads: one JSON file per program,
+      # parsed from the templates just fetched. Unlike penn-data-raw this
+      # branch keeps its history, so a commit there shows exactly what Penn
+      # changed. The function reads it at a commit pinned in the code, so
+      # nothing published here reaches a student until a person moves the pin.
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Build the packs
+        run: deno run --allow-read --allow-write scripts/penn-catalog/build-packs.ts raw packs --check
+      - name: Publish penn-data
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          remote="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code "$remote" refs/heads/penn-data > /dev/null; then
+            git clone -q --depth 1 --branch penn-data "$remote" data
+          else
+            mkdir data && git -C data init -q -b penn-data
+          fi
+          rm -rf data/packs data/programs.json
+          cp -r packs/packs packs/programs.json data/
+          printf '%s\n' "# Penn program packs" "" "One JSON file per undergraduate program, parsed from Path@Penn's public" "requirement templates by scripts/penn-catalog/build-packs.ts on a GitHub" "runner. Public Penn data; nothing about any student. Never merge this branch." > data/README.md
+          cd data
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo "no change"; exit 0; fi
+          git commit -q -m "Program packs from templates fetched $(date -u +%F)"
+          git push "$remote" penn-data
+          git rev-parse HEAD
