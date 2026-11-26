@@ -26,11 +26,16 @@ public struct DegreeOptionScore: Codable, Sendable, Equatable {
     public var fraction: Double
     public var open: Int
     public var readAt: Date
+    /// The goals of the audit this score came from, so the kept what-if for
+    /// the same option can be found again. Absent in a file written before
+    /// this field (an optional decodes as nil).
+    public var goals: DegreeGoals?
 
-    public init(fraction: Double, open: Int, readAt: Date) {
+    public init(fraction: Double, open: Int, readAt: Date, goals: DegreeGoals? = nil) {
         self.fraction = fraction
         self.open = open
         self.readAt = readAt
+        self.goals = goals
     }
 }
 

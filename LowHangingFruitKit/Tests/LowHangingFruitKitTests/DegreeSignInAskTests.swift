@@ -1,0 +1,205 @@
+import Foundation
+import Testing
+@testable import LowHangingFruitKit
+@testable import LowHangingFruitUI
+
+private func sourceText(_ name: String) throws -> String {
+    var url = URL(fileURLWithPath: #filePath)
+    for _ in 0..<3 { url.deleteLastPathComponent() }
+    return try String(
+        contentsOf: url.appendingPathComponent("Sources/LowHangingFruitUI/\(name)"), encoding: .utf8)
+}
+
+/// The text of one function, from its `func` line to the next `    func `.
+private func body(of marker: String, in source: String) throws -> String {
+    let start = try #require(source.range(of: marker))
+    let rest = String(source[start.lowerBound...])
+    let afterHead = rest.index(rest.startIndex, offsetBy: marker.count)
+    let end = rest[afterHead...].range(of: "\n    func ")?.lowerBound ?? rest.endIndex
+    return String(rest[..<end])
+}
+
+@Suite("Degree sign-in: who may type the PennKey")
+struct DegreeSignInFillRuleTests {
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func may(
+        submitted: TimeInterval? = nil, failed: TimeInterval? = nil,
+        rejected: Bool = false, enabled: Bool = true, user: Bool, trust: Bool
+    ) -> Bool {
+        PathPortal.mayFillCredential(
+            now: now,
+            lastSubmission: submitted.map { now.addingTimeInterval(-$0) },
+            lastFailedSubmission: failed.map { now.addingTimeInterval(-$0) },
+            passwordRejected: rejected, autoLoginEnabled: enabled,
+            userInitiated: user, duoTrustLive: trust)
+    }
+
+    @Test("a student's own ask types unless rejected or off, trust or no trust")
+    func userAsk() {
+        for trust in [true, false] {
+            #expect(may(user: true, trust: trust))
+            #expect(!may(rejected: true, user: true, trust: trust))
+            #expect(!may(enabled: false, user: true, trust: trust))
+            // The failed-submission hour does not apply to an ask.
+            #expect(may(submitted: 30 * 60, failed: 30 * 60, user: true, trust: trust))
+            // Ninety seconds since the last typing, never less.
+            #expect(PathPortal.userAskCredentialSpacing == 90)
+            #expect(!may(submitted: 60, user: true, trust: trust))
+            #expect(!may(submitted: 89, user: true, trust: trust))
+            #expect(may(submitted: 91, user: true, trust: trust))
+        }
+    }
+
+    @Test("an automatic attempt never types without Duo trust, and with it follows the old rule")
+    func automatic() {
+        let offsets: [TimeInterval?] = [nil, 0, 599, 600, 3599, 3600, 7200]
+        for submitted in offsets {
+            for failed in offsets {
+                #expect(!may(submitted: submitted, failed: failed, user: false, trust: false))
+                let expected = (submitted.map { $0 >= 600 } ?? true) && (failed.map { $0 >= 3600 } ?? true)
+                #expect(may(submitted: submitted, failed: failed, user: false, trust: true) == expected)
+            }
+        }
+        #expect(!may(rejected: true, user: false, trust: true))
+        #expect(!may(enabled: false, user: false, trust: true))
+    }
+}
+
+@Suite("Degree sign-in: the chat's failure lines")
+struct DegreeAdvisorFailureLineTests {
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+    private let utc = TimeZone(identifier: "UTC")!
+
+    private func line(_ failure: DegreeAdvisorReadFailure) -> String {
+        AppState.degreeAdvisorReadFailureLine(failure, name: "management (general)", now: now, timeZone: utc)
+    }
+
+    @Test("each reason has its words")
+    func lines() {
+        #expect(line(.duoNotApproved) == "duo wasn't approved in time. ask again and approve the push on this phone.")
+        #expect(line(.noCanvasSession) == "sign in to canvas first, then ask again.")
+        #expect(line(.needsPennKey) == "penn needs your pennkey. update it in profile, then ask again.")
+        #expect(line(.other) == "couldn't read path@penn's audit for management (general). ask again.")
+        #expect(line(.withinBudget(until: now.addingTimeInterval(30 * 60)))
+                == "path@penn sign-in can try again at 8:30 am.")
+        #expect(line(.withinBudget(until: now.addingTimeInterval(60))) == "just tried. ask again in a minute.")
+    }
+
+    @Test("the reason comes from the last sign-in and the portal's skip")
+    func reasons() {
+        let later = now.addingTimeInterval(1800)
+        #expect(AppState.degreeAdvisorReadFailure(signIn: .needsDuo, skip: nil) == .duoNotApproved)
+        #expect(AppState.degreeAdvisorReadFailure(signIn: .noCanvasSession, skip: nil) == .noCanvasSession)
+        #expect(AppState.degreeAdvisorReadFailure(signIn: .timedOut, skip: .withinBudget(until: later))
+                == .withinBudget(until: later))
+        #expect(AppState.degreeAdvisorReadFailure(signIn: .timedOut, skip: .noneSaved) == .needsPennKey)
+        #expect(AppState.degreeAdvisorReadFailure(signIn: .timedOut, skip: .rejectedOrOff) == .needsPennKey)
+        #expect(AppState.degreeAdvisorReadFailure(signIn: .timedOut, skip: nil) == .other)
+        #expect(AppState.degreeAdvisorReadFailure(signIn: nil, skip: nil) == .other)
+        #expect(AppState.degreeAdvisorReadFailure(signIn: .ready, skip: nil) == .other)
+    }
+
+    @Test("only a failure that asking again can fix offers try again")
+    func retryRule() {
+        #expect(DegreeAdvisorReadFailure.duoNotApproved.canRetry(now: now))
+        #expect(DegreeAdvisorReadFailure.other.canRetry(now: now))
+        #expect(!DegreeAdvisorReadFailure.noCanvasSession.canRetry(now: now))
+        #expect(!DegreeAdvisorReadFailure.needsPennKey.canRetry(now: now))
+        #expect(DegreeAdvisorReadFailure.withinBudget(until: now.addingTimeInterval(90)).canRetry(now: now))
+        #expect(!DegreeAdvisorReadFailure.withinBudget(until: now.addingTimeInterval(1800)).canRetry(now: now))
+    }
+}
+
+@Suite("Degree sign-in: kept what-if audits")
+struct DegreeKeptWhatIfTests {
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+    private let goals = DegreeGoals(degree: "BS", majors: ["MGMT"])
+
+    private func audit(goals: DegreeGoals, age: TimeInterval) -> DegreeAudit {
+        DegreeAudit(goals: goals, isWhatIf: true, percentComplete: 50, degreeLabel: nil,
+                    catalogYearLabel: nil, blocks: [], courses: [], fetchedAt: now.addingTimeInterval(-age))
+    }
+
+    private func scores(goals: DegreeGoals?) -> [String: DegreeOptionScore] {
+        [DegreeOptions.scoreKey(degreeID: "d1", programCode: "MGMT-BS-GEN"):
+            DegreeOptionScore(fraction: 0.5, open: 3, readAt: now, goals: goals)]
+    }
+
+    private func lookup(_ scores: [String: DegreeOptionScore], _ audits: [DegreeAudit]) -> DegreeAudit? {
+        AppState.keptWhatIf(
+            optionScores: scores, whatIfs: audits, degreeID: "d1", programCode: "MGMT-BS-GEN",
+            now: now, maxAge: AppState.degreeStaleAfter)
+    }
+
+    @Test("a score, its audit and a fresh read give the kept audit")
+    func hit() {
+        let kept = audit(goals: goals, age: 27 * 60)
+        #expect(lookup(scores(goals: goals), [audit(goals: DegreeGoals(), age: 0), kept]) == kept)
+    }
+
+    @Test("no score, no goals, no audit or an old audit give nil")
+    func misses() {
+        let kept = audit(goals: goals, age: 60)
+        #expect(lookup([:], [kept]) == nil)
+        #expect(lookup(scores(goals: nil), [kept]) == nil)
+        #expect(lookup(scores(goals: goals), []) == nil)
+        #expect(lookup(scores(goals: goals), [audit(goals: DegreeGoals(), age: 60)]) == nil)
+        #expect(lookup(scores(goals: goals), [audit(goals: goals, age: AppState.degreeStaleAfter + 1)]) == nil)
+    }
+
+    @Test("a score written before goals were kept still decodes")
+    func lenientDecode() throws {
+        let json = #"{"fraction":0.5,"open":3,"readAt":0}"#
+        let score = try JSONDecoder().decode(DegreeOptionScore.self, from: Data(json.utf8))
+        #expect(score.goals == nil)
+    }
+
+    @Test("the notice names today, yesterday or the day")
+    func notice() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        func text(_ age: TimeInterval) -> String {
+            AppState.degreeKeptAuditNotice(
+                name: "management", readAt: now.addingTimeInterval(-age), now: now, calendar: calendar)
+        }
+        #expect(text(60) == "using path@penn's audit for management from today")
+        #expect(text(86_400) == "using path@penn's audit for management from yesterday")
+        #expect(text(3 * 86_400) == "using path@penn's audit for management from jan 12")
+    }
+}
+
+@Suite("Degree sign-in: who asks, in the source")
+struct DegreeSignInSourceTests {
+    @Test("a student's own asks pass userInitiated true; the automatic callers do not")
+    func callers() throws {
+        let source = try sourceText("AppState+Degree.swift")
+        let plans = try body(of: "func degreeWhatIfPlans(", in: source)
+        #expect(plans.contains("signInToPath(force: true, userInitiated: true)"))
+        let whatIf = try body(of: "func runWhatIf(", in: source)
+        #expect(whatIf.contains("signInToPath(force: true, userInitiated: true)"))
+        let programs = try body(of: "func loadDegreePrograms(", in: source)
+        #expect(!programs.contains("userInitiated: true"))
+        let ensure = try body(of: "func ensureAllDegreeAudits(", in: source)
+        #expect(!ensure.contains("userInitiated: true"))
+        let refresh = try body(of: "func refreshDegreeAudit(", in: source)
+        #expect(refresh.contains("userInitiated: userInitiated"))
+        let screen = try sourceText("DegreeProgressView.swift")
+        #expect(screen.contains("refreshDegreeAudit(force: false)"))
+        #expect(!screen.contains("refreshDegreeAudit(force: false, userInitiated: true)"))
+    }
+
+    @Test("the portal says what Duo did and never grows the forbidden words")
+    func portalLog() throws {
+        let portal = try sourceText("PathPortal.swift")
+        for words in ["duo: push sent", "duo: trust tapped", "duo: approved"] {
+            #expect(portal.contains(words))
+        }
+        for file in ["PathPortal.swift", "AppState+DegreeAdvisor.swift", "DegreeAdvisorView.swift"] {
+            let text = try sourceText(file).lowercased()
+            #expect(!text.contains("recommend"))
+            #expect(!text.contains("average"))
+            #expect(!text.contains("graduate"))
+        }
+    }
+}

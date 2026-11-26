@@ -65,6 +65,12 @@ struct DegreeStatusLineTests {
 
 @Suite("Degree progress: what a sign-in outcome says")
 struct DegreeSignInStatusTests {
+    @Test("a stop at the form maps to the tap-to-sign-in status")
+    func needsStudent() {
+        #expect(AppState.degreeStatus(for: .needsStudentSignIn, previous: .idle) == .needsPathSignIn)
+        #expect(DegreeStatus.needsPathSignIn.line(now: Date()) == "tap to sign in to path@penn")
+    }
+
     @Test("each outcome maps to its status, and a throttle keeps what was showing")
     func mapping() {
         let kept = DegreeStatus.read(Date(timeIntervalSince1970: 1_800_000_000))
@@ -149,7 +155,11 @@ struct PathPortalSourceTests {
     func joinsAndReloads() throws {
         let source = try portalSource()
         #expect(source.contains("Task<SignIn, Never>"))
-        #expect(source.contains("return await running.value"))
+        // Was "return await running.value": a student's ask that joins an
+        // automatic attempt which stopped at the form now keeps the joined
+        // answer in a local first (`joined`), then may start its own.
+        #expect(source.contains("let joined = await running.value"))
+        #expect(source.contains("return joined"))
         #expect(!source.contains("isEnsuring"))
         #expect(source.contains("func invalidateSession"))
         #expect(source.contains("webViewWebContentProcessDidTerminate"))
@@ -174,14 +184,17 @@ struct PathPortalBudgetRuleTests {
 
     private func may(
         submitted: TimeInterval? = nil, failed: TimeInterval? = nil,
-        rejected: Bool = false, enabled: Bool = true
+        rejected: Bool = false, enabled: Bool = true,
+        user: Bool = false, trust: Bool = true
     ) -> Bool {
         PathPortal.mayFillCredential(
             now: now,
             lastSubmission: submitted.map { now.addingTimeInterval(-$0) },
             lastFailedSubmission: failed.map { now.addingTimeInterval(-$0) },
             passwordRejected: rejected,
-            autoLoginEnabled: enabled
+            autoLoginEnabled: enabled,
+            userInitiated: user,
+            duoTrustLive: trust
         )
     }
 
@@ -213,13 +226,17 @@ struct PathPortalBudgetRuleTests {
         #expect(!may(submitted: 5 * 60, failed: spacing + 600))
     }
 
+    // Before 2026-11-26 this pinned parity for every automatic call. It now
+    // pins parity only while Duo trust is live; with no trust an automatic
+    // attempt never fills (the first assertion in the loop).
     @MainActor
-    @Test("the portal's rule agrees with the renewer's own foreground rule")
+    @Test("the portal's automatic rule agrees with the renewer's foreground rule while Duo trust is live, and never fills without it")
     func agreesWithRenewer() {
         let offsets: [TimeInterval?] = [nil, 0, 599, 600, 3599, 3600, 7200]
         for submitted in offsets {
             for failed in offsets {
-                let portal = may(submitted: submitted, failed: failed)
+                #expect(!may(submitted: submitted, failed: failed, trust: false))
+                let portal = may(submitted: submitted, failed: failed, trust: true)
                 let renewer = CanvasSessionRenewer.credentialSubmissionAllowed(
                     lastSubmissionAt: submitted.map { now.addingTimeInterval(-$0) },
                     now: now,

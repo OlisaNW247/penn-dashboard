@@ -227,7 +227,7 @@ struct DegreeProgressView: View {
                 .padding(.horizontal, 20)
                 .padding(.bottom, 32)
             }
-            .refreshable { await state.refreshDegreeAudit(force: true) }
+            .refreshable { await state.refreshDegreeAudit(force: true, userInitiated: true) }
             .overlay(alignment: .bottomTrailing) {
                 if state.degreeAdvisorAvailable {
                     Button { showAdvisor = true } label: {
@@ -292,8 +292,10 @@ struct DegreeProgressView: View {
     }
 
     private var statusRetries: Bool {
-        if case .failed = state.degreeStatus { return true }
-        return false
+        switch state.degreeStatus {
+        case .failed, .needsPathSignIn: return true
+        default: return false
+        }
     }
 
     /// Tappable only where a tap has an answer: a failure retries;
@@ -305,7 +307,7 @@ struct DegreeProgressView: View {
                 .font(.lhfSans(13))
                 .foregroundStyle(Color.smoothMuted)
             if statusRetries {
-                Button { Task { await state.refreshDegreeAudit(force: true) } } label: { label }
+                Button { Task { await state.refreshDegreeAudit(force: true, userInitiated: true) } } label: { label }
                     .buttonStyle(.plain)
             } else {
                 label
@@ -384,7 +386,7 @@ struct DegreeProgressView: View {
 
     private var canRead: Bool {
         switch state.degreeStatus {
-        case .idle, .failed: return true
+        case .idle, .failed, .needsPathSignIn: return true
         default: return false
         }
     }
@@ -392,7 +394,7 @@ struct DegreeProgressView: View {
     private var emptyProgress: some View {
         VStack(alignment: .leading, spacing: 12) {
             if canRead {
-                Button { Task { await state.refreshDegreeAudit(force: true) } } label: {
+                Button { Task { await state.refreshDegreeAudit(force: true, userInitiated: true) } } label: {
                     Text("read path@penn")
                         .font(.lhfSans(14, weight: .semibold))
                         .foregroundStyle(Color.smoothInk)

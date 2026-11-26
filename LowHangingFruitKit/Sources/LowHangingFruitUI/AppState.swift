@@ -608,6 +608,19 @@ final class AppState: ObservableObject {
     /// The one hidden WebView on Penn's advising page (`PathPortal`).
     let degreePortal = PathPortal()
     var degreeRefreshTask: Task<Void, Never>?
+    /// The outcome of the last real portal sign-in, and the portal's reason for
+    /// not typing the PennKey in it (read by the chat's failure line).
+    var lastPathSignIn: PathPortal.SignIn?
+    var lastPathFillSkip: PathPortal.FillSkip?
+    /// Set only while the chat's what-if read runs: a sign-in in it that ended
+    /// without a session stops any further sign-in in the same ask.
+    var degreeAskActive = false
+    var degreeAskSignInFailed = false
+    /// The chat sets this for its read to hear "signing in to path@penn…".
+    var degreeStageSink: ((String) -> Void)?
+    /// The status the Duo hook replaced with `.waitingForDuo`, restored once
+    /// the sign-in call returns.
+    var degreeStatusBeforeDuo: DegreeStatus?
     /// Bumped by `clearDegreeData()`. A read in flight captured the number it
     /// started under and stops writing (tokens, file, snapshot, status) once it
     /// changes, so a disconnect cannot be undone by a read that finishes after.
@@ -10676,7 +10689,13 @@ extension AppState {
             lastSubmission: Self.persistedCredentialSubmissionAt(),
             lastFailedSubmission: failed,
             passwordRejected: autoLoginDisabledReason != nil,
-            autoLoginEnabled: stayLoggedInEnabled && PennKeyCredentialStore.hasCredentials
+            autoLoginEnabled: stayLoggedInEnabled && PennKeyCredentialStore.hasCredentials,
+            // From the cached Duo summary, never a cookie read here (this
+            // closure is synchronous). Nil before the jar has been read this
+            // launch, which is the safe side: no trust, no automatic typing.
+            // `signInToPath` awaits `refreshDuoRememberSummary()` before an
+            // automatic attempt so a fresh launch does not wrongly read none.
+            duoTrustLive: duoTrustExpiry.map { $0 > Date() } ?? false
         )
     }
 

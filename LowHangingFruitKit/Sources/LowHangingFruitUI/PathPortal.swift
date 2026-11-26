@@ -57,6 +57,9 @@ final class PathPortal: NSObject, WKUIDelegate {
         case blocked
         case timedOut
         case throttled
+        /// An automatic attempt reached Penn's form and stopped there: only
+        /// the student's own tap types the PennKey.
+        case needsStudentSignIn
     }
 
     /// How long one page script may take before the call is abandoned. The
@@ -78,6 +81,9 @@ final class PathPortal: NSObject, WKUIDelegate {
         var lastFailedSubmission: Date?
         var passwordRejected: Bool
         var autoLoginEnabled: Bool
+        /// A live Duo trust cookie is known. False when the Duo jar has not
+        /// been read yet this launch, which is the safe side.
+        var duoTrustLive: Bool = false
     }
 
     /// Bound by `AppState+Degree` before every use. Unbound means the fill is
@@ -86,6 +92,25 @@ final class PathPortal: NSObject, WKUIDelegate {
     var onCredentialSubmitted: ((Date) -> Void)?
     var onCredentialFailed: ((Date) -> Void)?
     var onCredentialRejected: (() -> Void)?
+    /// Called once per attempt when the popup reaches Duo (a push is waiting).
+    var onDuoReached: (() -> Void)?
+    /// Why the last attempt did not type the PennKey; reset at the start of
+    /// each attempt.
+    private(set) var lastFillSkip: FillSkip?
+    /// Set from the caller of the attempt in flight. A caller that joins an
+    /// attempt already running does not upgrade it: the attempt keeps the
+    /// flag it started with.
+    private(set) var attemptUserInitiated = false
+    /// An automatic attempt saw Penn's form; the attempt ends at once.
+    private var stopForStudent = false
+    /// The student's own attempt met a form it may not fill (just typed,
+    /// rejected, nothing saved). It ends at once with the reason in
+    /// `lastFillSkip`: sitting a minute on a form nobody will fill only
+    /// delays the line that tells the student what to do.
+    private var stopForSkip = false
+    /// Once-per-attempt guards for the Duo log lines.
+    private var loggedDuoPush = false
+    private var loggedDuoTrust = false
 
     private var configuration: WKWebViewConfiguration?
     private var webView: WKWebView?
@@ -114,32 +139,94 @@ final class PathPortal: NSObject, WKUIDelegate {
     /// foreground attempt, built on the renewer's own spacing constants (that
     /// function is main-actor isolated, so it cannot be called from here), plus
     /// the two latches: a password Penn rejected, or auto-login being off.
+    ///
+    /// `userInitiated` is true only for an attempt the student's own ask in the
+    /// degree screen started. Then the failed-submission hour is not applied and
+    /// the spacing since the last submission is `userAskCredentialSpacing`.
+    /// False is the renewer's rule AND a live Duo trust cookie.
     nonisolated static func mayFillCredential(
         now: Date,
         lastSubmission: Date?,
         lastFailedSubmission: Date?,
         passwordRejected: Bool,
-        autoLoginEnabled: Bool
+        autoLoginEnabled: Bool,
+        userInitiated: Bool = false,
+        duoTrustLive: Bool = false
     ) -> Bool {
         guard autoLoginEnabled, !passwordRejected else { return false }
-        if let lastFailedSubmission,
-           now.timeIntervalSince(lastFailedSubmission) < CanvasSessionRenewer.failedSubmissionSpacing {
-            return false
-        }
-        if let lastSubmission,
-           now.timeIntervalSince(lastSubmission) < CanvasSessionRenewer.foregroundCredentialSpacing {
-            return false
-        }
-        return true
+        // An automatic attempt types the PennKey only while Duo remembers this
+        // phone, because then the sign-in cannot cost a push nobody asked for
+        // (an automatic read when the screen opened is how a push went out
+        // unseen on 2026-11-26). Without trust it ends at the form and the
+        // student's tap signs in. The wrong fix is a longer wait or a
+        // notification, which still spends a push nobody asked for. (The
+        // renewer's own rule is untouched.)
+        guard userInitiated || duoTrustLive else { return false }
+        return fillBlockedUntil(
+            now: now, lastSubmission: lastSubmission, lastFailedSubmission: lastFailedSubmission,
+            userInitiated: userInitiated) == nil
     }
+
+    /// When the budget next allows a fill, or nil when it allows one now. Only
+    /// the two spacings; the latches (rejected, auto-login off) are the
+    /// caller's.
+    nonisolated static func fillBlockedUntil(
+        now: Date,
+        lastSubmission: Date?,
+        lastFailedSubmission: Date?,
+        userInitiated: Bool
+    ) -> Date? {
+        var until: Date?
+        if !userInitiated, let lastFailedSubmission {
+            let end = lastFailedSubmission.addingTimeInterval(CanvasSessionRenewer.failedSubmissionSpacing)
+            if end > now { until = end }
+        }
+        if let lastSubmission {
+            let spacing = userInitiated
+                ? userAskCredentialSpacing
+                : CanvasSessionRenewer.foregroundCredentialSpacing
+            let end = lastSubmission.addingTimeInterval(spacing)
+            if end > now {
+                if let existing = until {
+                    until = max(existing, end)
+                } else {
+                    until = end
+                }
+            }
+        }
+        return until
+    }
+
+    /// Why the last attempt did not type the saved PennKey, when it did not.
+    enum FillSkip: Sendable, Equatable {
+        case withinBudget(until: Date)
+        case noneSaved
+        case rejectedOrOff
+    }
+
+    /// A student's tap in the degree screen is the consent a Duo push needs;
+    /// the hour after a failed submission exists to stop pushes nobody asked
+    /// for. So an ask may type again inside that hour, but never within 90
+    /// seconds of the last typing. The wrong fixes would be shortening the
+    /// hour for automatic attempts, or touching the Canvas renewer's own
+    /// rule: this must change neither.
+    nonisolated static let userAskCredentialSpacing: TimeInterval = 90
 
     // MARK: Sign-in
 
     /// Signs in (or confirms the page already is). Concurrent callers share one
     /// attempt.
-    func ensureSignedIn(force: Bool = false) async -> SignIn {
-        if let running = inFlight { return await running.value }
-        let task = Task { @MainActor [self] in await self.performSignIn(force: force) }
+    func ensureSignedIn(force: Bool = false, userInitiated: Bool = false) async -> SignIn {
+        if let running = inFlight {
+            let joined = await running.value
+            // A student's ask that joined an AUTOMATIC attempt which stopped
+            // at the form gets exactly one attempt of its own. No loop.
+            guard userInitiated, joined == .needsStudentSignIn else { return joined }
+            if let again = inFlight { return await again.value }
+        }
+        let task = Task { @MainActor [self] in
+            await self.performSignIn(force: force, userInitiated: userInitiated)
+        }
         inFlight = task
         let result = await task.value
         // Only the owner clears, and only its own task: `reset()` may already
@@ -156,7 +243,13 @@ final class PathPortal: NSObject, WKUIDelegate {
         log("session invalidated")
     }
 
-    private func performSignIn(force: Bool) async -> SignIn {
+    private func performSignIn(force: Bool, userInitiated: Bool) async -> SignIn {
+        attemptUserInitiated = userInitiated
+        lastFillSkip = nil
+        stopForStudent = false
+        stopForSkip = false
+        loggedDuoPush = false
+        loggedDuoTrust = false
         // The clock-stale set is used on purpose (the old session reader
         // did the same): `load` applies the 24-hour rule and returns nothing
         // for a day-old session, but Penn's SSO may still honour it, and when
@@ -247,11 +340,20 @@ final class PathPortal: NSObject, WKUIDelegate {
 
         while true {
             if Task.isCancelled || webView == nil { return concludeAttempt(.timedOut) }
+            if stopForStudent {
+                log("automatic attempt stopped at the form")
+                return concludeAttempt(.needsStudentSignIn)
+            }
+            if stopForSkip {
+                log("sign-in stopped: nothing to type")
+                return concludeAttempt(.timedOut)
+            }
             let limit = duoReached ? Self.signInWaitAfterDuo : Self.signInWait
             if Date().timeIntervalSince(startedAt) >= limit { break }
             try? await Task.sleep(nanoseconds: Self.pollNanoseconds)
             if let state = await readiness(), state.token {
                 log("token arrived")
+                if duoReached { log("duo: approved") }
                 return .ready
             }
         }
@@ -269,6 +371,9 @@ final class PathPortal: NSObject, WKUIDelegate {
     /// exactly as a foreground renewer attempt does.
     private func concludeAttempt(_ result: SignIn) -> SignIn {
         guard result != .ready else { return result }
+        // Nothing was typed and nothing failed: no failure clock, and no
+        // attempt spacing against the student's own tap that follows.
+        if result == .needsStudentSignIn { return result }
         let now = Date()
         lastAttemptEndedAt = now
         if hasSubmittedCredentials { onCredentialFailed?(now) }
@@ -357,6 +462,8 @@ final class PathPortal: NSObject, WKUIDelegate {
         hasSubmittedCredentials = false
         bounceHandled = false
         needsReload = false
+        lastFillSkip = nil
+        attemptUserInitiated = false
     }
 
     // MARK: WKUIDelegate
@@ -401,8 +508,7 @@ final class PathPortal: NSObject, WKUIDelegate {
         if PennKeyLoginForm.isDuo(url) {
             // Arriving on Duo after a submission means a push is (or will be)
             // waiting; the deadline moves out to two minutes.
-            if !duoReached { log("duo reached") }
-            duoReached = true
+            markDuoReached()
             return
         }
         guard PennKeyLoginForm.isLoginForm(url) else { return }
@@ -457,21 +563,44 @@ final class PathPortal: NSObject, WKUIDelegate {
 
         guard let budget = credentialBudget?() else {
             log("credential fill skipped: budget unbound")
+            if !attemptUserInitiated { stopForStudent = true }
             return
         }
+        let fillNow = Date()
         guard Self.mayFillCredential(
-            now: Date(),
+            now: fillNow,
             lastSubmission: budget.lastSubmission,
             lastFailedSubmission: budget.lastFailedSubmission,
             passwordRejected: budget.passwordRejected,
-            autoLoginEnabled: budget.autoLoginEnabled
+            autoLoginEnabled: budget.autoLoginEnabled,
+            userInitiated: attemptUserInitiated,
+            duoTrustLive: budget.duoTrustLive
         ) else {
-            // Not an error: the attempt waits on Penn's form until its
-            // deadline and ends `.timedOut`.
+            // Either kind of attempt ends here instead of waiting out the
+            // deadline on a form nobody will fill: an automatic one as
+            // `.needsStudentSignIn`, a student's own as `.timedOut` with the
+            // reason in `lastFillSkip`.
+            if !attemptUserInitiated {
+                stopForStudent = true
+                log("credential fill skipped: automatic attempt")
+                return
+            }
+            if budget.passwordRejected || !budget.autoLoginEnabled {
+                lastFillSkip = .rejectedOrOff
+            } else {
+                let until = Self.fillBlockedUntil(
+                    now: fillNow, lastSubmission: budget.lastSubmission,
+                    lastFailedSubmission: budget.lastFailedSubmission,
+                    userInitiated: attemptUserInitiated) ?? fillNow
+                lastFillSkip = .withinBudget(until: until)
+            }
+            stopForSkip = true
             log("credential fill skipped: within budget")
             return
         }
         guard let credentials = PennKeyCredentialStore.load() else {
+            lastFillSkip = .noneSaved
+            if attemptUserInitiated { stopForSkip = true } else { stopForStudent = true }
             log("credential fill skipped: none saved")
             return
         }
@@ -499,7 +628,10 @@ final class PathPortal: NSObject, WKUIDelegate {
         // never starts.
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         let duoHandler = DuoPromptMessageHandler { [weak self] event in
-            if event == .push { self?.noteDuoPush() }
+            switch event {
+            case .push: self?.noteDuoPush()
+            case .trusted: self?.noteDuoTrust()
+            }
         }
         configuration.userContentController.add(duoHandler, name: DuoPromptAutoTap.handlerName)
         configuration.userContentController.addUserScript(DuoPromptAutoTap.makeUserScript())
@@ -519,8 +651,24 @@ final class PathPortal: NSObject, WKUIDelegate {
     }
 
     private func noteDuoPush() {
-        if !duoReached { log("duo reached") }
+        if !loggedDuoPush {
+            loggedDuoPush = true
+            log("duo: push sent")
+        }
+        markDuoReached()
+    }
+
+    private func noteDuoTrust() {
+        guard !loggedDuoTrust else { return }
+        loggedDuoTrust = true
+        log("duo: trust tapped")
+    }
+
+    private func markDuoReached() {
+        guard !duoReached else { return }
+        log("duo reached")
         duoReached = true
+        onDuoReached?()
     }
 
     private func releasePopup() {

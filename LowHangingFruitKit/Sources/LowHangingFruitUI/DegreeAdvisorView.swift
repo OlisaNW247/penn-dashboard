@@ -14,6 +14,8 @@ struct DegreeAdvisorMessage: Identifiable, Equatable {
     /// The engine's schedule card, built once when the reply arrives.
     var planLines: DegreeAdvisorPlanLines? = nil
     var email: String? = nil
+    /// A failed reply the student can fix by asking again.
+    var canRetry: Bool = false
 }
 
 /// The display lines of an engine plan's card. Pure, so a test can read them
@@ -190,7 +192,14 @@ struct DegreeAdvisorView: View {
                         HStack(spacing: 8) {
                             ProgressView()
                                 .controlSize(.small)
-                            if let stage {
+                            // The status, not the stage closure, carries the
+                            // Duo wait, so a push already waiting from a tap on
+                            // the degree screen shows here too.
+                            if state.degreeStatus == .waitingForDuo {
+                                Text(DegreeStatus.waitingForDuo.line(now: Date()) ?? "")
+                                    .font(.lhfSans(12, weight: .semibold))
+                                    .foregroundStyle(Color.smoothInk)
+                            } else if let stage {
                                 Text(stage)
                                     .font(.lhfSans(12))
                                     .foregroundStyle(Color.smoothMuted)
@@ -264,6 +273,14 @@ struct DegreeAdvisorView: View {
                     .foregroundStyle(message.failed ? Color.smoothMuted : Color.smoothInk)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                if message.canRetry, !waiting, messages.last?.id == message.id {
+                    Button { retry() } label: {
+                        Text("try again")
+                            .font(.lhfSans(13, weight: .semibold))
+                            .foregroundStyle(Color.smoothGrapeInk)
+                    }
+                    .buttonStyle(.plain)
+                }
                 if let lines = message.planLines {
                     planCard(lines)
                 }
@@ -410,15 +427,27 @@ struct DegreeAdvisorView: View {
 
     // MARK: Actions
 
-    private func send(_ raw: String) {
+    /// "try again" re-sends the question of the failed exchange: the failed
+    /// reply goes, the student's own message stays and is not repeated.
+    private func retry() {
+        guard !waiting, let last = messages.last, !last.isUser, last.canRetry,
+              let asked = messages.last(where: { $0.isUser }) else { return }
+        send(asked.text, retrying: true)
+    }
+
+    private func send(_ raw: String, retrying: Bool = false) {
         let question = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !waiting, !question.isEmpty else { return }
-        let turns: [DegreeAdvisorTurn] = messages.compactMap { message in
+        if retrying, let last = messages.last, !last.isUser, last.failed { messages.removeLast() }
+        let earlier: [DegreeAdvisorMessage] = retrying ? Array(messages.dropLast()) : messages
+        let turns: [DegreeAdvisorTurn] = earlier.compactMap { message in
             message.failed ? nil
                 : DegreeAdvisorTurn(role: message.isUser ? "user" : "assistant", content: message.text)
         }
-        messages.append(DegreeAdvisorMessage(id: UUID(), isUser: true, text: question,
-                                             changes: [], planBefore: nil, undone: false, failed: false))
+        if !retrying {
+            messages.append(DegreeAdvisorMessage(id: UUID(), isUser: true, text: question,
+                                                 changes: [], planBefore: nil, undone: false, failed: false))
+        }
         draft = ""
         waiting = true
         let sent = activeAudits ?? audits
@@ -433,7 +462,8 @@ struct DegreeAdvisorView: View {
                                                  undone: false, failed: reply.failed,
                                                  notice: reply.notice,
                                                  planLines: reply.plan.map { Self.planLines($0) },
-                                                 email: reply.email))
+                                                 email: reply.email,
+                                                 canRetry: reply.canRetry))
             waiting = false
         }
     }

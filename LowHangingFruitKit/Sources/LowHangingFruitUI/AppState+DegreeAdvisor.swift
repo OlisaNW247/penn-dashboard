@@ -9,6 +9,43 @@ import LowHangingFruitKit
 // the phone offered, so a made-up course or term is skipped, never filed.
 
 /// What one question came back with.
+/// Why the chat could not read a what-if audit from Penn.
+enum DegreeAdvisorReadFailure: Equatable, Sendable {
+    case duoNotApproved
+    case noCanvasSession
+    case withinBudget(until: Date)
+    case needsPennKey
+    case other
+
+    /// Words only, for the DEBUG degree log.
+    var logWords: String {
+        switch self {
+        case .duoNotApproved: return "duo not approved"
+        case .noCanvasSession: return "no canvas session"
+        case .withinBudget: return "within budget"
+        case .needsPennKey: return "needs pennkey"
+        case .other: return "other"
+        }
+    }
+
+    /// Whether asking again can work now: not when something else has to
+    /// happen first, and not for a wait of more than two minutes.
+    func canRetry(now: Date) -> Bool {
+        switch self {
+        case .duoNotApproved, .other: return true
+        case .noCanvasSession, .needsPennKey: return false
+        case let .withinBudget(until): return until.timeIntervalSince(now) <= 120
+        }
+    }
+}
+
+/// What the chat's Penn read came back with.
+enum DegreeAdvisorRead {
+    /// `keptFrom` is the read date when a kept audit was used without Penn.
+    case audit(DegreeAudit, keptFrom: Date?)
+    case failed(DegreeAdvisorReadFailure)
+}
+
 struct DegreeAdvisorReply: Sendable, Equatable {
     let answer: String
     let changes: [DegreeAdvisorChange]
@@ -23,10 +60,14 @@ struct DegreeAdvisorReply: Sendable, Equatable {
     /// The engine's schedule, when the server ran it, and its drafted advisor email.
     let plan: DegreeEnginePlan?
     let email: String?
+    /// A failed reply the student can fix by asking again (the view offers
+    /// "try again").
+    let canRetry: Bool
 
     init(answer: String, changes: [DegreeAdvisorChange], planBefore: DegreePlan?, failed: Bool,
          audits: [DegreeLabeledAudit]? = nil, notice: String? = nil,
-         plan: DegreeEnginePlan? = nil, email: String? = nil) {
+         plan: DegreeEnginePlan? = nil, email: String? = nil, canRetry: Bool = false) {
+        self.canRetry = canRetry
         self.plan = plan
         self.email = email
         self.answer = answer
@@ -61,7 +102,7 @@ extension AppState {
     /// commit the other plan edits use.
     func askDegreeAdvisor(question: String, turns: [DegreeAdvisorTurn],
                           audits: [DegreeLabeledAudit],
-                          onStage: @MainActor (String) -> Void = { _ in }) async -> DegreeAdvisorReply {
+                          onStage: @escaping @MainActor (String) -> Void = { _ in }) async -> DegreeAdvisorReply {
         loadDegreePlanIfNeeded()
         if isUsingFixtureData {
             return DegreeAdvisorReply(
@@ -104,14 +145,34 @@ extension AppState {
         }
 
         onStage("reading path@penn for \(entry.name)…")
-        guard let whatIf = await fetchDegreeAdvisorWhatIf(entry) else {
+        degreeAskActive = true
+        degreeAskSignInFailed = false
+        degreeStageSink = { onStage($0) }
+        let read = await fetchDegreeAdvisorWhatIf(entry, now: now)
+        degreeAskActive = false
+        degreeStageSink = nil
+        let whatIf: DegreeAudit
+        let notice: String
+        switch read {
+        case let .audit(audit, keptFrom):
+            whatIf = audit
+            if let keptFrom {
+                notice = Self.degreeKeptAuditNotice(name: entry.name, readAt: keptFrom, now: now, calendar: .current)
+            } else {
+                notice = "read path@penn's audit for \(entry.name)"
+            }
+        case let .failed(failure):
+            #if DEBUG
+            DebugDegreeLog.record("advisor read failed: \(failure.logWords)")
+            #endif
             return DegreeAdvisorReply(
-                answer: "couldn't read path@penn's audit for \(entry.name).",
-                changes: [], planBefore: nil, failed: true, audits: nil, notice: nil)
+                answer: Self.degreeAdvisorReadFailureLine(
+                    failure, name: entry.name, now: Date(), timeZone: .current),
+                changes: [], planBefore: nil, failed: true, audits: nil, notice: nil,
+                canRetry: failure.canRetry(now: Date()))
         }
         let degreeID = entry.degreeID ?? ""
         let swapped = Self.degreeAdvisorAudits(audits, replacing: degreeID, with: whatIf, name: entry.name)
-        let notice = "read path@penn's audit for \(entry.name)"
 
         onStage("planning…")
         let secondBrief = DegreeAdvisor.brief(audits: swapped, plan: degreePlan,
@@ -246,24 +307,118 @@ extension AppState {
 
     /// Fetches the what-if audit for one catalogue entry from Penn and returns
     /// it, or nil when it could not be read.
-    private func fetchDegreeAdvisorWhatIf(_ entry: DegreeProgramEntry) async -> DegreeAudit? {
+    private func fetchDegreeAdvisorWhatIf(_ entry: DegreeProgramEntry, now: Date) async -> DegreeAdvisorRead {
+        lastPathSignIn = nil
+        lastPathFillSkip = nil
         if entry.isSibling {
+            // A what-if already kept for this option and read within the
+            // staleness window is used without asking Penn. Only a switch
+            // (`.newProgram`) records the score the lookup needs, so the
+            // non-sibling branch below always reads Penn.
+            if let degreeID = entry.degreeID {
+                let kept = (degree.whatIfs + (degree.shelved[degreeID]?.whatIfs ?? []))
+                if let audit = Self.keptWhatIf(
+                    optionScores: degree.optionScores, whatIfs: kept, degreeID: degreeID,
+                    programCode: entry.listing.code, now: now, maxAge: Self.degreeStaleAfter) {
+                    return .audit(audit, keptFrom: audit.fetchedAt)
+                }
+            }
             let ok = await runDegreeEntry(entry)
-            guard ok, let audit = degree.whatIfs.first else { return nil }
-            return audit
+            guard ok, let audit = degree.whatIfs.first else {
+                return .failed(Self.degreeAdvisorReadFailure(signIn: lastPathSignIn, skip: lastPathFillSkip))
+            }
+            return .audit(audit, keptFrom: nil)
         }
         // A concentration of the student's own major: select the degree it
         // belongs to, then run the page's add-concentration change.
         if let id = entry.degreeID, id != selectedStudentDegree?.id {
-            await selectDegree(id)
+            await selectDegree(id, userInitiated: true)
         }
         let plans = await degreeWhatIfPlans(for: entry.listing.code)
         guard let plan = plans.first(where: { $0.change == .addConcentration })
                 ?? plans.first(where: { $0.change == .newProgram })
-        else { return nil }
+        else {
+            return .failed(Self.degreeAdvisorReadFailure(signIn: lastPathSignIn, skip: lastPathFillSkip))
+        }
         await runWhatIf(plan)
-        guard let audit = degree.whatIfs.first, audit.goals == plan.goals else { return nil }
-        return audit
+        guard let audit = degree.whatIfs.first, audit.goals == plan.goals else {
+            return .failed(Self.degreeAdvisorReadFailure(signIn: lastPathSignIn, skip: lastPathFillSkip))
+        }
+        return .audit(audit, keptFrom: nil)
+    }
+
+    /// The kept what-if audit for one option, when its score names the audit's
+    /// goals and the audit was read within `maxAge`. Nil otherwise (no score, a
+    /// score from before goals were kept, the audit no longer kept, too old).
+    nonisolated static func keptWhatIf(
+        optionScores: [String: DegreeOptionScore], whatIfs: [DegreeAudit],
+        degreeID: String, programCode: String, now: Date, maxAge: TimeInterval
+    ) -> DegreeAudit? {
+        let key = DegreeOptions.scoreKey(degreeID: degreeID, programCode: programCode)
+        guard let goals = optionScores[key]?.goals else { return nil }
+        return whatIfs.first { audit in
+            audit.goals == goals && now.timeIntervalSince(audit.fetchedAt) < maxAge
+        }
+    }
+
+    /// "using path@penn's audit for finance from today" / "from yesterday" /
+    /// "from nov 24".
+    nonisolated static func degreeKeptAuditNotice(name: String, readAt: Date, now: Date, calendar: Calendar) -> String {
+        let when: String
+        if calendar.isDate(readAt, inSameDayAs: now) {
+            when = "today"
+        } else if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
+                  calendar.isDate(readAt, inSameDayAs: yesterday) {
+            when = "yesterday"
+        } else {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = calendar.timeZone
+            formatter.dateFormat = "MMM d"
+            when = formatter.string(from: readAt).lowercased()
+        }
+        return "using path@penn's audit for \(name) from \(when)"
+    }
+
+    /// Why the chat's Penn read failed, from the last sign-in of that read.
+    nonisolated static func degreeAdvisorReadFailure(
+        signIn: PathPortal.SignIn?, skip: PathPortal.FillSkip?
+    ) -> DegreeAdvisorReadFailure {
+        switch signIn {
+        case .needsDuo?: return .duoNotApproved
+        case .noCanvasSession?: return .noCanvasSession
+        default: break
+        }
+        switch skip {
+        case let .withinBudget(until)?: return .withinBudget(until: until)
+        case .noneSaved?, .rejectedOrOff?: return .needsPennKey
+        case nil: return .other
+        }
+    }
+
+    /// The chat line for a failed Penn read. Lower case, the least text.
+    nonisolated static func degreeAdvisorReadFailureLine(
+        _ failure: DegreeAdvisorReadFailure, name: String, now: Date, timeZone: TimeZone
+    ) -> String {
+        switch failure {
+        case .duoNotApproved:
+            return "duo wasn't approved in time. ask again and approve the push on this phone."
+        case .noCanvasSession:
+            return "sign in to canvas first, then ask again."
+        case let .withinBudget(until):
+            if until.timeIntervalSince(now) < 120 {
+                return "just tried. ask again in a minute."
+            }
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = timeZone
+            formatter.dateFormat = "h:mm a"
+            return "path@penn sign-in can try again at \(formatter.string(from: until).lowercased())."
+        case .needsPennKey:
+            return "penn needs your pennkey. update it in profile, then ask again."
+        case .other:
+            return "couldn't read path@penn's audit for \(name). ask again."
+        }
     }
 
     /// The audits with the one for `degreeID` replaced by a what-if, labelled so

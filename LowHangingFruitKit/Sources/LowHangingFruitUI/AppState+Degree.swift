@@ -35,6 +35,8 @@ enum DegreeStatus: Equatable, Sendable {
     case reading
     case waitingForDuo
     case needsCanvasSignIn
+    /// An automatic read stopped at Penn's form; a tap signs in.
+    case needsPathSignIn
     case failed(String)
     case read(Date)
 
@@ -49,6 +51,8 @@ enum DegreeStatus: Equatable, Sendable {
             return "approve the duo push on this phone"
         case .needsCanvasSignIn:
             return "sign in to canvas"
+        case .needsPathSignIn:
+            return "tap to sign in to path@penn"
         case let .failed(message):
             return message
         case let .read(date):
@@ -205,6 +209,8 @@ extension AppState {
             return .failed(degreeFailedLine)
         case .throttled:
             return previous == .reading ? .idle : previous
+        case .needsStudentSignIn:
+            return .needsPathSignIn
         }
     }
 
@@ -246,17 +252,52 @@ extension AppState {
     /// Binds the portal to the renewer's PennKey budget (`AppState.swift`,
     /// "the shared PennKey budget") and signs in. Every sign-in in this file
     /// goes through here, so the portal can never fill without the budget.
-    private func signInToPath(force: Bool) async -> PathPortal.SignIn {
+    ///
+    /// `userInitiated` is true only for a student's own tap or ask; an
+    /// automatic attempt never types the PennKey (`PathPortal.mayFillCredential`).
+    private func signInToPath(force: Bool, userInitiated: Bool) async -> PathPortal.SignIn {
+        // Once one sign-in in the chat's ask ended without a session, no
+        // second one starts in the same ask (one Duo push per ask at most).
+        if degreeAskActive && degreeAskSignInFailed { return .throttled }
+        // Whether Duo remembers this phone decides if an automatic attempt may
+        // type the PennKey; read the jar now so a fresh launch is not "no trust".
+        if !userInitiated { await refreshDuoRememberSummary() }
         let portal = degreePortal
         portal.credentialBudget = { [weak self] in
             self?.pathCredentialBudget() ?? PathPortal.CredentialBudget(
                 lastSubmission: nil, lastFailedSubmission: nil,
                 passwordRejected: true, autoLoginEnabled: false)
         }
-        portal.onCredentialSubmitted = { [weak self] date in self?.notePathCredentialSubmitted(at: date) }
+        portal.onCredentialSubmitted = { [weak self] date in
+            self?.notePathCredentialSubmitted(at: date)
+            self?.degreeStageSink?("signing in to path@penn…")
+        }
         portal.onCredentialFailed = { [weak self] date in self?.notePathCredentialFailed(at: date) }
         portal.onCredentialRejected = { [weak self] in self?.noteAutoLoginRejected() }
-        return await portal.ensureSignedIn(force: force)
+        portal.onDuoReached = { [weak self] in self?.noteDegreeDuoReached() }
+        let result = await portal.ensureSignedIn(force: force, userInitiated: userInitiated)
+        if let from = degreeStatusBeforeDuo {
+            degreeStatusBeforeDuo = nil
+            if degreeStatus == .waitingForDuo { degreeStatus = from }
+        }
+        lastPathSignIn = result
+        lastPathFillSkip = portal.lastFillSkip
+        if degreeAskActive, result != .ready, result != .throttled { degreeAskSignInFailed = true }
+        return result
+    }
+
+    /// The portal reached Duo: the status says so live (restored after the
+    /// sign-in call returns), and the phone buzzes.
+    private func noteDegreeDuoReached() {
+        if degreeStatus != .waitingForDuo, degreeStatusBeforeDuo == nil {
+            degreeStatusBeforeDuo = degreeStatus
+            degreeStatus = .waitingForDuo
+        }
+        // Any attempt that reaches Duo buzzes, an automatic one most of all:
+        // that is the push the student did not start and must not miss.
+        #if os(iOS)
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        #endif
     }
 
     private var degreeIsForeground: Bool {
@@ -323,7 +364,10 @@ extension AppState {
     // MARK: Reads
 
     /// Reads the current audit when the rule says to (or when forced).
-    func refreshDegreeAudit(force: Bool = false) async {
+    /// `userInitiated` is true only for the student's own tap or pull; it is
+    /// what lets the portal type the PennKey. Never derived from `force`:
+    /// the combined view forces a read by itself.
+    func refreshDegreeAudit(force: Bool = false, userInitiated: Bool = false) async {
         if isUsingFixtureData {
             guard FeatureFlags.degreeProgress else { return }
             degree = SampleData.degreeSnapshot()
@@ -345,9 +389,13 @@ extension AppState {
 
         if let running = degreeRefreshTask {
             await running.value
-            return
+            // A student's tap that joined an AUTOMATIC read which stopped at
+            // Penn's form gets one read of its own. No loop.
+            guard userInitiated, degreeStatus == .needsPathSignIn else { return }
+            if degreeRefreshTask == running { degreeRefreshTask = nil }
+            if degreeRefreshTask != nil { return }
         }
-        let task = Task { await self.performDegreeRefresh(force: force) }
+        let task = Task { await self.performDegreeRefresh(force: force, userInitiated: userInitiated) }
         degreeRefreshTask = task
         await task.value
         // Only the task this call started, and only if it is still the stored
@@ -356,7 +404,7 @@ extension AppState {
         if degreeRefreshTask == task { degreeRefreshTask = nil }
     }
 
-    private func performDegreeRefresh(force: Bool) async {
+    private func performDegreeRefresh(force: Bool, userInitiated: Bool) async {
         let generation = degreeGeneration
         let now = Date()
         let previous = degreeStatus
@@ -369,7 +417,7 @@ extension AppState {
         var retried = false
         var readAudit: DegreeAudit?
         while readAudit == nil {
-            let signIn = await signInToPath(force: force)
+            let signIn = await signInToPath(force: force, userInitiated: userInitiated)
             guard generation == degreeGeneration else { return }
             if let stop = Self.degreeStatus(for: signIn, previous: previous) {
                 degreeStatus = stop
@@ -487,7 +535,7 @@ extension AppState {
     /// there is nothing shelved or the read is stale. Throwing the audit away
     /// here, as this used to, made every chip tap a blank screen and a
     /// 30-second sign-in and read of an audit that had not changed.
-    func selectDegree(_ id: String) async {
+    func selectDegree(_ id: String, userInitiated: Bool = false) async {
         guard id != selectedStudentDegree?.id else { return }
         if isUsingFixtureData {
             // The demo has no network; the sample holds an audit for each of
@@ -518,7 +566,7 @@ extension AppState {
         }
         // Forced only when nothing is shelved for this degree; otherwise the
         // ordinary staleness rule decides.
-        await refreshDegreeAudit(force: degree.current == nil)
+        await refreshDegreeAudit(force: degree.current == nil, userInitiated: userInitiated)
     }
 
     // MARK: What if
@@ -533,7 +581,7 @@ extension AppState {
         // A student's own tap, so the attempt spacing does not apply (the
         // PennKey budget still does, inside the portal). A throttle is never a
         // failure and says nothing; the list is simply not there yet.
-        let signIn = await signInToPath(force: true)
+        let signIn = await signInToPath(force: true, userInitiated: false)
         guard generation == degreeGeneration else { return [] }
         if signIn == .throttled { return [] }
         if let stop = Self.degreeStatus(for: signIn, previous: degreeStatus) {
@@ -557,7 +605,7 @@ extension AppState {
         if isUsingFixtureData { return Self.fixtureWhatIfPlans(for: programCode) }
         guard degreeFeatureAvailable else { return [] }
         let generation = degreeGeneration
-        let signIn = await signInToPath(force: true)
+        let signIn = await signInToPath(force: true, userInitiated: true)
         guard generation == degreeGeneration, signIn == .ready else { return [] }
         guard let info = await degreePortal.programInfo(code: programCode) else { return [] }
         guard generation == degreeGeneration else { return [] }
@@ -581,7 +629,7 @@ extension AppState {
         var retried = false
         var whatIfAudit: DegreeAudit?
         while whatIfAudit == nil {
-            let signIn = await signInToPath(force: true)
+            let signIn = await signInToPath(force: true, userInitiated: true)
             guard generation == degreeGeneration else { return }
             if signIn == .throttled {
                 // Never a failure: nothing was asked.
@@ -641,7 +689,8 @@ extension AppState {
             DegreeOptionScore(
                 fraction: DegreeProgressMath.ring(for: audit).fraction,
                 open: summary.open,
-                readAt: date)
+                readAt: date,
+                goals: audit.goals)
     }
 
     /// Runs the what-if for one catalogue row of the student's own degree
@@ -678,7 +727,7 @@ extension AppState {
     /// the engineering degree's chip.
     func runDegreeEntry(_ entry: DegreeProgramEntry) async -> Bool {
         if let id = entry.degreeID, id != selectedStudentDegree?.id {
-            await selectDegree(id)
+            await selectDegree(id, userInitiated: true)
         }
         return await runDegreeOption(entry.listing)
     }
