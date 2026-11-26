@@ -1,0 +1,17 @@
+{
+ "key": "755",
+ "prog_code": "SOCS-BA-ESTY",
+ "prog_name": "Sociology BA (Education and Society)",
+ "prog_type": "conc",
+ "prog_parent": "SOCS-BA",
+ "levl_code": "UG",
+ "degc_code": "BA",
+ "majr_code": "SOCS",
+ "minr_code": "",
+ "conc_code": "ESTY",
+ "coll_code": "AU",
+ "dept_code": "",
+ "sis_prog_code": "AU_BA",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

@@ -1,0 +1,17 @@
+{
+ "key": "872",
+ "prog_code": "FIGS-BSE-GMCS",
+ "prog_name": "Franc, Ital and Germanic St BSE (Germanic Studies)",
+ "prog_type": "conc",
+ "prog_parent": "FIGS-BSE",
+ "levl_code": "UG",
+ "degc_code": "BSE",
+ "majr_code": "FIGS",
+ "minr_code": "",
+ "conc_code": "GMCS",
+ "coll_code": "EU",
+ "dept_code": "",
+ "sis_prog_code": "EU_BSE",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

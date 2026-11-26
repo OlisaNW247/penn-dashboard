@@ -1,0 +1,17 @@
+{
+ "key": "886",
+ "prog_code": "MSE-BSE-EOS",
+ "prog_name": "Materials Science & Engin BSE (Elctrn & Optic Device & Sensor)",
+ "prog_type": "conc",
+ "prog_parent": "MSE-BSE",
+ "levl_code": "UG",
+ "degc_code": "BSE",
+ "majr_code": "MSE",
+ "minr_code": "",
+ "conc_code": "EOS",
+ "coll_code": "EU",
+ "dept_code": "",
+ "sis_prog_code": "EU_BSE",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

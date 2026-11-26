@@ -1,0 +1,17 @@
+{
+ "key": "603",
+ "prog_code": "AFRC-BA-AAS",
+ "prog_name": "Africana Studies BA (African American Studies)",
+ "prog_type": "conc",
+ "prog_parent": "AFRC-BA",
+ "levl_code": "UG",
+ "degc_code": "BA",
+ "majr_code": "AFRC",
+ "minr_code": "",
+ "conc_code": "AAS",
+ "coll_code": "AU",
+ "dept_code": "",
+ "sis_prog_code": "AU_BA",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

@@ -1,0 +1,884 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+
+
+  <Report>
+    <Audit>
+      <AuditHeader AuditDescription="" AuditType="AA" Audit_id="W0008X3T" DWGPA="*" DateDay="14" DateMonth="07" DateYear="2026" ExamApp="0" ExamOTL="0" FreezeDate="" FreezeType="" FreezeTypeDescription="" FreezeUserName="" In_progress="Y" Per_complete="7" ResApp="0" ResAppInProg="0" ResOTL="0" ResOTLInProg="0" SSGPA="*" Stu_email="" Stu_id="*" Stu_name="*Test" TimeHour="09" TimeMinute="37" Version="$Id$ OS_TYPE=Linux; Release=5.1.5.1" What_if="Y" XferApp="0" XferOTL="0"/>
+      <Block Cat_yr="9999" Cat_yrLit="End of Time" Cat_yr_start="2027" Cat_yr_stop="9999" Classes_applied="0" Credits_applied="0" Degree="BA" GPA="*" Gpa_credits="0" Gpa_grade_pts="*" Per_complete="7" Req_id="RA002258" Req_type="DEGREE" Req_value="BA" Title="Degree in Bachelor of Arts">
+        <Header>
+          <Qualifier Applied="0" ClassesApplied="0" Credits="33" CreditsApplied="0" Label="Minimum Total Credits Required" LabelTag="MINCRED33" Name="CLASSESCREDITS" Needed="33" Node_id="199" Node_type="4121" Satisfied="No">
+            <Text>33 Credits</Text>
+          </Qualifier>
+          <Qualifier Applied="0" Credits="17" Label="Minimum Credits Earned from University of Pennsylvania" LabelTag="2MINRES17" Name="MINRES" Needed="17" Node_id="200" Node_type="4119" Satisfied="No">
+            <Text>MINRES 17 Credits</Text>
+          </Qualifier>
+          <Qualifier Applied="0" Label="Last 5 Courses Taken in Residence" LabelTag="JSIEKS" Name="LASTRES" Needed="5" Node_id="270" Node_type="4112" Satisfied="No" Term="0000">
+            <Text>LASTRES 5 CLASSES</Text>
+          </Qualifier>
+          <Qualifier Applied="0" ClassesApplied="0" Credits="29" CreditsApplied="0" Label="Arts and Sciences 29 CU Requirement" LabelTag="UKEE34" Name="MINCREDIT" Needed="29" Node_id="1760" Node_type="4104" Satisfied="No">
+            <SubText>AAMW @, AFRC @, AFST @, ALAN @, AMCS @, AMEL @, AMHR @, </SubText>
+            <SubText>ANCH @, ANEL @, ANTH @, ARAB @, ARTH @, ASAM @, ASLD @, </SubText>
+            <SubText>ASTR @, BCHE @, BCS @, BDS @, BENF @, BENG @, BIBB @, </SubText>
+            <SubText>BIOL @, CHEM @, CHIC @, CHIN @, CIMS @, CLST @, COGS @, </SubText>
+            <SubText>COLL @, COML @, COMM @, CRIM @, CZCH @, DEMG @, DYNM @, </SubText>
+            <SubText>DTCH @, EALC @, ECON @, EESC @, ENGL @, FIGS @, FILP @, </SubText>
+            <SubText>FOLK @, FREN @, FRSM @, GAFL @, GREK @, GRMN @, GSWS @, </SubText>
+            <SubText>GUJR @, HEBR @, HIND @, HIST @, HSOC @, HSSC @, HUNG @, </SubText>
+            <SubText>IGBO @, INDO @, INSP @, INTG @, INTR @, IRIS @, ITAL @, </SubText>
+            <SubText>JPAN @, JWST @, KAND @, KORN @, LALS @, LATN @, LGIC @, </SubText>
+            <SubText>LING @, LSMP @, MALG @, MATH @, MELC @, MLYM @, MMES @, </SubText>
+            <SubText>MRTI @, MUSC @, NELC @, NRSC @, PASH @, PERS @, PHIL @, </SubText>
+            <SubText>PHYS @, PLSH @, PPE @, PRTG @, PSCI @, PSYC @, PUNJ @, </SubText>
+            <SubText>QUEC @, REES @, RELS @, ROML @, RUSS @, SARB @, SAST @, </SubText>
+            <SubText>SKRT @, SOCI @, SPAN @, STSC @, SWAH @, SWED @, TAML @, </SubText>
+            <SubText>TELU @, THAI @, THAR @, TIBT @, TIGR @, TURK @, TWI @, </SubText>
+            <SubText>UKRN @, URBS @, URDU @, VIET @, VIPR @, VLST @, WOLF @, </SubText>
+            <SubText>WRIT @, YDSH @, YORB @, ZULU @, GEOL @, ENVS @, </SubText>
+            <SubText>@ @ (With </SubText>
+            <SubText>ATTRIBUTE = AU16</SubText>
+            <SubText>)</SubText>
+            <Text>MinCredits 29 in </Text>
+          </Qualifier>
+          <Qualifier Classes="0" ClassesApplied="0" CreditsApplied="0" Name="MAXCLASS" Node_id="3452" Node_type="4101" Tag="MXCLH_ROTC">
+            <SubText>MSCI @, NSCI @</SubText>
+            <Text>MaxClasses 0 in </Text>
+          </Qualifier>
+          <Qualifier ClassesApplied="0" Credits="8" CreditsApplied="0" Name="MAXCREDIT" Node_id="3455" Node_type="4103" Tag="MXPFCOVID">
+            <SubText>@ @ (With </SubText>
+            <SubText>DWPASSFAIL = Y AND</SubText>
+            <SubText>DWTERM &lt;&gt; 202010, 202020, 202030, 202110</SubText>
+            <SubText>)</SubText>
+            <Text>MaxCredits 8 in </Text>
+          </Qualifier>
+          <Qualifier Applied="" JustAdded="TRUE" Name="CHECKELECTIVES" Node_id="" Node_type="4140">
+            <ECA-Overall Credits="33" Text="Credits required by degree block"/>
+            <ECA-Error Text="Block credits missing from block RA000521"/>
+            <ECA-Error Text="Block credits missing from block RA001031"/>
+            <ECA-BlocksRequired Text="RA001797 RA000521 RA001031 "/>
+            <ECA-BlocksNotRequired Text=""/>
+            <ECA-BlocksRequiredIncluded Text=""/>
+            <ECA-Blocksum Credits="13" Text="Sum of credits required in all *required* blocks; excludes credits in blocks included in other required blocks"/>
+            <ECA-Shared Credits="0" Text="Credits shared between required blocks"/>
+            <ECA-ECA Credits="20" Text="Credits allowed/needed in fall-through and non-required blocks"/>
+            <ECA-RequiredCreditsApplied Credits="0" Text="Credits applied to required blocks"/>
+            <ECA-NonrequiredCreditsApplied Credits="0" Text="Credits applied to non-required blocks"/>
+            <ECA-fallthruCounts Text="1"/>
+            <ECA-Overflow Credits="0" Text="Excess fall-through credits"/>
+            <CREDITSAPPLIEDTOWARDSDEGREE Credits="0" Text="Credits applied minus overflow"/>
+            <Text>CHECK-ELECTIVE-CREDITS-ALLOWED</Text>
+          </Qualifier>
+          <Advice>
+            <Text Node_id="199">
+              <Line>You currently have 0 credits including both</Line>
+              <Line>earned and in-progress courses. To graduate, you need</Line>
+              <Line>to successfully complete a minimum of 33 additional</Line>
+              <Line>credits and all graduation requirements.</Line>
+            </Text>
+            <Text Node_id="200">
+              <Line>You currently have 0 credits.</Line>
+              <Line>You still need a minimum of 17 additional credits.</Line>
+            </Text>
+            <Text Node_id="270">
+              <Line>You have 0 credits; you still need a minimum of</Line>
+              <Line>5 more credit(s).</Line>
+            </Text>
+            <Text Node_id="1760">
+              <Line>29 credits of Arts and Sciences courses are required. You</Line>
+              <Line>currently have 0. You still need 29 more.</Line>
+            </Text>
+          </Advice>
+        </Header>
+        <Rule IndentLevel="1" Label="There are no I, NR, or PR grades in this Degree Audit" LabelTag="KFSOEL" Node_id="3464" Node_type="4900" Per_complete="100" RuleType="Complete" Rule_id="1-1">
+          <IfElsePart>ElsePart</IfElsePart>
+          <Requirement/>
+        </Rule>
+        <Rule IndentLevel="1" Label="Cumulative GPA Requirement" LabelTag="NOGPA" Node_id="3493" Node_type="4971" Per_complete="0" ProxyAdvice="Yes" RuleType="Incomplete" Rule_id="2-1-1-0">
+          <IfElsePart>IfPart</IfElsePart>
+          <Requirement/>
+          <ProxyAdvice>
+            <Text>When your first term is graded, your cumulative GPA</Text>
+            <Text>will be calculated. If your cumulative GPA falls below</Text>
+            <Text>2.0 it is important to see an advisor to make plans</Text>
+            <Text>for raising your GPA.</Text>
+          </ProxyAdvice>
+        </Rule>
+        <Rule IndentLevel="1" Label="General Education - Foundations" LabelTag="GENED_FND_BLK" Node_id="3496" Node_type="4400" Per_complete="0" RuleType="Block" Rule_id="3">
+          <Requirement>
+            <NumBlocks>1</NumBlocks>
+            <Type>OTHER</Type>
+            <Value>U-GE-FND</Value>
+          </Requirement>
+          <Advice>
+            <BlockID>RA000521</BlockID>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="General Education - Sectors" LabelTag="GENED_SCT_BLK" Node_id="3498" Node_type="4400" Per_complete="14.285714" RuleType="Block" Rule_id="4">
+          <Requirement>
+            <NumBlocks>1</NumBlocks>
+            <Type>OTHER</Type>
+            <Value>U-GE-SCTR</Value>
+          </Requirement>
+          <Advice>
+            <BlockID>RA001031</BlockID>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Major Requirements" LabelTag="MAJR_BLK" Node_id="3513" Node_type="4500" Per_complete="0" RuleType="Blocktype" Rule_id="7">
+          <Requirement>
+            <NumBlocktypes>1</NumBlocktypes>
+            <Type>MAJOR</Type>
+          </Requirement>
+          <Advice>
+            <Title>Major in English</Title>
+          </Advice>
+        </Rule>
+      </Block>
+      <Block Cat_yr="9999" Cat_yrLit="End of Time" Cat_yr_start="0000" Cat_yr_stop="9999" Classes_applied="0" Credits_applied="0" GPA="*" Gpa_credits="0" Gpa_grade_pts="*" Per_complete="0" Req_id="RA000521" Req_type="OTHER" Req_value="U-GE-FND" Title="General Education, Foundations">
+        <Header>
+          <Qualifier Applied="0" Classes="6" ClassesApplied="0" CreditsApplied="0" Label="Minimum Classes Requirement" LabelTag="FJDKSL" Name="CLASSESCREDITS" Needed="6" Node_id="270" Node_type="4121" Satisfied="No">
+            <Text>6 CLASSES</Text>
+          </Qualifier>
+          <Qualifier ClassesApplied="0" Credits="0" CreditsApplied="0" Name="MAXCREDIT" Node_id="271" Node_type="4103" Tag="MXPFCOVID">
+            <SubText>@ @ (With </SubText>
+            <SubText>DWPASSFAIL = Y AND</SubText>
+            <SubText>DWTERM &lt;&gt; 202010, 202020, 202030, 202110</SubText>
+            <SubText>)</SubText>
+            <Text>MaxCredits 0 in </Text>
+          </Qualifier>
+          <Qualifier Classes="0" ClassesApplied="0" CreditsApplied="0" Name="MAXCLASS" Node_id="273" Node_type="4101">
+            <SubText>@ @ (With </SubText>
+            <SubText>DWTRANSFERSCHOOLID = EQIVAP, EQIVIB, EQIVEX, EQIVAS</SubText>
+            <SubText>)</SubText>
+            <Text>MaxClasses 0 in </Text>
+          </Qualifier>
+          <Qualifier Classes="0" ClassesApplied="0" CreditsApplied="0" Name="MAXCLASS" Node_id="275" Node_type="4101">
+            <SubText>@ @ (With </SubText>
+            <SubText>DWGRADELETTER = S</SubText>
+            <SubText>)</SubText>
+            <Text>MaxClasses 0 in </Text>
+          </Qualifier>
+          <Qualifier Applied="" Name="STANDALONEBLOCK" Node_id="277" Node_type="4137">
+            <Text>StandAloneBlock</Text>
+          </Qualifier>
+          <Advice>
+            <Text Node_id="270">
+              <Line>6 classes are required. You currently have 0.</Line>
+              <Line>You still need 6 more.</Line>
+            </Text>
+          </Advice>
+        </Header>
+        <Rule IndentLevel="1" Label="Foreign Language" LabelTag="AUFL" Node_id="547" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="1-1">
+          <IfElsePart>ElsePart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="548" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AULL</Value>
+              </With>
+            </Course>
+            <Qualifier Applied="" MinGrade="1.0" Name="MINGRADE" Node_id="549" Node_type="4117" Tag="MNGRR_LangReq">
+              <Text>MINGRADE 1.0</Text>
+            </Qualifier>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = AULL">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AULL</Value>
+              </With>
+            </Course>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Quantitative Data Analysis" LabelTag="AUQD" Node_id="550" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2">
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="551" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUQD</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = AUQD">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUQD</Value>
+              </With>
+            </Course>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Formal Reasoning and Analysis" LabelTag="AUFR" Node_id="552" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="3">
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="553" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUFR</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = AUFR">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUFR</Value>
+              </With>
+            </Course>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Cross Cultural Analysis" LabelTag="AUCC" Node_id="554" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="4">
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="555" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUCC</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = AUCC">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUCC</Value>
+              </With>
+            </Course>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Cultural Diversity in the U.S." LabelTag="AUCD" Node_id="556" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="5">
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="557" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUCD</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = AUCD">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUCD</Value>
+              </With>
+            </Course>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Writing Course" LabelTag="AUWR" Node_id="558" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="6">
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="WRIT" NewDiscipline="Yes" Node_id="559" Num="0000" Num_end="0991"/>
+            <Course Disc="WRIT" Node_id="560" Num="0998"/>
+            <Except>
+              <Course Disc="WRIT" NewDiscipline="Yes" Node_id="562" Num="135@"/>
+              <Course Disc="WRIT" Node_id="563" Num="138@"/>
+            </Except>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="WRIT" NewDiscipline="Yes" Num="0000" Num_end="0991"/>
+            <Course Credits="1" Disc="WRIT" Num="0998" Title="Transfer Writ Credit"/>
+            <Except>
+              <Course Disc="WRIT" NewDiscipline="Yes" Num="135@"/>
+              <Course Disc="WRIT" Num="138@"/>
+            </Except>
+          </Advice>
+        </Rule>
+      </Block>
+      <Block Cat_yr="9999" Cat_yrLit="End of Time" Cat_yr_start="2022" Cat_yr_stop="9999" Classes_applied="0" Credits_applied="0" GPA="*" Gpa_credits="0" Gpa_grade_pts="*" Per_complete="14.285714" Req_id="RA001031" Req_type="OTHER" Req_value="U-GE-SCTR" Title="General Education, Sectors">
+        <Header>
+          <Qualifier Applied="0" Classes="6" ClassesApplied="0" CreditsApplied="0" Name="CLASSESCREDITS" Needed="6" Node_id="86" Node_type="4121" Satisfied="No">
+            <Text>6 CLASSES</Text>
+          </Qualifier>
+          <Qualifier ClassesApplied="0" Credits="0" CreditsApplied="0" Name="MAXCREDIT" Node_id="87" Node_type="4103" Tag="MXPFCOVID">
+            <SubText>@ @ (With </SubText>
+            <SubText>DWPASSFAIL = Y AND</SubText>
+            <SubText>DWTERM &lt;&gt; 202010, 202020, 202030, 202110</SubText>
+            <SubText>)</SubText>
+            <Text>MaxCredits 0 in </Text>
+          </Qualifier>
+          <Qualifier Classes="0" ClassesApplied="0" CreditsApplied="0" Name="MAXCLASS" Node_id="89" Node_type="4101">
+            <SubText>@ @ (With </SubText>
+            <SubText>DWTRANSFERSCHOOLID = EQIVAP, EQIVIB, EQIVEX, EQIVAS</SubText>
+            <SubText>)</SubText>
+            <Text>MaxClasses 0 in </Text>
+          </Qualifier>
+          <Advice>
+            <Text Node_id="86">
+              <Line>6 classes are required. You currently have 0.</Line>
+              <Line>You still need 6 more.</Line>
+            </Text>
+          </Advice>
+        </Header>
+        <Rule IndentLevel="1" Label="Sector 1: Society" LabelTag="AUSO" Node_id="137" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2-1">
+          <IfElsePart>ElsePart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="138" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUSO</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = AUSO">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUSO</Value>
+              </With>
+            </Course>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Sector 2: History and Tradition" LabelTag="AUHT" Node_id="166" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="3-1">
+          <IfElsePart>ElsePart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="167" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUHT</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = AUHT">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUHT</Value>
+              </With>
+            </Course>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Sector 3: Arts and Letters Fulfilled by Major Course" LabelTag="ARDSEL" Node_id="199" Node_type="4900" Per_complete="100" RuleType="Complete" Rule_id="4-0">
+          <IfElsePart>IfPart</IfElsePart>
+          <Requirement/>
+        </Rule>
+        <Rule IndentLevel="1" Label="Sector 4: Humanities and Social Sciences" LabelTag="AUHS" Node_id="222" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="5-1">
+          <IfElsePart>ElsePart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="223" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUHS</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = AUHS">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUHS</Value>
+              </With>
+            </Course>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Sector 5: The Living World" LabelTag="AULW" Node_id="257" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="6-1">
+          <IfElsePart>ElsePart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="258" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AULW</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = AULW">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AULW</Value>
+              </With>
+            </Course>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Sector 6: The Physical World" LabelTag="AUPW" Node_id="284" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="7-1">
+          <IfElsePart>ElsePart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="285" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUPW</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = AUPW">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUPW</Value>
+              </With>
+            </Course>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Sector 7: Natural Science Across Disciplines" LabelTag="AUW_SHW" Node_id="308" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="8-1-1">
+          <IfElsePart>ElsePart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="309" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUNM</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = AUNM">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUNM</Value>
+              </With>
+            </Course>
+          </Advice>
+        </Rule>
+      </Block>
+      <Block Cat_yr="9999" Cat_yrLit="End of Time" Cat_yr_start="2025" Cat_yr_stop="9999" Classes_applied="0" Credits_applied="0" GPA="*" Gpa_credits="0" Gpa_grade_pts="*" Major1="ENGL" Per_complete="0" Req_id="RA001797" Req_type="MAJOR" Req_value="ENGL" School="UG" Title="Major in English">
+        <Header>
+          <Qualifier Applied="0" ClassesApplied="0" Credits="13" CreditsApplied="0" Label="Minimum Credits Required" LabelTag="SHEYWL" Name="CLASSESCREDITS" Needed="13" Node_id="1" Node_type="4121" Satisfied="No">
+            <Text>13 Credits</Text>
+          </Qualifier>
+          <Qualifier Applied="0.00" Label="Minimum Major GPA of 2.0 Required" LabelTag="MINGPA" MinGPA="2" Name="MINGPA" Needed="2" Node_id="8" Node_type="4116" Satisfied="No">
+            <Text>MINGPA 2</Text>
+          </Qualifier>
+          <Qualifier Applied="0" Credits="7" Label="Minimum Credits Earned from University of Pennsylvania" LabelTag="MINRESH" Name="MINRES" Needed="7" Node_id="9" Node_type="4119" Satisfied="No">
+            <Text>MINRES 7 Credits</Text>
+          </Qualifier>
+          <Qualifier ClassesApplied="0" Credits="0" CreditsApplied="0" Name="MAXCREDIT" Node_id="10" Node_type="4103" Tag="MXPFCOVID">
+            <SubText>@ @ (With </SubText>
+            <SubText>DWPASSFAIL = Y AND</SubText>
+            <SubText>DWTERM &lt;&gt; 202010, 202020, 202030, 202110</SubText>
+            <SubText>)</SubText>
+            <Text>MaxCredits 0 in </Text>
+          </Qualifier>
+          <Qualifier ClassesApplied="0" CreditsApplied="0" Name="NONEXCLUSIVE" Node_id="12" Node_type="4111" Tag="SJEWLK">
+            <SubText>(MAJOR)</SubText>
+            <Text>ShareWith </Text>
+          </Qualifier>
+          <Qualifier ClassesApplied="0" CreditsApplied="0" Name="NONEXCLUSIVE" Node_id="14" Node_type="4111" Tag="SLWIEO">
+            <SubText>(CONC)</SubText>
+            <Text>ShareWith </Text>
+          </Qualifier>
+          <Qualifier Applied="0" Classes="5" ClassesApplied="0" CreditsApplied="0" Label="SEMINAR REQUIREMENT" LabelTag="FIWUEH" Name="MINCLASS" Needed="5" Node_id="64" Node_type="4102" Satisfied="No">
+            <SubText>ENGL 0300:0399, 0500:0599, 0700:0799, 2000:2999, 4500:4998, </SubText>
+            <SubText>5000:5999</SubText>
+            <Text>MinClasses 5 in </Text>
+          </Qualifier>
+          <Advice>
+            <Text Node_id="1">
+              <Line>13 credits are required. You currently have 0.</Line>
+              <Line>You still need 13 more.</Line>
+            </Text>
+            <Text Node_id="8">
+              <Line>Your major GPA is 0.00</Line>
+            </Text>
+            <Text Node_id="9">
+              <Line>You currently have 0 credits.</Line>
+              <Line>You still need a minimum of 7 additional credits.</Line>
+            </Text>
+            <Text Node_id="64">
+              <Line>At least five seminar courses, ENGL 0300:0399, 0500:0599, 0700:0799, 2000:2999, 4500:4998, 5000:5999,</Line>
+              <Line>including Junior Seminar and Literature Before 1700 and 1900 are required.</Line>
+              <Line>You currently have 0. You still need 5 more.</Line>
+            </Text>
+          </Advice>
+        </Header>
+        <Rule IndentLevel="1" Label="THE CORE" LabelTag="HSY9U7" Node_id="90" Node_type="4700" Per_complete="0" RuleType="Subset" Rule_id="2-0">
+          <IfElsePart>IfPart</IfElsePart>
+          <Remark>
+            <Text>You will need to take one course to fulfill each sector of the Major</Text>
+            <Text>Core, six in total. Two of these courses may double-count with your</Text>
+            <Text>Literature Seminar Electives. Creative Writing Seminars cannot count in</Text>
+            <Text>the Major Core.</Text>
+          </Remark>
+          <Requirement/>
+          <Rule IndentLevel="2" Label="Theory and Poetics" LabelTag="AETNWP" Node_id="91" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2-0-0">
+            <Classes_applied>0</Classes_applied>
+            <Credits_applied>0</Credits_applied>
+            <ClassesApplied/>
+            <Requirement Class_cred_op="OR" Connector="," Credits_begin="1">
+              <Course Disc="ENGL" NewDiscipline="Yes" Node_id="92" Num="0000" Num_end="5999">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AETP</Value>
+                </With>
+              </Course>
+              <Except>
+                <Course Disc="ENGL" NewDiscipline="Yes" Node_id="94" Num="3000" Num_end="3999"/>
+              </Except>
+            </Requirement>
+            <Advice Connector=", " Credits="1">
+              <Course Disc="ENGL" NewDiscipline="Yes" Num="0000" Num_end="5999" With_advice="ATTRIBUTE = AETP">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AETP</Value>
+                </With>
+              </Course>
+              <Except>
+                <Course Disc="ENGL" NewDiscipline="Yes" Num="3000" Num_end="3999"/>
+              </Except>
+            </Advice>
+          </Rule>
+          <Rule IndentLevel="2" Label="Difference and Diaspora" LabelTag="AEDWID" Node_id="95" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2-0-1">
+            <Classes_applied>0</Classes_applied>
+            <Credits_applied>0</Credits_applied>
+            <ClassesApplied/>
+            <Requirement Class_cred_op="OR" Connector="," Credits_begin="1">
+              <Course Disc="ENGL" NewDiscipline="Yes" Node_id="96" Num="0000" Num_end="5999">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AEDD</Value>
+                </With>
+              </Course>
+              <Except>
+                <Course Disc="ENGL" NewDiscipline="Yes" Node_id="98" Num="3000" Num_end="3999"/>
+              </Except>
+            </Requirement>
+            <Advice Connector=", " Credits="1">
+              <Course Disc="ENGL" NewDiscipline="Yes" Num="0000" Num_end="5999" With_advice="ATTRIBUTE = AEDD">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AEDD</Value>
+                </With>
+              </Course>
+              <Except>
+                <Course Disc="ENGL" NewDiscipline="Yes" Num="3000" Num_end="3999"/>
+              </Except>
+            </Advice>
+          </Rule>
+          <Rule IndentLevel="2" Label="Medieval/Renaissance" LabelTag="AEMRLK" Node_id="99" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2-0-2">
+            <Classes_applied>0</Classes_applied>
+            <Credits_applied>0</Credits_applied>
+            <ClassesApplied/>
+            <Requirement Class_cred_op="OR" Connector="," Credits_begin="1">
+              <Course Disc="ENGL" NewDiscipline="Yes" Node_id="100" Num="0000" Num_end="5999">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AEMR</Value>
+                </With>
+              </Course>
+              <Except>
+                <Course Disc="ENGL" NewDiscipline="Yes" Node_id="102" Num="3000" Num_end="3999"/>
+              </Except>
+            </Requirement>
+            <Advice Connector=", " Credits="1">
+              <Course Disc="ENGL" NewDiscipline="Yes" Num="0000" Num_end="5999" With_advice="ATTRIBUTE = AEMR">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AEMR</Value>
+                </With>
+              </Course>
+              <Except>
+                <Course Disc="ENGL" NewDiscipline="Yes" Num="3000" Num_end="3999"/>
+              </Except>
+            </Advice>
+          </Rule>
+          <Rule IndentLevel="2" Label="Literature of the Long 18th Century" LabelTag="AE18YU" Node_id="103" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2-0-3">
+            <Classes_applied>0</Classes_applied>
+            <Credits_applied>0</Credits_applied>
+            <ClassesApplied/>
+            <Requirement Class_cred_op="OR" Connector="," Credits_begin="1">
+              <Course Disc="ENGL" NewDiscipline="Yes" Node_id="104" Num="0022"/>
+              <Course Disc="ENGL" Node_id="105" Num="0521"/>
+              <Course Disc="ENGL" Node_id="106" Num="1330"/>
+              <Course Disc="ENGL" Node_id="107" Num="1800"/>
+              <Course Disc="ENGL" Node_id="108" Num="2030"/>
+              <Course Disc="ENGL" Node_id="109" Num="2321"/>
+              <Course Disc="ENGL" Node_id="110" Num="0000" Num_end="5999">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AE18</Value>
+                </With>
+              </Course>
+              <Except>
+                <Course Disc="ENGL" NewDiscipline="Yes" Node_id="112" Num="3000" Num_end="3999"/>
+              </Except>
+            </Requirement>
+            <Advice Connector=", " Credits="1">
+              <Course Credits="1" CrossListed="Parent" Disc="ENGL" NewDiscipline="Yes" Num="0022" Title="Study of a Theme"/>
+              <Course Credits="1" CrossListed="Parent" Disc="ENGL" Num="0521" Title="18th-C Literature BFS"/>
+              <Course Credits="1" CrossListed="Parent" Disc="ENGL" Num="1330" Title="Gender, Sexuality, and Lit"/>
+              <Course Credits="1" Disc="ENGL" Num="1800" Title="Poetry and Poetics"/>
+              <Course Credits="1" Disc="ENGL" Num="2030" Title="18th-C British Lit Seminar"/>
+              <Course Credits="1" CrossListed="Parent" Disc="ENGL" Num="2321" Title="Gen/Sex in Early America"/>
+              <Course Disc="ENGL" Num="0000" Num_end="5999" With_advice="ATTRIBUTE = AE18">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AE18</Value>
+                </With>
+              </Course>
+              <Except>
+                <Course Disc="ENGL" NewDiscipline="Yes" Num="3000" Num_end="3999"/>
+              </Except>
+            </Advice>
+          </Rule>
+          <Rule IndentLevel="2" Label="19th Century Literature" LabelTag="AE1987" Node_id="113" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2-0-4">
+            <Classes_applied>0</Classes_applied>
+            <Credits_applied>0</Credits_applied>
+            <ClassesApplied/>
+            <Requirement Class_cred_op="OR" Connector="," Credits_begin="1">
+              <Course Disc="ENGL" NewDiscipline="Yes" Node_id="114" Num="0000" Num_end="5999">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AE19</Value>
+                </With>
+              </Course>
+              <Except>
+                <Course Disc="ENGL" NewDiscipline="Yes" Node_id="116" Num="3000" Num_end="3999"/>
+              </Except>
+            </Requirement>
+            <Advice Connector=", " Credits="1">
+              <Course Disc="ENGL" NewDiscipline="Yes" Num="0000" Num_end="5999" With_advice="ATTRIBUTE = AE19">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AE19</Value>
+                </With>
+              </Course>
+              <Except>
+                <Course Disc="ENGL" NewDiscipline="Yes" Num="3000" Num_end="3999"/>
+              </Except>
+            </Advice>
+          </Rule>
+          <Rule IndentLevel="2" Label="20th Century Literature" LabelTag="AE20NH" Node_id="117" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2-0-5">
+            <Classes_applied>0</Classes_applied>
+            <Credits_applied>0</Credits_applied>
+            <ClassesApplied/>
+            <Requirement Class_cred_op="OR" Connector="," Credits_begin="1">
+              <Course Disc="ENGL" NewDiscipline="Yes" Node_id="118" Num="0000" Num_end="5999">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AE20</Value>
+                </With>
+              </Course>
+              <Except>
+                <Course Disc="ENGL" NewDiscipline="Yes" Node_id="120" Num="3000" Num_end="3999"/>
+              </Except>
+            </Requirement>
+            <Advice Connector=", " Credits="1">
+              <Course Disc="ENGL" NewDiscipline="Yes" Num="0000" Num_end="5999" With_advice="ATTRIBUTE = AE20">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AE20</Value>
+                </With>
+              </Course>
+              <Except>
+                <Course Disc="ENGL" NewDiscipline="Yes" Num="3000" Num_end="3999"/>
+              </Except>
+            </Advice>
+          </Rule>
+        </Rule>
+        <Rule IndentLevel="1" Label="THE ONE SERIES" LabelTag="NF97EK" Node_id="121" Node_type="4200" Per_complete="0" ProxyAdvice="Yes" RuleType="Course" Rule_id="2-1">
+          <IfElsePart>IfPart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Connector="," Credits_begin="1">
+            <Course Disc="ENGL" NewDiscipline="Yes" Node_id="122" Num="4500" Num_end="4998"/>
+          </Requirement>
+          <ProxyAdvice>
+            <Text>The One Series seminar (TOS) cannot double count in the Major Core.</Text>
+            <Text>However, if you take a second TOS course, your additional TOS may</Text>
+            <Text>count as a Literature Seminar or Elective.</Text>
+          </ProxyAdvice>
+        </Rule>
+        <Rule IndentLevel="1" Label="EARLY-PERIOD SEMINARS" LabelTag="FHSUWK" Node_id="123" Node_type="4700" Per_complete="0" RuleType="Subset" Rule_id="2-2">
+          <IfElsePart>IfPart</IfElsePart>
+          <Remark>
+            <Text>These early-period Literature Seminars may not be double-counted</Text>
+            <Text>in the Core.</Text>
+          </Remark>
+          <Requirement/>
+          <Rule IndentLevel="2" Label="Literature Before 1700" LabelTag="AEB7" Node_id="124" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2-2-0">
+            <Classes_applied>0</Classes_applied>
+            <Credits_applied>0</Credits_applied>
+            <ClassesApplied/>
+            <Requirement Class_cred_op="OR" Connector="," Credits_begin="1">
+              <Course Disc="ENGL" NewDiscipline="Yes" Node_id="125" Num="0500" Num_end="0599">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AEB7</Value>
+                </With>
+              </Course>
+              <Course Disc="ENGL" Node_id="126" Num="0700" Num_end="0799">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AEB7</Value>
+                </With>
+              </Course>
+              <Course Disc="ENGL" Node_id="127" Num="2000" Num_end="2999">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AEB7</Value>
+                </With>
+              </Course>
+              <Course Disc="ENGL" Node_id="128" Num="4500" Num_end="4998">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AEB7</Value>
+                </With>
+              </Course>
+              <Course Disc="ENGL" Node_id="129" Num="5000" Num_end="5999">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AEB7</Value>
+                </With>
+              </Course>
+            </Requirement>
+            <Advice Connector=", " Credits="1">
+              <Course Disc="ENGL" NewDiscipline="Yes" Num="0500" Num_end="0599" With_advice="ATTRIBUTE = AEB7">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AEB7</Value>
+                </With>
+              </Course>
+              <Course Disc="ENGL" Num="0700" Num_end="0799" With_advice="ATTRIBUTE = AEB7">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AEB7</Value>
+                </With>
+              </Course>
+              <Course Disc="ENGL" Num="2000" Num_end="2999" With_advice="ATTRIBUTE = AEB7">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AEB7</Value>
+                </With>
+              </Course>
+              <Course Disc="ENGL" Num="4500" Num_end="4998" With_advice="ATTRIBUTE = AEB7">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AEB7</Value>
+                </With>
+              </Course>
+              <Course Disc="ENGL" Num="5000" Num_end="5999" With_advice="ATTRIBUTE = AEB7">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AEB7</Value>
+                </With>
+              </Course>
+            </Advice>
+          </Rule>
+          <Rule IndentLevel="2" Label="Literature Before 1900" LabelTag="AEBNM9" Node_id="130" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2-2-1">
+            <Classes_applied>0</Classes_applied>
+            <Credits_applied>0</Credits_applied>
+            <ClassesApplied/>
+            <Requirement Class_cred_op="OR" Connector="," Credits_begin="1">
+              <Course Disc="ENGL" NewDiscipline="Yes" Node_id="131" Num="0500" Num_end="0599">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AEB7</Value>
+                  <Value>AEB9</Value>
+                </With>
+              </Course>
+              <Course Disc="ENGL" Node_id="132" Num="0700" Num_end="0799">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AEB7</Value>
+                  <Value>AEB9</Value>
+                </With>
+              </Course>
+              <Course Disc="ENGL" Node_id="133" Num="2000" Num_end="2999">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AEB7</Value>
+                  <Value>AEB9</Value>
+                </With>
+              </Course>
+              <Course Disc="ENGL" Node_id="134" Num="4500" Num_end="4998">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AEB7</Value>
+                  <Value>AEB9</Value>
+                </With>
+              </Course>
+              <Course Disc="ENGL" Node_id="135" Num="5000" Num_end="5999">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AEB7</Value>
+                  <Value>AEB9</Value>
+                </With>
+              </Course>
+            </Requirement>
+            <Advice Connector=", " Credits="1">
+              <Course Disc="ENGL" NewDiscipline="Yes" Num="0500" Num_end="0599" With_advice="ATTRIBUTE = AEB7, AEB9">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AEB7</Value>
+                  <Value>AEB9</Value>
+                </With>
+              </Course>
+              <Course Disc="ENGL" Num="0700" Num_end="0799" With_advice="ATTRIBUTE = AEB7, AEB9">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AEB7</Value>
+                  <Value>AEB9</Value>
+                </With>
+              </Course>
+              <Course Disc="ENGL" Num="2000" Num_end="2999" With_advice="ATTRIBUTE = AEB7, AEB9">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AEB7</Value>
+                  <Value>AEB9</Value>
+                </With>
+              </Course>
+              <Course Disc="ENGL" Num="4500" Num_end="4998" With_advice="ATTRIBUTE = AEB7, AEB9">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AEB7</Value>
+                  <Value>AEB9</Value>
+                </With>
+              </Course>
+              <Course Disc="ENGL" Num="5000" Num_end="5999" With_advice="ATTRIBUTE = AEB7, AEB9">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>AEB7</Value>
+                  <Value>AEB9</Value>
+                </With>
+              </Course>
+            </Advice>
+          </Rule>
+        </Rule>
+        <Rule IndentLevel="1" Label="REMAINING SEMINARS AND ELECTIVES" LabelTag="NGH6KE" Node_id="136" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2-3">
+          <IfElsePart>IfPart</IfElsePart>
+          <Remark>
+            <Text>You must take two more Literature Seminars (which may be double counted</Text>
+            <Text>in the Core) and 1-3 Electives complete the 13 c.u. of the English Major.</Text>
+          </Remark>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Connector="," Credits_begin="4">
+            <Course Disc="ENGL" NewDiscipline="Yes" Node_id="137" Num="0000" Num_end="5999"/>
+          </Requirement>
+          <Advice Connector=", " Credits="4">
+            <Course Disc="ENGL" NewDiscipline="Yes" Num="0000" Num_end="5999"/>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="POETRY AND POETICS CONCENTRATION" LabelTag="IUWTRD" Node_id="341" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="13-0">
+          <IfElsePart>IfPart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Connector="," Credits_begin="4">
+            <Course Disc="ENGL" NewDiscipline="Yes" Node_id="342" Num="0000" Num_end="5999">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AEPP</Value>
+              </With>
+            </Course>
+            <Qualifier Applied="0" Credits="2" Name="MINCREDIT" Node_id="343" Node_type="4104" Satisfied="No">
+              <SubText>@ 2000:5999</SubText>
+              <Text>MinCredits 2 in </Text>
+            </Qualifier>
+            <Qualifier Applied="" Name="NONEXCLUSIVE" Node_id="345" Node_type="4111">
+              <SubText>(THISBLOCK)</SubText>
+              <Text>ShareWith </Text>
+            </Qualifier>
+          </Requirement>
+          <Advice Connector=", " Credits="4">
+            <Course Disc="ENGL" NewDiscipline="Yes" Num="0000" Num_end="5999" With_advice="ATTRIBUTE = AEPP">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AEPP</Value>
+              </With>
+            </Course>
+            <QualAdvice>
+              <Qual Applied="0" Credits="2" Needed="2" Text="MINCREDIT" Type="4104">
+                <Course Disc="@" NewDiscipline="Yes" Num="2000" Num_end="5999"/>
+              </Qual>
+            </QualAdvice>
+          </Advice>
+        </Rule>
+      </Block>
+      <Clsinfo/>
+      <Fallthrough Classes="0" Credits="0" Noncourses="0"/>
+      <OTL Classes="0" Credits="0"/>
+      <Insufficient Classes="0" Credits="0"/>
+      <In_progress Classes="0" Credits="0"/>
+      <FitList/>
+      <SplitCredits Classes="0" Credits="0"/>
+      <Deginfo>
+        <DegreeData Actv_term="" Actv_termLit="" Cat_yr="9999" Cat_yrLit="End of Time" Degree="BA" DegreeLit="Bachelor of Arts" DegreeSource="  " Degree_term="" SS_cum_cr_earn="        " SS_cum_gpa="        " SS_cum_gr_att="        " SS_cum_gr_pts="        " SS_cum_tot_earn="        " School="UG" SchoolLit="Undergraduate" Stu_level="  " Stu_levelLit="  "/>
+        <Goal Cat_yr="9999" Code="COLLEGE" Value="AU" ValueLit="College of Arts &amp; Sciences AU"/>
+        <Goal Cat_yr="9999" Code="PROGRAM" Value="AU_BA" ValueLit="Arts &amp; Sciences - BA"/>
+        <Goal Cat_yr="9999" Code="MAJOR" Value="ENGL" ValueLit="English"/>
+        <Goal Cat_yr="9999" Code="CONC" Value="PET" ValueLit="Poetry and Poetics"/>
+      </Deginfo>
+      <ExceptionList/>
+      <Notes/>
+      <Flags>
+        <CFG020DAP14>Y Y 05NNYNYY            NYYNY                             YNNN2YNNYYY05YYYYNYYNN    </CFG020DAP14>
+        <CFG020TIEBREAK>01H02H03H04H05N06N07N08N09N                                                                         </CFG020TIEBREAK>
+      </Flags>
+    </Audit>
+  </Report>
+

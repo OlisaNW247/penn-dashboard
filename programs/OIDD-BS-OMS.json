@@ -1,0 +1,17 @@
+{
+ "key": "820",
+ "prog_code": "OIDD-BS-OMS",
+ "prog_name": "Operations, Info.,&Decisions BS (Operations Mgmnt/Mgmnt Science)",
+ "prog_type": "conc",
+ "prog_parent": "OIDD-BS",
+ "levl_code": "UG",
+ "degc_code": "BS",
+ "majr_code": "OIDD",
+ "minr_code": "",
+ "conc_code": "OMS",
+ "coll_code": "WU",
+ "dept_code": "",
+ "sis_prog_code": "WU_BS",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

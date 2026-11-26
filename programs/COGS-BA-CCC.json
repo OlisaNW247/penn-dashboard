@@ -1,0 +1,17 @@
+{
+ "key": "639",
+ "prog_code": "COGS-BA-CCC",
+ "prog_name": "Cognitive Science BA (Computation and Cognition)",
+ "prog_type": "conc",
+ "prog_parent": "COGS-BA",
+ "levl_code": "UG",
+ "degc_code": "BA",
+ "majr_code": "COGS",
+ "minr_code": "",
+ "conc_code": "CCC",
+ "coll_code": "AU",
+ "dept_code": "",
+ "sis_prog_code": "AU_BA",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

@@ -1,0 +1,17 @@
+{
+ "key": "888",
+ "prog_code": "MSE-BSE-NCON",
+ "prog_name": "Materials Science & Engin BSE (No Concentration)",
+ "prog_type": "conc",
+ "prog_parent": "MSE-BSE",
+ "levl_code": "UG",
+ "degc_code": "BSE",
+ "majr_code": "MSE",
+ "minr_code": "",
+ "conc_code": "NCON",
+ "coll_code": "EU",
+ "dept_code": "",
+ "sis_prog_code": "EU_BSE",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

@@ -1,0 +1,17 @@
+{
+ "key": "733",
+ "prog_code": "PHYS-BA-CMT",
+ "prog_name": "Physics BA (Computer Techniques)",
+ "prog_type": "conc",
+ "prog_parent": "PHYS-BA",
+ "levl_code": "UG",
+ "degc_code": "BA",
+ "majr_code": "PHYS",
+ "minr_code": "",
+ "conc_code": "CMT",
+ "coll_code": "AU",
+ "dept_code": "",
+ "sis_prog_code": "AU_BA",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

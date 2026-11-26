@@ -1,0 +1,17 @@
+{
+ "key": "811",
+ "prog_code": "MGMT-BS-GEN",
+ "prog_name": "Management BS (General)",
+ "prog_type": "conc",
+ "prog_parent": "MGMT-BS",
+ "levl_code": "UG",
+ "degc_code": "BS",
+ "majr_code": "MGMT",
+ "minr_code": "",
+ "conc_code": "GEN",
+ "coll_code": "WU",
+ "dept_code": "",
+ "sis_prog_code": "WU_BS",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

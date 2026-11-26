@@ -1,0 +1,1348 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+
+
+  <Report>
+    <Audit>
+      <AuditHeader AuditDescription="" AuditType="AA" Audit_id="W0008XJ0" DWGPA="*" DateDay="14" DateMonth="07" DateYear="2026" ExamApp="0" ExamOTL="0" FreezeDate="" FreezeType="" FreezeTypeDescription="" FreezeUserName="" In_progress="Y" Per_complete="4" ResApp="0" ResAppInProg="0" ResOTL="0" ResOTLInProg="0" SSGPA="*" Stu_email="" Stu_id="*" Stu_name="*Test" TimeHour="09" TimeMinute="43" Version="$Id$ OS_TYPE=Linux; Release=5.1.5.1" What_if="Y" XferApp="0" XferOTL="0"/>
+      <Block Cat_yr="9999" Cat_yrLit="End of Time" Cat_yr_start="2027" Cat_yr_stop="9999" Classes_applied="0" Credits_applied="0" Degree="BA" GPA="*" Gpa_credits="0" Gpa_grade_pts="*" Per_complete="4" Req_id="RA002258" Req_type="DEGREE" Req_value="BA" Title="Degree in Bachelor of Arts">
+        <Header>
+          <Qualifier Applied="0" ClassesApplied="0" Credits="40" CreditsApplied="0" Label="Minimum Total Credits Required" LabelTag="MINGPA_HUNTS" Name="CLASSESCREDITS" Needed="40" Node_id="27" Node_type="4121" Satisfied="No">
+            <Text>40 Credits</Text>
+          </Qualifier>
+          <Qualifier Applied="0" Credits="20" Label="Minimum Credits Earned from University of Pennsylvania" LabelTag="MINRES_HUNTS" Name="MINRES" Needed="20" Node_id="28" Node_type="4119" Satisfied="No">
+            <Text>MINRES 20 Credits</Text>
+          </Qualifier>
+          <Qualifier Applied="0" Label="Last 5 Courses Taken in Residence" LabelTag="JSIEKS" Name="LASTRES" Needed="5" Node_id="270" Node_type="4112" Satisfied="No" Term="0000">
+            <Text>LASTRES 5 CLASSES</Text>
+          </Qualifier>
+          <Qualifier Classes="0" ClassesApplied="0" CreditsApplied="0" Name="MAXCLASS" Node_id="3452" Node_type="4101" Tag="MXCLH_ROTC">
+            <SubText>MSCI @, NSCI @</SubText>
+            <Text>MaxClasses 0 in </Text>
+          </Qualifier>
+          <Qualifier ClassesApplied="0" Credits="8" CreditsApplied="0" Name="MAXCREDIT" Node_id="3455" Node_type="4103" Tag="MXPFCOVID">
+            <SubText>@ @ (With </SubText>
+            <SubText>DWPASSFAIL = Y AND</SubText>
+            <SubText>DWTERM &lt;&gt; 202010, 202020, 202030, 202110</SubText>
+            <SubText>)</SubText>
+            <Text>MaxCredits 8 in </Text>
+          </Qualifier>
+          <Qualifier Applied="" JustAdded="TRUE" Name="CHECKELECTIVES" Node_id="" Node_type="4140">
+            <ECA-Overall Credits="40" Text="Credits required by degree block"/>
+            <ECA-Error Text="Block credits missing from block RA000521"/>
+            <ECA-Error Text="Block credits missing from block RA001031"/>
+            <ECA-BlocksRequired Text="RA001049 RA000521 RA001031 "/>
+            <ECA-BlocksNotRequired Text=""/>
+            <ECA-BlocksRequiredIncluded Text=""/>
+            <ECA-Blocksum Credits="6" Text="Sum of credits required in all *required* blocks; excludes credits in blocks included in other required blocks"/>
+            <ECA-Shared Credits="0" Text="Credits shared between required blocks"/>
+            <ECA-ECA Credits="34" Text="Credits allowed/needed in fall-through and non-required blocks"/>
+            <ECA-RequiredCreditsApplied Credits="0" Text="Credits applied to required blocks"/>
+            <ECA-NonrequiredCreditsApplied Credits="0" Text="Credits applied to non-required blocks"/>
+            <ECA-fallthruCounts Text="1"/>
+            <ECA-Overflow Credits="0" Text="Excess fall-through credits"/>
+            <CREDITSAPPLIEDTOWARDSDEGREE Credits="0" Text="Credits applied minus overflow"/>
+            <Text>CHECK-ELECTIVE-CREDITS-ALLOWED</Text>
+          </Qualifier>
+          <Advice>
+            <Text Node_id="27">
+              <Line>You currently have 0 credits including both</Line>
+              <Line>earned and in-progress courses. To graduate, you need</Line>
+              <Line>to successfully complete a minimum of 40 additional</Line>
+              <Line>credits and all graduation requirements.</Line>
+            </Text>
+            <Text Node_id="28">
+              <Line>You currently have 0 credits.</Line>
+              <Line>You still need a minimum of 20 additional credits.</Line>
+            </Text>
+            <Text Node_id="270">
+              <Line>You have 0 credits; you still need a minimum of</Line>
+              <Line>5 more credit(s).</Line>
+            </Text>
+          </Advice>
+        </Header>
+        <Rule IndentLevel="1" Label="There are no I, NR, or PR grades in this Degree Audit" LabelTag="KFSOEL" Node_id="3464" Node_type="4900" Per_complete="100" RuleType="Complete" Rule_id="1-1">
+          <IfElsePart>ElsePart</IfElsePart>
+          <Requirement/>
+        </Rule>
+        <Rule IndentLevel="1" Label="Cumulative GPA Requirement" LabelTag="NOGPA" Node_id="3493" Node_type="4971" Per_complete="0" ProxyAdvice="Yes" RuleType="Incomplete" Rule_id="2-1-1-0">
+          <IfElsePart>IfPart</IfElsePart>
+          <Requirement/>
+          <ProxyAdvice>
+            <Text>When your first term is graded, your cumulative GPA</Text>
+            <Text>will be calculated. If your cumulative GPA falls below</Text>
+            <Text>2.0 it is important to see an advisor to make plans</Text>
+            <Text>for raising your GPA.</Text>
+          </ProxyAdvice>
+        </Rule>
+        <Rule IndentLevel="1" Label="General Education - Foundations" LabelTag="GENED_FND_BLK" Node_id="3496" Node_type="4400" Per_complete="0" RuleType="Block" Rule_id="3">
+          <Requirement>
+            <NumBlocks>1</NumBlocks>
+            <Type>OTHER</Type>
+            <Value>U-GE-FND</Value>
+          </Requirement>
+          <Advice>
+            <BlockID>RA000521</BlockID>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="General Education - Sectors" LabelTag="GENED_SCT_BLK" Node_id="3498" Node_type="4400" Per_complete="0" RuleType="Block" Rule_id="4">
+          <Requirement>
+            <NumBlocks>1</NumBlocks>
+            <Type>OTHER</Type>
+            <Value>U-GE-SCTR</Value>
+          </Requirement>
+          <Advice>
+            <BlockID>RA001031</BlockID>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Major Requirements" LabelTag="MAJR_BLK" Node_id="3513" Node_type="4500" Per_complete="0" RuleType="Blocktype" Rule_id="7">
+          <Requirement>
+            <NumBlocktypes>1</NumBlocktypes>
+            <Type>MAJOR</Type>
+          </Requirement>
+          <Advice>
+            <Type>MAJOR</Type>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Minor Requirements" LabelTag="MINR_BLK" Node_id="3525" Node_type="4500" Per_complete="0" RuleType="Blocktype" Rule_id="9-0">
+          <IfElsePart>IfPart</IfElsePart>
+          <Requirement>
+            <NumBlocktypes>1</NumBlocktypes>
+            <Type>MINOR</Type>
+          </Requirement>
+          <Advice>
+            <Title>Minor in European Studies</Title>
+          </Advice>
+        </Rule>
+      </Block>
+      <Block Cat_yr="9999" Cat_yrLit="End of Time" Cat_yr_start="0000" Cat_yr_stop="9999" Classes_applied="0" Credits_applied="0" GPA="*" Gpa_credits="0" Gpa_grade_pts="*" Per_complete="0" Req_id="RA000521" Req_type="OTHER" Req_value="U-GE-FND" Title="General Education, Foundations">
+        <Header>
+          <Qualifier Applied="0" Classes="6" ClassesApplied="0" CreditsApplied="0" Label="Minimum Classes Requirement" LabelTag="FJDKSL" Name="CLASSESCREDITS" Needed="6" Node_id="270" Node_type="4121" Satisfied="No">
+            <Text>6 CLASSES</Text>
+          </Qualifier>
+          <Qualifier ClassesApplied="0" Credits="0" CreditsApplied="0" Name="MAXCREDIT" Node_id="271" Node_type="4103" Tag="MXPFCOVID">
+            <SubText>@ @ (With </SubText>
+            <SubText>DWPASSFAIL = Y AND</SubText>
+            <SubText>DWTERM &lt;&gt; 202010, 202020, 202030, 202110</SubText>
+            <SubText>)</SubText>
+            <Text>MaxCredits 0 in </Text>
+          </Qualifier>
+          <Qualifier Classes="0" ClassesApplied="0" CreditsApplied="0" Name="MAXCLASS" Node_id="273" Node_type="4101">
+            <SubText>@ @ (With </SubText>
+            <SubText>DWTRANSFERSCHOOLID = EQIVAP, EQIVIB, EQIVEX, EQIVAS</SubText>
+            <SubText>)</SubText>
+            <Text>MaxClasses 0 in </Text>
+          </Qualifier>
+          <Qualifier Classes="0" ClassesApplied="0" CreditsApplied="0" Name="MAXCLASS" Node_id="275" Node_type="4101">
+            <SubText>@ @ (With </SubText>
+            <SubText>DWGRADELETTER = S</SubText>
+            <SubText>)</SubText>
+            <Text>MaxClasses 0 in </Text>
+          </Qualifier>
+          <Qualifier Applied="" Name="STANDALONEBLOCK" Node_id="277" Node_type="4137">
+            <Text>StandAloneBlock</Text>
+          </Qualifier>
+          <Advice>
+            <Text Node_id="270">
+              <Line>6 classes are required. You currently have 0.</Line>
+              <Line>You still need 6 more.</Line>
+            </Text>
+          </Advice>
+        </Header>
+        <Rule IndentLevel="1" Label="Foreign Language" LabelTag="AUFL" Node_id="547" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="1-1">
+          <IfElsePart>ElsePart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="548" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AULL</Value>
+              </With>
+            </Course>
+            <Qualifier Applied="" MinGrade="1.0" Name="MINGRADE" Node_id="549" Node_type="4117" Tag="MNGRR_LangReq">
+              <Text>MINGRADE 1.0</Text>
+            </Qualifier>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = AULL">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AULL</Value>
+              </With>
+            </Course>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Quantitative Data Analysis" LabelTag="AUQD" Node_id="550" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2">
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="551" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUQD</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = AUQD">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUQD</Value>
+              </With>
+            </Course>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Formal Reasoning and Analysis" LabelTag="AUFR" Node_id="552" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="3">
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="553" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUFR</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = AUFR">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUFR</Value>
+              </With>
+            </Course>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Cross Cultural Analysis" LabelTag="AUCC" Node_id="554" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="4">
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="555" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUCC</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = AUCC">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUCC</Value>
+              </With>
+            </Course>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Cultural Diversity in the U.S." LabelTag="AUCD" Node_id="556" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="5">
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="557" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUCD</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = AUCD">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUCD</Value>
+              </With>
+            </Course>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Writing Course" LabelTag="AUWR" Node_id="558" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="6">
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="WRIT" NewDiscipline="Yes" Node_id="559" Num="0000" Num_end="0991"/>
+            <Course Disc="WRIT" Node_id="560" Num="0998"/>
+            <Except>
+              <Course Disc="WRIT" NewDiscipline="Yes" Node_id="562" Num="135@"/>
+              <Course Disc="WRIT" Node_id="563" Num="138@"/>
+            </Except>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="WRIT" NewDiscipline="Yes" Num="0000" Num_end="0991"/>
+            <Course Credits="1" Disc="WRIT" Num="0998" Title="Transfer Writ Credit"/>
+            <Except>
+              <Course Disc="WRIT" NewDiscipline="Yes" Num="135@"/>
+              <Course Disc="WRIT" Num="138@"/>
+            </Except>
+          </Advice>
+        </Rule>
+      </Block>
+      <Block Cat_yr="9999" Cat_yrLit="End of Time" Cat_yr_start="2022" Cat_yr_stop="9999" Classes_applied="0" Credits_applied="0" GPA="*" Gpa_credits="0" Gpa_grade_pts="*" Per_complete="0" Req_id="RA001031" Req_type="OTHER" Req_value="U-GE-SCTR" Title="General Education, Sectors">
+        <Header>
+          <Qualifier Applied="0" Classes="6" ClassesApplied="0" CreditsApplied="0" Name="CLASSESCREDITS" Needed="6" Node_id="86" Node_type="4121" Satisfied="No">
+            <Text>6 CLASSES</Text>
+          </Qualifier>
+          <Qualifier ClassesApplied="0" Credits="0" CreditsApplied="0" Name="MAXCREDIT" Node_id="87" Node_type="4103" Tag="MXPFCOVID">
+            <SubText>@ @ (With </SubText>
+            <SubText>DWPASSFAIL = Y AND</SubText>
+            <SubText>DWTERM &lt;&gt; 202010, 202020, 202030, 202110</SubText>
+            <SubText>)</SubText>
+            <Text>MaxCredits 0 in </Text>
+          </Qualifier>
+          <Qualifier Classes="0" ClassesApplied="0" CreditsApplied="0" Name="MAXCLASS" Node_id="89" Node_type="4101">
+            <SubText>@ @ (With </SubText>
+            <SubText>DWTRANSFERSCHOOLID = EQIVAP, EQIVIB, EQIVEX, EQIVAS</SubText>
+            <SubText>)</SubText>
+            <Text>MaxClasses 0 in </Text>
+          </Qualifier>
+          <Advice>
+            <Text Node_id="86">
+              <Line>6 classes are required. You currently have 0.</Line>
+              <Line>You still need 6 more.</Line>
+            </Text>
+          </Advice>
+        </Header>
+        <Rule IndentLevel="1" Label="Sector 1: Society" LabelTag="AUSO" Node_id="137" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2-1">
+          <IfElsePart>ElsePart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="138" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUSO</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = AUSO">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUSO</Value>
+              </With>
+            </Course>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Sector 2: History and Tradition" LabelTag="AUHT" Node_id="166" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="3-1">
+          <IfElsePart>ElsePart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="167" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUHT</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = AUHT">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUHT</Value>
+              </With>
+            </Course>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Sector 3: Arts and Letters" LabelTag="AUAL" Node_id="201" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="4-1">
+          <IfElsePart>ElsePart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="202" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUAL</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = AUAL">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUAL</Value>
+              </With>
+            </Course>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Sector 4: Humanities and Social Sciences" LabelTag="AUHS" Node_id="222" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="5-1">
+          <IfElsePart>ElsePart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="223" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUHS</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = AUHS">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUHS</Value>
+              </With>
+            </Course>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Sector 5: The Living World" LabelTag="AULW" Node_id="257" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="6-1">
+          <IfElsePart>ElsePart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="258" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AULW</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = AULW">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AULW</Value>
+              </With>
+            </Course>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Sector 6: The Physical World" LabelTag="AUPW" Node_id="284" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="7-1">
+          <IfElsePart>ElsePart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="285" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUPW</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = AUPW">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUPW</Value>
+              </With>
+            </Course>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Sector 7: Natural Science Across Disciplines" LabelTag="AUW_SHW" Node_id="308" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="8-1-1">
+          <IfElsePart>ElsePart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="309" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUNM</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = AUNM">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUNM</Value>
+              </With>
+            </Course>
+          </Advice>
+        </Rule>
+      </Block>
+      <Block Cat_yr="9999" Cat_yrLit="End of Time" Cat_yr_start="2023" Cat_yr_stop="9999" Classes_applied="0" Credits_applied="0" GPA="*" Gpa_credits="0" Gpa_grade_pts="*" Minor="EURO" Per_complete="0" Req_id="RA001049" Req_type="MINOR" Req_value="EURO" Title="Minor in European Studies">
+        <Header>
+          <Qualifier Applied="0" ClassesApplied="0" Credits="6" CreditsApplied="0" Label="Minimum Credits Requirement" LabelTag="FJDKSL" Name="CLASSESCREDITS" Needed="6" Node_id="1" Node_type="4121" Satisfied="No">
+            <Text>6 Credits</Text>
+          </Qualifier>
+          <Qualifier ClassesApplied="0" Credits="0" CreditsApplied="0" Name="MAXCREDIT" Node_id="2" Node_type="4103" Tag="MXPFCOVID">
+            <SubText>@ @ (With </SubText>
+            <SubText>DWPASSFAIL = Y AND</SubText>
+            <SubText>DWTERM &lt;&gt; 202010, 202020, 202030, 202110</SubText>
+            <SubText>)</SubText>
+            <Text>MaxCredits 0 in </Text>
+          </Qualifier>
+          <Qualifier Applied="" Name="STANDALONEBLOCK" Node_id="4" Node_type="4137">
+            <Text>StandAloneBlock</Text>
+          </Qualifier>
+          <Advice>
+            <Text Node_id="1">
+              <Line>6 credits are required. You currently have 0.</Line>
+              <Line>You still need 6 more.</Line>
+            </Text>
+          </Advice>
+        </Header>
+        <Rule IndentLevel="1" Label="The European Union" LabelTag="CONTEMP_EUROPOL" Node_id="5" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="1">
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="PSCI" NewDiscipline="Yes" Node_id="6" Num="1171"/>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Credits="0" Disc="PSCI" NewDiscipline="Yes" Num="1171" Title="The European Union" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="European History" LabelTag="FJDKEL" Node_id="7" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2">
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="HIST" NewDiscipline="Yes" Node_id="8" Num="0200"/>
+            <Course Disc="HIST" Node_id="9" Num="0250"/>
+            <Course Disc="HIST" Node_id="10" Num="0723"/>
+            <Course Disc="HIST" Node_id="11" Num="1200"/>
+            <Course Disc="HIST" Node_id="12" Num="1230"/>
+            <Course Disc="HIST" Node_id="13" Num="1250"/>
+            <Course Disc="HIST" Node_id="14" Num="1260"/>
+            <Course Disc="HIST" Node_id="15" Num="1270"/>
+            <Course Disc="HIST" Node_id="16" Num="1280"/>
+            <Course Disc="HIST" Node_id="17" Num="3920"/>
+            <Course Disc="HIST" Node_id="18" Num="3921"/>
+            <Course Disc="HIST" Node_id="19" Num="3922"/>
+            <Course Disc="HIST" HideFromAdvice="Yes" Node_id="20" Num="0255">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2025</Value>
+              </With>
+            </Course>
+            <Course Disc="HIST" HideFromAdvice="Yes" Node_id="21" Num="0210">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2025</Value>
+              </With>
+            </Course>
+            <Course Disc="HIST" HideFromAdvice="Yes" Node_id="22" Num="1203">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2025</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Credits="0" Disc="HIST" NewDiscipline="Yes" Num="0200" Title="Emergence of Mod Europe" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="1" Disc="HIST" Num="0250" Title="Modern Europe"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="0723" Title="The Enlightenment"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="1200" Title="Foundations Euro Thought"/>
+            <Course Credits="1" Disc="HIST" Num="1230" Title="French Revolution"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="1250" Title="Belief and Unbelief"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="1260" Title="Tolstoy?s War and Peace"/>
+            <Course Credits="0" Disc="HIST" Num="1270" Title="World War I" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="0" CrossListed="Parent" Disc="HIST" Num="1280" Title="Origins of Nazism" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="1" Disc="HIST" Num="3920" Title="Euro Diplo History 1789 - 1914"/>
+            <Course Credits="1" Disc="HIST" Num="3921" Title="European Int&apos;l Rel 1914-pres"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="3922" Title="Euro Thought &amp; Cult Age of Rev"/>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Non-English Language" LabelTag="NONENGLANG" Node_id="23" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="3">
+          <Remark>
+            <Text>Select 2 CUs of Non-English Language course beyond the Language Requirement level.</Text>
+          </Remark>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Connector="," Credits_begin="2">
+            <Course Disc="FREN" NewDiscipline="Yes" Node_id="24" Num="0800"/>
+            <Course Disc="FREN" Node_id="25" Num="1000"/>
+            <Course Disc="FREN" Node_id="26" Num="1212"/>
+            <Course Disc="FREN" Node_id="27" Num="1214"/>
+            <Course Disc="FREN" Node_id="28" Num="1226"/>
+            <Course Disc="FREN" Node_id="29" Num="1227"/>
+            <Course Disc="FREN" Node_id="30" Num="1228"/>
+            <Course Disc="FREN" Node_id="31" Num="2130"/>
+            <Course Disc="FREN" Node_id="32" Num="2140"/>
+            <Course Disc="GRMN" NewDiscipline="Yes" Node_id="33" Num="1120"/>
+            <Course Disc="GRMN" Node_id="34" Num="1130"/>
+            <Course Disc="GRMN" Node_id="35" Num="1132"/>
+            <Course Disc="GRMN" Node_id="36" Num="1140"/>
+            <Course Disc="GRMN" Node_id="37" Num="1160"/>
+            <Course Disc="GRMN" Node_id="38" Num="1170"/>
+            <Course Disc="GRMN" Node_id="39" Num="1500"/>
+            <Course Disc="GRMN" Node_id="40" Num="1510"/>
+            <Course Disc="GRMN" Node_id="41" Num="2290"/>
+            <Course Disc="ITAL" NewDiscipline="Yes" Node_id="42" Num="1000"/>
+            <Course Disc="ITAL" Node_id="43" Num="1200"/>
+            <Course Disc="ITAL" Node_id="44" Num="1211"/>
+            <Course Disc="ITAL" Node_id="45" Num="1212"/>
+            <Course Disc="ITAL" Node_id="46" Num="1213"/>
+            <Course Disc="ITAL" Node_id="47" Num="1214"/>
+            <Course Disc="ITAL" Node_id="48" Num="1900"/>
+            <Course Disc="ITAL" Node_id="49" Num="1920"/>
+            <Course Disc="ITAL" Node_id="50" Num="3060"/>
+            <Course Disc="ITAL" Node_id="51" Num="3080"/>
+            <Course Disc="ITAL" Node_id="52" Num="3250"/>
+            <Course Disc="PRTG" NewDiscipline="Yes" Node_id="53" Num="1000"/>
+            <Course Disc="PRTG" Node_id="54" Num="1320"/>
+            <Course Disc="PRTG" Node_id="55" Num="1340"/>
+            <Course Disc="PRTG" Node_id="56" Num="1800"/>
+            <Course Disc="PRTG" Node_id="57" Num="1810"/>
+            <Course Disc="PRTG" Node_id="58" Num="1900"/>
+            <Course Disc="PRTG" Node_id="59" Num="3100"/>
+            <Course Disc="RUSS" NewDiscipline="Yes" Node_id="60" Num="1100"/>
+            <Course Disc="RUSS" Node_id="61" Num="1200"/>
+            <Course Disc="SPAN" NewDiscipline="Yes" Node_id="62" Num="1000"/>
+            <Course Disc="SPAN" Node_id="63" Num="1005"/>
+            <Course Disc="SPAN" Node_id="64" Num="1010"/>
+            <Course Disc="SPAN" Node_id="65" Num="1110"/>
+            <Course Disc="SPAN" Node_id="66" Num="1200"/>
+            <Course Disc="SPAN" Node_id="67" Num="1210"/>
+          </Requirement>
+          <Advice Connector=", " Credits="2">
+            <Course Credits="0.5" Disc="FREN" NewDiscipline="Yes" Num="0800" Title="Adv Fr In Residence"/>
+            <Course Credits="1" Disc="FREN" Num="1000" Title="Advanced French"/>
+            <Course Credits="1" Disc="FREN" Num="1212" Title="Adv Fr Gram &amp; Comp"/>
+            <Course Credits="1" Disc="FREN" Num="1214" Title="Adv. Comp &amp; Conversation"/>
+            <Course Credits="1" Disc="FREN" Num="1226" Title="Fren Hist/Cltr to 1774"/>
+            <Course Credits="1" Disc="FREN" Num="1227" Title="Fren Hist/Cltr 1789-1945"/>
+            <Course Credits="1" Disc="FREN" Num="1228" Title="Contemporary France"/>
+            <Course Credits="1" Disc="FREN" Num="2130" Title="French For Business I"/>
+            <Course Credits="1" Disc="FREN" Num="2140" Title="French for Business II"/>
+            <Course Credits="1" CrossListed="Parent" Disc="GRMN" NewDiscipline="Yes" Num="1120" Title="Translating Cultures"/>
+            <Course Credits="0" CrossListed="Parent" Disc="GRMN" Num="1130" Title="Water Worlds" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="1" CrossListed="Parent" Disc="GRMN" Num="1132" Title="Forest Worlds"/>
+            <Course Credits="1" CrossListed="Parent" Disc="GRMN" Num="1140" Title="Liquid Histories"/>
+            <Course Credits="1" CrossListed="Parent" Disc="GRMN" Num="1160" Title="Sustainability &amp; Utopia"/>
+            <Course Credits="1" CrossListed="Parent" Disc="GRMN" Num="1170" Title="Global Sustainabilities"/>
+            <Course Credits="1" Disc="GRMN" Num="1500" Title="Texts and Contexts"/>
+            <Course Credits="1" Disc="GRMN" Num="1510" Title="Handschrift-Hypertext"/>
+            <Course Credits="1" Disc="GRMN" Num="2290" Title="Business German: Micro"/>
+            <Course Credits="1" Disc="ITAL" NewDiscipline="Yes" Num="1000" Title="Advanced Italian I"/>
+            <Course Credits="1" Disc="ITAL" Num="1200" Title="Advanced Italian II"/>
+            <Course Credits="1" Disc="ITAL" Num="1211" Title="Business Italian"/>
+            <Course Credits="1" Disc="ITAL" Num="1212" Title="Business Ital-Special Purposes"/>
+            <Course Credits="1" Disc="ITAL" Num="1213" Title="Business Italian - Professions"/>
+            <Course Credits="1" Disc="ITAL" Num="1214" Title="Business Ital- Transltn/Interp"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="1900" Title="Italian Hist on Screen"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="1920" Title="Ital Hist on Table"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3060" Title="Mafia in the Movies"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3080" Title="Soccer Beyond the Field"/>
+            <Course Credits="1" Disc="ITAL" Num="3250" Title="Italian Ecologies"/>
+            <Course Credits="1" Disc="PRTG" NewDiscipline="Yes" Num="1000" Title="Advanced Portuguese"/>
+            <Course Credits="1" CrossListed="Parent" Disc="PRTG" Num="1320" Title="Prtg For Professions I"/>
+            <Course Credits="1" CrossListed="Parent" Disc="PRTG" Num="1340" Title="Prtg for Prfessions II"/>
+            <Course Credits="1" CrossListed="Parent" Disc="PRTG" Num="1800" Title="Prsctves Brazln Cltr"/>
+            <Course Credits="1" CrossListed="Parent" Disc="PRTG" Num="1810" Title="Perspectives in Afro-Luso-Braz"/>
+            <Course Credits="1" CrossListed="Parent" Disc="PRTG" Num="1900" Title="Topics-Prtg, Afrc, Brzln Cltrs"/>
+            <Course Credits="1" CrossListed="Parent" Disc="PRTG" Num="3100" Title="Studies in Brazil Lit &amp; Cult"/>
+            <Course Credits="1" Disc="RUSS" NewDiscipline="Yes" Num="1100" Title="High Intermediate Russian I"/>
+            <Course Credits="1" Disc="RUSS" Num="1200" Title="High Intermediate Russian II"/>
+            <Course Credits="1" Disc="SPAN" NewDiscipline="Yes" Num="1000" Title="Advanced Spanish"/>
+            <Course Credits="1" Disc="SPAN" Num="1005" Title="Adv Span/Med Profs"/>
+            <Course Credits="1" Disc="SPAN" Num="1010" Title="Business Spanish I"/>
+            <Course Credits="1" Disc="SPAN" Num="1110" Title="Business Spanish II"/>
+            <Course Credits="1" Disc="SPAN" Num="1200" Title="Adv Span II: Grmr/Comp"/>
+            <Course Credits="1" Disc="SPAN" Num="1210" Title="Sp for Professions"/>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="European Electives" LabelTag="FHSKWE" Node_id="68" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="4">
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="2" Connector=",">
+            <Course Disc="BCS" NewDiscipline="Yes" Node_id="69" Num="0100"/>
+            <Course Disc="BCS" Node_id="70" Num="0200"/>
+            <Course Disc="BCS" Node_id="71" Num="0300"/>
+            <Course Disc="BCS" Node_id="72" Num="0400"/>
+            <Course Disc="COML" NewDiscipline="Yes" Node_id="73" Num="1010"/>
+            <Course Disc="COML" Node_id="74" Num="1020"/>
+            <Course Disc="COML" Node_id="75" Num="1030"/>
+            <Course Disc="COML" Node_id="76" Num="1071"/>
+            <Course Disc="COML" Node_id="77" Num="1080"/>
+            <Course Disc="COML" Node_id="78" Num="2011"/>
+            <Course Disc="COML" Node_id="79" Num="2251"/>
+            <Course Disc="CZCH" NewDiscipline="Yes" Node_id="80" Num="0010"/>
+            <Course Disc="CZCH" Node_id="81" Num="0100"/>
+            <Course Disc="CZCH" Node_id="82" Num="0120"/>
+            <Course Disc="CZCH" Node_id="83" Num="0200"/>
+            <Course Disc="CZCH" Node_id="84" Num="0300"/>
+            <Course Disc="CZCH" Node_id="85" Num="0400"/>
+            <Course Disc="FREN" NewDiscipline="Yes" Node_id="86" Num="1226"/>
+            <Course Disc="FREN" Node_id="87" Num="1227"/>
+            <Course Disc="FREN" Node_id="88" Num="1228"/>
+            <Course Disc="FREN" Node_id="89" Num="1230"/>
+            <Course Disc="FREN" Node_id="90" Num="1231"/>
+            <Course Disc="FREN" Node_id="91" Num="1232"/>
+            <Course Disc="FREN" Node_id="92" Num="1233"/>
+            <Course Disc="FREN" Node_id="93" Num="2130"/>
+            <Course Disc="FREN" Node_id="94" Num="2140"/>
+            <Course Disc="FREN" Node_id="95" Num="2250"/>
+            <Course Disc="FREN" Node_id="96" Num="2500"/>
+            <Course Disc="FREN" Node_id="97" Num="3010"/>
+            <Course Disc="FREN" Node_id="98" Num="3080"/>
+            <Course Disc="FREN" Node_id="99" Num="3110"/>
+            <Course Disc="FREN" Node_id="100" Num="3220"/>
+            <Course Disc="FREN" Node_id="101" Num="3250"/>
+            <Course Disc="FREN" Node_id="102" Num="3300"/>
+            <Course Disc="FREN" Node_id="103" Num="3600"/>
+            <Course Disc="FREN" Node_id="104" Num="3700"/>
+            <Course Disc="FREN" Node_id="105" Num="3800"/>
+            <Course Disc="FREN" Node_id="106" Num="3810"/>
+            <Course Disc="FREN" Node_id="107" Num="3820"/>
+            <Course Disc="FREN" Node_id="108" Num="3830"/>
+            <Course Disc="FREN" Node_id="109" Num="3840"/>
+            <Course Disc="FREN" Node_id="110" Num="3850"/>
+            <Course Disc="FREN" Node_id="111" Num="3860"/>
+            <Course Disc="FREN" Node_id="112" Num="3890"/>
+            <Course Disc="GRMN" NewDiscipline="Yes" Node_id="113" Num="0013"/>
+            <Course Disc="GRMN" Node_id="114" Num="1010"/>
+            <Course Disc="GRMN" Node_id="115" Num="1020"/>
+            <Course Disc="GRMN" Node_id="116" Num="1030"/>
+            <Course Disc="GRMN" Node_id="117" Num="1040"/>
+            <Course Disc="GRMN" Node_id="118" Num="1050"/>
+            <Course Disc="GRMN" Node_id="119" Num="1060"/>
+            <Course Disc="GRMN" Node_id="120" Num="1070"/>
+            <Course Disc="GRMN" Node_id="121" Num="1080"/>
+            <Course Disc="GRMN" Node_id="122" Num="1090"/>
+            <Course Disc="GRMN" Node_id="123" Num="1146"/>
+            <Course Disc="GRMN" Node_id="124" Num="1150"/>
+            <Course Disc="GRMN" Node_id="125" Num="1151"/>
+            <Course Disc="GRMN" Node_id="126" Num="1301"/>
+            <Course Disc="GRMN" Node_id="127" Num="1304"/>
+            <Course Disc="GRMN" Node_id="128" Num="1306"/>
+            <Course Disc="GRMN" Node_id="129" Num="1500"/>
+            <Course Disc="GRMN" Node_id="130" Num="1510"/>
+            <Course Disc="GRMN" Node_id="131" Num="2190"/>
+            <Course Disc="GRMN" Node_id="132" Num="2290"/>
+            <Course Disc="GRMN" Node_id="133" Num="2300"/>
+            <Course Disc="GRMN" Node_id="134" Num="3110"/>
+            <Course Disc="GRMN" Node_id="135" Num="3120"/>
+            <Course Disc="GRMN" Node_id="136" Num="3215"/>
+            <Course Disc="GRMN" Node_id="137" Num="3240"/>
+            <Course Disc="GRMN" Node_id="138" Num="3250"/>
+            <Course Disc="GRMN" Node_id="139" Num="3270"/>
+            <Course Disc="GRMN" Node_id="140" Num="3273"/>
+            <Course Disc="GRMN" Node_id="141" Num="3280"/>
+            <Course Disc="GRMN" Node_id="142" Num="3290"/>
+            <Course Disc="GRMN" Node_id="143" Num="5250"/>
+            <Course Disc="GRMN" Node_id="144" Num="5260"/>
+            <Course Disc="GLBS" NewDiscipline="Yes" Node_id="145" Num="3800"/>
+            <Course Disc="HIST" NewDiscipline="Yes" Node_id="146" Num="0220"/>
+            <Course Disc="HIST" Node_id="147" Num="0240"/>
+            <Course Disc="HIST" Node_id="148" Num="0290"/>
+            <Course Disc="HIST" Node_id="149" Num="0310"/>
+            <Course Disc="HIST" Node_id="150" Num="0600"/>
+            <Course Disc="HIST" Node_id="151" Num="0723"/>
+            <Course Disc="HIST" Node_id="152" Num="0724"/>
+            <Course Disc="HIST" Node_id="153" Num="0725"/>
+            <Course Disc="HIST" Node_id="154" Num="0820"/>
+            <Course Disc="HIST" Node_id="155" Num="0821"/>
+            <Course Disc="HIST" Node_id="156" Num="0823"/>
+            <Course Disc="HIST" Node_id="157" Num="0824"/>
+            <Course Disc="HIST" Node_id="158" Num="0825"/>
+            <Course Disc="HIST" Node_id="159" Num="1200"/>
+            <Course Disc="HIST" Node_id="160" Num="1201"/>
+            <Course Disc="HIST" Node_id="161" Num="1205"/>
+            <Course Disc="HIST" Node_id="162" Num="1610"/>
+            <Course Disc="HIST" Node_id="163" Num="1620"/>
+            <Course Disc="HIST" Node_id="164" Num="1625"/>
+            <Course Disc="HIST" Node_id="165" Num="1708"/>
+            <Course Disc="HIST" Node_id="166" Num="1710"/>
+            <Course Disc="HIST" Node_id="167" Num="1711"/>
+            <Course Disc="HIST" Node_id="168" Num="1735"/>
+            <Course Disc="HIST" Node_id="169" Num="2200"/>
+            <Course Disc="HIST" Node_id="170" Num="2201"/>
+            <Course Disc="HIST" Node_id="171" Num="2205"/>
+            <Course Disc="HIST" Node_id="172" Num="2206"/>
+            <Course Disc="HIST" Node_id="173" Num="2251"/>
+            <Course Disc="HIST" Node_id="174" Num="2252"/>
+            <Course Disc="HIST" Node_id="175" Num="2253"/>
+            <Course Disc="HIST" Node_id="176" Num="2254"/>
+            <Course Disc="HIST" Node_id="177" Num="2256"/>
+            <Course Disc="HIST" Node_id="178" Num="2257"/>
+            <Course Disc="HIST" Node_id="179" Num="2258"/>
+            <Course Disc="HIST" Node_id="180" Num="3705"/>
+            <Course Disc="HIST" Node_id="181" Num="3820"/>
+            <Course Disc="HIST" Node_id="182" Num="3920"/>
+            <Course Disc="HIST" Node_id="183" Num="3921"/>
+            <Course Disc="HIST" Node_id="184" Num="3922"/>
+            <Course Disc="HIST" Node_id="185" Num="3923"/>
+            <Course Disc="HIST" Node_id="186" Num="4925"/>
+            <Course Disc="HUNG" NewDiscipline="Yes" Node_id="187" Num="0100"/>
+            <Course Disc="HUNG" Node_id="188" Num="0200"/>
+            <Course Disc="HUNG" Node_id="189" Num="0299"/>
+            <Course Disc="HUNG" Node_id="190" Num="0300"/>
+            <Course Disc="HUNG" Node_id="191" Num="0400"/>
+            <Course Disc="ITAL" NewDiscipline="Yes" Node_id="192" Num="1320"/>
+            <Course Disc="ITAL" Node_id="193" Num="1322"/>
+            <Course Disc="ITAL" Node_id="194" Num="1440"/>
+            <Course Disc="ITAL" Node_id="195" Num="1890"/>
+            <Course Disc="ITAL" Node_id="196" Num="1900"/>
+            <Course Disc="ITAL" Node_id="197" Num="1920"/>
+            <Course Disc="ITAL" Node_id="198" Num="2200"/>
+            <Course Disc="ITAL" Node_id="199" Num="2201"/>
+            <Course Disc="ITAL" Node_id="200" Num="2204"/>
+            <Course Disc="ITAL" Node_id="201" Num="2500"/>
+            <Course Disc="ITAL" Node_id="202" Num="2510"/>
+            <Course Disc="ITAL" Node_id="203" Num="2520"/>
+            <Course Disc="ITAL" Node_id="204" Num="2522"/>
+            <Course Disc="ITAL" Node_id="205" Num="2550"/>
+            <Course Disc="ITAL" Node_id="206" Num="2600"/>
+            <Course Disc="ITAL" Node_id="207" Num="3060"/>
+            <Course Disc="ITAL" Node_id="208" Num="3080"/>
+            <Course Disc="ITAL" Node_id="209" Num="3250"/>
+            <Course Disc="ITAL" Node_id="210" Num="3300"/>
+            <Course Disc="ITAL" Node_id="211" Num="3330"/>
+            <Course Disc="ITAL" Node_id="212" Num="3335"/>
+            <Course Disc="ITAL" Node_id="213" Num="3401"/>
+            <Course Disc="ITAL" Node_id="214" Num="3402"/>
+            <Course Disc="ITAL" Node_id="215" Num="3403"/>
+            <Course Disc="ITAL" Node_id="216" Num="3404"/>
+            <Course Disc="ITAL" Node_id="217" Num="3405"/>
+            <Course Disc="ITAL" Node_id="218" Num="3406"/>
+            <Course Disc="ITAL" Node_id="219" Num="3407"/>
+            <Course Disc="ITAL" Node_id="220" Num="3408"/>
+            <Course Disc="ITAL" Node_id="221" Num="3409"/>
+            <Course Disc="ITAL" Node_id="222" Num="3410"/>
+            <Course Disc="ITAL" Node_id="223" Num="3411"/>
+            <Course Disc="ITAL" Node_id="224" Num="3412"/>
+            <Course Disc="ITAL" Node_id="225" Num="3413"/>
+            <Course Disc="ITAL" Node_id="226" Num="3414"/>
+            <Course Disc="ITAL" Node_id="227" Num="3415"/>
+            <Course Disc="ITAL" Node_id="228" Num="3416"/>
+            <Course Disc="ITAL" Node_id="229" Num="3417"/>
+            <Course Disc="ITAL" Node_id="230" Num="3418"/>
+            <Course Disc="ITAL" Node_id="231" Num="3419"/>
+            <Course Disc="ITAL" Node_id="232" Num="3420"/>
+            <Course Disc="ITAL" Node_id="233" Num="3501"/>
+            <Course Disc="ITAL" Node_id="234" Num="3502"/>
+            <Course Disc="ITAL" Node_id="235" Num="3503"/>
+            <Course Disc="ITAL" Node_id="236" Num="3504"/>
+            <Course Disc="ITAL" Node_id="237" Num="3505"/>
+            <Course Disc="ITAL" Node_id="238" Num="3506"/>
+            <Course Disc="ITAL" Node_id="239" Num="3507"/>
+            <Course Disc="ITAL" Node_id="240" Num="3508"/>
+            <Course Disc="ITAL" Node_id="241" Num="3509"/>
+            <Course Disc="ITAL" Node_id="242" Num="3510"/>
+            <Course Disc="ITAL" Node_id="243" Num="3511"/>
+            <Course Disc="ITAL" Node_id="244" Num="3512"/>
+            <Course Disc="ITAL" Node_id="245" Num="3513"/>
+            <Course Disc="ITAL" Node_id="246" Num="3514"/>
+            <Course Disc="ITAL" Node_id="247" Num="3515"/>
+            <Course Disc="ITAL" Node_id="248" Num="3516"/>
+            <Course Disc="ITAL" Node_id="249" Num="3517"/>
+            <Course Disc="ITAL" Node_id="250" Num="3518"/>
+            <Course Disc="ITAL" Node_id="251" Num="3519"/>
+            <Course Disc="ITAL" Node_id="252" Num="3520"/>
+            <Course Disc="ITAL" Node_id="253" Num="3820"/>
+            <Course Disc="ITAL" Node_id="254" Num="3830"/>
+            <Course Disc="ITAL" Node_id="255" Num="3999"/>
+            <Course Disc="JWST" NewDiscipline="Yes" Node_id="256" Num="0020"/>
+            <Course Disc="JWST" Node_id="257" Num="0160"/>
+            <Course Disc="JWST" Node_id="258" Num="0260"/>
+            <Course Disc="JWST" Node_id="259" Num="0330"/>
+            <Course Disc="JWST" Node_id="260" Num="0550"/>
+            <Course Disc="JWST" Node_id="261" Num="5650"/>
+            <Course Disc="MUSC" NewDiscipline="Yes" Node_id="262" Num="1321"/>
+            <Course Disc="MUSC" Node_id="263" Num="1322"/>
+            <Course Disc="MUSC" Node_id="264" Num="1325"/>
+            <Course Disc="MUSC" Node_id="265" Num="1326"/>
+            <Course Disc="MUSC" Node_id="266" Num="1430"/>
+            <Course Disc="MUSC" HideFromAdvice="Yes" Node_id="267" Num="2300">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2026</Value>
+              </With>
+            </Course>
+            <Course Disc="PHIL" NewDiscipline="Yes" Node_id="268" Num="3435"/>
+            <Course Disc="PHIL" Node_id="269" Num="4181"/>
+            <Course Disc="PHIL" Node_id="270" Num="4182"/>
+            <Course Disc="PHIL" Node_id="271" Num="4191"/>
+            <Course Disc="PLSH" NewDiscipline="Yes" Node_id="272" Num="0100"/>
+            <Course Disc="PLSH" Node_id="273" Num="0200"/>
+            <Course Disc="PLSH" Node_id="274" Num="0201"/>
+            <Course Disc="PLSH" Node_id="275" Num="0300"/>
+            <Course Disc="PLSH" Node_id="276" Num="0400"/>
+            <Course Disc="PLSH" Node_id="277" Num="0401"/>
+            <Course Disc="PSCI" NewDiscipline="Yes" Node_id="278" Num="0102"/>
+            <Course Disc="PSCI" Node_id="279" Num="0401"/>
+            <Course Disc="PSCI" Node_id="280" Num="1170"/>
+            <Course Disc="PSCI" Node_id="281" Num="1172"/>
+            <Course Disc="PSCI" Node_id="282" Num="3170"/>
+            <Course Disc="REES" NewDiscipline="Yes" Node_id="283" Num="0130"/>
+            <Course Disc="REES" Node_id="284" Num="0131"/>
+            <Course Disc="REES" Node_id="285" Num="0150"/>
+            <Course Disc="REES" Node_id="286" Num="0170"/>
+            <Course Disc="REES" Node_id="287" Num="0171"/>
+            <Course Disc="REES" Node_id="288" Num="0190"/>
+            <Course Disc="REES" Node_id="289" Num="0311"/>
+            <Course Disc="REES" Node_id="290" Num="0410"/>
+            <Course Disc="REES" Node_id="291" Num="0430"/>
+            <Course Disc="REES" Node_id="292" Num="0471"/>
+            <Course Disc="REES" Node_id="293" Num="0479"/>
+            <Course Disc="REES" Node_id="294" Num="0480"/>
+            <Course Disc="REES" Node_id="295" Num="0481"/>
+            <Course Disc="REES" Node_id="296" Num="0630"/>
+            <Course Disc="REES" Node_id="297" Num="1230"/>
+            <Course Disc="REES" Node_id="298" Num="1370"/>
+            <Course Disc="REES" Node_id="299" Num="1380"/>
+            <Course Disc="REES" Node_id="300" Num="1470"/>
+            <Course Disc="REES" Node_id="301" Num="1530"/>
+            <Course Disc="REES" Node_id="302" Num="1531"/>
+            <Course Disc="REES" Node_id="303" Num="1535"/>
+            <Course Disc="REES" Node_id="304" Num="1570"/>
+            <Course Disc="REES" Node_id="305" Num="1630"/>
+            <Course Disc="REES" Node_id="306" Num="1670"/>
+            <Course Disc="REES" Node_id="307" Num="1680"/>
+            <Course Disc="RELS" NewDiscipline="Yes" Node_id="308" Num="5010"/>
+            <Course Disc="SPAN" NewDiscipline="Yes" Node_id="309" Num="1300"/>
+            <Course Disc="SPAN" Node_id="310" Num="3200"/>
+            <Course Disc="SPAN" Node_id="311" Num="3350"/>
+            <Course Disc="SPAN" Node_id="312" Num="3400"/>
+            <Course Disc="SPAN" Node_id="313" Num="3402"/>
+            <Course Disc="SPAN" Node_id="314" Num="3404"/>
+            <Course Disc="SPAN" Node_id="315" Num="3430"/>
+            <Course Disc="SPAN" Node_id="316" Num="3432"/>
+            <Course Disc="SPAN" Node_id="317" Num="3434"/>
+            <Course Disc="SPAN" Node_id="318" Num="3500"/>
+            <Course Disc="SPAN" Node_id="319" Num="3502"/>
+            <Course Disc="SPAN" Node_id="320" Num="3504"/>
+            <Course Disc="SWED" NewDiscipline="Yes" Node_id="321" Num="0100"/>
+            <Course Disc="SWED" Node_id="322" Num="0200"/>
+            <Course Disc="SWED" Node_id="323" Num="0300"/>
+            <Course Disc="SWED" Node_id="324" Num="0400"/>
+            <Course Disc="UKRN" NewDiscipline="Yes" Node_id="325" Num="0100"/>
+            <Course Disc="UKRN" Node_id="326" Num="0200"/>
+            <Course Disc="UKRN" Node_id="327" Num="0300"/>
+            <Course Disc="UKRN" Node_id="328" Num="0400"/>
+            <Course Disc="YDSH" NewDiscipline="Yes" Node_id="329" Num="0100"/>
+            <Course Disc="YDSH" Node_id="330" Num="0200"/>
+            <Course Disc="YDSH" Node_id="331" Num="0300"/>
+            <Course Disc="YDSH" Node_id="332" Num="0400"/>
+            <Course Disc="YDSH" Node_id="333" Num="0550"/>
+            <Course Disc="FREN" HideFromAdvice="Yes" NewDiscipline="Yes" Node_id="334" Num="2170">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2025</Value>
+              </With>
+            </Course>
+            <Course Disc="FREN" HideFromAdvice="Yes" Node_id="335" Num="2280">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2025</Value>
+              </With>
+            </Course>
+            <Course Disc="FREN" HideFromAdvice="Yes" Node_id="336" Num="3100">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2026</Value>
+              </With>
+            </Course>
+            <Course Disc="FREN" HideFromAdvice="Yes" Node_id="337" Num="3130">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2025</Value>
+              </With>
+            </Course>
+            <Course Disc="FREN" HideFromAdvice="Yes" Node_id="338" Num="3290">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2025</Value>
+              </With>
+            </Course>
+            <Course Disc="GRMN" HideFromAdvice="Yes" NewDiscipline="Yes" Node_id="339" Num="0016">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2026</Value>
+              </With>
+            </Course>
+            <Course Disc="GRMN" HideFromAdvice="Yes" Node_id="340" Num="0017">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2026</Value>
+              </With>
+            </Course>
+            <Course Disc="GRMN" HideFromAdvice="Yes" Node_id="341" Num="1015">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2026</Value>
+              </With>
+            </Course>
+            <Course Disc="GRMN" HideFromAdvice="Yes" Node_id="342" Num="1153">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2026</Value>
+              </With>
+            </Course>
+            <Course Disc="GRMN" HideFromAdvice="Yes" Node_id="343" Num="1300">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2026</Value>
+              </With>
+            </Course>
+            <Course Disc="GRMN" HideFromAdvice="Yes" Node_id="344" Num="3210">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2026</Value>
+              </With>
+            </Course>
+            <Course Disc="GRMN" HideFromAdvice="Yes" Node_id="345" Num="3212">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2026</Value>
+              </With>
+            </Course>
+            <Course Disc="GRMN" HideFromAdvice="Yes" Node_id="346" Num="3220">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2026</Value>
+              </With>
+            </Course>
+            <Course Disc="GRMN" HideFromAdvice="Yes" Node_id="347" Num="3221">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2026</Value>
+              </With>
+            </Course>
+            <Course Disc="GRMN" HideFromAdvice="Yes" Node_id="348" Num="3260">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2026</Value>
+              </With>
+            </Course>
+            <Course Disc="GRMN" HideFromAdvice="Yes" Node_id="349" Num="3265">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2026</Value>
+              </With>
+            </Course>
+            <Course Disc="HIST" HideFromAdvice="Yes" NewDiscipline="Yes" Node_id="350" Num="0255">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2025</Value>
+              </With>
+            </Course>
+            <Course Disc="HIST" HideFromAdvice="Yes" Node_id="351" Num="0270">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2025</Value>
+              </With>
+            </Course>
+            <Course Disc="HIST" HideFromAdvice="Yes" Node_id="352" Num="1220">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2025</Value>
+              </With>
+            </Course>
+            <Course Disc="HIST" HideFromAdvice="Yes" Node_id="353" Num="1221">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2025</Value>
+              </With>
+            </Course>
+            <Course Disc="HIST" HideFromAdvice="Yes" Node_id="354" Num="1275">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2026</Value>
+              </With>
+            </Course>
+            <Course Disc="HIST" HideFromAdvice="Yes" Node_id="355" Num="1690">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2026</Value>
+              </With>
+            </Course>
+            <Course Disc="HIST" HideFromAdvice="Yes" Node_id="356" Num="2250">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2025</Value>
+              </With>
+            </Course>
+            <Course Disc="ITAL" HideFromAdvice="Yes" NewDiscipline="Yes" Node_id="357" Num="2512">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2026</Value>
+              </With>
+            </Course>
+            <Course Disc="ITAL" HideFromAdvice="Yes" Node_id="358" Num="2540">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2025</Value>
+              </With>
+            </Course>
+            <Course Disc="ITAL" HideFromAdvice="Yes" Node_id="359" Num="2541">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2025</Value>
+              </With>
+            </Course>
+            <Course Disc="ITAL" HideFromAdvice="Yes" Node_id="360" Num="2950">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2026</Value>
+              </With>
+            </Course>
+            <Course Disc="ITAL" HideFromAdvice="Yes" Node_id="361" Num="3328">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2026</Value>
+              </With>
+            </Course>
+            <Course Disc="ITAL" HideFromAdvice="Yes" Node_id="362" Num="3610">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2025</Value>
+              </With>
+            </Course>
+            <Course Disc="ITAL" HideFromAdvice="Yes" Node_id="363" Num="3612">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2025</Value>
+              </With>
+            </Course>
+            <Course Disc="COML" HideFromAdvice="Yes" NewDiscipline="Yes" Node_id="364" Num="1050">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2025</Value>
+              </With>
+            </Course>
+            <Course Disc="RELS" HideFromAdvice="Yes" NewDiscipline="Yes" Node_id="365" Num="5340">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2026</Value>
+              </With>
+            </Course>
+            <Course Disc="SPAN" HideFromAdvice="Yes" NewDiscipline="Yes" Node_id="366" Num="3406">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2026</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="2" Connector=", ">
+            <Course Credits="1" Disc="BCS" NewDiscipline="Yes" Num="0100" Title="Bosnian-Croatian-Serbian I"/>
+            <Course Credits="1" Disc="BCS" Num="0200" Title="Bosnian-Croatian-Serbian II"/>
+            <Course Credits="1" Disc="BCS" Num="0300" Title="Bosnian-Croatian-Serbian III"/>
+            <Course Credits="1" Disc="BCS" Num="0400" Title="Bosnian-Croatian-Serbian IV"/>
+            <Course Credits="0" CrossListed="Parent" Disc="COML" NewDiscipline="Yes" Num="1010" Title="Freud" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="1" CrossListed="Parent" Disc="COML" Num="1020" Title="Marx"/>
+            <Course Credits="1" CrossListed="Parent" Disc="COML" Num="1030" Title="Nietzsche&apos;s Modernity"/>
+            <Course Credits="0" CrossListed="Parent" Disc="COML" Num="1071" Title="Fascist Cinemas" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="1" CrossListed="Parent" Disc="COML" Num="1080" Title="German Cinema"/>
+            <Course Credits="1" CrossListed="Parent" Disc="COML" Num="2011" Title="Lit of Dissent Poland &amp; Czech"/>
+            <Course Credits="1" CrossListed="Parent" Disc="COML" Num="2251" Title="Machiavelli &amp; Mod Pol Thought"/>
+            <Course Credits="1" Disc="CZCH" NewDiscipline="Yes" Num="0010" Title="Czech Through Film"/>
+            <Course Credits="1" Disc="CZCH" Num="0100" Title="Czech I"/>
+            <Course Credits="1" Disc="CZCH" Num="0120" Title="Czech - Short Stories"/>
+            <Course Credits="1" Disc="CZCH" Num="0200" Title="Czech II"/>
+            <Course Credits="1" Disc="CZCH" Num="0300" Title="Czech III"/>
+            <Course Credits="1" Disc="CZCH" Num="0400" Title="Czech IV"/>
+            <Course Credits="1" Disc="FREN" NewDiscipline="Yes" Num="1226" Title="Fren Hist/Cltr to 1774"/>
+            <Course Credits="1" Disc="FREN" Num="1227" Title="Fren Hist/Cltr 1789-1945"/>
+            <Course Credits="1" Disc="FREN" Num="1228" Title="Contemporary France"/>
+            <Course Credits="0" CrossListed="Parent" Disc="FREN" Num="1230" Title="Masterpieces of French Cinema" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="1" CrossListed="Parent" Disc="FREN" Num="1231" Title="Fren Lit: Love &amp; Passion"/>
+            <Course Credits="1" CrossListed="Parent" Disc="FREN" Num="1232" Title="Fren Lit: Indiv/Society"/>
+            <Course Credits="1" Disc="FREN" Num="1233" Title="Francophone Lit And Film"/>
+            <Course Credits="1" Disc="FREN" Num="2130" Title="French For Business I"/>
+            <Course Credits="1" Disc="FREN" Num="2140" Title="French for Business II"/>
+            <Course Credits="1" Disc="FREN" Num="2250" Title="Paris during the Occupation"/>
+            <Course Credits="1" CrossListed="Parent" Disc="FREN" Num="2500" Title="The Novel and Marriage"/>
+            <Course Credits="1" CrossListed="Parent" Disc="FREN" Num="3010" Title="French Identity"/>
+            <Course Credits="1" Disc="FREN" Num="3080" Title="Topics in French Culture"/>
+            <Course Credits="1" CrossListed="Parent" Disc="FREN" Num="3110" Title="French Thought After 1968"/>
+            <Course Credits="1" Disc="FREN" Num="3220" Title="France &amp; the European Union"/>
+            <Course Credits="1" Disc="FREN" Num="3250" Title="Advan French: Translation"/>
+            <Course Credits="1" Disc="FREN" Num="3300" Title="Medieval Literature"/>
+            <Course Credits="1" CrossListed="Parent" Disc="FREN" Num="3600" Title="The Enlightenment"/>
+            <Course Credits="1" Disc="FREN" Num="3700" Title="Fr Lit of the 19th C"/>
+            <Course Credits="1" Disc="FREN" Num="3800" Title="Lit of the 20th Cent"/>
+            <Course Credits="1" Disc="FREN" Num="3810" Title="Intro to Zoopoetics"/>
+            <Course Credits="0" CrossListed="Parent" Disc="FREN" Num="3820" Title="Horror Cinema" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="1" CrossListed="Parent" Disc="FREN" Num="3830" Title="Fren &amp; Ital Modrn Horror"/>
+            <Course Credits="1" Disc="FREN" Num="3840" Title="Fr Novel of 20th Cent"/>
+            <Course Credits="1" Disc="FREN" Num="3850" Title="Modern French Theater"/>
+            <Course Credits="0" CrossListed="Parent" Disc="FREN" Num="3860" Title="Paris in Film" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="1" Disc="FREN" Num="3890" Title="France and its Others"/>
+            <Course Credits="1" Disc="GRMN" NewDiscipline="Yes" Num="0013" Title="Euro Zone Crisis"/>
+            <Course Credits="0" CrossListed="Parent" Disc="GRMN" Num="1010" Title="Freud" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="1" CrossListed="Parent" Disc="GRMN" Num="1020" Title="Marx"/>
+            <Course Credits="1" CrossListed="Parent" Disc="GRMN" Num="1030" Title="Nietzsche&apos;s Modernity"/>
+            <Course Credits="0" CrossListed="Parent" Disc="GRMN" Num="1040" Title="Berlin: Hist Pol Culture" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="1" CrossListed="Parent" Disc="GRMN" Num="1050" Title="Metropolis: Cultr of City"/>
+            <Course Credits="0" CrossListed="Parent" Disc="GRMN" Num="1060" Title="Fantastic/Uncanny In Lit" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="0" CrossListed="Parent" Disc="GRMN" Num="1070" Title="Fascist Cinemas" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="1" CrossListed="Parent" Disc="GRMN" Num="1080" Title="German Cinema"/>
+            <Course Credits="1" CrossListed="Parent" Disc="GRMN" Num="1090" Title="Jewish Films &amp; Lit"/>
+            <Course Credits="1" CrossListed="Parent" Disc="GRMN" Num="1146" Title="Queer German Cinema"/>
+            <Course Credits="1" CrossListed="Parent" Disc="GRMN" Num="1150" Title="Cultrs of Sustainability"/>
+            <Course Credits="1" CrossListed="Parent" Disc="GRMN" Num="1151" Title="ResilienceSustainabilityNL&amp;US"/>
+            <Course Credits="0" CrossListed="Parent" Disc="GRMN" Num="1301" Title="Northern Renaissance Art" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="1" CrossListed="Parent" Disc="GRMN" Num="1304" Title="Modernism Seminar"/>
+            <Course Credits="0" CrossListed="Parent" Disc="GRMN" Num="1306" Title="Origins of Nazism" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="1" Disc="GRMN" Num="1500" Title="Texts and Contexts"/>
+            <Course Credits="1" Disc="GRMN" Num="1510" Title="Handschrift-Hypertext"/>
+            <Course Credits="1" Disc="GRMN" Num="2190" Title="German Business World"/>
+            <Course Credits="1" Disc="GRMN" Num="2290" Title="Business German: Micro"/>
+            <Course Credits="1" CrossListed="Parent" Disc="GRMN" Num="2300" Title="Topics in Dutch Studies"/>
+            <Course Credits="1" Disc="GRMN" Num="3110" Title="Handschrift-Hypertext"/>
+            <Course Credits="1" Disc="GRMN" Num="3120" Title="Places of Memory"/>
+            <Course Credits="1" Disc="GRMN" Num="3215" Title="German Youth Cultures"/>
+            <Course Credits="1" Disc="GRMN" Num="3240" Title="Crime and Detection"/>
+            <Course Credits="1" Disc="GRMN" Num="3250" Title="Theater and Language"/>
+            <Course Credits="1" Disc="GRMN" Num="3270" Title="German Lit After 1945"/>
+            <Course Credits="1" Disc="GRMN" Num="3273" Title="Critical Christa Wolf"/>
+            <Course Credits="1" Disc="GRMN" Num="3280" Title="Decadence"/>
+            <Course Credits="1" Disc="GRMN" Num="3290" Title="Topics in German Culture"/>
+            <Course Credits="1" CrossListed="Parent" Disc="GRMN" Num="5250" Title="Schelling, Goethe, Nature"/>
+            <Course Credits="1" CrossListed="Parent" Disc="GRMN" Num="5260" Title="The Trouble with Freud"/>
+            <Course Credits="1" Disc="GLBS" NewDiscipline="Yes" Num="3800" Title="Portraits of Contemp Russia"/>
+            <Course Credits="1" Disc="HIST" NewDiscipline="Yes" Num="0220" Title="Britain to 1700"/>
+            <Course Credits="0" CrossListed="Parent" Disc="HIST" Num="0240" Title="Rise &amp; Fall of Russ Emp" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="0" CrossListed="Parent" Disc="HIST" Num="0290" Title="The Soviet Cent 1917-91" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="0310" Title="Ottoman Empire"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="0600" Title="Early Mod Atlantic World"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="0723" Title="The Enlightenment"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="0724" Title="Portraits of Old Rus"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="0725" Title="National Antiquities"/>
+            <Course Credits="0" CrossListed="Parent" Disc="HIST" Num="0820" Title="Freud" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="0" CrossListed="Parent" Disc="HIST" Num="0821" Title="Berlin: Hist Pol Culture" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="0823" Title="Portraits 19c Russian Society"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="0824" Title="Russia and the West"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="0825" Title="Portraits of Soviet Society"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="1200" Title="Foundations Euro Thought"/>
+            <Course Credits="1" Disc="HIST" Num="1201" Title="Foundations of Law"/>
+            <Course Credits="1" Disc="HIST" Num="1205" Title="Reading the Classics"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="1610" Title="Med &amp; Early Mod Jewry"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="1620" Title="Rise&amp;Fall of Spanish Emp"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="1625" Title="Era of Revolutions in Atlantic"/>
+            <Course Credits="1" Disc="HIST" Num="1708" Title="Rev Ideas, Ideologies of Rev"/>
+            <Course Credits="0" CrossListed="Parent" Disc="HIST" Num="1710" Title="Jews in the Modern World" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="1711" Title="Remembering the Holocaust"/>
+            <Course Credits="0" CrossListed="Parent" Disc="HIST" Num="1735" Title="Cold War: Global History" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="2200" Title="Florence in History"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="2201" Title="The City of Rome"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="2205" Title="Relig Conflict &amp; Coexistence"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="2206" Title="Neighbors and Strangers"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="2251" Title="Machiavelli &amp; Mod Pol Thought"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="2252" Title="Euro Intellct Since 1945"/>
+            <Course Credits="1" Disc="HIST" Num="2253" Title="Human Rights and History"/>
+            <Course Credits="1" Disc="HIST" Num="2254" Title="World War I"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="2256" Title="Russian Revolutions 1905-1924"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="2257" Title="Russia 20C: Hist Through Lit"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="2258" Title="French Though Since 1945"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="3705" Title="Jews and the City"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="3820" Title="Renaissance Europe"/>
+            <Course Credits="1" Disc="HIST" Num="3920" Title="Euro Diplo History 1789 - 1914"/>
+            <Course Credits="1" Disc="HIST" Num="3921" Title="European Int&apos;l Rel 1914-pres"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="3922" Title="Euro Thought &amp; Cult Age of Rev"/>
+            <Course Credits="1" CrossListed="Parent" Disc="HIST" Num="3923" Title="20th Cent Eur Intel Hist"/>
+            <Course Credits="1" Disc="HIST" Num="4925" Title="Ind Stdy: Eur After 1800"/>
+            <Course Credits="1" Disc="HUNG" NewDiscipline="Yes" Num="0100" Title="Hungarian I"/>
+            <Course Credits="1" Disc="HUNG" Num="0200" Title="Hungarian II"/>
+            <Course Credits="1" Disc="HUNG" Num="0299" Title="Independent Study"/>
+            <Course Credits="1" Disc="HUNG" Num="0300" Title="Hungarian III"/>
+            <Course Credits="1" Disc="HUNG" Num="0400" Title="Hungarian IV"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" NewDiscipline="Yes" Num="1320" Title="Composers"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="1322" Title="Composers"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="1440" Title="Film Music Post 1950 Italy"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="1890" Title="Best Sellers in Italian Lit"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="1900" Title="Italian Hist on Screen"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="1920" Title="Ital Hist on Table"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="2200" Title="Florence in History"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="2201" Title="The City of Rome"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="2204" Title="Food and Diet in Early Europe"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="2500" Title="Cultura E Letteratura"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="2510" Title="Black Italy"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="2520" Title="Contemporary Italy"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="2522" Title="Modern Italian Culture"/>
+            <Course Credits="0" CrossListed="Parent" Disc="ITAL" Num="2550" Title="Michelangelo Ital Ren" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="2600" Title="Italian Theater"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3060" Title="Mafia in the Movies"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3080" Title="Soccer Beyond the Field"/>
+            <Course Credits="1" Disc="ITAL" Num="3250" Title="Italian Ecologies"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3300" Title="Eras &amp; Topics Early Period"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3330" Title="Dante&apos;s Divine Comedy"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3335" Title="Benjamin Franklin Seminar"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3401" Title="Contemporary Italy"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3402" Title="Italian Film and Media Studies"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3403" Title="Race and Ethnicity in Italy"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3404" Title="Italian Gender Studies"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3405" Title="Italian Fashion"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3406" Title="Italian Visual Studies"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3407" Title="Italian Foods and Cultures"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3408" Title="Italian Literature"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3409" Title="Italian Innovations"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3410" Title="Italian Renaissance Studies"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3411" Title="Mediterranean Studies"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3412" Title="Italian Performance Studies"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3413" Title="Italian Science and Philosophy"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3414" Title="Italian Material Studies"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3415" Title="Italian Digital Humanities"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3416" Title="Boccaccio"/>
+            <Course Credits="1" Disc="ITAL" Num="3417" Title="Machiavelli"/>
+            <Course Credits="1" Disc="ITAL" Num="3418" Title="Petrarch"/>
+            <Course Credits="1" Disc="ITAL" Num="3419" Title="Italian Music"/>
+            <Course Credits="1" Disc="ITAL" Num="3420" Title="Italian Histories"/>
+            <Course Credits="1" Disc="ITAL" Num="3501" Title="Contemporary Italy"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3502" Title="Italian Film and Media Studies"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3503" Title="Race and Ethnicity in Italy"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3504" Title="Italian Gender Studies"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3505" Title="Italian Fashion"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3506" Title="Italian Visual Studies"/>
+            <Course Credits="1" Disc="ITAL" Num="3507" Title="Italian Foods and Cultures"/>
+            <Course Credits="1" Disc="ITAL" Num="3508" Title="Italian Literature"/>
+            <Course Credits="1" Disc="ITAL" Num="3509" Title="Italian Innovations"/>
+            <Course Credits="1" Disc="ITAL" Num="3510" Title="Italian Renaissance Studies"/>
+            <Course Credits="1" Disc="ITAL" Num="3511" Title="Mediterreanean Studies"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3512" Title="Italian Performance Studies"/>
+            <Course Credits="1" Disc="ITAL" Num="3513" Title="Italian Science and Philosophy"/>
+            <Course Credits="1" Disc="ITAL" Num="3514" Title="Italian Material Studies"/>
+            <Course Credits="1" Disc="ITAL" Num="3515" Title="Italian Digital Humanities"/>
+            <Course Credits="1" Disc="ITAL" Num="3516" Title="Boccaccio"/>
+            <Course Credits="1" Disc="ITAL" Num="3517" Title="Machiavelli"/>
+            <Course Credits="1" Disc="ITAL" Num="3518" Title="Petrarch"/>
+            <Course Credits="1" Disc="ITAL" Num="3519" Title="Italian Music"/>
+            <Course Credits="1" Disc="ITAL" Num="3520" Title="Italian Histories"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3820" Title="Renaissance Europe"/>
+            <Course Credits="1" CrossListed="Parent" Disc="ITAL" Num="3830" Title="Fren &amp; Ital Modrn Horror"/>
+            <Course Credits="1" Disc="ITAL" Num="3999" Title="Independent Study"/>
+            <Course Credits="1" CrossListed="Parent" Disc="JWST" NewDiscipline="Yes" Num="0020" Title="Religions of the West"/>
+            <Course Credits="1" CrossListed="Parent" Disc="JWST" Num="0160" Title="Beginning Yiddish I"/>
+            <Course Credits="1" CrossListed="Parent" Disc="JWST" Num="0260" Title="Beginning Yiddish II"/>
+            <Course Credits="1" CrossListed="Parent" Disc="JWST" Num="0330" Title="Themes Jewish Tradition"/>
+            <Course Credits="1" CrossListed="Parent" Disc="JWST" Num="0550" Title="Rdgs In Mod Yiddish Lit"/>
+            <Course Credits="1" CrossListed="Parent" Disc="JWST" Num="5650" Title="Benjamin On Kafka"/>
+            <Course Credits="1" Disc="MUSC" NewDiscipline="Yes" Num="1321" Title="Composers"/>
+            <Course Credits="1" CrossListed="Parent" Disc="MUSC" Num="1322" Title="Composers"/>
+            <Course Credits="1" Disc="MUSC" Num="1325" Title="Composers"/>
+            <Course Credits="1" Disc="MUSC" Num="1326" Title="Composers"/>
+            <Course Credits="1" CrossListed="Parent" Disc="MUSC" Num="1430" Title="History of Opera"/>
+            <Course Credits="1" Disc="PHIL" NewDiscipline="Yes" Num="3435" Title="The Philosophy of Marx"/>
+            <Course Credits="1" Disc="PHIL" Num="4181" Title="Kant I"/>
+            <Course Credits="1" Disc="PHIL" Num="4182" Title="Kant II"/>
+            <Course Credits="1" Disc="PHIL" Num="4191" Title="Hegel"/>
+            <Course Credits="1" Disc="PLSH" NewDiscipline="Yes" Num="0100" Title="Polish I"/>
+            <Course Credits="1" Disc="PLSH" Num="0200" Title="Polish II"/>
+            <Course Credits="1" Disc="PLSH" Num="0201" Title="Polish for Heritage Speakers 1"/>
+            <Course Credits="1" Disc="PLSH" Num="0300" Title="Polish III"/>
+            <Course Credits="1" Disc="PLSH" Num="0400" Title="Polish IV"/>
+            <Course Credits="1" Disc="PLSH" Num="0401" Title="Polish for Heritage Speakers 2"/>
+            <Course Credits="1" CrossListed="Parent" Disc="PSCI" NewDiscipline="Yes" Num="0102" Title="Communism"/>
+            <Course Credits="1" CrossListed="Parent" Disc="PSCI" Num="0401" Title="Russia &amp; E Euro Int&apos;l Affairs"/>
+            <Course Credits="0" Disc="PSCI" Num="1170" Title="Pol of Postwar Western Eur" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="0" CrossListed="Parent" Disc="PSCI" Num="1172" Title="Russian Politics" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="1" Disc="PSCI" Num="3170" Title="Politics of the Welfare State"/>
+            <Course Credits="1" CrossListed="Parent" Disc="REES" NewDiscipline="Yes" Num="0130" Title="Portraits of Soviet Society"/>
+            <Course Credits="1" Disc="REES" Num="0131" Title="Putin&apos;s Russia"/>
+            <Course Credits="1" Disc="REES" Num="0150" Title="Prague: Making European Nation"/>
+            <Course Credits="1" Disc="REES" Num="0170" Title="Europe: From Idea to Union"/>
+            <Course Credits="1" CrossListed="Parent" Disc="REES" Num="0171" Title="The Socialist City"/>
+            <Course Credits="1" CrossListed="Parent" Disc="REES" Num="0190" Title="Russia and the West"/>
+            <Course Credits="0" CrossListed="Parent" Disc="REES" Num="0311" Title="The Soviet Cent 1917-91" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="1" Disc="REES" Num="0410" Title="Masterpieces 19c Russian Lit"/>
+            <Course Credits="1" Disc="REES" Num="0430" Title="Masterpieces 20c Russian Lit"/>
+            <Course Credits="1" Disc="REES" Num="0471" Title="Russian Short Story"/>
+            <Course Credits="1" CrossListed="Parent" Disc="REES" Num="0479" Title="Lit of Dissent Poland &amp; Czech"/>
+            <Course Credits="1" CrossListed="Parent" Disc="REES" Num="0480" Title="Dostoevsky"/>
+            <Course Credits="1" CrossListed="Parent" Disc="REES" Num="0481" Title="Tolstoy"/>
+            <Course Credits="1" CrossListed="Parent" Disc="REES" Num="0630" Title="Behind the Iron Curtain"/>
+            <Course Credits="1" CrossListed="Parent" Disc="REES" Num="1230" Title="Russ &amp; E Euro Film 1917-1945"/>
+            <Course Credits="0" CrossListed="Parent" Disc="REES" Num="1370" Title="Cold War: Global History" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="1" CrossListed="Parent" Disc="REES" Num="1380" Title="Tolstoy?s War and Peace"/>
+            <Course Credits="1" CrossListed="Parent" Disc="REES" Num="1470" Title="Chekhov Stage &amp; Screen"/>
+            <Course Credits="1" CrossListed="Parent" Disc="REES" Num="1530" Title="Communism"/>
+            <Course Credits="1" CrossListed="Parent" Disc="REES" Num="1531" Title="Socialism"/>
+            <Course Credits="0" CrossListed="Parent" Disc="REES" Num="1535" Title="Russian Politics" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="1" CrossListed="Parent" Disc="REES" Num="1570" Title="Russia &amp; E Euro Int&apos;l Affairs"/>
+            <Course Credits="1" Disc="REES" Num="1630" Title="Soviet &amp; Post-Soviet Economy"/>
+            <Course Credits="1" CrossListed="Parent" Disc="REES" Num="1670" Title="Population &amp; Public Health"/>
+            <Course Credits="1" CrossListed="Parent" Disc="REES" Num="1680" Title="Sex and Socialism"/>
+            <Course Credits="1" Disc="RELS" NewDiscipline="Yes" Num="5010" Title="Sacred in Medieval Europe"/>
+            <Course Credits="1" Disc="SPAN" NewDiscipline="Yes" Num="1300" Title="Span Culture&amp;Civilizatio"/>
+            <Course Credits="1" Disc="SPAN" Num="3200" Title="Spanish Middle Ages"/>
+            <Course Credits="1" Disc="SPAN" Num="3350" Title="Don Quijote"/>
+            <Course Credits="1" Disc="SPAN" Num="3400" Title="Span Lit &amp; Culture: 1700-Pres"/>
+            <Course Credits="1" Disc="SPAN" Num="3402" Title="The Don Juan Myth"/>
+            <Course Credits="1" Disc="SPAN" Num="3404" Title="The Spanish Short Story"/>
+            <Course Credits="1" Disc="SPAN" Num="3430" Title="Studies Mod &amp; Contemp Span Lit"/>
+            <Course Credits="1" Disc="SPAN" Num="3432" Title="The Generation of 1898"/>
+            <Course Credits="1" Disc="SPAN" Num="3434" Title="Post-Franco Women&apos;s Narrative"/>
+            <Course Credits="1" Disc="SPAN" Num="3500" Title="Studies: Mod &amp; Cntmp Span Cult"/>
+            <Course Credits="1" Disc="SPAN" Num="3502" Title="The Spanish Avant-Garde"/>
+            <Course Credits="1" Disc="SPAN" Num="3504" Title="Spanish Surrealism: Dali"/>
+            <Course Credits="1" Disc="SWED" NewDiscipline="Yes" Num="0100" Title="Elementary Swedish I"/>
+            <Course Credits="1" Disc="SWED" Num="0200" Title="Elementary Swedish II"/>
+            <Course Credits="1" Disc="SWED" Num="0300" Title="Intermediate Swedish I"/>
+            <Course Credits="1" Disc="SWED" Num="0400" Title="Intermediate Swedish II"/>
+            <Course Credits="1" Disc="UKRN" NewDiscipline="Yes" Num="0100" Title="Ukrainian I"/>
+            <Course Credits="1" Disc="UKRN" Num="0200" Title="Ukrainian II"/>
+            <Course Credits="1" Disc="UKRN" Num="0300" Title="Ukrainian III"/>
+            <Course Credits="1" Disc="UKRN" Num="0400" Title="Ukrainian IV"/>
+            <Course Credits="1" CrossListed="Parent" Disc="YDSH" NewDiscipline="Yes" Num="0100" Title="Beginning Yiddish I"/>
+            <Course Credits="1" CrossListed="Parent" Disc="YDSH" Num="0200" Title="Beginning Yiddish II"/>
+            <Course Credits="1" CrossListed="Parent" Disc="YDSH" Num="0300" Title="Intermediate Yiddish I"/>
+            <Course Credits="1" CrossListed="Parent" Disc="YDSH" Num="0400" Title="Intermediate Yiddish II"/>
+            <Course Credits="1" CrossListed="Parent" Disc="YDSH" Num="0550" Title="Rdgs In Mod Yiddish Lit"/>
+          </Advice>
+        </Rule>
+      </Block>
+      <Clsinfo/>
+      <Fallthrough Classes="0" Credits="0" Noncourses="0"/>
+      <OTL Classes="0" Credits="0"/>
+      <Insufficient Classes="0" Credits="0"/>
+      <In_progress Classes="0" Credits="0"/>
+      <FitList/>
+      <SplitCredits Classes="0" Credits="0"/>
+      <Deginfo>
+        <DegreeData Actv_term="" Actv_termLit="" Cat_yr="9999" Cat_yrLit="End of Time" Degree="BA" DegreeLit="Bachelor of Arts" DegreeSource="  " Degree_term="" SS_cum_cr_earn="        " SS_cum_gpa="        " SS_cum_gr_att="        " SS_cum_gr_pts="        " SS_cum_tot_earn="        " School="UG" SchoolLit="Undergraduate" Stu_level="  " Stu_levelLit="  "/>
+        <Goal Cat_yr="9999" Code="COLLEGE" Value="AU" ValueLit="College of Arts &amp; Sciences AU"/>
+        <Goal Cat_yr="9999" Code="PROGRAM" Value="AU_BA_HUNTS" ValueLit="Dual Degree - Huntsman - BA - Arts &amp; Sciences"/>
+        <Goal Cat_yr="9999" Code="MINOR" Value="EURO" ValueLit="European Studies"/>
+      </Deginfo>
+      <ExceptionList/>
+      <Notes/>
+      <Flags>
+        <CFG020DAP14>Y Y 05NNYNYY            NYYNY                             YNNN2YNNYYY05YYYYNYYNN    </CFG020DAP14>
+        <CFG020TIEBREAK>01H02H03H04H05N06N07N08N09N                                                                         </CFG020TIEBREAK>
+      </Flags>
+    </Audit>
+  </Report>
+

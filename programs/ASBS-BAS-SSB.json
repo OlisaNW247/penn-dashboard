@@ -1,0 +1,17 @@
+{
+ "key": "789",
+ "prog_code": "ASBS-BAS-SSB",
+ "prog_name": "Appl Science-Biomed Science BAS (Systems and Synthetic Biology)",
+ "prog_type": "conc",
+ "prog_parent": "ASBS-BAS",
+ "levl_code": "UG",
+ "degc_code": "BAS",
+ "majr_code": "ASBS",
+ "minr_code": "",
+ "conc_code": "SSB",
+ "coll_code": "EU",
+ "dept_code": "",
+ "sis_prog_code": "EU_BAS",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

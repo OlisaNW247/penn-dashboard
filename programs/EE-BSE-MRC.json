@@ -1,0 +1,17 @@
+{
+ "key": "864",
+ "prog_code": "EE-BSE-MRC",
+ "prog_name": "Electrical Engineering BSE (Mixed-Signal & RF Intgr Circts)",
+ "prog_type": "conc",
+ "prog_parent": "EE-BSE",
+ "levl_code": "UG",
+ "degc_code": "BSE",
+ "majr_code": "EE",
+ "minr_code": "",
+ "conc_code": "MRC",
+ "coll_code": "EU",
+ "dept_code": "",
+ "sis_prog_code": "EU_BSE",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

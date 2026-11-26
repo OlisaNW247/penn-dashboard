@@ -1,0 +1,17 @@
+{
+ "key": "861",
+ "prog_code": "EE-BSE-CHD",
+ "prog_name": "Electrical Engineering BSE (System-on-A-Chip Design)",
+ "prog_type": "conc",
+ "prog_parent": "EE-BSE",
+ "levl_code": "UG",
+ "degc_code": "BSE",
+ "majr_code": "EE",
+ "minr_code": "",
+ "conc_code": "CHD",
+ "coll_code": "EU",
+ "dept_code": "",
+ "sis_prog_code": "EU_BSE",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

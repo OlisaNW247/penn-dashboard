@@ -1,0 +1,17 @@
+{
+ "key": "611",
+ "prog_code": "ANTH-BA-GAN",
+ "prog_name": "Anthropology BA (General Anthropology)",
+ "prog_type": "conc",
+ "prog_parent": "ANTH-BA",
+ "levl_code": "UG",
+ "degc_code": "BA",
+ "majr_code": "ANTH",
+ "minr_code": "",
+ "conc_code": "GAN",
+ "coll_code": "AU",
+ "dept_code": "",
+ "sis_prog_code": "AU_BA",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

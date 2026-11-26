@@ -1,0 +1,17 @@
+{
+ "key": "636",
+ "prog_code": "CMPL-BA-CGL",
+ "prog_name": "Comparative Literature BA (Globalization)",
+ "prog_type": "conc",
+ "prog_parent": "CMPL-BA",
+ "levl_code": "UG",
+ "degc_code": "BA",
+ "majr_code": "CMPL",
+ "minr_code": "",
+ "conc_code": "CGL",
+ "coll_code": "AU",
+ "dept_code": "",
+ "sis_prog_code": "AU_BA",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

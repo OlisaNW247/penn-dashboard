@@ -1,0 +1,17 @@
+{
+ "key": "745",
+ "prog_code": "PSCI-BA-POE",
+ "prog_name": "Political Science BA (Political Economy)",
+ "prog_type": "conc",
+ "prog_parent": "PSCI-BA",
+ "levl_code": "UG",
+ "degc_code": "BA",
+ "majr_code": "PSCI",
+ "minr_code": "",
+ "conc_code": "POE",
+ "coll_code": "AU",
+ "dept_code": "",
+ "sis_prog_code": "AU_BA",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

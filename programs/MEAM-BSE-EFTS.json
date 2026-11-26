@@ -1,0 +1,17 @@
+{
+ "key": "879",
+ "prog_code": "MEAM-BSE-EFTS",
+ "prog_name": "Mech Engr & Appl Mechanics BSE (Energy, Fluids & Thermal Sys)",
+ "prog_type": "conc",
+ "prog_parent": "MEAM-BSE",
+ "levl_code": "UG",
+ "degc_code": "BSE",
+ "majr_code": "MEAM",
+ "minr_code": "",
+ "conc_code": "EFTS",
+ "coll_code": "EU",
+ "dept_code": "",
+ "sis_prog_code": "EU_BSE",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

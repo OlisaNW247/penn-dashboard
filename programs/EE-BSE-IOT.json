@@ -1,0 +1,17 @@
+{
+ "key": "863",
+ "prog_code": "EE-BSE-IOT",
+ "prog_name": "Electrical Engineering BSE (Internet of Things)",
+ "prog_type": "conc",
+ "prog_parent": "EE-BSE",
+ "levl_code": "UG",
+ "degc_code": "BSE",
+ "majr_code": "EE",
+ "minr_code": "",
+ "conc_code": "IOT",
+ "coll_code": "EU",
+ "dept_code": "",
+ "sis_prog_code": "EU_BSE",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

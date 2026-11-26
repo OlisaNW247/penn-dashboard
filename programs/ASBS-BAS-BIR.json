@@ -1,0 +1,17 @@
+{
+ "key": "783",
+ "prog_code": "ASBS-BAS-BIR",
+ "prog_name": "Appl Science-Biomed Science BAS (Biomed Imgng&Radiation Physics)",
+ "prog_type": "conc",
+ "prog_parent": "ASBS-BAS",
+ "levl_code": "UG",
+ "degc_code": "BAS",
+ "majr_code": "ASBS",
+ "minr_code": "",
+ "conc_code": "BIR",
+ "coll_code": "EU",
+ "dept_code": "",
+ "sis_prog_code": "EU_BAS",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

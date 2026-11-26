@@ -1,0 +1,17 @@
+{
+ "key": "768",
+ "prog_code": "VLST-BA-APC",
+ "prog_name": "Visual Studies BA (Architecture Practice & Tech)",
+ "prog_type": "conc",
+ "prog_parent": "VLST-BA",
+ "levl_code": "UG",
+ "degc_code": "BA",
+ "majr_code": "VLST",
+ "minr_code": "",
+ "conc_code": "APC",
+ "coll_code": "AU",
+ "dept_code": "",
+ "sis_prog_code": "AU_BA",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

@@ -1,0 +1,17 @@
+{
+ "key": "829",
+ "prog_code": "BE-BSE-BDS",
+ "prog_name": "Bioengineering BSE (Biomed Data Sci&Cmptationl Med)",
+ "prog_type": "conc",
+ "prog_parent": "BE-BSE",
+ "levl_code": "UG",
+ "degc_code": "BSE",
+ "majr_code": "BE",
+ "minr_code": "",
+ "conc_code": "BDS",
+ "coll_code": "EU",
+ "dept_code": "",
+ "sis_prog_code": "EU_BSE",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

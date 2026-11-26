@@ -1,0 +1,17 @@
+{
+ "key": "612",
+ "prog_code": "ANTH-BA-MAGH",
+ "prog_name": "Anthropology BA (Med Anthropology&Global Health)",
+ "prog_type": "conc",
+ "prog_parent": "ANTH-BA",
+ "levl_code": "UG",
+ "degc_code": "BA",
+ "majr_code": "ANTH",
+ "minr_code": "",
+ "conc_code": "MAGH",
+ "coll_code": "AU",
+ "dept_code": "",
+ "sis_prog_code": "AU_BA",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

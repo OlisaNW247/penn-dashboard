@@ -1,0 +1,17 @@
+{
+ "key": "874",
+ "prog_code": "HIST-BSE-PLH",
+ "prog_name": "History BSE (Political History)",
+ "prog_type": "conc",
+ "prog_parent": "HIST-BSE",
+ "levl_code": "UG",
+ "degc_code": "BSE",
+ "majr_code": "HIST",
+ "minr_code": "",
+ "conc_code": "PLH",
+ "coll_code": "EU",
+ "dept_code": "",
+ "sis_prog_code": "EU_BSE",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

@@ -1,0 +1,17 @@
+{
+ "key": "847",
+ "prog_code": "CMPE-BSE-NCON",
+ "prog_name": "Computer Engineering BSE (No Concentration)",
+ "prog_type": "conc",
+ "prog_parent": "CMPE-BSE",
+ "levl_code": "UG",
+ "degc_code": "BSE",
+ "majr_code": "CMPE",
+ "minr_code": "",
+ "conc_code": "NCON",
+ "coll_code": "EU",
+ "dept_code": "",
+ "sis_prog_code": "EU_BSE",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

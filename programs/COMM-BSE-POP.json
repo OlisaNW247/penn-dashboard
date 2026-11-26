@@ -1,0 +1,17 @@
+{
+ "key": "851",
+ "prog_code": "COMM-BSE-POP",
+ "prog_name": "Communication BSE (Politics & Policy)",
+ "prog_type": "conc",
+ "prog_parent": "COMM-BSE",
+ "levl_code": "UG",
+ "degc_code": "BSE",
+ "majr_code": "COMM",
+ "minr_code": "",
+ "conc_code": "POP",
+ "coll_code": "EU",
+ "dept_code": "",
+ "sis_prog_code": "EU_BSE",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

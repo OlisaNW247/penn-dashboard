@@ -1,0 +1,17 @@
+{
+ "key": "804",
+ "prog_code": "HCMP-BS",
+ "prog_name": "Hlth Care Mgmt and Policy BS",
+ "prog_type": "major",
+ "prog_parent": "",
+ "levl_code": "UG",
+ "degc_code": "BS",
+ "majr_code": "HCMP",
+ "minr_code": "",
+ "conc_code": "",
+ "coll_code": "WU",
+ "dept_code": "",
+ "sis_prog_code": "WU_BS",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

@@ -1,0 +1,17 @@
+{
+ "key": "782",
+ "prog_code": "ASBS-BAS-BDV",
+ "prog_name": "Appl Science-Biomed Science BAS (Biomedical Devices)",
+ "prog_type": "conc",
+ "prog_parent": "ASBS-BAS",
+ "levl_code": "UG",
+ "degc_code": "BAS",
+ "majr_code": "ASBS",
+ "minr_code": "",
+ "conc_code": "BDV",
+ "coll_code": "EU",
+ "dept_code": "",
+ "sis_prog_code": "EU_BAS",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

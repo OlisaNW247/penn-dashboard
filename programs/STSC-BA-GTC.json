@@ -1,0 +1,17 @@
+{
+ "key": "761",
+ "prog_code": "STSC-BA-GTC",
+ "prog_name": "Science Technology & Society BA (Global Science & Technology)",
+ "prog_type": "conc",
+ "prog_parent": "STSC-BA",
+ "levl_code": "UG",
+ "degc_code": "BA",
+ "majr_code": "STSC",
+ "minr_code": "",
+ "conc_code": "GTC",
+ "coll_code": "AU",
+ "dept_code": "",
+ "sis_prog_code": "AU_BA",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

@@ -1,0 +1,17 @@
+{
+ "key": "857",
+ "prog_code": "CSCI-BSE-NCON",
+ "prog_name": "Computer Science BSE (No Concentration)",
+ "prog_type": "conc",
+ "prog_parent": "CSCI-BSE",
+ "levl_code": "UG",
+ "degc_code": "BSE",
+ "majr_code": "CSCI",
+ "minr_code": "",
+ "conc_code": "NCON",
+ "coll_code": "EU",
+ "dept_code": "",
+ "sis_prog_code": "EU_BSE",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

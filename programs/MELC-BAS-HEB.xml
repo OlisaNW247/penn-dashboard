@@ -1,0 +1,488 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+
+
+  <Report>
+    <Audit>
+      <AuditHeader AuditDescription="" AuditType="AA" Audit_id="W0008X96" DWGPA="*" DateDay="14" DateMonth="07" DateYear="2026" ExamApp="0" ExamOTL="0" FreezeDate="" FreezeType="" FreezeTypeDescription="" FreezeUserName="" In_progress="Y" Per_complete="5" ResApp="0" ResAppInProg="0" ResOTL="0" ResOTLInProg="0" SSGPA="*" Stu_email="" Stu_id="*" Stu_name="*Test" TimeHour="09" TimeMinute="39" Version="$Id$ OS_TYPE=Linux; Release=5.1.5.1" What_if="Y" XferApp="0" XferOTL="0"/>
+      <Block Cat_yr="9999" Cat_yrLit="End of Time" Cat_yr_start="2027" Cat_yr_stop="9999" Classes_applied="0" Credits_applied="0" Degree="BAS" GPA="*" Gpa_credits="0" Gpa_grade_pts="*" Per_complete="5" Req_id="RA002197" Req_type="DEGREE" Req_value="BAS" Title="Degree in Bachelor of Applied Science">
+        <Header>
+          <Qualifier Classes="0" ClassesApplied="0" CreditsApplied="0" Name="MAXCLASS" Node_id="38" Node_type="4101" Tag="MXCLHDWAGE">
+            <SubText>@ @ (With </SubText>
+            <SubText>DWAGE &gt; 8</SubText>
+            <SubText>)</SubText>
+            <Text>MaxClasses 0 in </Text>
+          </Qualifier>
+          <Qualifier Classes="0" ClassesApplied="0" CreditsApplied="0" Name="MAXCLASS" Node_id="40" Node_type="4101" Tag="MXCLHCOLL">
+            <SubText>COLL 0@</SubText>
+            <Text>MaxClasses 0 in </Text>
+          </Qualifier>
+          <Qualifier Classes="0" ClassesApplied="0" CreditsApplied="0" Name="MAXCLASS" Node_id="42" Node_type="4101" Tag="MXCLHMSCI">
+            <SubText>MSCI @</SubText>
+            <Text>MaxClasses 0 in </Text>
+          </Qualifier>
+          <Qualifier ClassesApplied="0" Credits="4" CreditsApplied="0" Name="MAXCREDIT" Node_id="44" Node_type="4103" Tag="MXPFCOVID">
+            <SubText>@ @ (With </SubText>
+            <SubText>DWPASSFAIL = Y AND</SubText>
+            <SubText>DWTERM &lt;&gt; 202010, 202020, 202030, 202110</SubText>
+            <SubText>)</SubText>
+            <Text>MaxCredits 4 in </Text>
+          </Qualifier>
+          <Qualifier Applied="" JustAdded="TRUE" Name="CHECKELECTIVES" Node_id="" Node_type="4140">
+            <ECA-Error Text="Degree overall credits qualifier not specified"/>
+            <Text>CHECK-ELECTIVE-CREDITS-ALLOWED</Text>
+          </Qualifier>
+        </Header>
+        <Rule IndentLevel="1" Label="There are no I, NR, or PR grades in this Degree Audit" LabelTag="KFSOEL" Node_id="53" Node_type="4900" Per_complete="100" RuleType="Complete" Rule_id="1-1">
+          <IfElsePart>ElsePart</IfElsePart>
+          <Requirement/>
+        </Rule>
+        <Rule IndentLevel="1" Label="Cumulative GPA Requirement " LabelTag="MNGPH2" Node_id="64" Node_type="4971" Per_complete="0" ProxyAdvice="Yes" RuleType="Incomplete" Rule_id="2-1-0">
+          <IfElsePart>IfPart</IfElsePart>
+          <Requirement/>
+          <ProxyAdvice>
+            <Text>When your first term is graded, your cumulative GPA</Text>
+            <Text>will be calculated. If your cumulative GPA falls below</Text>
+            <Text>2.0 it is important to see an advisor to make plans</Text>
+            <Text>for raising your GPA.</Text>
+          </ProxyAdvice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Major Requirements" LabelTag="MAJORBLOCK" Node_id="67" Node_type="4500" Per_complete="0" RuleType="Blocktype" Rule_id="3">
+          <Requirement>
+            <NumBlocktypes>1</NumBlocktypes>
+            <Type>MAJOR</Type>
+          </Requirement>
+          <Advice>
+            <Title>Major in Middle Eastern Languages &amp; Cultures</Title>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="General Electives" LabelTag="SEASSSHBLOCK" Node_id="75" Node_type="4400" Per_complete="0" RuleType="Block" Rule_id="5">
+          <Requirement>
+            <NumBlocks>1</NumBlocks>
+            <Type>OTHER</Type>
+            <Value>U-SEAS-SSH</Value>
+          </Requirement>
+          <Advice>
+            <BlockID>RA002195</BlockID>
+          </Advice>
+        </Rule>
+      </Block>
+      <Block Cat_yr="9999" Cat_yrLit="End of Time" Cat_yr_start="2027" Cat_yr_stop="9999" Classes_applied="0" Credits_applied="0" GPA="*" Gpa_credits="0" Gpa_grade_pts="*" Major1="MELC" Per_complete="0" Req_id="RA002269" Req_type="MAJOR" Req_value="MELC" School="UG" Title="Major in Middle Eastern Languages &amp; Cultures">
+        <Header>
+          <Qualifier Applied="0" ClassesApplied="0" Credits="14" CreditsApplied="0" Label="Minimum Credits Required" LabelTag="JSKELS" Name="CLASSESCREDITS" Needed="14" Node_id="30" Node_type="4121" Satisfied="No">
+            <Text>14 Credits</Text>
+          </Qualifier>
+          <Qualifier Applied="0.00" Label="Minimum Major GPA of 2.0 Required" LabelTag="MINGPA" MinGPA="2" Name="MINGPA" Needed="2" Node_id="37" Node_type="4116" Satisfied="No">
+            <Text>MINGPA 2</Text>
+          </Qualifier>
+          <Qualifier Applied="0" Credits="7" Label="Minimum Credits Earned from University of Pennsylvania" LabelTag="MINRES" Name="MINRES" Needed="7" Node_id="38" Node_type="4119" Satisfied="No">
+            <Text>MINRES 7 Credits</Text>
+          </Qualifier>
+          <Qualifier ClassesApplied="0" Credits="0" CreditsApplied="0" Name="MAXCREDIT" Node_id="51" Node_type="4103" Tag="MXPFCOVID">
+            <SubText>@ @ (With </SubText>
+            <SubText>DWPASSFAIL = Y AND</SubText>
+            <SubText>DWTERM &lt;&gt; 202010, 202020, 202030, 202110</SubText>
+            <SubText>)</SubText>
+            <Text>MaxCredits 0 in </Text>
+          </Qualifier>
+          <Qualifier ClassesApplied="0" CreditsApplied="0" Name="NONEXCLUSIVE" Node_id="53" Node_type="4111" Tag="SJEWLK">
+            <SubText>(MAJOR)</SubText>
+            <Text>ShareWith </Text>
+          </Qualifier>
+          <Qualifier ClassesApplied="0" CreditsApplied="0" Name="NONEXCLUSIVE" Node_id="55" Node_type="4111" Tag="SLWIEO">
+            <SubText>(CONC)</SubText>
+            <Text>ShareWith </Text>
+          </Qualifier>
+          <Remark>
+            <Text>Concentration requirements may focus on either Medieval or Modern Periods,</Text>
+            <Text>to be chosen in consultation with the major advisor.</Text>
+          </Remark>
+          <Advice>
+            <Text Node_id="30">
+              <Line>14 credits are required. You currently have 0</Line>
+              <Line>You still need 14 more.</Line>
+            </Text>
+            <Text Node_id="37">
+              <Line>Your major GPA is 0.00</Line>
+            </Text>
+            <Text Node_id="38">
+              <Line>You currently have 0 credits.</Line>
+              <Line>You still need a minimum of 7 additional credits.</Line>
+            </Text>
+          </Advice>
+        </Header>
+        <Rule IndentLevel="1" Label="BREADTH REQUIREMENT" LabelTag="BREADTH" Node_id="57" Node_type="4700" Per_complete="0" RuleType="Subset" Rule_id="1">
+          <Remark>
+            <Text>Language sequence varies by course of study; see advisor.</Text>
+          </Remark>
+          <Requirement/>
+          <Rule IndentLevel="2" Label="Intro to Anc Middle East" LabelTag="NELC1" Node_id="58" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="1-0">
+            <Classes_applied>0</Classes_applied>
+            <Credits_applied>0</Credits_applied>
+            <ClassesApplied/>
+            <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+              <Course Disc="MELC" NewDiscipline="Yes" Node_id="59" Num="0001"/>
+            </Requirement>
+            <Advice Classes="1" Connector=", ">
+              <Course Credits="0" CrossListed="Parent" Disc="MELC" NewDiscipline="Yes" Num="0001" Title="Intro to Anc Middle East" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            </Advice>
+          </Rule>
+          <Rule IndentLevel="2" Label="Making of Middle East" LabelTag="NELC2" Node_id="60" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="1-1">
+            <Classes_applied>0</Classes_applied>
+            <Credits_applied>0</Credits_applied>
+            <ClassesApplied/>
+            <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+              <Course Disc="MELC" NewDiscipline="Yes" Node_id="61" Num="0002"/>
+            </Requirement>
+            <Advice Classes="1" Connector=", ">
+              <Course Credits="1" CrossListed="Parent" Disc="MELC" NewDiscipline="Yes" Num="0002" Title="Making of Middle East"/>
+            </Advice>
+          </Rule>
+        </Rule>
+        <Rule IndentLevel="1" Label="LANGUAGE REQUIREMENT" LabelTag="HEBLANG" Node_id="145" Node_type="4700" Per_complete="0" RuleType="Subset" Rule_id="5-0">
+          <IfElsePart>IfPart</IfElsePart>
+          <Requirement/>
+          <Rule IndentLevel="2" Label="Elem Modern Hebrew I" LabelTag="HEB_HEBR1" Node_id="146" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="5-0-0">
+            <Classes_applied>0</Classes_applied>
+            <Credits_applied>0</Credits_applied>
+            <ClassesApplied/>
+            <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+              <Course Disc="HEBR" NewDiscipline="Yes" Node_id="147" Num="0100"/>
+            </Requirement>
+            <Advice Classes="1" Connector=", ">
+              <Course Credits="1" CrossListed="Parent" Disc="HEBR" NewDiscipline="Yes" Num="0100" Title="Elem Modern Hebrew I"/>
+            </Advice>
+          </Rule>
+          <Rule IndentLevel="2" Label="Elem Modern Hebrew II" LabelTag="HEB_HEBR2" Node_id="148" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="5-0-1">
+            <Classes_applied>0</Classes_applied>
+            <Credits_applied>0</Credits_applied>
+            <ClassesApplied/>
+            <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+              <Course Disc="HEBR" NewDiscipline="Yes" Node_id="149" Num="0200"/>
+            </Requirement>
+            <Advice Classes="1" Connector=", ">
+              <Course Credits="1" CrossListed="Parent" Disc="HEBR" NewDiscipline="Yes" Num="0200" Title="Elem Modern Hebrew II"/>
+            </Advice>
+          </Rule>
+          <Rule IndentLevel="2" Label="Intrm Modern Hebrew III" LabelTag="HEB_HEBR3" Node_id="150" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="5-0-2">
+            <Classes_applied>0</Classes_applied>
+            <Credits_applied>0</Credits_applied>
+            <ClassesApplied/>
+            <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+              <Course Disc="HEBR" NewDiscipline="Yes" Node_id="151" Num="0300"/>
+            </Requirement>
+            <Advice Classes="1" Connector=", ">
+              <Course Credits="1" CrossListed="Parent" Disc="HEBR" NewDiscipline="Yes" Num="0300" Title="Intrm Modern Hebrew III"/>
+            </Advice>
+          </Rule>
+          <Rule IndentLevel="2" Label="Intrm Modern Hebrew IV" LabelTag="HEB_HEBR4" Node_id="152" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="5-0-3">
+            <Classes_applied>0</Classes_applied>
+            <Credits_applied>0</Credits_applied>
+            <ClassesApplied/>
+            <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+              <Course Disc="HEBR" NewDiscipline="Yes" Node_id="153" Num="0400"/>
+            </Requirement>
+            <Advice Classes="1" Connector=", ">
+              <Course Credits="1" CrossListed="Parent" Disc="HEBR" NewDiscipline="Yes" Num="0400" Title="Intrm Modern Hebrew IV"/>
+            </Advice>
+          </Rule>
+          <Rule IndentLevel="2" Label="Advanced Modern Hebrew" LabelTag="HEB_HEBR5" Node_id="154" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="5-0-4">
+            <Classes_applied>0</Classes_applied>
+            <Credits_applied>0</Credits_applied>
+            <ClassesApplied/>
+            <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+              <Course Disc="HEBR" NewDiscipline="Yes" Node_id="155" Num="1000"/>
+            </Requirement>
+            <Advice Classes="1" Connector=", ">
+              <Course Credits="1" CrossListed="Parent" Disc="HEBR" NewDiscipline="Yes" Num="1000" Title="Advanced Modern Hebrew"/>
+            </Advice>
+          </Rule>
+          <Rule IndentLevel="2" Label="Intermediate Biblical Hebrew I" LabelTag="HEB_HEBR6" Node_id="156" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="5-0-5">
+            <Classes_applied>0</Classes_applied>
+            <Credits_applied>0</Credits_applied>
+            <ClassesApplied/>
+            <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+              <Course Disc="MELC" NewDiscipline="Yes" Node_id="157" Num="0303"/>
+            </Requirement>
+            <Advice Classes="1" Connector=", ">
+              <Course Credits="1" CrossListed="Parent" Disc="MELC" NewDiscipline="Yes" Num="0303" Title="Intermediate Biblical Hebrew I"/>
+            </Advice>
+          </Rule>
+        </Rule>
+        <Rule IndentLevel="1" Label="HEBREW AND JUDAIC STUDIES CONCENTRATION REQUIREMENTS" LabelTag="HEBREQ" Node_id="162" Node_type="4700" Per_complete="0" RuleType="Subset" Rule_id="6-0">
+          <IfElsePart>IfPart</IfElsePart>
+          <Requirement/>
+          <Rule IndentLevel="2" Label="Biblical Literature" LabelTag="HEB_ANHB" Node_id="163" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="6-0-0">
+            <Classes_applied>0</Classes_applied>
+            <Credits_applied>0</Credits_applied>
+            <ClassesApplied/>
+            <Requirement Class_cred_op="OR" Connector="," Credits_begin="1">
+              <Course Disc="@" NewDiscipline="Yes" Node_id="164" Num="0000" Num_end="4999">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>ANHB</Value>
+                </With>
+              </Course>
+            </Requirement>
+            <Advice Connector=", " Credits="1">
+              <Course Disc="@" NewDiscipline="Yes" Num="0000" Num_end="4999" With_advice="ATTRIBUTE = ANHB">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>ANHB</Value>
+                </With>
+              </Course>
+            </Advice>
+          </Rule>
+          <Rule IndentLevel="2" Label="abbinic/Medieval Literature" LabelTag="HEB_ANHR" Node_id="165" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="6-0-1">
+            <Classes_applied>0</Classes_applied>
+            <Credits_applied>0</Credits_applied>
+            <ClassesApplied/>
+            <Requirement Class_cred_op="OR" Connector="," Credits_begin="1">
+              <Course Disc="@" NewDiscipline="Yes" Node_id="166" Num="0000" Num_end="4999">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>ANHR</Value>
+                </With>
+              </Course>
+            </Requirement>
+            <Advice Connector=", " Credits="1">
+              <Course Disc="@" NewDiscipline="Yes" Num="0000" Num_end="4999" With_advice="ATTRIBUTE = ANHR">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>ANHR</Value>
+                </With>
+              </Course>
+            </Advice>
+          </Rule>
+          <Rule IndentLevel="2" Label="Modern Hebrew Literature" LabelTag="HEB_ANHM" Node_id="167" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="6-0-2">
+            <Classes_applied>0</Classes_applied>
+            <Credits_applied>0</Credits_applied>
+            <ClassesApplied/>
+            <Requirement Class_cred_op="OR" Connector="," Credits_begin="1">
+              <Course Disc="@" NewDiscipline="Yes" Node_id="168" Num="0000" Num_end="4999">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>ANHM</Value>
+                </With>
+              </Course>
+            </Requirement>
+            <Advice Connector=", " Credits="1">
+              <Course Disc="@" NewDiscipline="Yes" Num="0000" Num_end="4999" With_advice="ATTRIBUTE = ANHM">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>ANHM</Value>
+                </With>
+              </Course>
+            </Advice>
+          </Rule>
+          <Rule IndentLevel="2" Label="Electives Chosen in Consultation with Major Advisor" LabelTag="HEB_ANHC" Node_id="169" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="6-0-3">
+            <Classes_applied>0</Classes_applied>
+            <Credits_applied>0</Credits_applied>
+            <ClassesApplied/>
+            <Requirement Class_cred_op="OR" Connector="," Credits_begin="2">
+              <Course Disc="@" NewDiscipline="Yes" Node_id="170" Num="0000" Num_end="4999">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>ANHC</Value>
+                </With>
+              </Course>
+            </Requirement>
+            <Advice Connector=", " Credits="2">
+              <Course Disc="@" NewDiscipline="Yes" Num="0000" Num_end="4999" With_advice="ATTRIBUTE = ANHC">
+                <With Code="ATTRIBUTE" Connector="" Operator="=">
+                  <Value>ANHC</Value>
+                </With>
+              </Course>
+            </Advice>
+          </Rule>
+        </Rule>
+        <Rule IndentLevel="1" Label="Concentration Paper" LabelTag="AVSOMM" Node_id="250" Node_type="4200" Per_complete="0" ProxyAdvice="Yes" RuleType="Course" Rule_id="9">
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Connector="," Credits_begin="1">
+            <Course Disc="PSEUDO@" NewDiscipline="Yes" Node_id="251" Num="@"/>
+          </Requirement>
+          <ProxyAdvice>
+            <Text>Please see advisor to choose a concentration paper course.</Text>
+          </ProxyAdvice>
+        </Rule>
+      </Block>
+      <Block Cat_yr="9999" Cat_yrLit="End of Time" Cat_yr_start="2027" Cat_yr_stop="9999" Classes_applied="0" Credits_applied="0" GPA="*" Gpa_credits="0" Gpa_grade_pts="*" Per_complete="0" Req_id="RA002195" Req_type="OTHER" Req_value="U-SEAS-SSH" Title="General Electives">
+        <Header>
+          <Qualifier Applied="0" ClassesApplied="0" Credits="7" CreditsApplied="0" Label="Minimum Credits Requirement" LabelTag="HSJEUL" Name="CLASSESCREDITS" Needed="7" Node_id="1" Node_type="4121" Satisfied="No">
+            <Text>7 Credits</Text>
+          </Qualifier>
+          <Qualifier ClassesApplied="0" CreditsApplied="0" Name="NONEXCLUSIVE" Node_id="10" Node_type="4111">
+            <SubText>(OTHER = U-SEAS-WREE)</SubText>
+            <Text>ShareWith </Text>
+          </Qualifier>
+          <Qualifier ClassesApplied="0" CreditsApplied="0" Name="NONEXCLUSIVE" Node_id="12" Node_type="4111" Tag="AFLBLX">
+            <SubText>(MAJOR = AFRC, MAJOR = ANCH, MAJOR = ANTH, MAJOR = ARCH, </SubText>
+            <SubText> MAJOR = ARTH, MAJOR = BCHE, MAJOR = BIOL, MAJOR = BIOP, </SubText>
+            <SubText> MAJOR = BSCI, MAJOR = CBSC, MAJOR = CHEM, MAJOR = CIMS, </SubText>
+            <SubText> MAJOR = CLST, MAJOR = CMPL, MAJOR = COGS, MAJOR = COMM, </SubText>
+            <SubText> MAJOR = CRIM, MAJOR = DSGN, MAJOR = EALC, MAJOR = EASC, </SubText>
+            <SubText> MAJOR = ECOQ, MAJOR = ENGL, MAJOR = ENVS, MAJOR = ESCI, </SubText>
+            <SubText> MAJOR = FNAR, MAJOR = FRFS, MAJOR = GRMN, MAJOR = GSWS, </SubText>
+            <SubText> MAJOR = HIST, MAJOR = HSOC, MAJOR = HSPN, MAJOR = INDM, </SubText>
+            <SubText> MAJOR = INTR, MAJOR = ITST, MAJOR = JWST, MAJOR = LALX, </SubText>
+            <SubText> MAJOR = LING, MAJOR = LOGC, MAJOR = MAEC, MAJOR = MATH, </SubText>
+            <SubText> MAJOR = MESC, MAJOR = MMES, MAJOR = MSCI, MAJOR = MUSC, </SubText>
+            <SubText> MAJOR = NELC, MAJOR = NRSC, MAJOR = NTSC, MAJOR = PHIL, </SubText>
+            <SubText> MAJOR = PHYS, MAJOR = PPE, MAJOR = PSCI, MAJOR = PSYC, </SubText>
+            <SubText> MAJOR = REES, MAJOR = RELS, MAJOR = ROML, MAJOR = SAST, </SubText>
+            <SubText> MAJOR = SOCI, MAJOR = STSC, MAJOR = SYSC, MAJOR = THAR, </SubText>
+            <SubText> MAJOR = URBS, MAJOR = VLST, MAJOR = MELC, MAJOR = FIGS, </SubText>
+            <SubText> MAJOR = LAWS)</SubText>
+            <Text>ShareWith </Text>
+          </Qualifier>
+          <Qualifier ClassesApplied="0" CreditsApplied="0" Name="NONEXCLUSIVE" Node_id="78" Node_type="4111" Tag="ANGLBS">
+            <SubText>(CONC)</SubText>
+            <Text>ShareWith </Text>
+          </Qualifier>
+          <Advice>
+            <Text Node_id="1">
+              <Line>7 credits are required. You currently have 0</Line>
+              <Line>You still need 7 more.</Line>
+            </Text>
+          </Advice>
+        </Header>
+        <Rule IndentLevel="1" Label="GENERAL ELECTIVES (7 CU)" LabelTag="SEAS_SSH_REQ" Node_id="80" Node_type="4700" Per_complete="100" RuleType="Subset" Rule_id="1">
+          <Requirement/>
+        </Rule>
+        <Rule IndentLevel="1" Label="WRITING REQUIREMENT" Node_id="342" Node_type="4700" Per_complete="0" RuleType="Subset" Rule_id="2-0">
+          <IfElsePart>IfPart</IfElsePart>
+          <Remark>
+            <Text>Select 1 writing course from an area below. Course will count both here and toward a SS, H, or TBS area above.</Text>
+          </Remark>
+          <Requirement/>
+          <Rule IndentLevel="2" Label="Writing Course" LabelTag="NMBKJH" Node_id="343" Node_type="4600" Per_complete="0" RuleType="Group" Rule_id="2-0-0">
+            <Requirement NumGroups="1" NumRules="3">
+              <Qualifier Applied="" Name="NONEXCLUSIVE" Node_id="385" Node_type="4111">
+                <SubText>(THISBLOCK)</SubText>
+                <Text>ShareWith </Text>
+              </Qualifier>
+            </Requirement>
+            <Advice NumGroupsNeeded="1"/>
+            <Rule IndentLevel="3" Label="Social Sciences Writing Course" LabelTag="BNVMJS" Node_id="344" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2-0-0-0">
+              <Classes_applied>0</Classes_applied>
+              <Credits_applied>0</Credits_applied>
+              <ClassesApplied/>
+              <Requirement Class_cred_op="OR" Connector="," Credits_begin="1">
+                <Course Disc="WRIT" NewDiscipline="Yes" Node_id="345" Num="0160"/>
+                <Course Disc="WRIT" Node_id="346" Num="0170"/>
+                <Course Disc="WRIT" Node_id="347" Num="0021"/>
+                <Course Disc="WRIT" Node_id="348" Num="0280"/>
+                <Course Disc="WRIT" Node_id="349" Num="0340"/>
+                <Course Disc="WRIT" Node_id="350" Num="0370"/>
+                <Course Disc="WRIT" Node_id="351" Num="0380"/>
+                <Course Disc="WRIT" Node_id="352" Num="0480"/>
+                <Course Disc="WRIT" Node_id="353" Num="0500"/>
+                <Course Disc="WRIT" Node_id="354" Num="0550"/>
+                <Course Disc="WRIT" Node_id="355" Num="0590"/>
+              </Requirement>
+              <Advice Connector=", " Credits="1">
+                <Course Credits="1" Disc="WRIT" NewDiscipline="Yes" Num="0160" Title="Writing Seminar in AMES"/>
+                <Course Credits="1" Disc="WRIT" Num="0170" Title="Writing Seminar in Amst"/>
+                <Course Credits="1" Disc="WRIT" Num="0021" Title="Writing Seminar SNF Paideia"/>
+                <Course Credits="1" Disc="WRIT" Num="0280" Title="Writing Seminar in COMM"/>
+                <Course Credits="1" Disc="WRIT" Num="0340" Title="Writing Seminar in Education"/>
+                <Course Credits="1" Disc="WRIT" Num="0370" Title="Writing Seminar In Econ"/>
+                <Course Credits="1" Disc="WRIT" Num="0380" Title="Writing Seminar In EAS"/>
+                <Course Credits="1" Disc="WRIT" Num="0480" Title="Writing Seminar in GSWS"/>
+                <Course Credits="1" Disc="WRIT" Num="0500" Title="Writing Seminar in HSOC"/>
+                <Course Credits="1" Disc="WRIT" Num="0550" Title="Writing Seminar in IR"/>
+                <Course Credits="1" Disc="WRIT" Num="0590" Title="Writing Seminar In LING"/>
+              </Advice>
+            </Rule>
+            <Rule IndentLevel="3" Label="Humanities Writing Course" LabelTag="BNVMJK" Node_id="356" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2-0-0-1">
+              <Classes_applied>0</Classes_applied>
+              <Credits_applied>0</Credits_applied>
+              <ClassesApplied/>
+              <Requirement Class_cred_op="OR" Connector="," Credits_begin="1">
+                <Course Disc="WRIT" NewDiscipline="Yes" Node_id="357" Num="0020"/>
+                <Course Disc="WRIT" Node_id="358" Num="0100"/>
+                <Course Disc="WRIT" Node_id="359" Num="0110"/>
+                <Course Disc="WRIT" Node_id="360" Num="0120"/>
+                <Course Disc="WRIT" Node_id="361" Num="0130"/>
+                <Course Disc="WRIT" Node_id="362" Num="0140"/>
+                <Course Disc="WRIT" Node_id="363" Num="0150"/>
+                <Course Disc="WRIT" Node_id="364" Num="0230"/>
+                <Course Disc="WRIT" Node_id="365" Num="0250"/>
+                <Course Disc="WRIT" Node_id="366" Num="0260"/>
+                <Course Disc="WRIT" Node_id="367" Num="0270"/>
+                <Course Disc="WRIT" Node_id="368" Num="0300"/>
+                <Course Disc="WRIT" Node_id="369" Num="0330"/>
+                <Course Disc="WRIT" Node_id="370" Num="0390"/>
+                <Course Disc="WRIT" Node_id="371" Num="0410"/>
+                <Course Disc="WRIT" Node_id="372" Num="0490"/>
+                <Course Disc="WRIT" Node_id="373" Num="0570"/>
+                <Course Disc="WRIT" Node_id="374" Num="0580"/>
+                <Course Disc="WRIT" Node_id="375" Num="0670"/>
+                <Course Disc="WRIT" Node_id="376" Num="0680"/>
+                <Course Disc="WRIT" Node_id="377" Num="0730"/>
+              </Requirement>
+              <Advice Connector=", " Credits="1">
+                <Course Credits="1" Disc="WRIT" NewDiscipline="Yes" Num="0020" Title="Craft of Prose"/>
+                <Course Credits="1" Disc="WRIT" Num="0100" Title="Writing Seminar in Afrc"/>
+                <Course Credits="1" Disc="WRIT" Num="0110" Title="Writing Sem Global Engl"/>
+                <Course Credits="1" Disc="WRIT" Num="0120" Title="Critical Writing Seminar"/>
+                <Course Credits="1" Disc="WRIT" Num="0130" Title="Writing Seminar in Anth"/>
+                <Course Credits="1" Disc="WRIT" Num="0140" Title="Writing Seminar in Arch"/>
+                <Course Credits="1" Disc="WRIT" Num="0150" Title="Writing Seminar in Arth"/>
+                <Course Credits="1" Disc="WRIT" Num="0230" Title="Writing Seminar in BUSN"/>
+                <Course Credits="1" Disc="WRIT" Num="0250" Title="Writing Seminar in CIMS"/>
+                <Course Credits="1" Disc="WRIT" Num="0260" Title="Writing Seminar in CLST"/>
+                <Course Credits="1" Disc="WRIT" Num="0270" Title="Writing Seminar in COML"/>
+                <Course Credits="1" Disc="WRIT" Num="0300" Title="Critical Writing Seminar"/>
+                <Course Credits="1" Disc="WRIT" Num="0330" Title="Writing Seminar in DH"/>
+                <Course Credits="1" Disc="WRIT" Num="0390" Title="Writing Seminar In Engl"/>
+                <Course Credits="1" Disc="WRIT" Num="0410" Title="Writing Seminar in FNAR"/>
+                <Course Credits="1" Disc="WRIT" Num="0490" Title="Writing Seminar in Hist"/>
+                <Course Credits="1" Disc="WRIT" Num="0570" Title="Writing Seminar in JOUR"/>
+                <Course Credits="1" Disc="WRIT" Num="0580" Title="Writing Seminar in Lgst"/>
+                <Course Credits="1" Disc="WRIT" Num="0670" Title="Writing Seminar in MUSC"/>
+                <Course Credits="1" Disc="WRIT" Num="0680" Title="Writing Seminar in NELC"/>
+                <Course Credits="1" Disc="WRIT" Num="0730" Title="Writing Seminar in PHIL"/>
+              </Advice>
+            </Rule>
+            <Rule IndentLevel="3" Label="Tech, Business, and Society Writing Course" LabelTag="BNVMJD" LastRuleInGroup="Yes" Node_id="378" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2-0-0-2">
+              <Classes_applied>0</Classes_applied>
+              <Credits_applied>0</Credits_applied>
+              <ClassesApplied/>
+              <Requirement Class_cred_op="OR" Connector="," Credits_begin="1">
+                <Course Disc="WRIT" NewDiscipline="Yes" Node_id="379" Num="0210"/>
+                <Course Disc="WRIT" Node_id="380" Num="0220"/>
+                <Course Disc="WRIT" Node_id="381" Num="0310"/>
+                <Course Disc="WRIT" Node_id="382" Num="0400"/>
+                <Course Disc="WRIT" Node_id="383" Num="0650"/>
+                <Course Disc="WRIT" Node_id="384" Num="0740"/>
+              </Requirement>
+              <Advice Connector=", " Credits="1">
+                <Course Credits="1" Disc="WRIT" NewDiscipline="Yes" Num="0210" Title="Writing Seminar in Bibb"/>
+                <Course Credits="1" Disc="WRIT" Num="0220" Title="Writing Seminar in Biol"/>
+                <Course Credits="1" Disc="WRIT" Num="0310" Title="Writing Seminar in COGS"/>
+                <Course Credits="1" Disc="WRIT" Num="0400" Title="Writing Seminar In Envs"/>
+                <Course Credits="1" Disc="WRIT" Num="0650" Title="WRITING SEMINAR IN MATH"/>
+                <Course Credits="1" Disc="WRIT" Num="0740" Title="Writing Seminar in Phys"/>
+              </Advice>
+            </Rule>
+          </Rule>
+        </Rule>
+      </Block>
+      <Clsinfo/>
+      <Fallthrough Classes="0" Credits="0" Noncourses="0"/>
+      <OTL Classes="0" Credits="0"/>
+      <Insufficient Classes="0" Credits="0"/>
+      <In_progress Classes="0" Credits="0"/>
+      <FitList/>
+      <SplitCredits Classes="0" Credits="0"/>
+      <Deginfo>
+        <DegreeData Actv_term="" Actv_termLit="" Cat_yr="9999" Cat_yrLit="End of Time" Degree="BAS" DegreeLit="Bachelor of Applied Science" DegreeSource="  " Degree_term="" SS_cum_cr_earn="        " SS_cum_gpa="        " SS_cum_gr_att="        " SS_cum_gr_pts="        " SS_cum_tot_earn="        " School="UG" SchoolLit="Undergraduate" Stu_level="  " Stu_levelLit="  "/>
+        <Goal Cat_yr="9999" Code="COLLEGE" Value="EU" ValueLit="SEAS Undergraduate EU"/>
+        <Goal Cat_yr="9999" Code="PROGRAM" Value="EU_BAS" ValueLit="SEAS - Bachelor of Applied Science"/>
+        <Goal Cat_yr="9999" Code="MAJOR" Value="MELC" ValueLit="Middle Eastern Languages &amp; Cultures"/>
+        <Goal Cat_yr="9999" Code="CONC" Value="HEB" ValueLit="Hebrew &amp; Judaic Studies"/>
+      </Deginfo>
+      <ExceptionList/>
+      <Notes/>
+      <Flags>
+        <CFG020DAP14>Y Y 05NNYNYY            NYYNY                             YNNN2YNNYYY05YYYYNYYNN    </CFG020DAP14>
+        <CFG020TIEBREAK>01H02H03H04H05N06N07N08N09N                                                                         </CFG020TIEBREAK>
+      </Flags>
+    </Audit>
+  </Report>
+

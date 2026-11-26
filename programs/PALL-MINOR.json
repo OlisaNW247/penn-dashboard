@@ -1,0 +1,17 @@
+{
+ "key": "1022",
+ "prog_code": "PALL-MINOR",
+ "prog_name": "Minor in Palliative Care",
+ "prog_type": "major",
+ "prog_parent": "",
+ "levl_code": "UG",
+ "degc_code": "MINOR",
+ "majr_code": "PALL",
+ "minr_code": "",
+ "conc_code": "",
+ "coll_code": "",
+ "dept_code": "",
+ "sis_prog_code": "",
+ "hide": "N",
+ "minor_sis_prog_codes": "NM_MSN,NP_PHD,ND_DNP,ND_DNP_ONL"
+}

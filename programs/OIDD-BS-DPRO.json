@@ -1,0 +1,17 @@
+{
+ "key": "817",
+ "prog_code": "OIDD-BS-DPRO",
+ "prog_name": "Operations, Info.,&Decisions BS (Decision Processes)",
+ "prog_type": "conc",
+ "prog_parent": "OIDD-BS",
+ "levl_code": "UG",
+ "degc_code": "BS",
+ "majr_code": "OIDD",
+ "minr_code": "",
+ "conc_code": "DPRO",
+ "coll_code": "WU",
+ "dept_code": "",
+ "sis_prog_code": "WU_BS",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

@@ -1,0 +1,17 @@
+{
+ "key": "808",
+ "prog_code": "LAD-BS",
+ "prog_name": "Leading Across Differences BS",
+ "prog_type": "major",
+ "prog_parent": "",
+ "levl_code": "UG",
+ "degc_code": "BS",
+ "majr_code": "LAD",
+ "minr_code": "",
+ "conc_code": "",
+ "coll_code": "WU",
+ "dept_code": "",
+ "sis_prog_code": "WU_BS",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

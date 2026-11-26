@@ -1,0 +1,17 @@
+{
+ "key": "849",
+ "prog_code": "CMPE-BSE-SAFE",
+ "prog_name": "Computer Engineering BSE (Security and Safety)",
+ "prog_type": "conc",
+ "prog_parent": "CMPE-BSE",
+ "levl_code": "UG",
+ "degc_code": "BSE",
+ "majr_code": "CMPE",
+ "minr_code": "",
+ "conc_code": "SAFE",
+ "coll_code": "EU",
+ "dept_code": "",
+ "sis_prog_code": "EU_BSE",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

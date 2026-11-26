@@ -1,0 +1,732 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+
+
+  <Report>
+    <Audit>
+      <AuditHeader AuditDescription="" AuditType="AA" Audit_id="W0008XJC" DWGPA="*" DateDay="14" DateMonth="07" DateYear="2026" ExamApp="0" ExamOTL="0" FreezeDate="" FreezeType="" FreezeTypeDescription="" FreezeUserName="" In_progress="Y" Per_complete="5" ResApp="0" ResAppInProg="0" ResOTL="0" ResOTLInProg="0" SSGPA="*" Stu_email="" Stu_id="*" Stu_name="*Test" TimeHour="09" TimeMinute="43" Version="$Id$ OS_TYPE=Linux; Release=5.1.5.1" What_if="Y" XferApp="0" XferOTL="0"/>
+      <Block Cat_yr="9999" Cat_yrLit="End of Time" Cat_yr_start="2026" Cat_yr_stop="9999" Classes_applied="0" Credits_applied="0" Degree="BSN" GPA="*" Gpa_credits="0" Gpa_grade_pts="*" Per_complete="5" Req_id="RA002122" Req_type="DEGREE" Req_value="BSN" Title="Degree in Bachelor of Science in Nursing">
+        <Header>
+          <Qualifier Applied="0" ClassesApplied="0" Credits="36" CreditsApplied="0" Label="Minimum Total Credits Required" LabelTag="CREH2" Name="CLASSESCREDITS" Needed="36" Node_id="8" Node_type="4121" Satisfied="No">
+            <Text>36 Credits</Text>
+          </Qualifier>
+          <Qualifier Applied="0" Credits="18" Label="Minimum Credits Earned from University of Pennsylvania" LabelTag="MNRSH2" Name="MINRES" Needed="18" Node_id="9" Node_type="4119" Satisfied="No">
+            <Text>MINRES 18 Credits</Text>
+          </Qualifier>
+          <Qualifier ClassesApplied="0" Credits="2" CreditsApplied="0" Name="MAXCREDIT" Node_id="10" Node_type="4103" Tag="MXPFCOVID">
+            <SubText>@ @ (With </SubText>
+            <SubText>DWPASSFAIL = Y AND</SubText>
+            <SubText>DWTERM &lt;&gt; 202010, 202020, 202030, 202110</SubText>
+            <SubText>)</SubText>
+            <Text>MaxCredits 2 in </Text>
+          </Qualifier>
+          <Qualifier Classes="0" ClassesApplied="0" CreditsApplied="0" Name="MAXCLASS" Node_id="12" Node_type="4101" Tag="MXCLH1">
+            <SubText>COLL @</SubText>
+            <Text>MaxClasses 0 in </Text>
+          </Qualifier>
+          <Qualifier Classes="0" ClassesApplied="0" CreditsApplied="0" Name="MAXCLASS" Node_id="14" Node_type="4101" Tag="MAXCLH2">
+            <SubText>MSCI @</SubText>
+            <Text>MaxClasses 0 in </Text>
+          </Qualifier>
+          <Qualifier Applied="" JustAdded="TRUE" Name="CHECKELECTIVES" Node_id="" Node_type="4140">
+            <ECA-Overall Credits="36" Text="Credits required by degree block"/>
+            <ECA-BlocksRequired Text="RA001283 RA002047 "/>
+            <ECA-BlocksNotRequired Text=""/>
+            <ECA-BlocksRequiredIncluded Text=""/>
+            <ECA-Blocksum Credits="14.5" Text="Sum of credits required in all *required* blocks; excludes credits in blocks included in other required blocks"/>
+            <ECA-Shared Credits="0" Text="Credits shared between required blocks"/>
+            <ECA-ECA Credits="21.5" Text="Credits allowed/needed in fall-through and non-required blocks"/>
+            <ECA-RequiredCreditsApplied Credits="0" Text="Credits applied to required blocks"/>
+            <ECA-NonrequiredCreditsApplied Credits="0" Text="Credits applied to non-required blocks"/>
+            <ECA-fallthruCounts Text="1"/>
+            <ECA-Overflow Credits="0" Text="Excess fall-through credits"/>
+            <CREDITSAPPLIEDTOWARDSDEGREE Credits="0" Text="Credits applied minus overflow"/>
+            <Text>CHECK-ELECTIVE-CREDITS-ALLOWED</Text>
+          </Qualifier>
+          <Advice>
+            <Text Node_id="8">
+              <Line>You currently have 0 credits including both</Line>
+              <Line>earned and in-progress courses. To graduate, you need</Line>
+              <Line>to successfully complete a minimum of 36 additional </Line>
+              <Line>credits and all graduation requirements.</Line>
+            </Text>
+            <Text Node_id="9">
+              <Line>You currently have 0 credits.</Line>
+              <Line>You still need a minimum of 18 additional credits.</Line>
+            </Text>
+          </Advice>
+        </Header>
+        <Rule IndentLevel="1" Label="Cumulative GPA Requirement " LabelTag="MNGPR2" Node_id="26" Node_type="4971" Per_complete="0" ProxyAdvice="Yes" RuleType="Incomplete" Rule_id="1-1-0">
+          <IfElsePart>IfPart</IfElsePart>
+          <Requirement/>
+          <ProxyAdvice>
+            <Text>When your first term is graded, your cumulative GPA</Text>
+            <Text>will be calculated. If your cumulative GPA falls below</Text>
+            <Text>2.0 it is important to see an advisor to make plans</Text>
+            <Text>for raising your GPA.</Text>
+          </ProxyAdvice>
+        </Rule>
+        <Rule IndentLevel="1" Label="There are no I, NR, or PR grades in this Degree Audit" LabelTag="KFSOEL" Node_id="36" Node_type="4900" Per_complete="100" RuleType="Complete" Rule_id="2-1">
+          <IfElsePart>ElsePart</IfElsePart>
+          <Requirement/>
+        </Rule>
+        <Rule IndentLevel="1" Label="General Education Requirements" LabelTag="GENEDBLOCK2" Node_id="44" Node_type="4400" Per_complete="0" RuleType="Block" Rule_id="3-1">
+          <IfElsePart>ElsePart</IfElsePart>
+          <Requirement>
+            <NumBlocks>1</NumBlocks>
+            <Type>OTHER</Type>
+            <Value>U-GE-SN</Value>
+          </Requirement>
+          <Advice>
+            <BlockID>RA002047</BlockID>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Major Requirements" LabelTag="GENEDMAJBLOCK" Node_id="46" Node_type="4500" Per_complete="0" RuleType="Blocktype" Rule_id="4">
+          <Requirement>
+            <NumBlocktypes>1</NumBlocktypes>
+            <Type>MAJOR</Type>
+          </Requirement>
+          <Advice>
+            <Type>MAJOR</Type>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Minor Requirements" LabelTag="MINORBLOCK" Node_id="52" Node_type="4500" Per_complete="0" RuleType="Blocktype" Rule_id="5-0">
+          <IfElsePart>IfPart</IfElsePart>
+          <Requirement>
+            <NumBlocktypes>1</NumBlocktypes>
+            <Type>MINOR</Type>
+          </Requirement>
+          <Advice>
+            <Title>Minor in Health Communications</Title>
+          </Advice>
+        </Rule>
+      </Block>
+      <Block Cat_yr="9999" Cat_yrLit="End of Time" Cat_yr_start="2026" Cat_yr_stop="9999" Classes_applied="0" Credits_applied="0" GPA="*" Gpa_credits="0" Gpa_grade_pts="*" Per_complete="0" Req_id="RA002047" Req_type="OTHER" Req_value="U-GE-SN" Title="General Education, School of Nursing">
+        <Header>
+          <Qualifier Applied="0" ClassesApplied="0" Credits="8" CreditsApplied="0" Label="Minimum Credits Requirement" LabelTag="SNEHSK" Name="CLASSESCREDITS" Needed="8" Node_id="5" Node_type="4121" Satisfied="No">
+            <Text>8 Credits</Text>
+          </Qualifier>
+          <Qualifier ClassesApplied="0" Credits="2" CreditsApplied="0" Name="MAXCREDIT" Node_id="6" Node_type="4103" Tag="MXPFCOVID">
+            <SubText>@ @ (With </SubText>
+            <SubText>DWPASSFAIL = Y AND</SubText>
+            <SubText>DWTERM &lt;&gt; 202010, 202020, 202030, 202110</SubText>
+            <SubText>)</SubText>
+            <Text>MaxCredits 2 in </Text>
+          </Qualifier>
+          <Qualifier ClassesApplied="0" Credits="1" CreditsApplied="0" Name="MAXCREDIT" Node_id="8" Node_type="4103" Tag="MXPFSEM">
+            <SubText>@ @ (With </SubText>
+            <SubText>DWPASSFAIL = Y AND</SubText>
+            <SubText>DWTERM = </SubText>
+            <SubText>)</SubText>
+            <SubText> Except </SubText>
+            <SubText>@ @ (With </SubText>
+            <SubText>DWPASSFAIL = Y AND</SubText>
+            <SubText>DWTERM &lt;&gt; 202010, 202020, 202030, 202110</SubText>
+            <SubText>)</SubText>
+            <Text>MaxCredits 1 in </Text>
+          </Qualifier>
+          <Qualifier ClassesApplied="0" CreditsApplied="0" Name="NONEXCLUSIVE" Node_id="12" Node_type="4111" Tag="SWHMIN">
+            <SubText>(MINOR)</SubText>
+            <Text>ShareWith </Text>
+          </Qualifier>
+          <Qualifier ClassesApplied="0" CreditsApplied="0" Name="NONEXCLUSIVE" Node_id="14" Node_type="4111" Tag="ABCDEF">
+            <SubText>(MAJOR = NTSC)</SubText>
+            <Text>ShareWith </Text>
+          </Qualifier>
+          <Advice>
+            <Text Node_id="5">
+              <Line>8 credits are required. You currently have 0.</Line>
+              <Line>You still need 8 more.</Line>
+            </Text>
+          </Advice>
+        </Header>
+        <Rule IndentLevel="1" Label="Writing Intensive Course" LabelTag="GENUWRIT" Node_id="25" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2-0">
+          <IfElsePart>IfPart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Connector="," Credits_begin="1">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="26" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUWR</Value>
+              </With>
+            </Course>
+            <Course Disc="WRIT" NewDiscipline="Yes" Node_id="27" Num="0000" Num_end="0991"/>
+            <Except>
+              <Course Disc="@" HideFromAdvice="Yes" NewDiscipline="Yes" Node_id="29" Num="@">
+                <With Code="DWPASSFAIL" Connector="AND" Operator="=">
+                  <Value>Y</Value>
+                </With>
+                <With Code="DWTERM" Connector="AND" Operator="&lt;&gt;">
+                  <Value>Spring 2020</Value>
+                  <Value>Summer 2020</Value>
+                  <Value>Fall 2020</Value>
+                  <Value>Spring 2021</Value>
+                </With>
+              </Course>
+            </Except>
+          </Requirement>
+          <Advice Connector=", " Credits="1">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = AUWR">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>AUWR</Value>
+              </With>
+            </Course>
+            <Course Disc="WRIT" NewDiscipline="Yes" Num="0000" Num_end="0991"/>
+            <Except/>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Foreign Language Proficiency" LabelTag="WUBSSLFLREQ" Node_id="303" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2-1-1">
+          <IfElsePart>ElsePart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Connector="," Credits_begin="1">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="304" Num="@">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>WUFL</Value>
+              </With>
+            </Course>
+            <Course Disc="SPAN" NewDiscipline="Yes" Node_id="305" Num="0205"/>
+            <Qualifier Applied="" Name="HIGHPRIORITY" Node_id="306" Node_type="4135">
+              <Text>HighPriority</Text>
+            </Qualifier>
+            <Qualifier Applied="" Name="HIGHPRIORITY" Node_id="307" Node_type="4135">
+              <Text>HighPriority</Text>
+            </Qualifier>
+          </Requirement>
+          <Advice Connector=", " Credits="1">
+            <Course Disc="@" NewDiscipline="Yes" Num="@" With_advice="ATTRIBUTE = WUFL">
+              <With Code="ATTRIBUTE" Connector="" Operator="=">
+                <Value>WUFL</Value>
+              </With>
+            </Course>
+            <Course Credits="1" Disc="SPAN" NewDiscipline="Yes" Num="0205" Title="Spanish for Med Prof Elem 2"/>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="The Planet &amp; Our Climate" LabelTag="BKNJF" Node_id="308" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2-2">
+          <IfElsePart>IfPart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Connector="," Credits_begin="1">
+            <Course Disc="ASTR" NewDiscipline="Yes" Node_id="309" Num="0001" Num_end="4999"/>
+            <Course Disc="BIOL" NewDiscipline="Yes" Node_id="310" Num="0001" Num_end="4999"/>
+            <Course Disc="EESC" NewDiscipline="Yes" Node_id="311" Num="0001" Num_end="4999"/>
+            <Course Disc="ENVS" NewDiscipline="Yes" Node_id="312" Num="0001" Num_end="4999"/>
+            <Course Disc="NURS" NewDiscipline="Yes" Node_id="313" Num="3520"/>
+            <Except>
+              <Course Disc="@" HideFromAdvice="Yes" NewDiscipline="Yes" Node_id="315" Num="@">
+                <With Code="DWPASSFAIL" Connector="AND" Operator="=">
+                  <Value>Y</Value>
+                </With>
+                <With Code="DWTERM" Connector="AND" Operator="&lt;&gt;">
+                  <Value>Spring 2020</Value>
+                  <Value>Summer 2020</Value>
+                  <Value>Fall 2020</Value>
+                  <Value>Spring 2021</Value>
+                </With>
+              </Course>
+            </Except>
+          </Requirement>
+          <Advice Connector=", " Credits="1">
+            <Course Disc="ASTR" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="BIOL" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="EESC" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="ENVS" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Credits="0" Disc="NURS" NewDiscipline="Yes" Num="3520" Title="ClimateChange &amp; FoodInsecurity" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Except/>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Societies, Histories, and Traditions" LabelTag="DRKFLL" Node_id="316" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2-3">
+          <IfElsePart>IfPart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Connector="," Credits_begin="1">
+            <Course Disc="ANCH" NewDiscipline="Yes" Node_id="317" Num="0001" Num_end="4999"/>
+            <Course Disc="ANEL" NewDiscipline="Yes" Node_id="318" Num="0001" Num_end="4999"/>
+            <Course Disc="ANTH" NewDiscipline="Yes" Node_id="319" Num="0001" Num_end="4999"/>
+            <Course Disc="ARTH" NewDiscipline="Yes" Node_id="320" Num="0001" Num_end="4999"/>
+            <Course Disc="CLST" NewDiscipline="Yes" Node_id="321" Num="0001" Num_end="4999"/>
+            <Course Disc="COMM" NewDiscipline="Yes" Node_id="322" Num="0001" Num_end="4999"/>
+            <Course Disc="CRIM" NewDiscipline="Yes" Node_id="323" Num="0001" Num_end="4999"/>
+            <Course Disc="EALC" NewDiscipline="Yes" Node_id="324" Num="0001" Num_end="4999"/>
+            <Course Disc="ECON" NewDiscipline="Yes" Node_id="325" Num="0001" Num_end="4999"/>
+            <Course Disc="EDUC" NewDiscipline="Yes" Node_id="326" Num="0001" Num_end="4999"/>
+            <Course Disc="HIST" NewDiscipline="Yes" Node_id="327" Num="0001" Num_end="4999"/>
+            <Course Disc="MMES" NewDiscipline="Yes" Node_id="328" Num="0001" Num_end="4999"/>
+            <Course Disc="NELC" NewDiscipline="Yes" Node_id="329" Num="0001" Num_end="4999"/>
+            <Course Disc="NURS" NewDiscipline="Yes" Node_id="330" Num="3060"/>
+            <Course Disc="NURS" Node_id="331" Num="3130"/>
+            <Course Disc="PPE" NewDiscipline="Yes" Node_id="332" Num="0001" Num_end="4999"/>
+            <Course Disc="PSCI" NewDiscipline="Yes" Node_id="333" Num="0001" Num_end="4999"/>
+            <Course Disc="PSYC" NewDiscipline="Yes" Node_id="334" Num="0001" Num_end="4999"/>
+            <Course Disc="SOCI" NewDiscipline="Yes" Node_id="335" Num="0001" Num_end="4999"/>
+            <Except>
+              <Course Disc="@" HideFromAdvice="Yes" NewDiscipline="Yes" Node_id="337" Num="@">
+                <With Code="DWPASSFAIL" Connector="AND" Operator="=">
+                  <Value>Y</Value>
+                </With>
+                <With Code="DWTERM" Connector="AND" Operator="&lt;&gt;">
+                  <Value>Spring 2020</Value>
+                  <Value>Summer 2020</Value>
+                  <Value>Fall 2020</Value>
+                  <Value>Spring 2021</Value>
+                </With>
+              </Course>
+            </Except>
+          </Requirement>
+          <Advice Connector=", " Credits="1">
+            <Course Disc="ANCH" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="ANEL" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="ANTH" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="ARTH" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="CLST" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="COMM" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="CRIM" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="EALC" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="ECON" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="EDUC" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="HIST" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="MMES" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="NELC" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Credits="1" Disc="NURS" NewDiscipline="Yes" Num="3060" Title="Opioids:Recptrs To Epidm"/>
+            <Course Credits="1" Disc="NURS" Num="3130" Title="Obesity and Society"/>
+            <Course Disc="PPE" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="PSCI" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="PSYC" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="SOCI" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Except/>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Global Arts, Letters, &amp; Cultures" LabelTag="UNGKLL" Node_id="338" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2-4">
+          <IfElsePart>IfPart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Connector="," Credits_begin="1">
+            <Course Disc="ASLD" NewDiscipline="Yes" Node_id="339" Num="0100" Num_end="4999"/>
+            <Course Disc="AMHR" NewDiscipline="Yes" Node_id="340" Num="0100" Num_end="4999"/>
+            <Course Disc="ARAB" NewDiscipline="Yes" Node_id="341" Num="0100" Num_end="4999"/>
+            <Course Disc="ARCH" NewDiscipline="Yes" Node_id="342" Num="0001" Num_end="4999"/>
+            <Course Disc="ARTH" NewDiscipline="Yes" Node_id="343" Num="0001" Num_end="4999"/>
+            <Course Disc="ALAN" NewDiscipline="Yes" Node_id="344" Num="0100" Num_end="4999"/>
+            <Course Disc="BENG" NewDiscipline="Yes" Node_id="345" Num="0100" Num_end="4999"/>
+            <Course Disc="BCS" NewDiscipline="Yes" Node_id="346" Num="0100" Num_end="4999"/>
+            <Course Disc="CHIC" NewDiscipline="Yes" Node_id="347" Num="0100" Num_end="4999"/>
+            <Course Disc="CHIN" NewDiscipline="Yes" Node_id="348" Num="0100" Num_end="4999"/>
+            <Course Disc="CIMS" NewDiscipline="Yes" Node_id="349" Num="0100" Num_end="4999"/>
+            <Course Disc="COML" NewDiscipline="Yes" Node_id="350" Num="0100" Num_end="4999"/>
+            <Course Disc="CZCH" NewDiscipline="Yes" Node_id="351" Num="0100" Num_end="4999"/>
+            <Course Disc="DSGN" NewDiscipline="Yes" Node_id="352" Num="0100" Num_end="4999"/>
+            <Course Disc="DTCH" NewDiscipline="Yes" Node_id="353" Num="0100" Num_end="4999"/>
+            <Course Disc="ENGL" NewDiscipline="Yes" Node_id="354" Num="0100" Num_end="4999"/>
+            <Course Disc="FILP" NewDiscipline="Yes" Node_id="355" Num="0100" Num_end="4999"/>
+            <Course Disc="FNAR" NewDiscipline="Yes" Node_id="356" Num="0100" Num_end="4999"/>
+            <Course Disc="FREN" NewDiscipline="Yes" Node_id="357" Num="0100" Num_end="4999"/>
+            <Course Disc="GRMN" NewDiscipline="Yes" Node_id="358" Num="0100" Num_end="4999"/>
+            <Course Disc="GREK" NewDiscipline="Yes" Node_id="359" Num="0100" Num_end="4999"/>
+            <Course Disc="GUJR" NewDiscipline="Yes" Node_id="360" Num="0100" Num_end="4999"/>
+            <Course Disc="HEBR" NewDiscipline="Yes" Node_id="361" Num="0100" Num_end="4999"/>
+            <Course Disc="HIND" NewDiscipline="Yes" Node_id="362" Num="0100" Num_end="4999"/>
+            <Course Disc="HUNG" NewDiscipline="Yes" Node_id="363" Num="0100" Num_end="4999"/>
+            <Course Disc="IGBO" NewDiscipline="Yes" Node_id="364" Num="0100" Num_end="4999"/>
+            <Course Disc="INDO" NewDiscipline="Yes" Node_id="365" Num="0100" Num_end="4999"/>
+            <Course Disc="IRIS" NewDiscipline="Yes" Node_id="366" Num="0100" Num_end="4999"/>
+            <Course Disc="ITAL" NewDiscipline="Yes" Node_id="367" Num="0100" Num_end="4999"/>
+            <Course Disc="JPAN" NewDiscipline="Yes" Node_id="368" Num="0100" Num_end="4999"/>
+            <Course Disc="KAND" NewDiscipline="Yes" Node_id="369" Num="0100" Num_end="4999"/>
+            <Course Disc="KORN" NewDiscipline="Yes" Node_id="370" Num="0100" Num_end="4999"/>
+            <Course Disc="LATN" NewDiscipline="Yes" Node_id="371" Num="0100" Num_end="4999"/>
+            <Course Disc="LING" NewDiscipline="Yes" Node_id="372" Num="0100" Num_end="4999"/>
+            <Course Disc="MALG" NewDiscipline="Yes" Node_id="373" Num="0100" Num_end="4999"/>
+            <Course Disc="MLYM" NewDiscipline="Yes" Node_id="374" Num="0100" Num_end="4999"/>
+            <Course Disc="MRTI" NewDiscipline="Yes" Node_id="375" Num="0100" Num_end="4999"/>
+            <Course Disc="MUSC" NewDiscipline="Yes" Node_id="376" Num="0100" Num_end="4999"/>
+            <Course Disc="NURS" NewDiscipline="Yes" Node_id="377" Num="3050"/>
+            <Course Disc="NURS" Node_id="378" Num="3160"/>
+            <Course Disc="PASH" NewDiscipline="Yes" Node_id="379" Num="0100" Num_end="4999"/>
+            <Course Disc="PERS" NewDiscipline="Yes" Node_id="380" Num="0100" Num_end="4999"/>
+            <Course Disc="PHIL" NewDiscipline="Yes" Node_id="381" Num="0100" Num_end="4999"/>
+            <Course Disc="PLSH" NewDiscipline="Yes" Node_id="382" Num="0100" Num_end="4999"/>
+            <Course Disc="PRTG" NewDiscipline="Yes" Node_id="383" Num="0100" Num_end="4999"/>
+            <Course Disc="PUNJ" NewDiscipline="Yes" Node_id="384" Num="0100" Num_end="4999"/>
+            <Course Disc="QUEC" NewDiscipline="Yes" Node_id="385" Num="0100" Num_end="4999"/>
+            <Course Disc="RUSS" NewDiscipline="Yes" Node_id="386" Num="0100" Num_end="4999"/>
+            <Course Disc="SKRT" NewDiscipline="Yes" Node_id="387" Num="0100" Num_end="4999"/>
+            <Course Disc="SPAN" NewDiscipline="Yes" Node_id="388" Num="0100" Num_end="4999"/>
+            <Course Disc="SARB" NewDiscipline="Yes" Node_id="389" Num="0100" Num_end="4999"/>
+            <Course Disc="SWAH" NewDiscipline="Yes" Node_id="390" Num="0100" Num_end="4999"/>
+            <Course Disc="SWED" NewDiscipline="Yes" Node_id="391" Num="0100" Num_end="4999"/>
+            <Course Disc="TAML" NewDiscipline="Yes" Node_id="392" Num="0100" Num_end="4999"/>
+            <Course Disc="TELU" NewDiscipline="Yes" Node_id="393" Num="0100" Num_end="4999"/>
+            <Course Disc="THAI" NewDiscipline="Yes" Node_id="394" Num="0100" Num_end="4999"/>
+            <Course Disc="THAR" NewDiscipline="Yes" Node_id="395" Num="0100" Num_end="4999"/>
+            <Course Disc="TIBT" NewDiscipline="Yes" Node_id="396" Num="0100" Num_end="4999"/>
+            <Course Disc="TIGR" NewDiscipline="Yes" Node_id="397" Num="0100" Num_end="4999"/>
+            <Course Disc="TURK" NewDiscipline="Yes" Node_id="398" Num="0100" Num_end="4999"/>
+            <Course Disc="TWI" NewDiscipline="Yes" Node_id="399" Num="0100" Num_end="4999"/>
+            <Course Disc="UKRN" NewDiscipline="Yes" Node_id="400" Num="0100" Num_end="4999"/>
+            <Course Disc="URDU" NewDiscipline="Yes" Node_id="401" Num="0100" Num_end="4999"/>
+            <Course Disc="VIET" NewDiscipline="Yes" Node_id="402" Num="0100" Num_end="4999"/>
+            <Course Disc="VLST" NewDiscipline="Yes" Node_id="403" Num="0100" Num_end="4999"/>
+            <Course Disc="WOLF" NewDiscipline="Yes" Node_id="404" Num="0100" Num_end="4999"/>
+            <Course Disc="YDSH" NewDiscipline="Yes" Node_id="405" Num="0100" Num_end="4999"/>
+            <Course Disc="YORB" NewDiscipline="Yes" Node_id="406" Num="0100" Num_end="4999"/>
+            <Course Disc="ZULU" NewDiscipline="Yes" Node_id="407" Num="0100" Num_end="4999"/>
+            <Except>
+              <Course Disc="@" HideFromAdvice="Yes" NewDiscipline="Yes" Node_id="409" Num="@">
+                <With Code="DWPASSFAIL" Connector="AND" Operator="=">
+                  <Value>Y</Value>
+                </With>
+                <With Code="DWTERM" Connector="AND" Operator="&lt;&gt;">
+                  <Value>Spring 2020</Value>
+                  <Value>Summer 2020</Value>
+                  <Value>Fall 2020</Value>
+                  <Value>Spring 2021</Value>
+                </With>
+              </Course>
+            </Except>
+            <Qualifier Applied="" Name="HIGHPRIORITY" Node_id="410" Node_type="4135">
+              <Text>HighPriority</Text>
+            </Qualifier>
+          </Requirement>
+          <Advice Connector=", " Credits="1">
+            <Course Disc="ASLD" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="AMHR" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="ARAB" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="ARCH" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="ARTH" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="ALAN" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="BENG" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="BCS" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="CHIC" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="CHIN" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="CIMS" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="COML" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="CZCH" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="DSGN" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="DTCH" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="ENGL" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="FILP" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="FNAR" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="FREN" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="GRMN" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="GREK" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="GUJR" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="HEBR" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="HIND" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="HUNG" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="IGBO" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="INDO" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="IRIS" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="ITAL" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="JPAN" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="KAND" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="KORN" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="LATN" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="LING" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="MALG" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="MLYM" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="MRTI" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="MUSC" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Credits="1" Disc="NURS" NewDiscipline="Yes" Num="3050" Title="Narr Matters in Health"/>
+            <Course Credits="1" Disc="NURS" Num="3160" Title="Global Food Insecurity"/>
+            <Course Disc="PASH" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="PERS" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="PHIL" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="PLSH" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="PRTG" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="PUNJ" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="QUEC" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="RUSS" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="SKRT" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="SPAN" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="SARB" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="SWAH" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="SWED" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="TAML" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="TELU" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="THAI" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="THAR" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="TIBT" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="TIGR" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="TURK" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="TWI" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="UKRN" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="URDU" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="VIET" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="VLST" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="WOLF" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="YDSH" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="YORB" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Course Disc="ZULU" NewDiscipline="Yes" Num="0100" Num_end="4999"/>
+            <Except/>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Universality in Thought and Action" LabelTag="VBNKXK" Node_id="411" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2-5">
+          <IfElsePart>IfPart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Connector="," Credits_begin="1">
+            <Course Disc="AFRC" NewDiscipline="Yes" Node_id="412" Num="0001" Num_end="4999"/>
+            <Course Disc="ASAM" NewDiscipline="Yes" Node_id="413" Num="0001" Num_end="4999"/>
+            <Course Disc="GSWS" NewDiscipline="Yes" Node_id="414" Num="0001" Num_end="4999"/>
+            <Course Disc="JWST" NewDiscipline="Yes" Node_id="415" Num="0001" Num_end="4999"/>
+            <Course Disc="LALS" NewDiscipline="Yes" Node_id="416" Num="0001" Num_end="4999"/>
+            <Course Disc="NURS" NewDiscipline="Yes" Node_id="417" Num="3160"/>
+            <Course Disc="RELS" NewDiscipline="Yes" Node_id="418" Num="0001" Num_end="4999"/>
+            <Course Disc="REES" NewDiscipline="Yes" Node_id="419" Num="0001" Num_end="4999"/>
+            <Course Disc="SAST" NewDiscipline="Yes" Node_id="420" Num="0001" Num_end="4999"/>
+            <Course Disc="URBS" NewDiscipline="Yes" Node_id="421" Num="0001" Num_end="4999"/>
+            <Except>
+              <Course Disc="@" HideFromAdvice="Yes" NewDiscipline="Yes" Node_id="423" Num="@">
+                <With Code="DWPASSFAIL" Connector="AND" Operator="=">
+                  <Value>Y</Value>
+                </With>
+                <With Code="DWTERM" Connector="AND" Operator="&lt;&gt;">
+                  <Value>Spring 2020</Value>
+                  <Value>Summer 2020</Value>
+                  <Value>Fall 2020</Value>
+                  <Value>Spring 2021</Value>
+                </With>
+              </Course>
+            </Except>
+          </Requirement>
+          <Advice Connector=", " Credits="1">
+            <Course Disc="AFRC" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="ASAM" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="GSWS" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="JWST" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="LALS" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Credits="1" Disc="NURS" NewDiscipline="Yes" Num="3160" Title="Global Food Insecurity"/>
+            <Course Disc="RELS" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="REES" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="SAST" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Course Disc="URBS" NewDiscipline="Yes" Num="0001" Num_end="4999"/>
+            <Except/>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Language or Free Elective Courses" LabelTag="STUNZK" Node_id="708" Node_type="4200" Per_complete="0" ProxyAdvice="Yes" RuleType="Course" Rule_id="2-6-1">
+          <IfElsePart>ElsePart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Connector="," Credits_begin="1" Decide="ORDER">
+            <Course Disc="AMHR" NewDiscipline="Yes" Node_id="709" Num="@"/>
+            <Course Disc="ARAB" NewDiscipline="Yes" Node_id="710" Num="@"/>
+            <Course Disc="ASLD" NewDiscipline="Yes" Node_id="711" Num="@"/>
+            <Course Disc="CHIC" NewDiscipline="Yes" Node_id="712" Num="@"/>
+            <Course Disc="CHIN" NewDiscipline="Yes" Node_id="713" Num="@"/>
+            <Course Disc="FREN" NewDiscipline="Yes" Node_id="714" Num="@"/>
+            <Course Disc="GREK" NewDiscipline="Yes" Node_id="715" Num="@"/>
+            <Course Disc="GRMN" NewDiscipline="Yes" Node_id="716" Num="@"/>
+            <Course Disc="GUJR" NewDiscipline="Yes" Node_id="717" Num="@"/>
+            <Course Disc="HEBR" NewDiscipline="Yes" Node_id="718" Num="@"/>
+            <Course Disc="HIND" NewDiscipline="Yes" Node_id="719" Num="@"/>
+            <Course Disc="HUNG" NewDiscipline="Yes" Node_id="720" Num="@"/>
+            <Course Disc="IGBO" NewDiscipline="Yes" Node_id="721" Num="@"/>
+            <Course Disc="INDO" NewDiscipline="Yes" Node_id="722" Num="@"/>
+            <Course Disc="ITAL" NewDiscipline="Yes" Node_id="723" Num="@"/>
+            <Course Disc="JPAN" NewDiscipline="Yes" Node_id="724" Num="@"/>
+            <Course Disc="JWST" NewDiscipline="Yes" Node_id="725" Num="@"/>
+            <Course Disc="KAND" NewDiscipline="Yes" Node_id="726" Num="@"/>
+            <Course Disc="KORN" NewDiscipline="Yes" Node_id="727" Num="@"/>
+            <Course Disc="LATN" NewDiscipline="Yes" Node_id="728" Num="@"/>
+            <Course Disc="MALG" NewDiscipline="Yes" Node_id="729" Num="@"/>
+            <Course Disc="MLYM" NewDiscipline="Yes" Node_id="730" Num="@"/>
+            <Course Disc="MRTI" NewDiscipline="Yes" Node_id="731" Num="@"/>
+            <Course Disc="PASH" NewDiscipline="Yes" Node_id="732" Num="@"/>
+            <Course Disc="PERS" NewDiscipline="Yes" Node_id="733" Num="@"/>
+            <Course Disc="PLSH" NewDiscipline="Yes" Node_id="734" Num="@"/>
+            <Course Disc="PRTG" NewDiscipline="Yes" Node_id="735" Num="@"/>
+            <Course Disc="RUSS" NewDiscipline="Yes" Node_id="736" Num="@"/>
+            <Course Disc="SKRT" NewDiscipline="Yes" Node_id="737" Num="@"/>
+            <Course Disc="SPAN" NewDiscipline="Yes" Node_id="738" Num="@"/>
+            <Course Disc="SWAH" NewDiscipline="Yes" Node_id="739" Num="@"/>
+            <Course Disc="TAML" NewDiscipline="Yes" Node_id="740" Num="@"/>
+            <Course Disc="TELU" NewDiscipline="Yes" Node_id="741" Num="@"/>
+            <Course Disc="THAI" NewDiscipline="Yes" Node_id="742" Num="@"/>
+            <Course Disc="TIGR" NewDiscipline="Yes" Node_id="743" Num="@"/>
+            <Course Disc="TURK" NewDiscipline="Yes" Node_id="744" Num="@"/>
+            <Course Disc="UKRN" NewDiscipline="Yes" Node_id="745" Num="@"/>
+            <Course Disc="VIET" NewDiscipline="Yes" Node_id="746" Num="@"/>
+            <Course Disc="WOLF" NewDiscipline="Yes" Node_id="747" Num="@"/>
+            <Course Disc="YDSH" NewDiscipline="Yes" Node_id="748" Num="@"/>
+            <Course Disc="YORB" NewDiscipline="Yes" Node_id="749" Num="@"/>
+            <Course Disc="ZULU" NewDiscipline="Yes" Node_id="750" Num="@"/>
+            <Course Disc="@" NewDiscipline="Yes" Node_id="751" Num="@"/>
+            <Except>
+              <Course Disc="NURS" NewDiscipline="Yes" Node_id="753" Num="0061"/>
+              <Course Disc="NURS" Node_id="754" Num="0065"/>
+              <Course Disc="NURS" Node_id="755" Num="0068"/>
+              <Course Disc="NURS" Node_id="756" Num="1030"/>
+              <Course Disc="NURS" Node_id="757" Num="1630"/>
+              <Course Disc="NURS" Node_id="758" Num="1650"/>
+              <Course Disc="NURS" Node_id="759" Num="2350"/>
+              <Course Disc="NURS" Node_id="760" Num="3820"/>
+            </Except>
+            <Qualifier Applied="" Name="LOWPRIORITY" Node_id="761" Node_type="4136">
+              <Text>LowPriority</Text>
+            </Qualifier>
+          </Requirement>
+          <ProxyAdvice>
+            <Text>If language proficiency completed in less than 2 semesters,</Text>
+            <Text>use remaining CUs as free electives.</Text>
+          </ProxyAdvice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Exploration Course Requirement" LabelTag="DDFNGL" Node_id="762" Node_type="4200" Per_complete="0" ProxyAdvice="Yes" RuleType="Course" Rule_id="2-7">
+          <IfElsePart>IfPart</IfElsePart>
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Connector="," Credits_begin="1">
+            <Course Disc="@" NewDiscipline="Yes" Node_id="763" Num="@"/>
+            <Except>
+              <Course Disc="NURS" NewDiscipline="Yes" Node_id="765" Num="@"/>
+            </Except>
+            <Qualifier Applied="" Name="LOWESTPRIORITY" Node_id="766" Node_type="4141">
+              <Text>LowestPriority</Text>
+            </Qualifier>
+          </Requirement>
+          <ProxyAdvice>
+            <Text>A course in any School within the University other than the School of Nursing,</Text>
+            <Text>at any level for which the student is eligible and in any discipline.</Text>
+          </ProxyAdvice>
+        </Rule>
+      </Block>
+      <Block Cat_yr="9999" Cat_yrLit="End of Time" Cat_yr_start="2023" Cat_yr_stop="9999" Classes_applied="0" Credits_applied="0" GPA="*" Gpa_credits="0" Gpa_grade_pts="*" Minor="HCOM" Per_complete="0" Req_id="RA001283" Req_type="MINOR" Req_value="HCOM" Title="Minor in Health Communications">
+        <Header>
+          <Qualifier Applied="0" ClassesApplied="0" Credits="6.5" CreditsApplied="0" Label="Minimum Credits Requirement" LabelTag="SNEHSK" Name="CLASSESCREDITS" Needed="6.5" Node_id="1" Node_type="4121" Satisfied="No">
+            <Text>6.5 Credits</Text>
+          </Qualifier>
+          <Qualifier ClassesApplied="0" Credits="0" CreditsApplied="0" Name="MAXCREDIT" Node_id="2" Node_type="4103" Tag="MXPFCOVID">
+            <SubText>@ @ (With </SubText>
+            <SubText>DWPASSFAIL = Y AND</SubText>
+            <SubText>DWTERM &lt;&gt; 202010, 202020, 202030, 202110</SubText>
+            <SubText>)</SubText>
+            <Text>MaxCredits 0 in </Text>
+          </Qualifier>
+          <Qualifier Applied="" Name="STANDALONEBLOCK" Node_id="4" Node_type="4137">
+            <Text>StandAloneBlock</Text>
+          </Qualifier>
+          <Advice>
+            <Text Node_id="1">
+              <Line>6.5 credits are required. You currently have 0.</Line>
+              <Line>You still need 6.5 more.</Line>
+            </Text>
+          </Advice>
+        </Header>
+        <Rule IndentLevel="1" Label="Pscyh&amp;Soc Diversity" LabelTag="SRJKNF" Node_id="5" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="1">
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="NURS" NewDiscipline="Yes" Node_id="6" Num="1030"/>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Credits="0" Disc="NURS" NewDiscipline="Yes" Num="1030" Title="Pscyh&amp;Soc Diversity" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Psychiatric, Behavioral, Menta" LabelTag="BLJNFR" Node_id="7" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2">
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="NURS" NewDiscipline="Yes" Node_id="8" Num="2350"/>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Credits="0" Disc="NURS" NewDiscipline="Yes" Num="2350" Title="Psychiatric, Behavioral, Menta" creditsHigh="1.5" creditsIndicator="OR" creditsSuggested="1.5"/>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Nursing Elective" LabelTag="ABGZND" Node_id="9" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="3">
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="NURS" NewDiscipline="Yes" Node_id="10" Num="3200"/>
+            <Course Disc="NURS" Node_id="11" Num="3530"/>
+            <Course Disc="COMM" HideFromAdvice="Yes" NewDiscipline="Yes" Node_id="12" Num="2760">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2025</Value>
+              </With>
+            </Course>
+            <Course Disc="COMM" HideFromAdvice="Yes" Node_id="13" Num="2760">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2025</Value>
+              </With>
+            </Course>
+            <Course Disc="PSYC" HideFromAdvice="Yes" NewDiscipline="Yes" Node_id="14" Num="2760">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2025</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Credits="1" Disc="NURS" NewDiscipline="Yes" Num="3200" Title="Dsgn Cre: SNF Padeia Program"/>
+            <Course Credits="1" Disc="NURS" Num="3530" Title="Health Comm Digital Age"/>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Communications Courses" LabelTag="GZNBTV" Node_id="15" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="4">
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="3" Connector=",">
+            <Course Disc="COMM" NewDiscipline="Yes" Node_id="16" Num="2100"/>
+            <Course Disc="COMM" Node_id="17" Num="2250"/>
+            <Course Disc="COMM" Node_id="18" Num="3450"/>
+            <Course Disc="COMM" Node_id="19" Num="4070"/>
+            <Course Disc="COMM" Node_id="20" Num="4320"/>
+            <Course Disc="COMM" HideFromAdvice="Yes" Node_id="21" Num="1250">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2026</Value>
+              </With>
+            </Course>
+            <Course Disc="COMM" HideFromAdvice="Yes" Node_id="22" Num="1300">
+              <With Code="DWTERMM" Connector="" Operator="&lt;">
+                <Value>202620</Value>
+              </With>
+            </Course>
+            <Course Disc="COMM" HideFromAdvice="Yes" Node_id="23" Num="2750">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2025</Value>
+              </With>
+            </Course>
+            <Course Disc="COMM" HideFromAdvice="Yes" Node_id="24" Num="3100">
+              <With Code="DWTERM" Connector="" Operator="&lt;">
+                <Value>Summer 2026</Value>
+              </With>
+            </Course>
+          </Requirement>
+          <Advice Classes="3" Connector=", ">
+            <Course Credits="0" Disc="COMM" NewDiscipline="Yes" Num="2100" Title="Research Methods In Comm" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="0" Disc="COMM" Num="2250" Title="Children and Media" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="0" Disc="COMM" Num="3450" Title="Adolescence and Media" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="0" Disc="COMM" Num="4070" Title="Social Networks" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+            <Course Credits="0" Disc="COMM" Num="4320" Title="Digital Inequalities" creditsHigh="1" creditsIndicator="OR" creditsSuggested="1"/>
+          </Advice>
+        </Rule>
+      </Block>
+      <Clsinfo/>
+      <Fallthrough Classes="0" Credits="0" Noncourses="0"/>
+      <OTL Classes="0" Credits="0"/>
+      <Insufficient Classes="0" Credits="0"/>
+      <In_progress Classes="0" Credits="0"/>
+      <FitList/>
+      <SplitCredits Classes="0" Credits="0"/>
+      <Deginfo>
+        <DegreeData Actv_term="" Actv_termLit="" Cat_yr="9999" Cat_yrLit="End of Time" Degree="BSN" DegreeLit="Bachelor of Science in Nursing" DegreeSource="  " Degree_term="" SS_cum_cr_earn="        " SS_cum_gpa="        " SS_cum_gr_att="        " SS_cum_gr_pts="        " SS_cum_tot_earn="        " School="UG" SchoolLit="Undergraduate" Stu_level="  " Stu_levelLit="  "/>
+        <Goal Cat_yr="9999" Code="COLLEGE" Value="NU" ValueLit="Nursing Undergraduate NU"/>
+        <Goal Cat_yr="9999" Code="PROGRAM" Value="NU_BSN" ValueLit="Nursing - BSN"/>
+        <Goal Cat_yr="9999" Code="MINOR" Value="HCOM" ValueLit="Health Communications"/>
+      </Deginfo>
+      <ExceptionList/>
+      <Notes/>
+      <Flags>
+        <CFG020DAP14>Y Y 05NNYNYY            NYYNY                             YNNN2YNNYYY05YYYYNYYNN    </CFG020DAP14>
+        <CFG020TIEBREAK>01H02H03H04H05N06N07N08N09N                                                                         </CFG020TIEBREAK>
+      </Flags>
+    </Audit>
+  </Report>
+

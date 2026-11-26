@@ -1,0 +1,17 @@
+{
+ "key": "884",
+ "prog_code": "MSE-BSE-BMBM",
+ "prog_name": "Materials Science & Engin BSE (Biomaterials and Biomimetics)",
+ "prog_type": "conc",
+ "prog_parent": "MSE-BSE",
+ "levl_code": "UG",
+ "degc_code": "BSE",
+ "majr_code": "MSE",
+ "minr_code": "",
+ "conc_code": "BMBM",
+ "coll_code": "EU",
+ "dept_code": "",
+ "sis_prog_code": "EU_BSE",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

@@ -1,0 +1,17 @@
+{
+ "key": "842",
+ "prog_code": "CBE-BSE-NCON",
+ "prog_name": "Chemical & Biomolecular Eng BSE (No Concentration)",
+ "prog_type": "conc",
+ "prog_parent": "CBE-BSE",
+ "levl_code": "UG",
+ "degc_code": "BSE",
+ "majr_code": "CBE",
+ "minr_code": "",
+ "conc_code": "NCON",
+ "coll_code": "EU",
+ "dept_code": "",
+ "sis_prog_code": "EU_BSE",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

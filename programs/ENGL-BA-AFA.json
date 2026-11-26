@@ -1,0 +1,17 @@
+{
+ "key": "657",
+ "prog_code": "ENGL-BA-AFA",
+ "prog_name": "English BA (Africana Literatures & Culture)",
+ "prog_type": "conc",
+ "prog_parent": "ENGL-BA",
+ "levl_code": "UG",
+ "degc_code": "BA",
+ "majr_code": "ENGL",
+ "minr_code": "",
+ "conc_code": "AFA",
+ "coll_code": "AU",
+ "dept_code": "",
+ "sis_prog_code": "AU_BA",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

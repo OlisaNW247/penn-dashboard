@@ -1,0 +1,17 @@
+{
+ "key": "807",
+ "prog_code": "IVSB-BS-SOGO",
+ "prog_name": "Impact, Value and Sus Bus BS (Social and Gov Factors Bus)",
+ "prog_type": "conc",
+ "prog_parent": "IVSB-BS",
+ "levl_code": "UG",
+ "degc_code": "BS",
+ "majr_code": "IVSB",
+ "minr_code": "",
+ "conc_code": "SOGO",
+ "coll_code": "WU",
+ "dept_code": "",
+ "sis_prog_code": "WU_BS",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

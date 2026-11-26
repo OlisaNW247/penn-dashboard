@@ -1,0 +1,17 @@
+{
+ "key": "819",
+ "prog_code": "OIDD-BS-INFO",
+ "prog_name": "Operations, Info.,&Decisions BS (Information Systems)",
+ "prog_type": "conc",
+ "prog_parent": "OIDD-BS",
+ "levl_code": "UG",
+ "degc_code": "BS",
+ "majr_code": "OIDD",
+ "minr_code": "",
+ "conc_code": "INFO",
+ "coll_code": "WU",
+ "dept_code": "",
+ "sis_prog_code": "WU_BS",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

@@ -1,0 +1,17 @@
+{
+ "key": "1115",
+ "prog_code": "QISP-MINOR",
+ "prog_name": "Minor in Qual Improv & Saf Proc Hlthcre",
+ "prog_type": "major",
+ "prog_parent": "",
+ "levl_code": "UG",
+ "degc_code": "MINOR",
+ "majr_code": "QISP",
+ "minr_code": "",
+ "conc_code": "",
+ "coll_code": "",
+ "dept_code": "",
+ "sis_prog_code": "",
+ "hide": "N",
+ "minor_sis_prog_codes": "NM_MSN,NP_PHD,ND_DNP,ND_DNP_ONL"
+}

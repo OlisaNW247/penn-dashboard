@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+
+
+  <Report>
+    <Audit>
+      <AuditHeader AuditDescription="" AuditType="AA" Audit_id="W0008XJo" DWGPA="*" DateDay="14" DateMonth="07" DateYear="2026" ExamApp="0" ExamOTL="0" FreezeDate="" FreezeType="" FreezeTypeDescription="" FreezeUserName="" In_progress="Y" Per_complete="16" ResApp="0" ResAppInProg="0" ResOTL="0" ResOTLInProg="0" SSGPA="*" Stu_email="" Stu_id="*" Stu_name="*Test" TimeHour="09" TimeMinute="44" Version="$Id$ OS_TYPE=Linux; Release=5.1.5.1" What_if="Y" XferApp="0" XferOTL="0"/>
+      <Block Cat_yr="9999" Cat_yrLit="End of Time" Cat_yr_start="2027" Cat_yr_stop="9999" Classes_applied="0" Credits_applied="0" Degree="DNP" GPA="*" Gpa_credits="0" Gpa_grade_pts="*" Per_complete="16" Req_id="RA002210" Req_type="DEGREE" Req_value="DNP" Title="Degree in Doctor of Nursing Practice">
+        <Header>
+          <Qualifier ClassesApplied="0" Credits="0" CreditsApplied="0" Name="MAXPASSFAIL" Node_id="35" Node_type="4115" Tag="MXPFH">
+            <Text>MAXPASSFAIL 0 Credits</Text>
+          </Qualifier>
+          <Qualifier Applied="" JustAdded="TRUE" Name="CHECKELECTIVES" Node_id="" Node_type="4140">
+            <ECA-Error Text="Degree overall credits qualifier not specified"/>
+            <Text>CHECK-ELECTIVE-CREDITS-ALLOWED</Text>
+          </Qualifier>
+        </Header>
+        <Rule IndentLevel="1" Label="Cumulative GPA Requirement " LabelTag="MNGPR2" Node_id="46" Node_type="4971" Per_complete="0" ProxyAdvice="Yes" RuleType="Incomplete" Rule_id="1-1-0">
+          <IfElsePart>IfPart</IfElsePart>
+          <Requirement/>
+          <ProxyAdvice>
+            <Text>When your first term is graded, your cumulative GPA</Text>
+            <Text>will be calculated. If your cumulative GPA falls below</Text>
+            <Text>3.0 it is important to see an advisor to make plans</Text>
+            <Text>for raising your GPA.</Text>
+          </ProxyAdvice>
+        </Rule>
+        <Rule IndentLevel="1" Label="There are no I, NR, or PR grades in this Degree Audit" LabelTag="KFSOEL" Node_id="56" Node_type="4900" Per_complete="100" RuleType="Complete" Rule_id="2-1">
+          <IfElsePart>ElsePart</IfElsePart>
+          <Requirement/>
+        </Rule>
+        <Rule IndentLevel="1" Label="Major Requirements" LabelTag="MAJBLOCK" Node_id="57" Node_type="4500" Per_complete="0" RuleType="Blocktype" Rule_id="3">
+          <Requirement>
+            <NumBlocktypes>1</NumBlocktypes>
+            <Type>MAJOR</Type>
+          </Requirement>
+          <Advice>
+            <Type>MAJOR</Type>
+          </Advice>
+        </Rule>
+      </Block>
+      <Block Cat_yr="9999" Cat_yrLit="End of Time" Cat_yr_start="0000" Cat_yr_stop="9999" Classes_applied="0" Credits_applied="0" GPA="*" Gpa_credits="0" Gpa_grade_pts="*" Minor="PALL" Per_complete="0" Req_id="RA000127" Req_type="MINOR" Req_value="PALL" Title="Minor in Palliative Care">
+        <Header>
+          <Qualifier Applied="0" ClassesApplied="0" Credits="3" CreditsApplied="0" Label="Minimum Credits Requirement" LabelTag="SNEHSK" Name="CLASSESCREDITS" Needed="3" Node_id="1" Node_type="4121" Satisfied="No">
+            <Text>3 Credits</Text>
+          </Qualifier>
+          <Qualifier Applied="" Name="STANDALONEBLOCK" Node_id="2" Node_type="4137">
+            <Text>StandAloneBlock</Text>
+          </Qualifier>
+          <Advice>
+            <Text Node_id="1">
+              <Line>3 credits are required. You currently have 0.</Line>
+              <Line>You still need 3 more.</Line>
+            </Text>
+          </Advice>
+        </Header>
+        <Rule IndentLevel="1" Label="Princ of Palliative Care" LabelTag="MINNURS5570" Node_id="3" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="1">
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="NURS" NewDiscipline="Yes" Node_id="4" Num="5570"/>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Credits="1" Disc="NURS" NewDiscipline="Yes" Num="5570" Title="Princ of Palliative Care"/>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Ebp Mgmt Symp Adv Illnes" LabelTag="MINNURS5670" Node_id="5" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="2">
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="NURS" NewDiscipline="Yes" Node_id="6" Num="5670"/>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Credits="1" Disc="NURS" NewDiscipline="Yes" Num="5670" Title="Ebp Mgmt Symp Adv Illnes"/>
+          </Advice>
+        </Rule>
+        <Rule IndentLevel="1" Label="Elective" LabelTag="MINNURSELECT" Node_id="7" Node_type="4200" Per_complete="0" RuleType="Course" Rule_id="3">
+          <Classes_applied>0</Classes_applied>
+          <Credits_applied>0</Credits_applied>
+          <ClassesApplied/>
+          <Requirement Class_cred_op="OR" Classes_begin="1" Connector=",">
+            <Course Disc="NURS" NewDiscipline="Yes" Node_id="8" Num="5110"/>
+            <Course Disc="NURS" Node_id="9" Num="5250"/>
+            <Course Disc="NURS" Node_id="10" Num="5400"/>
+            <Course Disc="NURS" Node_id="11" Num="6360"/>
+          </Requirement>
+          <Advice Classes="1" Connector=", ">
+            <Course Credits="1" Disc="NURS" NewDiscipline="Yes" Num="5110" Title="Loss, Grief &amp; Bereavemnt"/>
+            <Course Credits="1" Disc="NURS" Num="5250" Title="Eth Asp Hlth &amp; Tech"/>
+            <Course Credits="1" Disc="NURS" Num="5400" Title="Cur Iss Hlth &amp; Soc Plcy"/>
+            <Course Credits="1" CrossListed="Parent" Disc="NURS" Num="6360" Title="Pain Science &amp; Practice"/>
+          </Advice>
+        </Rule>
+      </Block>
+      <Clsinfo/>
+      <Fallthrough Classes="0" Credits="0" Noncourses="0"/>
+      <OTL Classes="0" Credits="0"/>
+      <Insufficient Classes="0" Credits="0"/>
+      <In_progress Classes="0" Credits="0"/>
+      <FitList/>
+      <SplitCredits Classes="0" Credits="0"/>
+      <Deginfo>
+        <DegreeData Actv_term="" Actv_termLit="" Cat_yr="9999" Cat_yrLit="End of Time" Degree="DNP" DegreeLit="Doctor of Nursing Practice" DegreeSource="  " Degree_term="" SS_cum_cr_earn="        " SS_cum_gpa="        " SS_cum_gr_att="        " SS_cum_gr_pts="        " SS_cum_tot_earn="        " School="PR" SchoolLit="Professional" Stu_level="  " Stu_levelLit="  "/>
+        <Goal Cat_yr="9999" Code="COLLEGE" Value="ND" ValueLit="Nursing Doctorate ND"/>
+        <Goal Cat_yr="9999" Code="PROGRAM" Value="ND_DNP" ValueLit="Nursing - Doctor of Nursing Practice"/>
+        <Goal Cat_yr="9999" Code="MINOR" Value="PALL" ValueLit="Palliative Care"/>
+      </Deginfo>
+      <ExceptionList/>
+      <Notes/>
+      <Flags>
+        <CFG020DAP14>Y Y 05NNYNYY            NYYNY                             YNNN2YNNYYY05YYYYNYYNN    </CFG020DAP14>
+        <CFG020TIEBREAK>01H02H03H04H05N06N07N08N09N                                                                         </CFG020TIEBREAK>
+      </Flags>
+    </Audit>
+  </Report>
+

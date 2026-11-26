@@ -1,0 +1,17 @@
+{
+ "key": "1109",
+ "prog_code": "CRWT-MINOR",
+ "prog_name": "Minor in Creative Writing",
+ "prog_type": "major",
+ "prog_parent": "",
+ "levl_code": "UG",
+ "degc_code": "MINOR",
+ "majr_code": "CRWT",
+ "minr_code": "",
+ "conc_code": "",
+ "coll_code": "",
+ "dept_code": "",
+ "sis_prog_code": "",
+ "hide": "N",
+ "minor_sis_prog_codes": "EU_BSE,EU_BSE_MANT,AU_BA,AU_BA_VAGL,NU_BSN,AL_BFA,WU_BS_HUNTS,WU_BS_MAT_U,WU_BS_NHCM,WU_BS_WUNG,AU_BA_VIPER,AU_BA_BIOD,AU_BA_HUNTS,EU_BAS_VIPER,EU_BAS,WU_BS,WU_BS_MANT"
+}

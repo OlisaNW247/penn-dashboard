@@ -1,0 +1,17 @@
+{
+ "key": "1142",
+ "prog_code": "NRSC-MINOR",
+ "prog_name": "Minor in Neuroscience",
+ "prog_type": "major",
+ "prog_parent": "",
+ "levl_code": "UG",
+ "degc_code": "MINOR",
+ "majr_code": "NRSC",
+ "minr_code": "",
+ "conc_code": "",
+ "coll_code": "",
+ "dept_code": "",
+ "sis_prog_code": "",
+ "hide": "N",
+ "minor_sis_prog_codes": "EU_BSE,EU_BSE_MANT,AU_BA,EU_BSE_VIPER,AU_BA_VAGL,NU_BSN,NU_BSN_NHCM,AL_BFA,WU_BS_HUNTS,WU_BS_MAT_U,EU_BAS_MANT,WU_BS_NHCM,WU_BS_VAGL_U,WU_BS_WUNG,AU_BA_VIPER,AU_BA_BIOD,AU_BA_HUNTS,EU_BAS_VIPER,EU_BAS,WU_BS,WU_BS_MANT,WU_BS_VAGL"
+}

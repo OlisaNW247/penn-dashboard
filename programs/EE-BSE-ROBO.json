@@ -1,0 +1,17 @@
+{
+ "key": "868",
+ "prog_code": "EE-BSE-ROBO",
+ "prog_name": "Electrical Engineering BSE (Robotics)",
+ "prog_type": "conc",
+ "prog_parent": "EE-BSE",
+ "levl_code": "UG",
+ "degc_code": "BSE",
+ "majr_code": "EE",
+ "minr_code": "",
+ "conc_code": "ROBO",
+ "coll_code": "EU",
+ "dept_code": "",
+ "sis_prog_code": "EU_BSE",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

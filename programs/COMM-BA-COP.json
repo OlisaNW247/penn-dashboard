@@ -1,0 +1,17 @@
+{
+ "key": "644",
+ "prog_code": "COMM-BA-COP",
+ "prog_name": "Communication BA (Communication & Public Service)",
+ "prog_type": "conc",
+ "prog_parent": "COMM-BA",
+ "levl_code": "UG",
+ "degc_code": "BA",
+ "majr_code": "COMM",
+ "minr_code": "",
+ "conc_code": "COP",
+ "coll_code": "AU",
+ "dept_code": "",
+ "sis_prog_code": "AU_BA",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

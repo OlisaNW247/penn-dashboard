@@ -1,0 +1,17 @@
+{
+ "key": "661",
+ "prog_code": "ENGL-BA-ENC",
+ "prog_name": "English BA (18th/19th Centuries)",
+ "prog_type": "conc",
+ "prog_parent": "ENGL-BA",
+ "levl_code": "UG",
+ "degc_code": "BA",
+ "majr_code": "ENGL",
+ "minr_code": "",
+ "conc_code": "ENC",
+ "coll_code": "AU",
+ "dept_code": "",
+ "sis_prog_code": "AU_BA",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

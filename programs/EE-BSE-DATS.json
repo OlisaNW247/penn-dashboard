@@ -1,0 +1,17 @@
+{
+ "key": "862",
+ "prog_code": "EE-BSE-DATS",
+ "prog_name": "Electrical Engineering BSE (Data Science)",
+ "prog_type": "conc",
+ "prog_parent": "EE-BSE",
+ "levl_code": "UG",
+ "degc_code": "BSE",
+ "majr_code": "EE",
+ "minr_code": "",
+ "conc_code": "DATS",
+ "coll_code": "EU",
+ "dept_code": "",
+ "sis_prog_code": "EU_BSE",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

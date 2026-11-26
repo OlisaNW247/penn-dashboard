@@ -1,0 +1,17 @@
+{
+ "key": "945",
+ "prog_code": "SCED-MINOR",
+ "prog_name": "Minor in Secondary Education",
+ "prog_type": "major",
+ "prog_parent": "",
+ "levl_code": "UG",
+ "degc_code": "MINOR",
+ "majr_code": "SCED",
+ "minr_code": "",
+ "conc_code": "",
+ "coll_code": "",
+ "dept_code": "",
+ "sis_prog_code": "",
+ "hide": "N",
+ "minor_sis_prog_codes": "EU_BSE,EU_BSE_MANT,AU_BA,EU_BSE_VIPER,AU_BA_VAGL,NU_BSN,NU_BSN_NHCM,WU_BS_HUNTS,EU_BAS_MANT,WU_BS_NHCM,AU_BA_VIPER,AU_BA_HUNTS,EU_BAS_VIPER,EU_BAS,WU_BS,WU_BS_MANT,WU_BS_VAGL"
+}

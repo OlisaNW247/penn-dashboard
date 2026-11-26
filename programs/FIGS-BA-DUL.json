@@ -1,0 +1,17 @@
+{
+ "key": "676",
+ "prog_code": "FIGS-BA-DUL",
+ "prog_name": "Franc, Ital and Germanic St BA (Dual Language)",
+ "prog_type": "conc",
+ "prog_parent": "FIGS-BA",
+ "levl_code": "UG",
+ "degc_code": "BA",
+ "majr_code": "FIGS",
+ "minr_code": "",
+ "conc_code": "DUL",
+ "coll_code": "AU",
+ "dept_code": "",
+ "sis_prog_code": "AU_BA",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

@@ -1,0 +1,17 @@
+{
+ "key": "859",
+ "prog_code": "CSCI-BSE-SYS",
+ "prog_name": "Computer Science BSE (Systems)",
+ "prog_type": "conc",
+ "prog_parent": "CSCI-BSE",
+ "levl_code": "UG",
+ "degc_code": "BSE",
+ "majr_code": "CSCI",
+ "minr_code": "",
+ "conc_code": "SYS",
+ "coll_code": "EU",
+ "dept_code": "",
+ "sis_prog_code": "EU_BSE",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}

@@ -1,0 +1,17 @@
+{
+ "key": "838",
+ "prog_code": "BE-BSE-TDN",
+ "prog_name": "Bioengineering BSE (Therapeutics,Drug Dliv&Nanomed)",
+ "prog_type": "conc",
+ "prog_parent": "BE-BSE",
+ "levl_code": "UG",
+ "degc_code": "BSE",
+ "majr_code": "BE",
+ "minr_code": "",
+ "conc_code": "TDN",
+ "coll_code": "EU",
+ "dept_code": "",
+ "sis_prog_code": "EU_BSE",
+ "hide": "N",
+ "minor_sis_prog_codes": ""
+}
