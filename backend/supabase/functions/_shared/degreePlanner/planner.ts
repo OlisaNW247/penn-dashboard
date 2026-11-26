@@ -1143,6 +1143,29 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
     const name = sl.replace(/#\s*1\b/, "").trim().toLowerCase();
     notes.push(`${byCi.get(a)!.course.code} goes in ${termLabel(terms[ta])} and ${byCi.get(b)!.course.code} in ${termLabel(terms[tb])} (${name} runs fall to spring)`);
   }
+  // Within-degree double counts that rest on a template block matched only by
+  // title (possibly another catalog year of the same block).
+  {
+    const loose = new Map<string, string>(); // degree label -> program
+    for (const it of items) {
+      for (let i = 0; i < it.slots.length; i++) {
+        for (let j = i + 1; j < it.slots.length; j++) {
+          const a = chosenSlots[it.slots[i]].slot, b = chosenSlots[it.slots[j]].slot;
+          if (a.degreeId !== b.degreeId) continue;
+          const pa = a.pack, pb = b.pack;
+          if (!pa || !pb || (pa.exact && pb.exact)) continue;
+          if (!loose.has(a.degreeLabel)) loose.set(a.degreeLabel, (pa.exact ? pb : pa).program);
+        }
+      }
+    }
+    if (loose.size > 0) {
+      const labels = [...loose.keys()].join(" and ");
+      const programs = [...new Set(loose.values())].join("/");
+      notes.push(
+        `double counting inside ${labels} follows Penn's current template for ${programs}; your catalog year's rules may differ, so confirm with your advisor`,
+      );
+    }
+  }
   if (capstoneBySeniorDesign) {
     notes.push("Wharton counts your engineering senior design project as its senior capstone; if your audit still shows the capstone open, ask your Wharton advisor to record it");
   }

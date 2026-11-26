@@ -15,6 +15,8 @@
 // So the arithmetic and the matching live in code, and the model only reads
 // the student's request and explains the result.
 //
+import type { PackShare } from "./pack.ts";
+
 // Term codes are Penn's: YYYY10 spring, YYYY20 summer, YYYY30 fall.
 // Penn Labs' semester ids are YYYYA (spring), YYYYB (summer), YYYYC (fall).
 
@@ -87,6 +89,24 @@ export type SlotGroup =
   | "seas.general"            // SSH / ethics / free electives
   | "other";
 
+/** What Penn's template says about one requirement's sharing. */
+export interface SlotPack {
+  program: string;
+  blockType: string;
+  blockCode: string;
+  /** The template block's Req_id; two slots are in the same block when equal. */
+  reqId: string;
+  /** The audit block's id equalled the template block's reqId. Otherwise the
+   *  block was matched by type and title, so it may be another catalog year of
+   *  the same block. */
+  exact: boolean;
+  /** Block shares + the rule's own + its ancestors', deduplicated. */
+  share: PackShare[];
+  /** The slot is a header overlay (an "area list"), not a competing rule. */
+  overlay: boolean;
+  ruleLabel?: string;
+}
+
 export interface Slot {
   /** Unique within a request: `${degreeId}|${blockId}|${ruleId}`. */
   id: string;
@@ -95,6 +115,12 @@ export interface Slot {
   /** Penn's own label, e.g. "Global Economy, Business and Society". */
   label: string;
   blockTitle: string;
+  /** The audit block's id and type ("MAJOR", "OTHER", ...). */
+  blockId: string;
+  blockType: string;
+  /** Penn's own sharing rules for this requirement, when the program's
+   *  published template was joined to the audit (packJoin.ts). */
+  pack?: SlotPack;
   /** What is still needed, after courses taken and in progress. */
   need: number;
   unit: "cu" | "courses";
@@ -128,6 +154,18 @@ export interface Degree {
    *  DEGREE block ("You currently have 28.5 CU including ..."). Undefined
    *  when the audit has no such line; never guessed from course lists. */
   creditsSoFar?: number;
+  /** The audit's goals object, leniently read. */
+  goals?: DegreeGoals;
+}
+
+export interface DegreeGoals {
+  college: string;
+  degree: string;
+  program: string;
+  majors: string[];
+  concentrations: string[];
+  minors: string[];
+  catalogYear: string;
 }
 
 // ---------------------------------------------------------------------------

@@ -1308,9 +1308,18 @@ Failures leave holes, never errors; an empty catalogue yields a plan from the
 audits' explicit options with a note.
 
 Structured-phone log line (counts and ids only, no content, no course codes):
-`degree-advisor: round R intent I model M[+M2] ms T explain_ms E engine_ms G slots S remaining C chosen ID finish TERM`
+`degree-advisor: round R intent I model M[+M2] ms T explain_ms E engine_ms G slots S remaining C chosen ID finish TERM packs P1/P2|none [pack_error X]`
 for plan and email; `degree-advisor: round R intent I model M ms T actions A picks P kept K` for the
 other intents.
+
+Penn's own sharing rules (2026-11-26): before planning, the engine fetches
+`<base>/programs.json` and `<base>/packs/<CODE>.json` (static JSON built from Penn's public
+requirement templates; `_shared/degreePlanner/packData.ts`, base pinned to a ref, 4 s cap, cached per
+isolate, never fatal). Only a program code is chosen from the audit's goals; nothing about the student
+is sent. Where a pack joins a requirement (`packJoin.ts`), which requirements of one degree may count
+the same course comes from Penn's `ShareWith` and overlays instead of the hand-written policy, and the
+plan carries one note when the join was by block title rather than exact block id. The engine output
+gains `packs` (per degree: program, matched/total slots, exact/title blocks) and `packError`.
 
 ## `map-categories`
 

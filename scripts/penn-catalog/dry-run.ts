@@ -105,4 +105,19 @@ import { runEngine } from "../../backend/supabase/functions/_shared/degreePlanne
     if (p) console.log(`prereq ${code}: ${p.slice(0, 160)}`);
   }
   for (const n of r.notes) console.log(`note: ${n}`);
+  console.log(`packs: ${JSON.stringify(out.packs)}${out.packError ? ` error ${out.packError}` : ""}`);
+  // Courses counted toward two requirements of one degree: which shares
+  // Penn's data (or the hand policy) allowed.
+  for (const term of r.schedule) {
+    for (const c of term.courses) {
+      const byDegree = new Map<string, string[]>();
+      for (const label of c.countsToward) {
+        const [deg, ...rest] = label.split(" · ");
+        byDegree.set(deg, [...(byDegree.get(deg) ?? []), rest.join(" · ")]);
+      }
+      for (const [deg, labels] of byDegree) {
+        if (labels.length > 1) console.log(`double count ${term.term} ${c.code} [${deg}]: ${labels.join(" + ")} (${c.approval})`);
+      }
+    }
+  }
 }

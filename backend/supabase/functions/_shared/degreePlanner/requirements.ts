@@ -292,6 +292,8 @@ function makeSlot(ctx: Ctx, r: RuleView, path: string[], opts: {
     degreeLabel: ctx.degreeLabel,
     label,
     blockTitle: ctx.blockTitle,
+    blockId: ctx.blockId,
+    blockType: ctx.blockType,
     need: opts.need,
     unit: opts.unit,
     anyOf: opts.parsed.anyOf,
@@ -493,7 +495,17 @@ export function degreesFromAudits(audits: AuditInput[]): RequirementsResult {
       if (s.constraints?.distinctSubjects) s.constraints.excludeSubjects = [...concSubjects].sort();
     }
 
-    degrees.push({ id: input.degreeId, label: input.label, college, slots, applied, ...(creditsSoFar !== undefined ? { creditsSoFar } : {}) });
+    const strs = (v: unknown): string[] => Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+    const goalsOut = {
+      college,
+      degree: str(goals.degree).toUpperCase(),
+      program: str(goals.program),
+      majors: strs(goals.majors).map((x) => x.toUpperCase()),
+      concentrations: strs(goals.concentrations).map((x) => x.toUpperCase()),
+      minors: strs(goals.minors).map((x) => x.toUpperCase()),
+      catalogYear: str(goals.catalogYear),
+    };
+    degrees.push({ id: input.degreeId, label: input.label, college, goals: goalsOut, slots, applied, ...(creditsSoFar !== undefined ? { creditsSoFar } : {}) });
   }
   return { degrees, unfilled, taken };
 }

@@ -7,6 +7,8 @@
 // missing catalogue leaves the plan to explicit options and says so in a note.
 import type { DegreeAdvisorStructured } from "../degreeAdvisor.ts";
 import { buildCatalogSnapshot } from "./catalog.ts";
+import { PENN_DATA_BASE, loadPacks } from "./packData.ts";
+import { attachPack } from "./packJoin.ts";
 import { plan } from "./planner.ts";
 import { degreesFromAudits } from "./requirements.ts";
 import type { CatalogSnapshot, Degree, PlanResult, Slot, Unfilled } from "./types.ts";
@@ -45,6 +47,19 @@ export interface EngineInput {
   clock?: () => number;
   /** The caller going away cuts off every catalogue request. */
   signal?: AbortSignal;
+  /** Where Penn's published program packs are served; null turns them off and
+   *  the hand-written sharing rules decide everything. Default: PENN_DATA_BASE. */
+  pennData?: { baseUrl: string } | null;
+}
+
+export interface EnginePackReport {
+  degreeId: string;
+  program: string | null;
+  exactMajor: boolean;
+  matchedSlots: number;
+  totalSlots: number;
+  exactBlocks: number;
+  titleBlocks: number;
 }
 
 export interface EngineOutput {
@@ -52,6 +67,9 @@ export interface EngineOutput {
   unfilled: Unfilled[];
   /** Counts for the log line. */
   slots: number;
+  /** Which of Penn's program templates joined each degree, and how well. */
+  packs: EnginePackReport[];
+  packError?: string;
 }
 
 function normCode(raw: string): string {
@@ -182,6 +200,15 @@ export async function runEngine(input: EngineInput): Promise<EngineOutput> {
   }
   const deadline = started + budget;
 
+  // Penn's own sharing rules load beside the catalogue (both are public data;
+  // only a program code and course codes leave the server). Never throws.
+  const pennData = input.pennData === undefined ? { baseUrl: PENN_DATA_BASE } : input.pennData;
+  const packPromise = pennData
+    ? loadPacks({
+      baseUrl: pennData.baseUrl, degrees: req.degrees, fetchImpl: input.fetchImpl, deadline, signal: input.signal, clock,
+    })
+    : null;
+
   let catalog: CatalogSnapshot = { courses: {}, attributeIndex: {}, cisTechElective: {}, semesters: [] };
   try {
     catalog = await buildCatalogSnapshot({
@@ -196,6 +223,24 @@ export async function runEngine(input: EngineInput): Promise<EngineOutput> {
       clock,
     });
   } catch { /* buildCatalogSnapshot does not throw; belt and braces */ }
+
+  const packReports: EnginePackReport[] = [];
+  let packError: string | undefined;
+  const loadedPacks = packPromise ? await packPromise : null;
+  if (loadedPacks?.error) packError = loadedPacks.error;
+  for (const d of req.degrees) {
+    const pack = loadedPacks?.packs[d.id];
+    const prog = loadedPacks?.programs[d.id];
+    if (pack && prog) {
+      const r = attachPack(d, pack);
+      packReports.push({ degreeId: d.id, program: pack.code, exactMajor: prog.exactMajor, ...r });
+    } else {
+      packReports.push({
+        degreeId: d.id, program: null, exactMajor: false, matchedSlots: 0, totalSlots: d.slots.length,
+        exactBlocks: 0, titleBlocks: 0,
+      });
+    }
+  }
 
   const catalogEmpty = Object.keys(catalog.courses).length === 0;
   if (catalogEmpty) {
@@ -269,5 +314,8 @@ export async function runEngine(input: EngineInput): Promise<EngineOutput> {
     unfilled.push(u);
   }
   result = { ...result, unfilled, notes: [...result.notes, ...extraNotes] };
-  return { plan: result, unfilled, slots: req.degrees.reduce((n, d) => n + d.slots.length, 0) };
+  return {
+    plan: result, unfilled, slots: req.degrees.reduce((n, d) => n + d.slots.length, 0), packs: packReports,
+    ...(packError ? { packError } : {}),
+  };
 }

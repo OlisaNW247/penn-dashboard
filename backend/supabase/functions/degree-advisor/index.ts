@@ -255,7 +255,9 @@ export async function handleDegreeAdvisor(req: Request): Promise<Response> {
             `degree-advisor: round ${body.round} intent ${intent.intent} model ${completion.model}` +
               `${explainModel !== completion.model ? `+${explainModel}` : ""} ` +
               `ms ${firstMs} explain_ms ${modelMs - firstMs} engine_ms ${engineMs} slots ${out.slots} ` +
-              `remaining ${plan.remainingCredits} chosen ${plan.chosen} finish ${chosen?.finishTerm ?? "none"}`,
+              `remaining ${plan.remainingCredits} chosen ${plan.chosen} finish ${chosen?.finishTerm ?? "none"}` +
+              ` packs ${(out.packs ?? []).map((p) => p.program).filter(Boolean).join("/") || "none"}` +
+              (out.packError ? ` pack_error ${out.packError.slice(0, 60).replace(/\s+/g, "_")}` : ""),
           );
           const response: Record<string, unknown> = {
             answer: explained?.answer ?? plainPlanSummary(plan),

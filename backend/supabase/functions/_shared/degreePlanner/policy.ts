@@ -2,7 +2,21 @@
 // planner so a rule change is a change here and nowhere else. Read from the
 // official SEAS and Wharton pages on 2026-11-15; anything an advisor decides
 // case by case lives in `petitionPairs`, never in the main plan.
+//
+// Where each rule comes from:
+//   - Which requirements of ONE degree may count the same course
+//     (`withinDegree`, `withinDegreeCap`): from Penn's own published program
+//     template (Degree Works ShareWith, MaxCredits, header overlays) whenever
+//     the slots carry a `pack` (packJoin.ts attaches it). The hand-written
+//     rules below remain only as the fallback for a slot no pack covers (no
+//     program found, Penn's data unreachable, a block the template lacks):
+//     they know one student's two programs and nothing else.
+//   - Still hand-written, because the template does not say them: course
+//     loads, the summer ceiling, the 46 cu floor, the Wharton capstone and its
+//     ordering, the senior-project sequence, and `petitionPairs` (pairs an
+//     advisor sometimes approves, which Penn's data cannot list).
 
+import { packShareCap, packShares } from "./packJoin.ts";
 import type { Degree, Slot } from "./types.ts";
 
 export interface Policy {
@@ -71,6 +85,8 @@ export const pennPolicy: Policy = {
   crossDegree: { maxPerDegree: 1 },
 
   withinDegree(a, b) {
+    const fromPenn = packShares(a, b);
+    if (fromPenn !== null) return fromPenn;
     if (a.degreeId !== b.degreeId || a.id === b.id) return false;
     // SEAS: an area list ("Area List - Networking") overlaps the CIS elective
     // by design, so a course from the list also counts as an elective. That
@@ -88,6 +104,7 @@ export const pennPolicy: Policy = {
   },
 
   withinDegreeCap(a, b) {
+    if (a.pack && b.pack) return packShareCap(a, b);
     if (isPair(a, b, "wharton.crossCultural", "wharton.liberal")) {
       return { key: "crossCultural+liberal", cu: 2 };
     }

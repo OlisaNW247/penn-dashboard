@@ -40,7 +40,7 @@ function slot(
   need: number, unit: "cu" | "courses", anyOf: Eligibility[], extra: Partial<Slot> = {},
 ): Slot {
   return {
-    id: `${degreeId}|b|${label}`, degreeId, degreeLabel, label, blockTitle: "b",
+    id: `${degreeId}|b|${label}`, degreeId, degreeLabel, label, blockTitle: "b", blockId: "b", blockType: "OTHER",
     need, unit, anyOf, exclude: [], group, ...extra,
   };
 }
