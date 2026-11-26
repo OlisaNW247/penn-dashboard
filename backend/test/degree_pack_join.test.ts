@@ -6,7 +6,7 @@ import { degreesFromAudits } from "../supabase/functions/_shared/degreePlanner/r
 import { pennPolicy } from "../supabase/functions/_shared/degreePlanner/policy.ts";
 import { runEngine } from "../supabase/functions/_shared/degreePlanner/engine.ts";
 import { clearCatalogCache } from "../supabase/functions/_shared/degreePlanner/catalog.ts";
-import type { Degree, Slot } from "../supabase/functions/_shared/degreePlanner/types.ts";
+import type { Degree, Slot, SlotPack } from "../supabase/functions/_shared/degreePlanner/types.ts";
 
 const fx = JSON.parse(Deno.readTextFileSync(new URL("./fixtures/degree-audits-synthetic.json", import.meta.url)));
 const tplXml = (code: string) =>
@@ -168,15 +168,16 @@ Deno.test("packShares: symmetry and ancestor inheritance (SEAS writing group)", 
   hw.blockId = sw.blockId = "none";
   hw.pack = sw.pack = undefined;
   attachPack(d, CSCI);
-  assert(hw.pack && sw.pack, "writing children join the General Electives block");
-  assertEquals(hw.pack!.blockCode, "U-SEAS-SSH");
-  assert(hw.pack!.share.some((s) => s.scope === "thisBlock"), "inherited from the Writing Course group");
+  const hp = hw.pack as SlotPack | undefined;
+  assert(hp && sw.pack, "writing children join the General Electives block");
+  assertEquals(hp.blockCode, "U-SEAS-SSH");
+  assert(hp.share.some((x) => x.scope === "thisBlock"), "inherited from the Writing Course group");
   assertEquals(packShares(hw, sw), true);
   assertEquals(packShares(sw, hw), true);
   // Symmetry across blocks: B names nothing, A's type target reaches B.
   const a = slot(wh, "Humanities");
   const b = slot(wh, "General Management Electives");
-  a.pack!.share = [{ scope: "type", type: "MAJOR" }];
+  a.pack!.share = [{ scope: "type", type: "MAJOR", from: "rule" }];
   b.pack!.share = [];
   assertEquals(packShares(a, b), true);
   assertEquals(packShares(b, a), true);
@@ -215,9 +216,9 @@ Deno.test("parity: where Penn's data and the hand policy disagree", () => {
     }
   }
   console.log("PARITY\n" + diffs.join("\n"));
-  // Overlay shares widen from the hand policy's one "elective" slot to every
-  // other slot of block CSCI (an overlay counts courses applied anywhere in
-  // its block); and cross-cultural + language, which the hand policy lacked.
+  // An overlay shares with every NON-overlay slot of its block (the hand
+  // policy allowed only the "CIS Elective at 2000+" slot); cross-cultural +
+  // language is new. Overlay + overlay stays false.
   const areaWide = [
     "Calc III or Algebra Course", "Math and Natural Science Elective", "ENGINEERING (14 CU) (CIS 3200)",
     "Operating Systems", "Computer Organization and Design", "Senior Project #1", "Senior Project #2",
@@ -408,4 +409,144 @@ Deno.test("engine: unreachable pack data leaves the plan to the hand policy and 
   assertEquals(out.packError, "http 503");
   assert(out.packs.every((p) => p.program === null));
   assert(out.plan.schedule.length > 0);
+});
+
+// ------------------------------------------------------------ review fixes
+
+import type { PackBlock, PackRule } from "../supabase/functions/_shared/degreePlanner/pack.ts";
+
+const mkRule = (label: string, extra: Partial<PackRule> = {}): PackRule => ({ id: label, label, type: "course", ...extra });
+const mkBlock = (reqId: string, type: string, code: string, title: string, rules: PackRule[], extra: Partial<PackBlock> = {}): PackBlock => ({
+  reqId, type, code, title, catalogYears: { start: "2020", stop: "9999" }, share: [], standalone: false, limits: [], overlays: [],
+  other: [], rules, ...extra,
+});
+const mkPack = (blocks: PackBlock[]): ProgramPack => ({
+  code: "X-BS", title: "x", goals: {}, goalNames: {}, provenance: PROV, blocks,
+});
+let slotN = 0;
+const mkSlot = (label: string, block: PackBlock): Slot => ({
+  id: `s${slotN++}`, degreeId: "d", degreeLabel: "d", label, blockTitle: block.title, blockId: "audit-id", blockType: block.type,
+  need: 1, unit: "courses", anyOf: [], exclude: [], group: "other",
+});
+const mkDegree = (slots: Slot[]): Degree => ({ id: "d", label: "d", college: "AS", slots, applied: [] });
+function joinedPair(pack: ProgramPack, a: string, b: string, blockIdx = 0): [Slot, Slot] {
+  const blk = pack.blocks[blockIdx];
+  const sa = mkSlot(a, blk), sb = mkSlot(b, blk);
+  attachPack(mkDegree([sa, sb]), pack);
+  return [sa, sb];
+}
+
+Deno.test("exclusive: a rule carrying EXCLUSIVE shares with nothing, from either side (inline template)", () => {
+  const blk = mkBlock("R1", "MAJOR", "H", "Major in H", [
+    mkRule("SEMINAR", { share: [{ scope: "thisBlock" }] }),
+    mkRule("ELECTIVES", { exclusive: true }),
+    mkRule("OPEN"),
+  ]);
+  const pack = mkPack([blk]);
+  const [sem, el] = joinedPair(pack, "SEMINAR", "ELECTIVES");
+  assertEquals(el.pack?.exclusive, true);
+  assertEquals(packShares(sem, el), false);
+  assertEquals(packShares(el, sem), false);
+  assertEquals(packShareCap(sem, el), null);
+  // A neighbour that is not exclusive still shares through the share.
+  const [s2, o] = joinedPair(pack, "SEMINAR", "OPEN");
+  assertEquals(packShares(s2, o), true);
+  // An exclusive ancestor makes its children exclusive.
+  const g = mkBlock("R2", "MAJOR", "G", "Major in G", [mkRule("GROUP", { exclusive: true, children: [mkRule("CHILD")] }), mkRule("OTHER", { share: [{ scope: "thisBlock" }] })]);
+  const [c, ot] = joinedPair(mkPack([g]), "CHILD", "OTHER");
+  assertEquals(c.pack?.exclusive, true);
+  assertEquals(packShares(c, ot), false);
+  // An overlay still counts a course applied to an exclusive rule (assumption in the module comment).
+  const ov = mkBlock("R3", "MAJOR", "O", "Major in O", [mkRule("EX", { exclusive: true })], {
+    overlays: [{ kind: "MINCLASS", label: "Area List - X", need: 1, unit: "courses", courses: [], except: [], text: "" }],
+  });
+  const [area, ex] = joinedPair(mkPack([ov]), "Area List - X", "EX");
+  assertEquals(area.pack?.overlay, true);
+  assertEquals(packShares(area, ex), true);
+});
+
+Deno.test("overlays: share with non-overlay slots of their block, not with each other", () => {
+  const ov = (label: string) => ({ kind: "MINCLASS" as const, label, need: 1, unit: "courses" as const, courses: [], except: [], text: "" });
+  const blk = mkBlock("R1", "MAJOR", "C", "Major in C", [mkRule("CORE")], { overlays: [ov("Area List - A"), ov("Area List - B")] });
+  const pack = mkPack([blk]);
+  const a = mkSlot("Area List - A", blk), b = mkSlot("Area List - B", blk), core = mkSlot("CORE", blk);
+  attachPack(mkDegree([a, b, core]), pack);
+  assertEquals(packShares(a, core), true);
+  assertEquals(packShares(a, b), false);
+});
+
+Deno.test("maxClasses is read as that many cu", () => {
+  const blk = mkBlock("R1", "MAJOR", "C", "Major in C", [mkRule("A"), mkRule("B")], { share: [{ scope: "thisBlock", maxClasses: 2 }] });
+  const [a, b] = joinedPair(mkPack([blk]), "A", "B");
+  assertEquals(packShareCap(a, b)?.cu, 2);
+  const both = mkBlock("R2", "MAJOR", "D", "Major in D", [mkRule("A"), mkRule("B")], { share: [{ scope: "thisBlock", maxClasses: 3, maxCredits: 1.5 }] });
+  const [c, d] = joinedPair(mkPack([both]), "A", "B");
+  assertEquals(packShareCap(c, d)?.cu, 1.5);
+});
+
+Deno.test("cap keys: a block-level cap is one budget for the block, a rule-level cap is per rule", () => {
+  const blkCap = mkBlock("R1", "MAJOR", "C", "Major in C", [mkRule("A"), mkRule("B"), mkRule("C")], { share: [{ scope: "thisBlock", maxCredits: 3 }] });
+  const p1 = mkPack([blkCap]);
+  const [a, b] = joinedPair(p1, "A", "B");
+  const [a2, c2] = joinedPair(p1, "A", "C");
+  const k1 = packShareCap(a, b)!, k2 = packShareCap(a2, c2)!;
+  assertEquals(k1.key, k2.key);
+  assert(!k1.key.includes("|a|"), "no rule label in a block-level key");
+  const ruleCap = mkBlock("R2", "MAJOR", "D", "Major in D", [
+    mkRule("A", { share: [{ scope: "thisBlock", maxCredits: 2 }] }),
+    mkRule("B", { share: [{ scope: "thisBlock", maxCredits: 2 }] }),
+    mkRule("C"),
+  ]);
+  const p2 = mkPack([ruleCap]);
+  const [ra, rc] = joinedPair(p2, "A", "C");
+  const [rb, rc2] = joinedPair(p2, "B", "C");
+  assert(packShareCap(ra, rc)!.key !== packShareCap(rb, rc2)!.key, "each rule keeps its own budget");
+  assertEquals(packShareCap(ra, rc)!.cu, 2);
+});
+
+Deno.test("findProgram: a concentration no program carries is not an exact major", () => {
+  assertEquals(
+    findProgram(INDEX, goals({ college: "WU", degree: "BS", majors: ["MGMT"], concentrations: ["ZZZZ"] })),
+    { code: "MGMT-BS-GEN", exactMajor: false },
+  );
+});
+
+Deno.test("attachPack: a program found by school and degree only joins its school-wide blocks", () => {
+  const { wh } = load();
+  const r = attachPack(wh, MGMT, { exactMajor: false });
+  assert(wh.slots.some((s) => s.pack), "school-wide blocks join");
+  for (const s of wh.slots) {
+    if (s.blockType !== "OTHER") assertEquals(s.pack, undefined, s.label);
+    else assert(s.pack, s.label);
+  }
+  assert(r.matchedSlots < r.totalSlots);
+  assertEquals(slot(wh, "General Management Electives").pack, undefined);
+});
+
+Deno.test("attachPack: ruleMatched counts slots whose rule or overlay label matched", () => {
+  const { cs, wh, rc, rw } = joined();
+  const blockOnly = [...cs.slots, ...wh.slots].filter((s) => s.pack && s.pack.ruleLabel === undefined).map((s) => s.label);
+  console.log("RULEMATCHED cs", rc.ruleMatched, "/", rc.matchedSlots, "wh", rw.ruleMatched, "/", rw.matchedSlots, "blockOnly", JSON.stringify(blockOnly));
+  assertEquals(rc.ruleMatched + rw.ruleMatched + blockOnly.length, rc.matchedSlots + rw.matchedSlots);
+  const blk = mkBlock("R1", "MAJOR", "C", "Major in C", [mkRule("KNOWN")]);
+  const k = mkSlot("KNOWN", blk), u = mkSlot("UNKNOWN", blk);
+  const r = attachPack(mkDegree([k, u]), mkPack([blk]));
+  assertEquals([r.matchedSlots, r.ruleMatched], [2, 1]);
+});
+
+Deno.test("engine: a pack that throws in attachPack leaves the degree on the hand policy and says so", async () => {
+  clearCatalogCache();
+  clearPackCache();
+  const bad = { ...CSCI, blocks: CSCI.blocks.map((b) => ({ ...b, rules: [{ id: "1", label: "x", share: 5 }] })) };
+  const inner = engineFetch([]);
+  const out = await runEngine({
+    structured: structured(), intent, now: NOW, pennData: { baseUrl: BASE },
+    fetchImpl: ((i: string | URL | Request, n?: RequestInit) =>
+      String(i).endsWith("/packs/CSCI-BSE-NCON.json") ? Promise.resolve(new Response(JSON.stringify(bad), { status: 200 })) : inner(i, n)) as typeof fetch,
+  });
+  assert(out.packError?.includes("attach failed"), String(out.packError));
+  const cs = out.packs.find((p) => p.degreeId === "cs")!;
+  assertEquals(cs.program, null);
+  assert(out.plan.schedule.length > 0);
+  assert(out.packs.find((p) => p.degreeId === "wh")!.program !== null, "the other degree keeps its pack");
 });

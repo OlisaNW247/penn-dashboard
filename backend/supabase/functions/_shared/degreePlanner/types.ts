@@ -89,6 +89,9 @@ export type SlotGroup =
   | "seas.general"            // SSH / ethics / free electives
   | "other";
 
+/** A share as the slot holds it: where it came from decides its cap's budget. */
+export type SlotShare = PackShare & { from: "block" | "rule" };
+
 /** What Penn's template says about one requirement's sharing. */
 export interface SlotPack {
   program: string;
@@ -101,7 +104,9 @@ export interface SlotPack {
    *  the same block. */
   exact: boolean;
   /** Block shares + the rule's own + its ancestors', deduplicated. */
-  share: PackShare[];
+  share: SlotShare[];
+  /** EXCLUSIVE on the rule, an ancestor rule or the block: shares with nothing. */
+  exclusive: boolean;
   /** The slot is a header overlay (an "area list"), not a competing rule. */
   overlay: boolean;
   ruleLabel?: string;

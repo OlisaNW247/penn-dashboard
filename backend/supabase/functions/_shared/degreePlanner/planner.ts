@@ -1127,7 +1127,7 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
   // What "best" leans on, named exactly, so the explanation can say it.
   const bestAssumptions = (): string[] => {
     const out: string[] = [`${fmt(policy.loads.approved)} cu semesters, which need approval`];
-    if (chosen.summer) out.push(`summer courses, up to ${fmt(policy.loads.summerCeiling)} cu a summer (Engineering's limit, 2 per session)`);
+    if (chosen.summer) out.push(`summer courses, up to ${fmt(policy.loads.summerCeiling)} cu a summer${req.degrees.some((d) => d.college === "EU") ? " (Engineering's limit, 2 per session)" : ""}`);
     for (const it of items) {
       for (const [i, j] of petitionPairsOf(it)) {
         out.push(`your advisor approving ${it.course.code} for both ${label(i)} and ${label(j)}`);

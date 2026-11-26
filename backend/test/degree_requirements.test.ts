@@ -215,3 +215,15 @@ Deno.test("creditsSoFar: absent without the label, and not taken from a MAJOR bl
   ]) }]);
   assertEquals(major.degrees[0].creditsSoFar, undefined);
 });
+
+Deno.test("creditsSoFar: prefers the label that says earned over an earlier one", () => {
+  const a = degreesFromAudits([{ degreeId: "a", label: "a", audit: audit([{ id: "b0", type: "DEGREE", title: "t", rules: [
+    rule("r1", "You currently have 20 CU."),
+    rule("r2", "You currently have 28.5 CU including both earned and in-progress courses."),
+  ] }]) }]);
+  assertEquals(a.degrees[0].creditsSoFar, 28.5);
+  const b = degreesFromAudits([{ degreeId: "a", label: "a", audit: audit([{ id: "b0", type: "DEGREE", title: "t", rules: [
+    rule("r1", "You currently have 20 CU."), rule("r2", "You currently have 25 CU."),
+  ] }]) }]);
+  assertEquals(b.degrees[0].creditsSoFar, 20);
+});

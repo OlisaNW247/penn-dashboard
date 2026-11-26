@@ -98,7 +98,7 @@ Deno.test("engine: history codes count as taken", async () => {
   clearCatalogCache();
   const withHist = await runEngine({
     pennData: null,
-    structured: structured({ "202530": ["cis 4710"] }), intent: intent(), fetchImpl: pennFetch(), now: NOW, pennData: null,
+    structured: structured({ "202530": ["cis 4710"] }), intent: intent(), fetchImpl: pennFetch(), now: NOW,
   });
   const has = (r: typeof base, code: string) => r.plan.schedule.some((t) => t.courses.some((c) => c.code === code));
   assert(has(base, "CIS 4710"), "baseline plans CIS 4710");
@@ -117,7 +117,7 @@ Deno.test("engine: a waived requirement is not planned and an unmatched label is
   clearCatalogCache();
   const out = await runEngine({
     pennData: null,
-    structured: structured(), intent: intent({ waive: ["Foreign Language", "Unicorn Studies"] }), fetchImpl: pennFetch(), now: NOW, pennData: null,
+    structured: structured(), intent: intent({ waive: ["Foreign Language", "Unicorn Studies"] }), fetchImpl: pennFetch(), now: NOW,
   });
   const targets = out.plan.schedule.flatMap((t) => t.courses.flatMap((c) => c.countsToward));
   assert(!targets.some((l) => l.includes("Foreign Language")));
@@ -139,7 +139,7 @@ Deno.test("engine: a spent budget skips the prerequisite pass and says so", asyn
   const clock = () => (t++ < 2 ? 0 : 30_000);
   const out = await runEngine({
     pennData: null,
-    structured: structured(), intent: intent(), fetchImpl: pennFetch(calls), now: NOW, pennData: null, budgetMs: 25_000, clock,
+    structured: structured(), intent: intent(), fetchImpl: pennFetch(calls), now: NOW, budgetMs: 25_000, clock,
   });
   const attrOnly = Object.values(ATTR_COURSES).flat().filter((c) => !explicitCodes().includes(c)).map(slug);
   assert(!calls.some((u) => attrOnly.some((a) => u.endsWith(`/courses/${a}/`))), "no second-pass detail requests");
@@ -150,7 +150,7 @@ Deno.test("engine: target, load and summer flow through to the scenarios", async
   clearCatalogCache();
   const out = await runEngine({
     pennData: null,
-    structured: structured(), intent: intent({ targetTerm: "202810", maxLoad: 7, allowSummer: false }), fetchImpl: pennFetch(), now: NOW, pennData: null,
+    structured: structured(), intent: intent({ targetTerm: "202810", maxLoad: 7, allowSummer: false }), fetchImpl: pennFetch(), now: NOW,
   });
   assert(out.plan.scenarios.some((s) => s.id === "student"));
 });
@@ -198,7 +198,7 @@ Deno.test("engine: the caller's signal reaches the catalogue requests", async ()
   const calls: string[] = [];
   await runEngine({
     pennData: null,
-    structured: structured(), intent: intent(), fetchImpl: pennFetch(calls), now: NOW, pennData: null, signal: ctl.signal,
+    structured: structured(), intent: intent(), fetchImpl: pennFetch(calls), now: NOW, signal: ctl.signal,
   });
   assertEquals(calls.length, 0);
 });
@@ -241,7 +241,7 @@ Deno.test("engine: waived requirements are listed in a note", async () => {
   clearCatalogCache();
   const out = await runEngine({
     pennData: null,
-    structured: structured(), intent: intent({ waive: ["Foreign Language"] }), fetchImpl: pennFetch(), now: NOW, pennData: null,
+    structured: structured(), intent: intent({ waive: ["Foreign Language"] }), fetchImpl: pennFetch(), now: NOW,
   });
   assert(out.plan.notes.some((n) => n.startsWith("treated as done: ") && n.includes("Foreign Language")));
 });

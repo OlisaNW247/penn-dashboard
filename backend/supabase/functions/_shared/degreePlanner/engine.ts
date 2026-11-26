@@ -60,6 +60,7 @@ export interface EnginePackReport {
   totalSlots: number;
   exactBlocks: number;
   titleBlocks: number;
+  ruleMatched: number;
 }
 
 export interface EngineOutput {
@@ -231,15 +232,21 @@ export async function runEngine(input: EngineInput): Promise<EngineOutput> {
   for (const d of req.degrees) {
     const pack = loadedPacks?.packs[d.id];
     const prog = loadedPacks?.programs[d.id];
+    let report: EnginePackReport | null = null;
     if (pack && prog) {
-      const r = attachPack(d, pack);
-      packReports.push({ degreeId: d.id, program: pack.code, exactMajor: prog.exactMajor, ...r });
-    } else {
-      packReports.push({
-        degreeId: d.id, program: null, exactMajor: false, matchedSlots: 0, totalSlots: d.slots.length,
-        exactBlocks: 0, titleBlocks: 0,
-      });
+      try {
+        const r = attachPack(d, pack, { exactMajor: prog.exactMajor });
+        report = { degreeId: d.id, program: pack.code, exactMajor: prog.exactMajor, ...r };
+      } catch {
+        // No partial state: the whole degree goes back to the hand policy.
+        for (const s of d.slots) delete s.pack;
+        packError = packError ? `${packError}; attach failed` : "attach failed";
+      }
     }
+    packReports.push(report ?? {
+      degreeId: d.id, program: null, exactMajor: false, matchedSlots: 0, totalSlots: d.slots.length,
+      exactBlocks: 0, titleBlocks: 0, ruleMatched: 0,
+    });
   }
 
   const catalogEmpty = Object.keys(catalog.courses).length === 0;

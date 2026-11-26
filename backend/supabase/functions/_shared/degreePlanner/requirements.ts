@@ -436,14 +436,12 @@ export function degreesFromAudits(audits: AuditInput[]): RequirementsResult {
       }
     };
     let creditsSoFar: number | undefined;
-    const findCredits = (r: RuleView): number | undefined => {
+    // Every "currently have N CU" label in a rule's tree, in order.
+    const creditLabels = (r: RuleView, out: { n: number; earned: boolean }[] = []): { n: number; earned: boolean }[] => {
       const m = /currently have\s+([\d.]+)\s*CU/i.exec(r.label);
-      if (m && Number.isFinite(Number(m[1]))) return Number(m[1]);
-      for (const c of r.children) {
-        const v = findCredits(c);
-        if (v !== undefined) return v;
-      }
-      return undefined;
+      if (m && Number.isFinite(Number(m[1]))) out.push({ n: Number(m[1]), earned: /earned/i.test(r.label) });
+      for (const c of r.children) creditLabels(c, out);
+      return out;
     };
     const collect = (r: RuleView) => {
       for (const a of r.applied) noteApplied(a.code);
@@ -458,10 +456,10 @@ export function degreesFromAudits(audits: AuditInput[]): RequirementsResult {
       // block's label. A MAJOR block says "You currently have 16." (the
       // major's own count, no "CU"), which must not be taken for it.
       if (type === "DEGREE" && creditsSoFar === undefined) {
-        for (const r of rules) {
-          creditsSoFar = findCredits(r);
-          if (creditsSoFar !== undefined) break;
-        }
+        // Prefer the line that says "earned" ("You currently have 28.5 CU
+        // including both earned and in-progress courses."), else the first.
+        const all = rules.flatMap((r) => creditLabels(r));
+        creditsSoFar = (all.find((x) => x.earned) ?? all[0])?.n;
       }
       if (SKIPPED_BLOCKS.has(type)) continue;
       const ctx: Ctx = {

@@ -1281,7 +1281,7 @@ Keep this current. It is the fastest way for a new session to know what exists.
     names, enrollment restrictions and `prereqs_from_cim` (filled for some
     courses only). Nothing in the planner used any of it that morning.
     **Rules verified, policy corrected, packs wired in (2026-11-26, later;
-    `b54981b`..`5e3e133`; Deno 893 / 0 in the cloud container; NOT
+    `b54981b` onward; Deno 902 / 0 in the cloud container; NOT
     deployed, `degree-advisor` is still version 9).** Olisa: "do all 3 in
     order". (1) `scripts/penn-catalog/verify-rules.mjs` crawled 579
     official pages from a runner (Wharton's undergraduate site by its
@@ -1323,6 +1323,14 @@ Keep this current. It is the fastest way for a new session to know what exists.
     cross-cultural with language). The live dry run on the runner loaded
     both packs and planned in 1.4 s. The publish jobs run only for a
     commit whose message contains `[programs]` or `[verify-rules]`.
+    An independent review then found that a rule Penn marks `EXCLUSIVE`
+    (History and English electives) still shared a course, and nine
+    smaller things; all fixed the same day (Deno 902): exclusive rules
+    never share, a pack that fails to attach is dropped whole for that
+    degree, two overlays do not share with each other, a class-count
+    share limit is honoured, a block-level cap is one budget for the
+    block, and a student whose concentration no program carries gets
+    only the school-wide blocks from a pack.
     **The add sheet's list is grouped** (`DegreeContribution.grouped`): "both
     degrees" first, then each degree under its name, ranked inside. Ranked by
     points alone, his five engineering rows (+2% each) sat above two Wharton
@@ -2337,7 +2345,7 @@ Before it, on the two lines that merged:
 **Previous: 3399 tests / 327 suites on `v8` at `8b691b6` (2026-10-29, `swift test --no-parallel`, on Olisa's Mac, 61 s): two failures and the SEC-10 known issue.** The first run of `30c4132` did not compile: `GradescopeSessionKeepTests` wrote an offset as `15 * 60` in a tuple array, typed `Int` (fixed in `8b691b6`, `hour / 4`). The two failures were `OwnTaskRemovalTests`' stop-repeating tests counting all ten weekly occurrences where the dashboard's term cap (`AppState.withinTermCap`) keeps nine once ten weeks from late October passes the term's end; the tests now count what the cap keeps (`fbb0296`). SEC-10 is fixed in the extension (`decide()` drops anonymous threads after private, as `EdThreadFilter` does) and its `withKnownIssue` wrapper removed, so `EdFilterParityTests` now asserts parity outright. Both fixes are blind until the next Mac run. The iOS Debug device build of `30c4132` succeeded and was installed on Olisa's iPhone 17 at 13:57 local the same day.
 
 **Previous: 3402 tests / 328 suites on `onboarding-polish-2026-10` (`origin/v8` `019e1a5` plus the 2026-10-30 onboarding polish; 2026-10-30, `swift test --no-parallel`, on Marco's Mac, 109 s), all green after two source-pinning tests were updated to the new intent (`ReconnectCoverTests` now expects the preview door on the school pane and not on the Canvas pane; `SweeperOnboardingTests` expects one line). +3 tests / +1 suite over 3399/327: `DuoPasscodeAutofillTests`. The first run of this tree had exactly those two tests red and nothing else; the practice-guide tests were rewritten with the `.finished` step's removal and stayed green.** The iOS Debug device build (3.4.0 (17)) of the same tree was installed on Marco's iPhone 17 Pro the same afternoon and launched onto the intro. Before that: **Current: 3399 tests / 327 suites on `v8` at `8b691b6` (2026-10-29, `swift test --no-parallel`, on Olisa's Mac, 61 s): two failures and the SEC-10 known issue.** The first run of `30c4132` did not compile: `GradescopeSessionKeepTests` wrote an offset as `15 * 60` in a tuple array, typed `Int` (fixed in `8b691b6`, `hour / 4`). The two failures were `OwnTaskRemovalTests`' stop-repeating tests counting all ten weekly occurrences where the dashboard's term cap (`AppState.withinTermCap`) keeps nine once ten weeks from late October passes the term's end; the tests now count what the cap keeps (`fbb0296`). SEC-10 is fixed in the extension (`decide()` drops anonymous threads after private, as `EdThreadFilter` does) and its `withKnownIssue` wrapper removed, so `EdFilterParityTests` now asserts parity outright. Both fixes are blind until the next Mac run. The iOS Debug device build of `30c4132` succeeded and was installed on Olisa's iPhone 17 at 13:57 local the same day.
-**Deno on `degree-progress` (2026-11-26): 893 passed, 0 failed** (`/opt/node22/bin/deno test --no-check --allow-env --allow-net --allow-read=test/fixtures test/` in the cloud container; `deno check --no-lock` clean on `degree-advisor/index.ts` and `scripts/penn-catalog/dry-run.ts`). 842 at version 9's deploy, +24 `degree_pack.test.ts`, +7 for the five policy corrections, +20 `degree_pack_join.test.ts`. Restore `backend/deno.lock` after a run.
+**Deno on `degree-progress` (2026-11-26): 902 passed, 0 failed** (`/opt/node22/bin/deno test --no-check --allow-env --allow-net --allow-read=test/fixtures test/` in the cloud container; `deno check --no-lock` clean on `degree-advisor/index.ts` and `scripts/penn-catalog/dry-run.ts`). 842 at version 9's deploy, +24 `degree_pack.test.ts`, +7 for the five policy corrections, +20 `degree_pack_join.test.ts`, +9 for the review's fixes. Restore `backend/deno.lock` after a run.
 Deno on `phase0/extract-facts-bench` (2026-11-03): 626 passed, 0 failed, `deno task check` green; +12 for `facts.test.ts`.
 
 
@@ -4573,9 +4581,12 @@ none is a ship line.
   a real audit match the template's (every synthetic one does). Olisa's
   run of `capture-audit-shape.js` answers the first. Known limits: the
   46-cu floor adds a row and a note but schedules no filler, so the finish
-  term can be optimistic when it binds; block-level `maxClasses` on a
-  share (27 in the packs) is ignored; an overlay shares with every slot of
-  its block including another overlay; the pack's exact eligibility lists
+  term can be optimistic when it binds; a share limit stated in classes is
+  read as that many cu; two overlays of one block (two CIS area lists) do
+  not share a course with each other, although Degree Works would count
+  it, because no Penn page read so far confirms the department means it;
+  one course can still fill three slots of one degree when each pair may
+  share (the planner checks pairs); the pack's exact eligibility lists
   and `Except` courses are not yet used to tighten a slot (the audit's own
   text still decides what a course may fill); caps (`MaxCredits 1 in
   ACCT @`) are not read from packs, the breadth rule is still the hand

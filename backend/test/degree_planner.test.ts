@@ -729,7 +729,14 @@ Deno.test("planner: ordinary scenarios stay at 2 cu a summer, best reaches 4, an
   assert.ok(summers(easy).every((c) => c <= 2 + 1e-9));
   assert.ok(summers(easy).reduce((a, b) => a + b, 0) > 4, "the old 4-in-all cap is gone");
   const note = hard.notes.find((n) => n.startsWith("best case assumes"))!;
-  assert.ok(note.includes("summer courses, up to 4 cu a summer (Engineering's limit, 2 per session)"), note);
+  // No Engineering degree in the request: the number stays, the attribution goes.
+  assert.ok(note.includes("summer courses, up to 4 cu a summer") && !note.includes("Engineering"), note);
+  const withEng = plan(
+    request({ degrees: [...degs, { id: "eu", label: CS, college: "EU", applied: [], slots: [] }], targetTerm: "202920" }),
+    cat,
+  );
+  const note2 = withEng.notes.find((n) => n.startsWith("best case assumes"))!;
+  assert.ok(note2.includes("summer courses, up to 4 cu a summer (Engineering's limit, 2 per session)"), note2);
 });
 
 Deno.test("planner: a Wharton + Engineering student does not plan the capstone", () => {
