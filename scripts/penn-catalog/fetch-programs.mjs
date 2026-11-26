@@ -60,7 +60,9 @@ for (const p of wanted) {
   const info = await call("programs-v2-info", { srcdb, programCode: p.code });
   await sleep(500);
   const xml = info?.audit_xml;
-  if (typeof xml !== "string" || xml.length < 200) {
+  // Penn answers a program it lists but has not published with a 200 and
+  // an <errors> document in `audit_xml` (10 of 398 on 2026-11-26).
+  if (typeof xml !== "string" || !xml.includes("<Audit")) {
     console.log(`no template: ${p.code} (${p.title})`);
     index.push({ code: p.code, title: p.title, template: false });
     continue;

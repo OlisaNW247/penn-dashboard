@@ -44,6 +44,9 @@ jobs:
   # Checks the unverified rules in docs/research/degree-data/RULES.md against
   # Penn's own pages. Read-only: the verdicts are in the job log.
   verify-rules:
+    # A 600-page crawl of Penn's sites: only for a commit that asks for it
+    # with "[verify-rules]" in its message.
+    if: contains(github.event.head_commit.message, '[verify-rules]')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
