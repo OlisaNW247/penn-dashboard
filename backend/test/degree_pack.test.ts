@@ -6,6 +6,8 @@ import {
   parseCourseList,
   parseShare,
   parseTemplate,
+  toIndexEntry,
+  toProgramPack,
 } from "../supabase/functions/_shared/degreePlanner/pack.ts";
 
 // Real Penn templates (public Path@Penn data, no student in them) are the
@@ -399,4 +401,16 @@ Deno.test("golden FNCS-BS (pinned from the file)", () => {
       for (const l of [...b.limits, ...b.overlays]) assert(!l.unparsed, `${f} ${b.code}: ${l.text}`);
     }
   }
+});
+
+Deno.test("program pack: shape, provenance and index entry from MGMT-BS-GEN", () => {
+  const prov = { source: "https://example.test/x", srcdb: "202630", fetched: "2026-11-26" };
+  const pack = toProgramPack("MGMT-BS-GEN", "Management BS", parseTemplate(fixture("MGMT-BS-GEN")), prov);
+  assertEquals([pack.code, pack.title, pack.goals.major, pack.blocks.length], ["MGMT-BS-GEN", "Management BS", "MGMT", 6]);
+  assertEquals(pack.provenance, prov);
+  assertEquals(pack.goalNames.MAJOR !== undefined, true);
+  const idx = toIndexEntry(pack);
+  assertEquals(idx.blocks.length, 6);
+  assertEquals(idx.blocks[0], { reqId: "RA002124", type: "DEGREE", code: "BS", title: "Degree in Bachelor of Science in Economics" });
+  assertEquals(Object.keys(idx).sort(), ["blocks", "code", "goals", "title"]);
 });

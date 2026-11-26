@@ -6,14 +6,16 @@
 //
 // Reads <rawDir>/programs/*.xml (and the .json metadata beside each, and
 // <rawDir>/index.json, when present) and writes
-//   <outDir>/blocks/<Req_id>.json   one block per unique Req_id (+ programs)
-//   <outDir>/programs.json          code -> { title, goals, blockIds }
-//   <outDir>/index.json             one summary row per block
-// then prints a report. The report is the point: it says which blocks two
-// programs disagree about (the same Req_id appears in many templates, and the
-// planner will trust one copy), which qualifier names Penn used that the parser
-// only keeps as text, and which course lists did not read. Run it after every
-// refetch and read the numbers before trusting the output.
+//   <outDir>/packs/<CODE>.json   one ProgramPack per program (its own blocks)
+//   <outDir>/programs.json       { generatedFrom, programs: ProgramIndexEntry[] }
+// then prints a report. Packs are per program because Penn resolves each
+// template for its program: the same Req_id differs between programs, so a
+// shared per-block copy would be wrong for most of them. The old packs/ and
+// blocks/ folders are deleted first so a program Penn drops does not linger,
+// but nothing is deleted or written when fewer than 100 templates parse: a
+// failed fetch must never be published as "Penn removed its programs". The
+// report says which qualifier names the parser only keeps as text and which
+// course lists did not read; read it before trusting the output.
 //
 // `--check` also verifies the XML reader itself, by comparing the number of
 // elements it built for each tag with a regex count of `<Tag` in the raw text.
@@ -22,8 +24,8 @@
 // 1-space indent, trailing newline. Reading is by bytes and the declared
 // encoding (Penn says ISO-8859-1), not Deno's UTF-8 default.
 
-import { parseTemplate, MODELLED_HEADER_QUALIFIERS, MODELLED_RULE_QUALIFIERS } from "../../backend/supabase/functions/_shared/degreePlanner/pack.ts";
-import type { PackBlock, PackRule } from "../../backend/supabase/functions/_shared/degreePlanner/pack.ts";
+import { parseTemplate, toIndexEntry, toProgramPack, MODELLED_HEADER_QUALIFIERS, MODELLED_RULE_QUALIFIERS } from "../../backend/supabase/functions/_shared/degreePlanner/pack.ts";
+import type { PackRule, ProgramIndexEntry, ProgramPack } from "../../backend/supabase/functions/_shared/degreePlanner/pack.ts";
 import { countTags, findAll, parseXml } from "../../backend/supabase/functions/_shared/degreePlanner/xml.ts";
 
 const args = Deno.args.filter((a) => !a.startsWith("--"));
@@ -58,37 +60,13 @@ const sortKeys = (v: unknown): unknown =>
     : v;
 
 let bytesWritten = 0;
+let largest = { path: "", bytes: 0 };
 async function writeJson(path: string, value: unknown, sorted = false) {
   const text = JSON.stringify(sorted ? sortKeys(value) : value, null, 1) + "\n";
-  bytesWritten += new TextEncoder().encode(text).length;
+  const size = new TextEncoder().encode(text).length;
+  bytesWritten += size;
+  if (!path.endsWith("/programs.json") && size > largest.bytes) largest = { path, bytes: size };
   await Deno.writeTextFile(path, text);
-}
-
-/** First path at which two JSON values differ, with both values clipped. */
-function firstDiff(a: any, b: any, path = ""): string | null {
-  if (JSON.stringify(a) === JSON.stringify(b)) return null;
-  if (a && b && typeof a === "object" && typeof b === "object" && Array.isArray(a) === Array.isArray(b)) {
-    const keys = Array.isArray(a) ? [...Array(Math.max(a.length, b.length)).keys()] : [...new Set([...Object.keys(a), ...Object.keys(b)])].sort();
-    for (const k of keys) {
-      const d = firstDiff(a[k as any], b[k as any], `${path}/${k}`);
-      if (d) return d;
-    }
-  }
-  const clip = (v: unknown) => (JSON.stringify(v) ?? "undefined").slice(0, 60);
-  return `${path || "/"}: ${clip(a)} vs ${clip(b)}`;
-}
-
-function hint(a: PackBlock, b: PackBlock): string {
-  const la = a.rules.map((r) => r.label);
-  const lb = b.rules.map((r) => r.label);
-  const onlyA = la.filter((x) => !lb.includes(x));
-  const onlyB = lb.filter((x) => !la.includes(x));
-  const parts: string[] = [];
-  if (onlyA.length || onlyB.length) {
-    parts.push(`top-level rule labels differ (only first: ${JSON.stringify(onlyA.slice(0, 3))}, only second: ${JSON.stringify(onlyB.slice(0, 3))})`);
-  }
-  parts.push(`first diff ${firstDiff({ ...a, programs: undefined }, { ...b, programs: undefined }) ?? "?"}`);
-  return parts.join("; ");
 }
 
 function walkRules(rules: PackRule[], f: (r: PackRule) => void) {
@@ -108,12 +86,12 @@ const index = await readJson(`${rawDir}/index.json`);
 const titles = new Map<string, string>();
 for (const p of index?.programs ?? []) titles.set(p.code, p.title);
 
-const blocksById = new Map<string, { block: PackBlock; json: string; first: string; programs: string[] }>();
-const programs: Record<string, { title: string; goals: unknown; blockIds: string[] }> = {};
+const SOURCE = "https://courses.upenn.edu/api/?page=fose&route=programs-v2-info";
+const provenance = { source: SOURCE, srcdb: String(index?.srcdb ?? ""), fetched: String(index?.fetched ?? "") };
+const packs: ProgramPack[] = [];
+const contentsByReqId = new Map<string, Set<string>>(); // information only
 const failures: { file: string; message: string }[] = [];
 const errorDocs: string[] = [];
-const conflicts: { reqId: string; title: string; a: string; b: string; hint: string }[] = [];
-const conflictSeen = new Set<string>();
 const checkMismatches: string[] = [];
 const qualTotals = { header: new Map<string, number>(), rule: new Map<string, number>() };
 const qualOther = { header: new Map<string, number>(), rule: new Map<string, number>() };
@@ -152,11 +130,7 @@ for (const file of files) {
     const t = parseTemplate(text);
     parsed++;
     const meta = await readJson(`${rawDir}/programs/${code}.json`);
-    programs[code] = {
-      title: titles.get(code) ?? meta?.prog_name ?? code,
-      goals: t.goals,
-      blockIds: t.blocks.map((b) => b.reqId),
-    };
+    packs.push(toProgramPack(code, titles.get(code) ?? meta?.prog_name ?? code, t, provenance));
     for (const block of t.blocks) {
       const lists = [...block.limits, ...block.overlays];
       for (const o of block.other) bump(qualOther.header, o.name);
@@ -171,38 +145,32 @@ for (const file of files) {
           if (!unparsedTexts.has(l.text)) unparsedTexts.set(l.text, code);
         }
       }
-      const json = JSON.stringify(block);
-      const seen = blocksById.get(block.reqId);
-      if (!seen) blocksById.set(block.reqId, { block, json, first: code, programs: [code] });
-      else {
-        if (!seen.programs.includes(code)) seen.programs.push(code);
-        if (seen.json !== json && !conflictSeen.has(`${block.reqId}|${json}`)) {
-          conflictSeen.add(`${block.reqId}|${json}`);
-          conflicts.push({ reqId: block.reqId, title: block.title, a: seen.first, b: code, hint: hint(seen.block, block) });
-        }
-      }
+      const set = contentsByReqId.get(block.reqId) ?? new Set<string>();
+      set.add(JSON.stringify(block));
+      contentsByReqId.set(block.reqId, set);
     }
   } catch (e) {
     failures.push({ file, message: e instanceof Error ? e.message : String(e) });
   }
 }
 
-await Deno.mkdir(`${outDir}/blocks`, { recursive: true });
-const ids = [...blocksById.keys()].sort();
-for (const id of ids) {
-  const e = blocksById.get(id)!;
-  await writeJson(`${outDir}/blocks/${id}.json`, { ...e.block, programs: [...e.programs].sort() });
+// A failed or partial fetch must not be published as "Penn dropped these
+// programs": refuse before deleting or writing anything.
+if (parsed < 100) {
+  console.error(`refusing to write: only ${parsed} templates parsed (need at least 100); nothing deleted`);
+  Deno.exit(1);
 }
-const sortedPrograms = Object.fromEntries(Object.keys(programs).sort().map((k) => [k, programs[k]]));
-await writeJson(`${outDir}/programs.json`, sortedPrograms);
-const generatedFrom = index ? { srcdb: index.srcdb, fetched: index.fetched } : undefined;
-await writeJson(`${outDir}/index.json`, {
-  ...(generatedFrom ? { generatedFrom } : {}),
-  blocks: ids.map((id) => {
-    const e = blocksById.get(id)!;
-    return { reqId: id, type: e.block.type, code: e.block.code, title: e.block.title, catalogStart: e.block.catalogYears.start, programs: e.programs.length };
-  }),
-});
+await Deno.remove(`${outDir}/packs`, { recursive: true }).catch(() => {});
+await Deno.remove(`${outDir}/blocks`, { recursive: true }).catch(() => {});
+await Deno.remove(`${outDir}/index.json`).catch(() => {});
+await Deno.mkdir(`${outDir}/packs`, { recursive: true });
+packs.sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
+for (const pack of packs) await writeJson(`${outDir}/packs/${pack.code}.json`, pack);
+const programsIndex: { generatedFrom: { srcdb: string; fetched: string }; programs: ProgramIndexEntry[] } = {
+  generatedFrom: { srcdb: provenance.srcdb, fetched: provenance.fetched },
+  programs: packs.map(toIndexEntry),
+};
+await writeJson(`${outDir}/programs.json`, programsIndex);
 
 // ------------------------------------------------------------- report
 
@@ -210,9 +178,8 @@ console.log(`templates parsed: ${parsed} of ${files.length} files`);
 console.log(`error documents (Penn answered <errors>, no template; not parse failures): ${errorDocs.length}${errorDocs.length ? ` [${errorDocs.join(", ")}]` : ""}`);
 console.log(`failures: ${failures.length}`);
 for (const f of failures) console.log(`  ${f.file}: ${f.message}`);
-console.log(`unique blocks: ${ids.length}`);
-console.log(`conflicts: ${conflicts.length} (first 20)`);
-for (const c of conflicts.slice(0, 20)) console.log(`  ${c.reqId} "${c.title}" ${c.a} vs ${c.b}: ${c.hint}`);
+console.log(`packs written: ${packs.length}`);
+console.log(`Req_ids with more than one distinct content across programs: ${[...contentsByReqId.values()].filter((v) => v.size > 1).length} of ${contentsByReqId.size} (information only)`);
 
 console.log("qualifier names (count over all templates; 'other' = kept only as text in the output):");
 for (const [where, label, modelled] of [["header", "block header", MODELLED_HEADER_QUALIFIERS], ["rule", "rule", MODELLED_RULE_QUALIFIERS]] as const) {
@@ -231,4 +198,5 @@ if (check) {
   for (const m of checkMismatches.slice(0, 20)) console.log(`  ${m}`);
 }
 console.log(`bytes written: ${bytesWritten}`);
+console.log(`largest pack: ${largest.path} ${largest.bytes} bytes`);
 if (failures.length) Deno.exit(1);

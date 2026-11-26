@@ -653,3 +653,36 @@ export function parseTemplate(xml: string): ParsedTemplate {
   }
   return { goals, goalNames, blocks: findAll(audit, "Block").map(parseBlock) };
 }
+
+// ------------------------------------------------------ per-program pack
+
+/** One program's whole rulebook as published: every block of ITS template.
+ * Penn resolves a template for the program (the same Req_id carries different
+ * minimum credits, concentration rules and if/else branches in different
+ * programs), so blocks are never shared across packs. */
+export interface ProgramPack {
+  code: string; // Path program code, "CSCI-BSE-NCON"
+  title: string;
+  goals: ParsedTemplate["goals"];
+  goalNames: Record<string, string>;
+  provenance: { source: string; srcdb: string; fetched: string }; // endpoint URL, term, yyyy-mm-dd
+  blocks: PackBlock[];
+}
+export interface ProgramIndexEntry {
+  code: string;
+  title: string;
+  goals: ParsedTemplate["goals"];
+  blocks: { reqId: string; type: string; code: string; title: string }[];
+}
+
+/** Pure, so the shape is testable without I/O; the build script only adds the
+ * file reading and writing around it. */
+export function toProgramPack(code: string, title: string, parsed: ParsedTemplate, provenance: ProgramPack["provenance"]): ProgramPack {
+  return { code, title, goals: parsed.goals, goalNames: parsed.goalNames, provenance, blocks: parsed.blocks };
+}
+export function toIndexEntry(pack: ProgramPack): ProgramIndexEntry {
+  return {
+    code: pack.code, title: pack.title, goals: pack.goals,
+    blocks: pack.blocks.map((b) => ({ reqId: b.reqId, type: b.type, code: b.code, title: b.title })),
+  };
+}
