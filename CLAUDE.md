@@ -195,7 +195,15 @@ mode, the S app mark, and bundled type registered at runtime by
   Olisa holds. There is deliberately no licence file in the repo; the
   agreement is Olisa's to produce if it is ever asked for.
 
-**Release state.** Live on the App Store: **3.4.0 (build 17)**, released
+**Release state.** Live on the App Store: **3.5.0**, from Marco's `v11`
+(stamped 3.5.0 (21) there and on `v13`); the `update-manifest` floor has
+been **3.5.0** since 2026-11-24 06:49 UTC (`b755945`, the workflow's own
+run; before it 3.4.1 from 2026-11-09, `4fdc5ac`), read from the manifest on
+2026-11-26. The exact release time was not read (the iTunes lookup does not
+answer the cloud container). **`degree-progress` is stamped 3.5.0 (20) since
+2026-11-26 only to clear that floor**; it does not contain `v11`'s 3.5.0
+work (Traps, "a branch stamped below the floor"). The history below is
+older and was not re-read that day. Before it: **3.4.0 (build 17)**, released
 2026-10-28 at 21:43 UTC per the public iTunes lookup, read 2026-11-06. **3.4.1
 (build 20) was archived from `v10` `c3a4feb` and uploaded at 16:39 EST (21:39
 UTC) on 2026-11-07** ("Upload succeeded"; it supersedes build 19 (`5bc1a9f`,
@@ -2901,10 +2909,12 @@ button leads to a version that still fails the check, and everyone is stuck. The
 
 Two things that surprise people. The gate cannot reach builds that shipped
 without it — 1.2.1 and earlier never fetch the manifest, so no floor retires
-them; only a future release can. And local builds are `3.0.0` (`project.yml`), above any floor
-that is safe to publish, so the wall never appears in normal development: to see
-it, build with `MARKETING_VERSION=1.0.0` (that is how the live path was verified
-end to end) or pass `-LHFForceUpdateWall`.
+them; only a future release can. And a local build carries whatever
+`project.yml` and `project.pbxproj` say (3.5.0 on `degree-progress` since
+2026-11-26), so it shows the wall for real the day a release raises the floor
+past its branch (Traps). To see the wall on purpose, build with
+`MARKETING_VERSION=1.0.0` (that is how the live path was verified end to
+end) or pass `-LHFForceUpdateWall`.
 
 ### ask: the model, the hedge, and the loop that tunes them
 
@@ -3424,6 +3434,22 @@ itself.
 
 ## Traps that have already bitten
 
+- **A branch stamped below the floor is locked out of its own build, and
+  of the backend.** On 2026-11-26 Olisa rebuilt `degree-progress` onto his
+  phone to try the new planner and got only "time for an update". Nothing
+  was broken: 3.5.0 had shipped from `v11` and the `update-floor` workflow
+  raised the floor to 3.5.0 on 2026-11-24, while this branch was still
+  stamped 3.4.1 (20). The same number goes out as `X-Smooth-Version`, and
+  `degree-advisor` calls `enforceMinimumVersion`, so even past the wall the
+  planner would have answered 426. The fix is the stamp: `MARKETING_VERSION`
+  in `project.yml` (two places) and `project.pbxproj` (four), set to the
+  live version. The wrong fixes: tapping "update now", which installs the
+  App Store copy over the Debug build (same bundle id) and takes degree
+  progress off the phone; pausing or lowering the floor for one phone, which
+  lets every student back onto old builds; and a DEBUG bypass of the gate,
+  which the 426 would defeat anyway. Expect it again after every release
+  until this branch is merged into the line: check the manifest first when a
+  dev build shows the wall.
 - **A petition the planner offered was one the school's page refuses in
   so many words.** `policy.ts` listed "a Wharton flex fundamental counted
   toward the concentration" as something an advisor sometimes approves,
@@ -4531,6 +4557,7 @@ it holds work that exists nowhere else.
 | Branch | What |
 |---|---|
 | `degree-progress` | **Where degree work continues (2026-11-12 onward).** Cut from `v12` `4aadc3c` at Olisa's ask: "keep v12 for the ambassador mode and work further on this in another branch". It differs from `v12` in one constant (`FeatureFlags.degreeProgress = true`), the "switched off" line removed from `docs/PRIVACY.md` and `docs/site/privacy.html`, its own name added to the `tests` workflow's push branches, and these notes. Everything else, ambassador mode included, is `v12`'s as of that commit. Later ambassador work lands on `v12` and has to be merged in here from time to time (`git merge origin/v12`; expect the flag, the privacy line and these notes to be the conflicts, and keep this branch's side of all three). Merging this branch back into the line switches degree progress on there, so do that only when Olisa says the feature is ready. Build it onto a phone with `git checkout degree-progress && git pull && bash scripts/build-to-phone.sh`. |
+| `v13` | **Found on the remote on 2026-11-26, not read.** Tip `1c5c4f6` of 2026-11-24, stamped 3.5.0 (21); its last commit records "v13's first green run: 4536 / 479", and its recent subjects name both the agent connection and ambassador mode, so it looks like the merge of `v11` and `v12`. Whether it is now the line, and whether degree progress is on or off there, has to be read from its own notes before `degree-progress` is merged anywhere. |
 | `v12` | **Current line (2026-11-09 onward).** `v10` at `4c136b2` plus the degree-progress research (`docs/DEGREE_PROGRESS_RESEARCH_2026-11-09.md`) and the degree feature. Built on 2026-11-09 against a guessed Degree Works host; rewritten on 2026-11-10 against what Olisa captured from his own Path@Penn session: `Degree/` in the Kit (`PathAuditDecoder`, `PathBridge`, `PathDegree`, `PathWhatIf`), `PathPortal`, `AppState+Degree`, `DegreeProgressView`, `DegreeWhatIfSheet`, `FeatureFlags.degreeProgress`. Green on the `tests` workflow, which runs on pushes to it, and built for iOS with `xcodebuild` on Olisa's Mac (Xcode 27.2) on 2026-11-10 (Test baseline); the Debug build of `d2f37a0` read a real audit on Olisa's iPhone 17 the same day (Known gaps). It does **not** contain `v11` (next row), which branched from the same `v10` commit; the two have to be merged before either ships with the other's work. **Since 2026-11-11 it also carries ambassador mode and `smooth-ambassadors/`** (the `claude/new-session-b3ylkg` row below; What the app does → Profile → 8). |
 | `v11` | **Marco's line since 2026-11-07, found on the remote on 2026-11-10** (this file said "there is no `v11`" until then, which was wrong). Off `v10` at `4c136b2`, the same commit `v12` started from, and 46 commits on by 2026-11-10 (`06250d0`): the "agent connection" (an `agent-auth` / `mcp` / `agent-snapshot` backend, a connector front on Vercel, the phone's opt-in, approve sheet and snapshot upload) and a DEBUG Canvas submit spike; its own notes say "`v11` is the line". Read only from the commit subjects and a file list here, not reviewed. It and `v12` both edit `CLAUDE.md`, `ROADMAP.md`, `docs/PRIVACY.md`, `AppState.swift`, `ContentView.swift` and `FeatureFlags.swift`; none of the degree files is touched by it. Nobody has merged the two or decided which is the base. |
 | `claude/new-session-b3ylkg` | **2026-11-09, `v10` `4c136b2` plus two commits, meant to become `v11`.** (1) `smooth-ambassadors/`: the poster-scan tracker plus the campus ambassador system as a Cloudflare Worker + D1 (private pages per ambassador, tracked links, a founder view with a digest generator, 17 Miniflare tests), drafted here to move to a private repo. (2) **Ambassador mode in the app** (What the app does → Profile → 8): a code-based sign-in in Profile, today's post, a daily local reminder, the planner carve-out. 3697/357 green on the GitHub runner at `85d4234` and the unsigned iOS `xcodebuild` green at `674b89b` (2026-11-10, Test baseline); never on a phone, server not deployed. The Worker's legacy routes were matched to the live site the same day (dashboard byte-identical, `/api/stats` rows identical). Olisa or Marco creates `v11` from it. **2026-11-10, later:** the Sites source arrived as an archive; `scripts/build-sites.mjs` folds the ambassador system into the real single-file Worker (two edits to its `fetch`, a generated section, images byte-identical), `test/sites.test.mjs` runs the original and the edited artifact side by side (14 of 14; `npm test` 28 pass), and the public `/r/{ref}` links replaced the token-bearing ones (Traps). A zip went to Olisa for the ChatGPT session that deploys Sites. **2026-11-11:** deployed to the live Sites project by that session; existing routes and totals checked from here (Known gaps). **Merged into `v12` on 2026-11-11** ("do this in v12", Olisa): `v12` was merged into this branch first (two conflicts, both "each side added a line here": the `DashRoute` cases and these notes), the merged tree was run on the runner, and only then was `v12` moved to it. The "meant to become `v11`" above is history: `v11` is Marco's line and none of this is in it. **Later on 2026-11-11:** school-prefixed codes, then posters, the dashboard link, poster-idea uploads and the Smooth restyle of the ambassador website, all landed on `v12` once compiled (Test baseline). `scripts/build-to-phone.sh` came from the same day. **2026-11-12:** that update is live on the Sites project and was checked read-only from here (Known gaps). |
