@@ -203,3 +203,55 @@ struct DegreeSignInSourceTests {
         }
     }
 }
+
+@Suite("Degree sign-in: the failure ceiling and stuck-status guards")
+struct DegreeSignInCeilingTests {
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func may(streak: Int, failedAgo: TimeInterval?, rejected: Bool = false) -> Bool {
+        PathPortal.mayFillCredential(
+            now: now, lastSubmission: nil,
+            lastFailedSubmission: failedAgo.map { now.addingTimeInterval(-$0) },
+            passwordRejected: rejected, autoLoginEnabled: true,
+            userInitiated: true, duoTrustLive: false, failedStreak: streak)
+    }
+
+    @Test("a student's ask skips the failed hour only while fewer than two failures in a row")
+    func streak() {
+        #expect(PathPortal.userAskFailureLimit == 2)
+        #expect(may(streak: 0, failedAgo: 30 * 60))
+        #expect(may(streak: 1, failedAgo: 30 * 60))
+        #expect(!may(streak: 2, failedAgo: 30 * 60))
+        #expect(!may(streak: 5, failedAgo: 30 * 60))
+        // After the hour a streak of two may try again.
+        #expect(may(streak: 2, failedAgo: 3600))
+        #expect(may(streak: 2, failedAgo: nil))
+        // Rejected always refuses.
+        #expect(!may(streak: 0, failedAgo: nil, rejected: true))
+        #expect(!may(streak: 2, failedAgo: 7200, rejected: true))
+    }
+
+    @Test("the refusal's wait ends an hour after the last failure")
+    func waitEnds() {
+        let until = PathPortal.fillBlockedUntil(
+            now: now, lastSubmission: nil, lastFailedSubmission: now.addingTimeInterval(-1800),
+            userInitiated: true, failedStreak: 2)
+        #expect(until == now.addingTimeInterval(1800))
+    }
+
+    @Test("the guards are in the source")
+    func source() throws {
+        let portal = try sourceText("PathPortal.swift")
+        #expect(portal.contains("guard attemptRunning, !duoReached"))
+        #expect(portal.contains("defer { attemptRunning = false }"))
+        #expect(portal.contains("if inFlight == running { inFlight = nil }"))
+        #expect(portal.contains("onCredentialSucceeded?()"))
+        let state = try sourceText("AppState+Degree.swift")
+        #expect(state.contains("guard degreeSignInsAwaiting > 0"))
+        #expect(state.contains("degreeAskSubmitted"))
+        let screen = try sourceText("DegreeProgressView.swift")
+        #expect(screen.contains("selectDegree(degree.id, userInitiated: true)"))
+        #expect(screen.contains("selectDegree(entry.id, userInitiated: true)"))
+        #expect(try sourceText("DegreeWhatIfSheet.swift").contains("selectDegree(id, userInitiated: true)"))
+    }
+}

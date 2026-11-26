@@ -431,7 +431,7 @@ struct DegreeWhatIfSheet: View {
         runningID = entry.id
         Task {
             if let id = entry.degreeID, id != state.selectedStudentDegree?.id {
-                await state.selectDegree(id)
+                await state.selectDegree(id, userInitiated: true)
             }
             await state.runWhatIf(plan)
             runningID = nil

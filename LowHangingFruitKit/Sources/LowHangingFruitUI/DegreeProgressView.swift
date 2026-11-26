@@ -347,7 +347,7 @@ struct DegreeProgressView: View {
                         let title = degree.goals.title(descriptions: descriptions)
                         Button {
                             state.setDegreeShowsOverall(false)
-                            Task { await state.selectDegree(degree.id) }
+                            Task { await state.selectDegree(degree.id, userInitiated: true) }
                         } label: {
                             Text(index < labels.count ? labels[index] : title)
                                 .font(.lhfSans(13, weight: isSelected ? .semibold : .medium))
@@ -465,7 +465,7 @@ struct DegreeProgressView: View {
                 let title = index < titles.count ? titles[index] : entry.goals.title(descriptions: descriptions)
                 Button {
                     state.setDegreeShowsOverall(false)
-                    Task { await state.selectDegree(entry.id) }
+                    Task { await state.selectDegree(entry.id, userInitiated: true) }
                 } label: {
                     VStack(spacing: 6) {
                         if let match {

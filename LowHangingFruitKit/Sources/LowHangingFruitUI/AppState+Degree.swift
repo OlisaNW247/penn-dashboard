@@ -259,6 +259,13 @@ extension AppState {
         // Once one sign-in in the chat's ask ended without a session, no
         // second one starts in the same ask (one Duo push per ask at most).
         if degreeAskActive && degreeAskSignInFailed { return .throttled }
+        // Hard rule: once the PennKey has been typed in this ask, a later
+        // sign-in in the same ask runs as an AUTOMATIC attempt. Its own spacing
+        // (ten minutes since the last typing) keeps it from typing again, and
+        // with no trust it ends at the form instead of waiting. An attempt that
+        // finds a live token (the common case after an approved push) still
+        // succeeds, because the token check comes before any fill.
+        let userInitiated = userInitiated && !(degreeAskActive && degreeAskSubmitted)
         // Whether Duo remembers this phone decides if an automatic attempt may
         // type the PennKey; read the jar now so a fresh launch is not "no trust".
         if !userInitiated { await refreshDuoRememberSummary() }
@@ -270,12 +277,16 @@ extension AppState {
         }
         portal.onCredentialSubmitted = { [weak self] date in
             self?.notePathCredentialSubmitted(at: date)
+            if self?.degreeAskActive == true { self?.degreeAskSubmitted = true }
             self?.degreeStageSink?("signing in to path@penn…")
         }
         portal.onCredentialFailed = { [weak self] date in self?.notePathCredentialFailed(at: date) }
+        portal.onCredentialSucceeded = { [weak self] in self?.notePathCredentialSucceeded() }
         portal.onCredentialRejected = { [weak self] in self?.noteAutoLoginRejected() }
         portal.onDuoReached = { [weak self] in self?.noteDegreeDuoReached() }
+        degreeSignInsAwaiting += 1
         let result = await portal.ensureSignedIn(force: force, userInitiated: userInitiated)
+        degreeSignInsAwaiting -= 1
         if let from = degreeStatusBeforeDuo {
             degreeStatusBeforeDuo = nil
             if degreeStatus == .waitingForDuo { degreeStatus = from }
@@ -289,6 +300,10 @@ extension AppState {
     /// The portal reached Duo: the status says so live (restored after the
     /// sign-in call returns), and the phone buzzes.
     private func noteDegreeDuoReached() {
+        // Only while a sign-in call is awaiting: a late Duo message after the
+        // call returned would leave "approve the duo push" with nobody to
+        // restore it.
+        guard degreeSignInsAwaiting > 0 else { return }
         if degreeStatus != .waitingForDuo, degreeStatusBeforeDuo == nil {
             degreeStatusBeforeDuo = degreeStatus
             degreeStatus = .waitingForDuo
@@ -578,9 +593,10 @@ extension AppState {
         guard degreeFeatureAvailable else { return [] }
         if !degree.programs.isEmpty { return degree.programs }
         let generation = degreeGeneration
-        // A student's own tap, so the attempt spacing does not apply (the
-        // PennKey budget still does, inside the portal). A throttle is never a
-        // failure and says nothing; the list is simply not there yet.
+        // An automatic caller (the sheet opening), not a tap: it never types
+        // the PennKey without Duo trust, which is why `userInitiated` is false.
+        // `force` skips only the 60-second attempt throttle. A throttle is
+        // never a failure and says nothing; the list is simply not there yet.
         let signIn = await signInToPath(force: true, userInitiated: false)
         guard generation == degreeGeneration else { return [] }
         if signIn == .throttled { return [] }

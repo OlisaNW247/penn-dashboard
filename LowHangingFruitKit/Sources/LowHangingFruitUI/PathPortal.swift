@@ -84,6 +84,8 @@ final class PathPortal: NSObject, WKUIDelegate {
         /// A live Duo trust cookie is known. False when the Duo jar has not
         /// been read yet this launch, which is the safe side.
         var duoTrustLive: Bool = false
+        /// Consecutive failed submissions (typed, ended without a session).
+        var failedStreak: Int = 0
     }
 
     /// Bound by `AppState+Degree` before every use. Unbound means the fill is
@@ -92,6 +94,11 @@ final class PathPortal: NSObject, WKUIDelegate {
     var onCredentialSubmitted: ((Date) -> Void)?
     var onCredentialFailed: ((Date) -> Void)?
     var onCredentialRejected: (() -> Void)?
+    /// An attempt that typed the PennKey got its token.
+    var onCredentialSucceeded: (() -> Void)?
+    /// True from the top of an attempt to every way out of it; the Duo hook
+    /// fires only inside it (`defer` in `performSignIn` cannot leak).
+    private var attemptRunning = false
     /// Called once per attempt when the popup reaches Duo (a push is waiting).
     var onDuoReached: (() -> Void)?
     /// Why the last attempt did not type the PennKey; reset at the start of
@@ -151,7 +158,8 @@ final class PathPortal: NSObject, WKUIDelegate {
         passwordRejected: Bool,
         autoLoginEnabled: Bool,
         userInitiated: Bool = false,
-        duoTrustLive: Bool = false
+        duoTrustLive: Bool = false,
+        failedStreak: Int = 0
     ) -> Bool {
         guard autoLoginEnabled, !passwordRejected else { return false }
         // An automatic attempt types the PennKey only while Duo remembers this
@@ -164,7 +172,7 @@ final class PathPortal: NSObject, WKUIDelegate {
         guard userInitiated || duoTrustLive else { return false }
         return fillBlockedUntil(
             now: now, lastSubmission: lastSubmission, lastFailedSubmission: lastFailedSubmission,
-            userInitiated: userInitiated) == nil
+            userInitiated: userInitiated, failedStreak: failedStreak) == nil
     }
 
     /// When the budget next allows a fill, or nil when it allows one now. Only
@@ -174,10 +182,11 @@ final class PathPortal: NSObject, WKUIDelegate {
         now: Date,
         lastSubmission: Date?,
         lastFailedSubmission: Date?,
-        userInitiated: Bool
+        userInitiated: Bool,
+        failedStreak: Int = 0
     ) -> Date? {
         var until: Date?
-        if !userInitiated, let lastFailedSubmission {
+        if !userInitiated || failedStreak >= userAskFailureLimit, let lastFailedSubmission {
             let end = lastFailedSubmission.addingTimeInterval(CanvasSessionRenewer.failedSubmissionSpacing)
             if end > now { until = end }
         }
@@ -212,6 +221,13 @@ final class PathPortal: NSObject, WKUIDelegate {
     /// rule: this must change neither.
     nonisolated static let userAskCredentialSpacing: TimeInterval = 90
 
+    /// After this many consecutive failed submissions the failed-submission
+    /// hour applies to a student's ask too. The hour was the only cap on a
+    /// wrong password whose error text Penn's page words differently than
+    /// `errorTextIndicatesBadCredential` expects (it never latches as
+    /// rejected), and a PennKey lockout is the worst outcome here.
+    nonisolated static let userAskFailureLimit = 2
+
     // MARK: Sign-in
 
     /// Signs in (or confirms the page already is). Concurrent callers share one
@@ -222,6 +238,10 @@ final class PathPortal: NSObject, WKUIDelegate {
             // A student's ask that joined an AUTOMATIC attempt which stopped
             // at the form gets exactly one attempt of its own. No loop.
             guard userInitiated, joined == .needsStudentSignIn else { return joined }
+            // The finished task may still be stored: clear it (only if it is
+            // still the one joined) so this caller gets an attempt of its own,
+            // not the stale result.
+            if inFlight == running { inFlight = nil }
             if let again = inFlight { return await again.value }
         }
         let task = Task { @MainActor [self] in
@@ -244,6 +264,8 @@ final class PathPortal: NSObject, WKUIDelegate {
     }
 
     private func performSignIn(force: Bool, userInitiated: Bool) async -> SignIn {
+        attemptRunning = true
+        defer { attemptRunning = false }
         attemptUserInitiated = userInitiated
         lastFillSkip = nil
         stopForStudent = false
@@ -354,6 +376,7 @@ final class PathPortal: NSObject, WKUIDelegate {
             if let state = await readiness(), state.token {
                 log("token arrived")
                 if duoReached { log("duo: approved") }
+                if hasSubmittedCredentials { onCredentialSucceeded?() }
                 return .ready
             }
         }
@@ -574,7 +597,8 @@ final class PathPortal: NSObject, WKUIDelegate {
             passwordRejected: budget.passwordRejected,
             autoLoginEnabled: budget.autoLoginEnabled,
             userInitiated: attemptUserInitiated,
-            duoTrustLive: budget.duoTrustLive
+            duoTrustLive: budget.duoTrustLive,
+            failedStreak: budget.failedStreak
         ) else {
             // Either kind of attempt ends here instead of waiting out the
             // deadline on a form nobody will fill: an automatic one as
@@ -591,7 +615,8 @@ final class PathPortal: NSObject, WKUIDelegate {
                 let until = Self.fillBlockedUntil(
                     now: fillNow, lastSubmission: budget.lastSubmission,
                     lastFailedSubmission: budget.lastFailedSubmission,
-                    userInitiated: attemptUserInitiated) ?? fillNow
+                    userInitiated: attemptUserInitiated,
+                    failedStreak: budget.failedStreak) ?? fillNow
                 lastFillSkip = .withinBudget(until: until)
             }
             stopForSkip = true
@@ -665,7 +690,9 @@ final class PathPortal: NSObject, WKUIDelegate {
     }
 
     private func markDuoReached() {
-        guard !duoReached else { return }
+        // Only inside an attempt: a Duo message that lands after it ended must
+        // not raise the status with nobody left to restore it.
+        guard attemptRunning, !duoReached else { return }
         log("duo reached")
         duoReached = true
         onDuoReached?()

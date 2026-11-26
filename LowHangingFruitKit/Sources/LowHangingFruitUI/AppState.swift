@@ -616,6 +616,10 @@ final class AppState: ObservableObject {
     /// without a session stops any further sign-in in the same ask.
     var degreeAskActive = false
     var degreeAskSignInFailed = false
+    /// The PennKey has been typed during this chat ask (see `signInToPath`).
+    var degreeAskSubmitted = false
+    /// How many `signInToPath` calls are awaiting the portal right now.
+    var degreeSignInsAwaiting = 0
     /// The chat sets this for its read to hear "signing in to path@penn…".
     var degreeStageSink: ((String) -> Void)?
     /// The status the Duo hook replaced with `.waitingForDuo`, restored once
@@ -3643,6 +3647,8 @@ final class AppState: ObservableObject {
         failedCredentialSubmissionAt = nil
         if persistsConfirmedDeadFlag {
             UserDefaults.lhf.removeObject(forKey: Self.lastFailedCredentialSubmissionAtKey)
+            // The degree portal's streak of failed submissions ends with it.
+            UserDefaults.lhf.removeObject(forKey: Self.pathFailedStreakKey)
         }
         canvasSessionRenewer?.clearFailedSubmissionClock()
     }
@@ -10695,8 +10701,23 @@ extension AppState {
             // launch, which is the safe side: no trust, no automatic typing.
             // `signInToPath` awaits `refreshDuoRememberSummary()` before an
             // automatic attempt so a fresh launch does not wrongly read none.
-            duoTrustLive: duoTrustExpiry.map { $0 > Date() } ?? false
+            duoTrustLive: duoTrustExpiry.map { $0 > Date() } ?? false,
+            failedStreak: Self.persistedPathFailedStreak()
         )
+    }
+
+    /// Consecutive failed submissions (typed, no session), persisted beside the
+    /// failed clock and cleared wherever that clock is cleared.
+    static let pathFailedStreakKey = "pathFailedSubmissionStreakV1"
+
+    static func persistedPathFailedStreak() -> Int {
+        UserDefaults.lhf.integer(forKey: pathFailedStreakKey)
+    }
+
+    /// A portal attempt that typed the PennKey got a session: the streak ends.
+    func notePathCredentialSucceeded() {
+        guard persistsConfirmedDeadFlag else { return }
+        UserDefaults.lhf.removeObject(forKey: Self.pathFailedStreakKey)
     }
 
     /// The portal filled the form: stamp the renewer's submission record
@@ -10709,5 +10730,8 @@ extension AppState {
     /// renewer's failed-submission record, the one its 60-minute wait reads.
     func notePathCredentialFailed(at date: Date) {
         setFailedSubmissionClock(date)
+        if persistsConfirmedDeadFlag {
+            UserDefaults.lhf.set(Self.persistedPathFailedStreak() + 1, forKey: Self.pathFailedStreakKey)
+        }
     }
 }

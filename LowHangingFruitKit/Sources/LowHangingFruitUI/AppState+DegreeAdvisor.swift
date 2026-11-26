@@ -8,7 +8,6 @@ import LowHangingFruitKit
 // the plan (add, remove, move); `DegreeAdvisor.apply` checks each against what
 // the phone offered, so a made-up course or term is skipped, never filed.
 
-/// What one question came back with.
 /// Why the chat could not read a what-if audit from Penn.
 enum DegreeAdvisorReadFailure: Equatable, Sendable {
     case duoNotApproved
@@ -46,6 +45,7 @@ enum DegreeAdvisorRead {
     case failed(DegreeAdvisorReadFailure)
 }
 
+/// What one question came back with.
 struct DegreeAdvisorReply: Sendable, Equatable {
     let answer: String
     let changes: [DegreeAdvisorChange]
@@ -147,9 +147,11 @@ extension AppState {
         onStage("reading path@penn for \(entry.name)…")
         degreeAskActive = true
         degreeAskSignInFailed = false
+        degreeAskSubmitted = false
         degreeStageSink = { onStage($0) }
         let read = await fetchDegreeAdvisorWhatIf(entry, now: now)
         degreeAskActive = false
+        degreeAskSubmitted = false
         degreeStageSink = nil
         let whatIf: DegreeAudit
         let notice: String
