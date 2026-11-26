@@ -6,6 +6,58 @@ inventory. `RULES.md` holds the rules read from these sources, `DESIGN.md`
 the storage design, `OPEN-QUESTIONS.md` what is still unsettled and what the
 owner can capture signed in.
 
+## Live probe, 2026-11-26: S01 and S02 are verified from a GitHub runner
+
+After this file was written, `scripts/penn-catalog/probe-path.mjs` called
+Path@Penn's public endpoints from a GitHub runner (the `penn-catalog`
+workflow, commits `795e210` and `b6e23cf`). No sign-in, browser-like
+headers, 0.6 s between calls. What it settled, which overrides the
+"UNREACHED live" notes in S01 and S02 below:
+
+- **`programs-v2-list`** (term `202630`) answers 200 with 1,049 programs:
+  118 `-MINOR`, 36 `-BA`, 17 `-BS`, the `-BSE` and `-BSE-<concentration>`
+  codes, and the graduate programs.
+- **`programs-v2-info`** answers 200 in about 0.1 s with the keys `key,
+  prog_code, prog_name, prog_type, prog_parent, levl_code, degc_code,
+  majr_code, minr_code, conc_code, coll_code, dept_code, sis_prog_code, hide,
+  audit_xml, minor_sis_prog_codes`. A code that does not exist answers `{}`
+  with status 200, so an empty object is "no such program", not an error.
+  The real codes differ from the obvious ones: computer science is
+  `CSCI-BSE-NCON` (and `-ARIN`, `-COGS`, `-CBI`, `-CMV`, `-DATS`, `-SFF`,
+  `-SYS`; there is no bare `CSCI-BSE`), management is `MGMT-BS-GEN` (and
+  `-MNMT`, `-ORGS`, `-SMGT`), finance is `FNCS-BS`; `ECON-BA` does not
+  exist under that name.
+- **Wharton templates are readable**, which this file could not confirm
+  before: `FNCS-BS` is 75,112 characters of audit XML with the blocks
+  Degree, First-Year Foundations, Business Fundamentals, Liberal Arts and
+  Sciences, Business Breadth and the concentration, and the qualifiers
+  `MAXCREDIT` (17), `NONEXCLUSIVE` (13), `MAXCLASS` (8), `CLASSESCREDITS`
+  (6), `SPMAXCREDIT` (3), `MINRES`, `MAXPASSFAIL`, `MINGPA`. Seen in it:
+  `MINRES 19 Credits`; `MaxClasses 3 in @ 5000:9999`; `MaxClasses 1 in BEPP
+  2500, 2508, ECON 2100`; `MaxClasses 0 in MSCI @` and `NSCI @`; `MaxCredits
+  0 in @ @ (With DWPASSFAIL = Y ...) Except WH 1010`; `MaxClasses 0 in ...
+  @ @ (With DWTRANSFERSCHOOLID = EQIVAP, EQIVIB, EQIVEX, EQIVAS)`;
+  `ShareWith (MINOR)`; `ShareWith (OTHER = U-SCHOLARS)`. `MGMT-BS-GEN`,
+  `NURS-BSN` (`MINRES 18`, `MINGPA 2`, pass/fail caps) and `MATH-MINOR`
+  (the College's `AU..` sector and foundation attributes) answered the same
+  way. A minor's `minor_sis_prog_codes` lists the degree programs it may
+  attach to.
+- **`search` and `details`** answer 200. `details` for a section carries
+  `hours_html` (credit units), `attributes_detail` (names with codes, e.g.
+  "CIS Unrestricted Technical Elective (EUCU)"), `xlist` ("Scheduled With
+  CIS 5710"), `registration_restrictions` as tagged sentences (`cls` class
+  level, `lvl` level, `maj` major, `col` division: "Students with a
+  semester level of Freshman, Junior or Sophomore may not enroll",
+  "Enrollment limited to students in the Wharton Undergraduate division")
+  and **`prereqs_from_cim`**, prerequisites as markup with course codes
+  (`CIS 4710` → `CIS 2400`). It is filled for some courses and empty for
+  others (`STAT 4310`, `ACCT 1020`, `ASLD 0200`, `FNCE 2050`, `CIS 4000`
+  were empty), so it narrows the prerequisite gap without closing it.
+
+Still unverified from a runner: every prose page (the handbooks, the
+College's policy pages), and `catalog.upenn.edu`, which answered runners
+with an empty 202 on 2026-11-16.
+
 ## Read this first: what this session could and could not reach
 
 The session ran on the Default cloud environment, whose network allows only

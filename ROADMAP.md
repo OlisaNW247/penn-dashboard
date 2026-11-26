@@ -966,6 +966,15 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-26.** Degree-data research (`degree-progress`, `795e210`,
+  `b6e23cf`; `docs/research/degree-data/`): 35 sources, 105 rules (67
+  still unverified, because the session could not reach Penn's hosts), a
+  storage design and a list of captures only a signed-in student can make.
+  A live probe from a GitHub runner then confirmed the main lead: Path@Penn
+  serves every program's requirement template and its course search
+  without a sign-in. Next: verify the prose rules from a session on the
+  `penn-dashboard` environment, then build the program packs
+  (`DESIGN.md`) and replace the hand-written parts of `policy.ts`.
 - **2026-11-16.** Plan with AI plans with code, not the model
   (`degree-progress`, `738bf42`..`4083bc0`; `degree-advisor` version 7,
   deployed at Olisa's go): the audits become slots, Penn Labs and the CIS

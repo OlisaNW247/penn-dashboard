@@ -1264,6 +1264,22 @@ Keep this current. It is the fastest way for a new session to know what exists.
     concentration is no longer offered as a petition (Wharton refuses it).
     The live dry run then read 24.5 CU with no approvals and spring 2028
     in the best case, as the hand plan did. Deno 842. Not yet asked again.
+    **Where the rules should come from (2026-11-26).** `policy.ts` is one
+    student's case written by hand. `docs/research/degree-data/` is the
+    inventory Olisa asked for of every source of degree and counting rules
+    at Penn (`SOURCES.md`, `RULES.md`, `DESIGN.md`, `OPEN-QUESTIONS.md`);
+    read `SOURCES.md`'s first two sections before trusting a line of it,
+    because 67 of its 105 rules are search-reported and unverified. What
+    is verified live, from a GitHub runner
+    (`scripts/penn-catalog/probe-path.mjs`): Path@Penn's
+    `programs-v2-list` and `programs-v2-info` return every program's
+    Degree Works template without a sign-in (1,049 programs; the real
+    codes are `CSCI-BSE-NCON`, `MGMT-BS-GEN`, `FNCS-BS`, and an unknown
+    code answers `{}` with 200), with Penn's own `NONEXCLUSIVE`
+    (ShareWith), `MAXCLASS`, `MAXCREDIT`, `MINRES` and pass/fail
+    qualifiers, and the course `details` route returns attributes with
+    names, enrollment restrictions and `prereqs_from_cim` (filled for some
+    courses only). Nothing in the planner uses any of it yet.
     **The add sheet's list is grouped** (`DegreeContribution.grouped`): "both
     degrees" first, then each degree under its name, ranked inside. Ranked by
     points alone, his five engineering rows (+2% each) sat above two Wharton
