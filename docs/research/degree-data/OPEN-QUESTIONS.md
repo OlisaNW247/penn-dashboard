@@ -36,6 +36,13 @@ Response (and the request Payload when asked).
   to a program pack (`DESIGN.md` section 7) is exact instead of by title.
 - **Mask:** name, ids, grades, GPA lines, token; replace course codes if
   the file is to be shared.
+- **The easy way (2026-11-26):** paste `capture-audit-shape.js` (beside
+  this file) into the browser console on Path@Penn while signed in. It
+  asks the page for your audit the way the page does and prints an
+  inventory of field names, with example values only for short ALL-CAPS
+  codes that are not course codes and not in your record. No name, id,
+  token, course, title, grade, number or sentence is printed. Tested
+  against a fake page seeded with marker secrets, none of which appeared.
 
 ### 1.2 What-if audits for the coordinated programs and for Wharton
 
