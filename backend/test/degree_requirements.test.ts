@@ -192,3 +192,26 @@ Deno.test("CS BSE: area lists sit beside the CIS elective", () => {
   assert(slot(cs, "Area List - Networking"));
   assert(slot(cs, "CIS Elective at the 2000 Level or Above"));
 });
+
+// ---- creditsSoFar (Engineering's 46 cu floor, read 2026-11-26) -------------
+
+const rule = (id: string, label: string, status = "info", children: unknown[] = []) => ({ id, label, status, children });
+const audit = (blocks: unknown[]) => ({ goals: { college: "EU" }, blocks, courses: [] });
+
+Deno.test("creditsSoFar: read from the DEGREE block's label, searching children", () => {
+  const label = "You currently have 28.5 CU including both earned and in-progress courses. To graduate, you need to successfully complete a minimum of 8.5 additional CU and all graduation requirements.";
+  const flat = degreesFromAudits([{ degreeId: "a", label: "a", audit: audit([{ id: "b0", type: "DEGREE", title: "t", rules: [rule("r1", label)] }]) }]);
+  assertEquals(flat.degrees[0].creditsSoFar, 28.5);
+  const nested = degreesFromAudits([{ degreeId: "a", label: "a", audit: audit([{ id: "b0", type: "DEGREE", title: "t", rules: [rule("r0", "Total", "open", [rule("r1", label)])] }]) }]);
+  assertEquals(nested.degrees[0].creditsSoFar, 28.5);
+});
+
+Deno.test("creditsSoFar: absent without the label, and not taken from a MAJOR block", () => {
+  const none = degreesFromAudits([{ degreeId: "a", label: "a", audit: audit([{ id: "b0", type: "DEGREE", title: "t", rules: [rule("r1", "Minimum Total Credits Required")] }]) }]);
+  assertEquals(none.degrees[0].creditsSoFar, undefined);
+  const major = degreesFromAudits([{ degreeId: "a", label: "a", audit: audit([
+    { id: "b0", type: "DEGREE", title: "t", rules: [rule("r1", "Minimum Total Credits Required")] },
+    { id: "b1", type: "MAJOR", title: "m", rules: [rule("r2", "29 CU are required. You currently have 16.")] },
+  ]) }]);
+  assertEquals(major.degrees[0].creditsSoFar, undefined);
+});

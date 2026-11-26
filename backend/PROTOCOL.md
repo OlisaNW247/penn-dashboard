@@ -1264,7 +1264,7 @@ courses: [{ code, title, credits, countsToward: [string], approval:
 label, reason }], petitions: [{ code, slots: [string], savesCredits }], notes:
 [string] }`. When `plan` is present the phone replaces its future semesters with
 `plan.schedule` and ignores `actions`.
-Scenario `best` (always reported, 6.5 cu semesters, summers unless the student
+Scenario `best` (always reported, 6.5 cu semesters, summers of up to 4 cu (Engineering's limit; the other scenarios use 2) unless the student
 said no, every petition pair counted as if the advisor approved it, and the
 `wharton.language` slots treated as met by the placement exam when the student
 has taken nothing in a language subject) is `chosen` only when `standard`,

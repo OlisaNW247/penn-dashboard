@@ -702,28 +702,27 @@ function runSchedule(
   items: Item[],
   cons: Constraints,
   terms: string[],
-  params: { maxLoad: number; summer: boolean },
+  params: { maxLoad: number; summer: boolean; summerLoad: number },
   policy: Policy,
   variant: 0 | 1,
 ): Run {
   const byCi = new Map(items.map((i) => [i.ci, i]));
   const load = terms.map(() => 0);
-  let summerTotal = 0;
   const placed = new Map<number, number>();
   const failed = new Set<number>();
 
   const offeredIn = (it: Item, t: number) => noOfferingData(it.course) || it.course.offered[seasonOf(terms[t])];
   const room = (t: number, credits: number): boolean => {
     if (seasonOf(terms[t]) === "summer") {
-      return params.summer && load[t] + credits <= policy.loads.summerPerTerm + EPS &&
-        summerTotal + credits <= policy.loads.maxSummerTotal + EPS;
+      // One summer's limit only: Engineering's handbook (Enrollment page,
+      // read 2026-11-26) sets no cap across summers, so no running total.
+      return params.summer && load[t] + credits <= params.summerLoad + EPS;
     }
     return load[t] + credits <= params.maxLoad + EPS;
   };
   const put = (it: Item, t: number) => {
     placed.set(it.ci, t);
     load[t] += it.course.credits;
-    if (seasonOf(terms[t]) === "summer") summerTotal += it.course.credits;
   };
   const predsOk = (ci: number, t: number, skip: number | undefined): boolean => {
     for (const p of cons.preds.get(ci)!) {
@@ -874,7 +873,18 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
   const env: Env = { canon, attrSets };
 
   // ---- slots -------------------------------------------------------------
-  const active = req.degrees.flatMap((d) => d.slots).filter((s) => !waive.has(s.id) && s.need > EPS);
+  // Wharton counts an Engineering senior design project as the capstone for a
+  // Wharton + Engineering student (Senior Capstone page, 2026-11-26), so that
+  // slot is left out like a waived one, in every scenario including "best".
+  let capstoneBySeniorDesign = false;
+  const active = req.degrees.flatMap((d) => d.slots).filter((s) => {
+    if (waive.has(s.id) || s.need <= EPS) return false;
+    if (policy.capstoneRule.satisfiedBySeniorDesign(s, req.degrees)) {
+      capstoneBySeniorDesign = true;
+      return false;
+    }
+    return true;
+  });
 
   // Explicit options the catalogue lacks are possible but unverified.
   for (const s of active) {
@@ -1001,10 +1011,14 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
   }
 
   const summerOk = req.allowSummer !== false;
-  const defs: { id: Scenario["id"]; label: string; maxLoad: number; summer: boolean }[] = [
-    { id: "standard", label: `${fmt(policy.loads.standard)} cu a semester, no summer`, maxLoad: policy.loads.standard, summer: false },
-    { id: "summer", label: `${fmt(policy.loads.standard)} cu a semester, summers at ${fmt(policy.loads.summerPerTerm)} cu`, maxLoad: policy.loads.standard, summer: summerOk },
-    { id: "approved", label: `${fmt(policy.loads.approved)} cu a semester, summers at ${fmt(policy.loads.summerPerTerm)} cu`, maxLoad: policy.loads.approved, summer: summerOk },
+  // `summerLoad` is the most one summer may hold in that scenario. The
+  // ordinary scenarios use the planner's cautious default (one course per
+  // session); only "best" reaches Penn's own ceiling.
+  const sl = policy.loads.summerPerTerm;
+  const defs: { id: Scenario["id"]; label: string; maxLoad: number; summer: boolean; summerLoad: number }[] = [
+    { id: "standard", label: `${fmt(policy.loads.standard)} cu a semester, no summer`, maxLoad: policy.loads.standard, summer: false, summerLoad: sl },
+    { id: "summer", label: `${fmt(policy.loads.standard)} cu a semester, summers at ${fmt(policy.loads.summerPerTerm)} cu`, maxLoad: policy.loads.standard, summer: summerOk, summerLoad: sl },
+    { id: "approved", label: `${fmt(policy.loads.approved)} cu a semester, summers at ${fmt(policy.loads.summerPerTerm)} cu`, maxLoad: policy.loads.approved, summer: summerOk, summerLoad: sl },
   ];
   if (req.maxLoad !== undefined) {
     defs.push({
@@ -1012,13 +1026,15 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
       label: `${fmt(req.maxLoad)} cu a semester${summerOk ? `, summers at ${fmt(policy.loads.summerPerTerm)} cu` : ", no summer"}`,
       maxLoad: req.maxLoad,
       summer: summerOk,
+      summerLoad: sl,
     });
   }
   defs.push({
     id: "best",
-    label: `${fmt(policy.loads.approved)} cu${summerOk ? ", summers" : ""}, your advisor's approvals and the language placement exam`,
+    label: `${fmt(policy.loads.approved)} cu${summerOk ? `, summers at up to ${fmt(policy.loads.summerCeiling)} cu` : ""}, your advisor's approvals and the language placement exam`,
     maxLoad: policy.loads.approved,
     summer: summerOk,
+    summerLoad: policy.loads.summerCeiling,
   });
   const runs = defs.map((d) => {
     // "best" schedules its own course set; the others share the main one.
@@ -1111,7 +1127,7 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
   // What "best" leans on, named exactly, so the explanation can say it.
   const bestAssumptions = (): string[] => {
     const out: string[] = [`${fmt(policy.loads.approved)} cu semesters, which need approval`];
-    if (chosen.summer) out.push("summer courses");
+    if (chosen.summer) out.push(`summer courses, up to ${fmt(policy.loads.summerCeiling)} cu a summer (Engineering's limit, 2 per session)`);
     for (const it of items) {
       for (const [i, j] of petitionPairsOf(it)) {
         out.push(`your advisor approving ${it.course.code} for both ${label(i)} and ${label(j)}`);
@@ -1126,6 +1142,9 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
     const sl = byCi.get(a)!.slots.map((s) => chosenSlots[s].slot.label).find((l) => /#\s*1\b/.test(l)) ?? "sequence";
     const name = sl.replace(/#\s*1\b/, "").trim().toLowerCase();
     notes.push(`${byCi.get(a)!.course.code} goes in ${termLabel(terms[ta])} and ${byCi.get(b)!.course.code} in ${termLabel(terms[tb])} (${name} runs fall to spring)`);
+  }
+  if (capstoneBySeniorDesign) {
+    notes.push("Wharton counts your engineering senior design project as its senior capstone; if your audit still shows the capstone open, ask your Wharton advisor to record it");
   }
   if (cons.hasCapstoneRule) {
     notes.push("fundamentals and leadership courses are placed before the Wharton capstone (rule for capstones from fall 2027)");
@@ -1164,7 +1183,27 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
   if (chosen.maxLoad > policy.loads.standard + EPS) {
     notes.push(chosen.maxLoad > policy.loads.approved + EPS
       ? `${fmt(chosen.maxLoad)} cu a semester is above Penn's ${fmt(policy.loads.approved)} cu limit for dual-degree students and needs special permission`
-      : `${fmt(chosen.maxLoad)} cu semesters need your advisor's approval`);
+      : policy.loads.approvalNote(req.degrees.map((d) => d.college), chosen.maxLoad));
+  }
+
+  // The 46 cu floor (Engineering's Dual Degrees page, 2026-11-26). Known
+  // limit: no filler courses are added to the schedule, so when the floor
+  // binds the finish term can be optimistic; the plan only says how many
+  // more cu of any courses are owed.
+  const floor = policy.totalFloor(req.degrees);
+  const sofar = req.degrees.map((d) => d.creditsSoFar).filter((v): v is number => v !== undefined);
+  if (floor && sofar.length) {
+    const have = Math.max(...sofar);
+    const short = Math.round((floor.cu - (have + chosenCredits)) * 100) / 100;
+    if (short > EPS) {
+      unfilled.push({
+        slotId: "policy|totalFloor",
+        degreeLabel: "both degrees",
+        label: `${floor.cu} cu minimum`,
+        reason: `${fmt(short)} more cu of any courses are needed: ${floor.reason}`,
+      });
+      notes.push(`the plan ends at ${fmt(Math.round((have + chosenCredits) * 100) / 100)} cu; ${floor.reason}, so ${fmt(short)} more cu of any courses are needed`);
+    }
   }
 
   // Penn Labs' prerequisites field is empty for most language courses, so the

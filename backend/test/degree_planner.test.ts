@@ -98,6 +98,12 @@ function degrees(): Degree[] {
   ];
 }
 
+/** The same two degrees with the CS one in the College, so Wharton has no
+ *  engineering senior design project to stand in for its capstone. */
+function collegeDegrees(): Degree[] {
+  return degrees().map((d) => (d.id === "cs" ? { ...d, college: "AS" } : d));
+}
+
 function catalog(): CatalogSnapshot {
   const list: CatalogCourse[] = [
     course("CIS 1200", 1), course("CIS 1210", 1, [], "fs", "CIS 1200"),
@@ -164,9 +170,14 @@ const filled = (r: PlanResult, code: string, label: string) =>
 
 Deno.test("planner: cross-degree double counts are found", () => {
   const r = plan(request(), catalog());
-  // CIS 4000 fills senior project #1 and the Wharton capstone together.
+  // CIS 4000 fills senior project #1; the Wharton capstone is satisfied by the
+  // engineering senior design project, so it is not a slot (Wharton's Senior
+  // Capstone page, 2026-11-26).
   assert.ok(filled(r, "CIS 4000", "Senior Project #1"));
-  assert.ok(filled(r, "CIS 4000", "Senior Capstone"));
+  assert.ok(!filled(r, "CIS 4000", "Senior Capstone"));
+  // With the CS degree in the College the capstone is planned and shared.
+  const r2 = plan(request({ degrees: collegeDegrees() }), catalog());
+  assert.ok(filled(r2, "CIS 4000", "Senior Capstone"));
   // Each of the EUCU courses counts toward its Wharton slot and technical electives.
   let techShared = 0;
   for (const c of planned(r)) {
@@ -181,8 +192,9 @@ Deno.test("planner: overlap saves exactly the shared credits", () => {
   const r = plan(request(), catalog());
   // 36 cu of need; the humanities/cross-cultural sharing (-1) applies in both runs.
   assert.equal(r.remainingCredits, 30);
-  assert.equal(r.remainingCreditsWithoutOverlap, 35);
-  assert.equal(r.remainingCreditsWithoutOverlap - r.remainingCredits, 5);
+  // 35 before the capstone left the plan for a Wharton + Engineering student.
+  assert.equal(r.remainingCreditsWithoutOverlap, 34);
+  assert.equal(r.remainingCreditsWithoutOverlap - r.remainingCredits, 4);
   const sum = planned(r).reduce((t, c) => t + c.credits, 0);
   assert.equal(sum, r.remainingCredits);
 });
@@ -225,14 +237,19 @@ Deno.test("planner: within-degree policy rules", () => {
   assert.ok(pennPolicy.withinDegree(a, b) && pennPolicy.withinDegree(b, a));
   assert.ok(pennPolicy.withinDegree(lang, b));
   assert.ok(!pennPolicy.withinDegree(flex, conc));
-  assert.ok(pennPolicy.petitionPairs(flex, conc));
+  // Wharton refuses a petition for the flex fundamentals ("no petitions will
+  // be considered", 2026-11-26), in either order.
+  assert.ok(!pennPolicy.petitionPairs(flex, conc));
+  assert.ok(!pennPolicy.petitionPairs(conc, flex));
   const m = cs("m", "seas.math", 1, "cu", []);
   const t = cs("t", "seas.techElective", 1, "cu", []);
   assert.ok(!pennPolicy.withinDegree(m, t));
   assert.ok(pennPolicy.petitionPairs(m, t));
   assert.ok(pennPolicy.sequences.immediatelyBefore(
     cs("Senior Project #1", "seas.core", 1, "cu", []), cs("Senior Project #2", "seas.core", 1, "cu", [])));
-  assert.equal(pennPolicy.loads.maxSummerTotal, 4);
+  assert.equal(pennPolicy.loads.summerPerTerm, 2);
+  assert.equal(pennPolicy.loads.summerCeiling, 4);
+  assert.equal((pennPolicy.loads as Record<string, unknown>)["max" + "SummerTotal"], undefined);
 });
 
 Deno.test("planner: scenario finish terms, standard vs approved", () => {
@@ -292,17 +309,14 @@ Deno.test("planner: load caps are never exceeded", () => {
   for (const req of [request(), lightRequest()]) {
     const r = plan(req, catalog());
     const sc = r.scenarios.find((s) => s.id === r.chosen)!;
-    let summerTotal = 0;
     for (const t of r.schedule) {
       if (t.term.endsWith("20")) {
         assert.ok(sc.summer);
         assert.ok(t.credits <= pennPolicy.loads.summerPerTerm + 1e-9);
-        summerTotal += t.credits;
       } else {
         assert.ok(t.credits <= sc.maxLoad + 1e-9, `${t.term} has ${t.credits}`);
       }
     }
-    assert.ok(summerTotal <= pennPolicy.loads.maxSummerTotal + 1e-9);
   }
 });
 
@@ -331,7 +345,7 @@ Deno.test("planner: taken courses satisfy prerequisites and are not planned", ()
 });
 
 Deno.test("planner: capstone comes after fundamentals and leadership", () => {
-  const r = plan(request(), catalog());
+  const r = plan(request({ degrees: collegeDegrees() }), catalog());
   const cap = termOf(r, "CIS 4000")!;
   for (const code of ["ACCT 1020", "OIDD 1010", "MGMT 3010", "BEPP 2500", "STAT 4310"]) {
     const t = termOf(r, code);
@@ -438,7 +452,10 @@ Deno.test("planner: a slot with no eligible course is reported unfilled", () => 
 
 Deno.test("planner: petitions report within-degree savings", () => {
   const r = plan(request(), catalog());
-  assert.ok(r.petitions.length > 0);
+  // The flex + concentration pair is no longer a petition (Wharton refuses it),
+  // so with Wharton sharing the technical electives nothing is offered here.
+  assert.equal(r.petitions.length, 0);
+  assert.ok(!r.petitions.some((p) => p.slots.some((x) => x.endsWith("Technology Innovation"))));
   for (const p of r.petitions) {
     assert.ok(p.savesCredits > 0);
     assert.equal(p.slots.length, 2);
@@ -504,7 +521,7 @@ for (const [wild, budgetMs] of [[4, 1000], [34, 3000]] as const) {
 Deno.test("planner: loads above the standard are flagged for approval or permission", () => {
   const mid = plan(lightRequest({ maxLoad: 6 }), catalog());
   assert.equal(mid.chosen, "student");
-  assert.ok(mid.notes.some((n) => n === "6 cu semesters need your advisor's approval"), mid.notes.join("|"));
+  assert.ok(mid.notes.some((n) => n === "6 cu semesters need approval: Engineering's department can approve up to 1 cu above your previous semester (6.5 at most for dual-degree students), and Wharton needs a petition to its Petitions Committee"), mid.notes.join("|"));
   const high = plan(lightRequest({ maxLoad: 7 }), catalog());
   assert.ok(
     high.notes.some((n) => n === "7 cu a semester is above Penn's 6.5 cu limit for dual-degree students and needs special permission"),
@@ -512,7 +529,15 @@ Deno.test("planner: loads above the standard are flagged for approval or permiss
   );
   const std = plan(request(), catalog());
   assert.equal(std.chosen, "standard");
-  assert.ok(!std.notes.some((n) => n.includes("advisor's approval") || n.includes("special permission")));
+  assert.ok(!std.notes.some((n) => n.includes("advisor's approval") || n.includes("special permission") || n.includes("need approval")));
+});
+
+Deno.test("policy: approvalNote names who approves", () => {
+  const eng = "Engineering's department can approve up to 1 cu above your previous semester (6.5 at most for dual-degree students)";
+  assert.equal(pennPolicy.loads.approvalNote(["EU", "WU"], 6), `6 cu semesters need approval: ${eng}, and Wharton needs a petition to its Petitions Committee`);
+  assert.equal(pennPolicy.loads.approvalNote(["EU"], 6.5), `6.5 cu semesters need approval: ${eng}`);
+  assert.equal(pennPolicy.loads.approvalNote(["WU"], 6), "6 cu semesters need a petition to Wharton's Petitions Committee");
+  assert.equal(pennPolicy.loads.approvalNote(["AS", "WU2"], 6), "6 cu semesters need your advisor's approval");
 });
 
 Deno.test("planner: a language course from level 200 up assumes placement", () => {
@@ -611,7 +636,7 @@ Deno.test("planner: best is always reported, never preferred when an ordinary sc
   const best = r.scenarios.find((s) => s.id === "best")!;
   assert.ok(best);
   assert.equal(best.maxLoad, 6.5);
-  assert.equal(best.label, "6.5 cu, summers, your advisor's approvals and the language placement exam");
+  assert.equal(best.label, "6.5 cu, summers at up to 4 cu, your advisor's approvals and the language placement exam");
   assert.equal(r.chosen, "standard");
   const noSummer = plan(request({ allowSummer: false }), catalog()).scenarios.find((s) => s.id === "best")!;
   assert.equal(noSummer.summer, false);
@@ -628,13 +653,20 @@ Deno.test("planner: best is picked when the ordinary scenarios miss the target",
   const mk = (n: string, code: string) => wh(n, "wharton.fundamental", 1, "cu", opts(code));
   const slotsW: Slot[] = [
     mk("A", "ACCT 1020"), mk("B", "OIDD 1010"), mk("C", "MGMT 3010"), mk("D", "BEPP 2500"), mk("E", "ACCT 2300"),
-    wh("Technology Innovation", "wharton.flex", 1, "cu", opts("OIDD 4770")),
-    wh("Finance Courses", "wharton.concentration", 1, "cu", opts("OIDD 4770")),
     wh("Foreign Language", "wharton.language", 1, "cu", attr("WUFL")),
   ];
   void cs0;
   const req: PlanRequest = request({
-    degrees: [{ id: "wh", label: WH, college: "WU", applied: [], slots: slotsW }],
+    // The petition pair is Engineering's: math with a technical elective.
+    // (The Wharton flex + concentration pair used to be the example; Wharton
+    // refuses it, so it is no longer a petition.)
+    degrees: [
+      { id: "wh", label: WH, college: "WU", applied: [], slots: slotsW },
+      { id: "cs", label: CS, college: "EU", applied: [], slots: [
+        cs("Math Science Elective", "seas.math", 1, "cu", opts("MATH 3140")),
+        cs("Technical Electives", "seas.techElective", 1, "cu", opts("MATH 3140")),
+      ] },
+    ],
     targetTerm: "202710", allowSummer: false,
   });
   const r = plan(req, cat);
@@ -644,7 +676,7 @@ Deno.test("planner: best is picked when the ordinary scenarios miss the target",
   const best = r.scenarios.find((s) => s.id === "best")!;
   assert.equal(best.meetsTarget, true, JSON.stringify(r.scenarios));
   assert.equal(r.chosen, "best");
-  const oidd = findCourse(r, "OIDD 4770");
+  const oidd = findCourse(r, "MATH 3140");
   assert.equal(oidd.approval, "petition");
   assert.equal(oidd.countsToward.length, 2);
   assert.ok(!planned(r).some((c) => c.code === "SPAN 0100"), "language is waived");
@@ -652,7 +684,7 @@ Deno.test("planner: best is picked when the ordinary scenarios miss the target",
   const note = r.notes.find((n) => n.startsWith("best case assumes"))!;
   assert.ok(note, r.notes.join("|"));
   assert.ok(note.includes("6.5 cu semesters"));
-  assert.ok(note.includes("OIDD 4770"));
+  assert.ok(note.includes("MATH 3140"));
   assert.ok(note.includes("placement exam"));
   // A language already studied is not waived.
   const r2 = plan({ ...req, taken: ["SPAN 0050"] }, (() => { const c = catalog(); c.courses["SPAN 0050"] = course("SPAN 0050", 1, ["WUFL"]); c.attributeIndex["WUFL"].push("SPAN 0050"); return c; })());
@@ -660,4 +692,102 @@ Deno.test("planner: best is picked when the ordinary scenarios miss the target",
   // When nothing meets the target, best is not chosen.
   const none = plan({ ...req, targetTerm: "202630" }, cat);
   assert.notEqual(none.chosen, "best");
+});
+
+// ---- summer, capstone, floor (Penn's pages read 2026-11-26) -----------------
+
+function summerOnlyCatalog(n: number): { cat: CatalogSnapshot; slots: Slot[] } {
+  const cat = catalog();
+  const slots: Slot[] = [];
+  for (let i = 0; i < n; i++) {
+    const code = `SUMR ${1000 + i}`;
+    cat.courses[code] = course(code, 1, [], "u");
+    slots.push(wh(`S${i}`, "wharton.fundamental", 1, "cu", opts(code)));
+  }
+  return { cat, slots };
+}
+
+Deno.test("planner: ordinary scenarios stay at 2 cu a summer, best reaches 4, and nothing caps the total", () => {
+  const { cat, slots } = summerOnlyCatalog(10);
+  const degs: Degree[] = [{ id: "wh", label: WH, college: "WU", applied: [], slots }];
+  const summers = (r: PlanResult) => r.schedule.filter((t) => t.term.endsWith("20")).map((t) => t.credits);
+  // 10 summer-only cu by summer 2029: only best's 4-cu summers fit (4+4+2).
+  const hard = plan(request({ degrees: degs, targetTerm: "202920" }), cat);
+  assert.equal(hard.chosen, "best");
+  const bs = summers(hard);
+  assert.ok(bs.length >= 3 && bs.every((c) => c <= 4 + 1e-9));
+  assert.ok(bs.some((c) => c > 2), "best uses more than the cautious 2 cu");
+  assert.ok(bs.reduce((a, b) => a + b, 0) > 4, "no cap across summers");
+  for (const id of ["standard", "summer", "approved"]) {
+    assert.equal(hard.scenarios.find((s) => s.id === id)!.meetsTarget, false, id);
+  }
+  // With no target an ordinary scenario is chosen and keeps to 2 cu a summer.
+  const six = summerOnlyCatalog(6);
+  const easy = plan(request({ degrees: [{ id: "wh", label: WH, college: "WU", applied: [], slots: six.slots }], targetTerm: "209910" }), six.cat);
+  assert.notEqual(easy.chosen, "best");
+  assert.ok(summers(easy).length > 2, "more than two summers are used");
+  assert.ok(summers(easy).every((c) => c <= 2 + 1e-9));
+  assert.ok(summers(easy).reduce((a, b) => a + b, 0) > 4, "the old 4-in-all cap is gone");
+  const note = hard.notes.find((n) => n.startsWith("best case assumes"))!;
+  assert.ok(note.includes("summer courses, up to 4 cu a summer (Engineering's limit, 2 per session)"), note);
+});
+
+Deno.test("planner: a Wharton + Engineering student does not plan the capstone", () => {
+  const r = plan(request(), catalog());
+  assert.ok(!planned(r).some((c) => c.countsToward.some((x) => x.endsWith("· Senior Capstone"))));
+  assert.ok(!r.unfilled.some((u) => /capstone/i.test(u.label)));
+  const note = "Wharton counts your engineering senior design project as its senior capstone; if your audit still shows the capstone open, ask your Wharton advisor to record it";
+  assert.ok(r.notes.includes(note));
+  // Every scenario, best included: ask for a target only best can meet.
+  const best = plan(request({ targetTerm: "202710" }), catalog());
+  assert.ok(best.notes.includes(note));
+  assert.ok(!planned(best).some((c) => c.countsToward.some((x) => x.endsWith("· Senior Capstone"))));
+  // Wharton + College, and Wharton alone, still plan it after the fundamentals.
+  for (const degs of [collegeDegrees(), [degrees()[1]]]) {
+    const r2 = plan(request({ degrees: degs }), catalog());
+    assert.ok(!r2.notes.includes(note));
+    assert.ok(planned(r2).some((c) => c.countsToward.some((x) => x.endsWith("· Senior Capstone"))));
+    const cap = termOf(r2, planned(r2).find((c) => c.countsToward.some((x) => x.endsWith("· Senior Capstone")))!.code)!;
+    for (const code of ["ACCT 1020", "OIDD 1010", "MGMT 3010"]) {
+      const t = termOf(r2, code);
+      if (t) assert.ok(t < cap, `${code} before the capstone`);
+    }
+    assert.ok(r2.notes.some((n) => n.includes("before the Wharton capstone")));
+  }
+});
+
+Deno.test("policy: senior design satisfies the capstone only for Wharton + Engineering", () => {
+  const capstone = wh("Senior Capstone", "wharton.leadership", 1, "courses", []);
+  const other = wh("Humanities", "wharton.liberal", 1, "cu", []);
+  const [eu, wu] = degrees();
+  const rule = pennPolicy.capstoneRule;
+  assert.ok(rule.satisfiedBySeniorDesign(capstone, [eu, wu]));
+  assert.ok(!rule.satisfiedBySeniorDesign(other, [eu, wu]));
+  assert.ok(!rule.satisfiedBySeniorDesign(capstone, [{ ...eu, college: "AS" }, wu]));
+  assert.ok(!rule.satisfiedBySeniorDesign(capstone, [wu]));
+});
+
+Deno.test("planner: the 46 cu floor for a dual degree with Engineering", () => {
+  const withSoFar = (n: number | undefined, degs = degrees()): Degree[] =>
+    degs.map((d, i) => (i === 0 && n !== undefined ? { ...d, creditsSoFar: n } : d));
+  const base = plan(request(), catalog());
+  const chosen = base.remainingCredits;
+  const short = 46 - 5 - chosen;
+  assert.ok(short > 0);
+  const r = plan(request({ degrees: withSoFar(5) }), catalog());
+  const row = r.unfilled.find((u) => u.slotId === "policy|totalFloor")!;
+  assert.ok(row, JSON.stringify(r.unfilled));
+  assert.equal(row.degreeLabel, "both degrees");
+  assert.equal(row.label, "46 cu minimum");
+  assert.equal(row.reason, `${short} more cu of any courses are needed: a dual degree with Engineering needs at least 46 cu`);
+  assert.ok(r.notes.includes(`the plan ends at ${5 + chosen} cu; a dual degree with Engineering needs at least 46 cu, so ${short} more cu of any courses are needed`), r.notes.join("|"));
+  // Enough already, nothing known, or one degree: no row.
+  const none = (req: PlanRequest) => !plan(req, catalog()).unfilled.some((u) => u.slotId === "policy|totalFloor");
+  assert.ok(none(request({ degrees: withSoFar(40) })));
+  assert.ok(none(request({ degrees: withSoFar(46 - chosen) })));
+  assert.ok(none(request({ degrees: withSoFar(undefined) })));
+  assert.ok(none(request({ degrees: [{ ...degrees()[0], creditsSoFar: 5 }] })));
+  assert.equal(pennPolicy.totalFloor(collegeDegrees().slice(1)), null);
+  assert.equal(pennPolicy.totalFloor([{ ...degrees()[1] }, { ...degrees()[1], id: "x" }]), null);
+  assert.deepEqual(pennPolicy.totalFloor(degrees()), { cu: 46, reason: "a dual degree with Engineering needs at least 46 cu" });
 });

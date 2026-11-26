@@ -124,6 +124,10 @@ export interface Degree {
   slots: Slot[];
   /** Courses Penn already applies to this degree (taken or in progress). */
   applied: string[];
+  /** Penn's own count of cu earned plus in progress, read from the audit's
+   *  DEGREE block ("You currently have 28.5 CU including ..."). Undefined
+   *  when the audit has no such line; never guessed from course lists. */
+  creditsSoFar?: number;
 }
 
 // ---------------------------------------------------------------------------

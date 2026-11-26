@@ -433,6 +433,16 @@ export function degreesFromAudits(audits: AuditInput[]): RequirementsResult {
         taken.push(code);
       }
     };
+    let creditsSoFar: number | undefined;
+    const findCredits = (r: RuleView): number | undefined => {
+      const m = /currently have\s+([\d.]+)\s*CU/i.exec(r.label);
+      if (m && Number.isFinite(Number(m[1]))) return Number(m[1]);
+      for (const c of r.children) {
+        const v = findCredits(c);
+        if (v !== undefined) return v;
+      }
+      return undefined;
+    };
     const collect = (r: RuleView) => {
       for (const a of r.applied) noteApplied(a.code);
       for (const c of r.children) collect(c);
@@ -442,6 +452,15 @@ export function degreesFromAudits(audits: AuditInput[]): RequirementsResult {
       const rules = arr(b.rules).map(readRule);
       for (const r of rules) collect(r);
       const type = str(b.type);
+      // Penn's own count of cu earned plus in progress sits in the DEGREE
+      // block's label. A MAJOR block says "You currently have 16." (the
+      // major's own count, no "CU"), which must not be taken for it.
+      if (type === "DEGREE" && creditsSoFar === undefined) {
+        for (const r of rules) {
+          creditsSoFar = findCredits(r);
+          if (creditsSoFar !== undefined) break;
+        }
+      }
       if (SKIPPED_BLOCKS.has(type)) continue;
       const ctx: Ctx = {
         degreeId: input.degreeId,
@@ -474,7 +493,7 @@ export function degreesFromAudits(audits: AuditInput[]): RequirementsResult {
       if (s.constraints?.distinctSubjects) s.constraints.excludeSubjects = [...concSubjects].sort();
     }
 
-    degrees.push({ id: input.degreeId, label: input.label, college, slots, applied });
+    degrees.push({ id: input.degreeId, label: input.label, college, slots, applied, ...(creditsSoFar !== undefined ? { creditsSoFar } : {}) });
   }
   return { degrees, unfilled, taken };
 }
