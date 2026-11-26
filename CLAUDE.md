@@ -1341,6 +1341,39 @@ Keep this current. It is the fastest way for a new session to know what exists.
     share limit is honoured, a block-level cap is one budget for the
     block, and a student whose concentration no program carries gets
     only the school-wide blocks from a pack.
+    **The first plan from version 10, and what it showed (2026-11-26,
+    22:28 UTC, Olisa's phone; fixed in `8bbeac2` server and `299c116`
+    phone, green on the runner, the server half NOT deployed).** The
+    second try reached the planner (the first could not read the what-if
+    audit, Known gaps): log `engine_ms 6294 slots 20 remaining 19 chosen
+    approved finish 202810 packs CSCI-BSE-NCON/MGMT-BS-GEN`, so both packs
+    joined on a real audit, and the schedule landed in the table. Two
+    faults, from his screen recording. (1) **The plan was wrong**: spring
+    2027 read 11 cu, his five registered courses plus 6.5 cu the planner
+    added, because the planner counted registered courses as taken and
+    started every future term's load at zero. "Spring 2028 is met" rested
+    on that. The engine now prices registered courses in future terms
+    (audit credits, then catalogue, then 1) and seeds each term's load
+    with them; a term carries `registeredCredits`, appears in the schedule
+    even when nothing is added, and gets a note; the explaining call is
+    given planned, registered and total per term. (2) **The screen did not
+    show the plan**: rings read "73%, ≈ 76% with plan" and the bar "28 of
+    73 · 9 planned" under an answer that said nothing was left unfilled,
+    because `DegreeProjection` only credits a course Penn lists as an
+    option, one rule per course. Each scheduled course now carries
+    `slotIds` (`degreeId|blockId|ruleId`, with a fourth part, a course
+    code, on a rule that advises specific courses; the phone ignores the
+    fourth), `PlannedCourse.slotIds` keeps them, and the projection lays
+    the course on every rule they name, with no fallback to option
+    matching. "≈ NN% with plan" counts in-progress rules as done (the text
+    only; arcs and bars unchanged). `DegreePlan.summary` holds the chosen
+    scenario and draws one line above the table ("plan · would finish
+    spring 2028 · 19 cu to go · needs approval"); a hand edit drops it. A
+    future column over 6.5 cu (4 in a summer) shows its cu in tomato; the
+    chat's card no longer prints "approved" and "best" as the same row;
+    the "(what if, not declared)" suffix comes off labels under a chip.
+    His real numbers suggest spring 2028 only fits in the best case, if at
+    all: 19 cu left against about 2 + 4 + 6.5 + 6.5 of room.
     **The add sheet's list is grouped** (`DegreeContribution.grouped`): "both
     degrees" first, then each degree under its name, ranked inside. Ranked by
     points alone, his five engineering rows (+2% each) sat above two Wharton
@@ -1926,7 +1959,18 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `degree-progress` (2026-11-16, the held course-material sync
+**Current on `degree-progress` (2026-11-26, the plan drawn where the planner
+put it): 4075 tests / 387 suites, all green, `swift test --no-parallel` on the
+GitHub macOS runner in 117 s, with the unsigned iOS `xcodebuild`, Deno (908
+passed, 0 failed) and the extension suite green in the same run (manual run
+45906270469 at `299c116`), compiled at the first attempt.** +15 tests and +1
+suite over 4060 / 386: `DegreePlanSummaryTests` (slot ids, the projection
+with them, the with-plan share, the summary line and its drop on a hand edit,
+the over-limit rule, the scenario row, label stripping). No existing test was
+changed. Deno +6 over 902: `degree_registered_load.test.ts`. Not on a phone,
+and the server half is not deployed.
+
+Before it, **on `degree-progress` (2026-11-16, the held course-material sync
 and the student's own section): 4060 tests / 386 suites, all green, `swift
 test --no-parallel` alone on Olisa's Mac (34 s of tests), and the unsigned
 generic iOS `xcodebuild` succeeded.** Marco's `c5f8d2a` from `v10` (the sync
@@ -4602,6 +4646,21 @@ none is a ship line.
 
 ## Known gaps
 
+- **The plan-drawing fix of 2026-11-26 is compiled and unseen, and its
+  server half is not live.** Until `degree-advisor` is redeployed from
+  `8bbeac2` or later, the live version 10 still stacks new courses onto
+  registered semesters and sends no `slotIds`, so a new phone build draws as
+  the old one did (it needs both). Unseen on a device: the rings and bars
+  after a plan, the summary line, the tomato cu figure. Known limits: a slot
+  whose id names a parent rule (the four-part form) may resolve to a rule the
+  layout does not count, and then adds nothing; the degree part of a slot id
+  is not checked, only block and rule; the percent text can read 100 while
+  the arc stops short of the in-progress share, by design; in the "both"
+  view the Wharton audit is the undeclared one, so concentration courses
+  planned against a what-if add nothing to its ring there; closing the chat
+  still lands on the what-if tab under "switch to management, bs", which
+  read as confusing in the recording and is not changed; a registered course
+  neither the audit nor the catalogue can price counts as 1 cu.
 - **The first question to version 10 never reached the planner: the phone
   could not read the what-if audit (2026-11-26, about 22:22 UTC, Olisa's
   phone, the 3.5.0-stamped Debug build of `4869115`).** "plan out my classes

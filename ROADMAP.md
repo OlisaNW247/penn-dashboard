@@ -966,6 +966,15 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-26, evening.** The first real plan from `degree-advisor`
+  version 10, read from Olisa's screen recording. The planner ran and both
+  program packs joined, but it put 6.5 cu of new courses on top of five
+  registered ones in spring 2027, and the rings barely moved under a plan
+  that claimed to fill everything. Fixed: registered courses count toward a
+  term's load (`8bbeac2`, Deno 908), and the phone draws the plan from the
+  planner's own slot assignments, with a summary line above the table
+  (`299c116`, 4075 / 387 and the iOS build green on the runner). The server
+  half waits for Olisa's go to deploy; nothing is on a phone.
 - **2026-11-26, later.** "Do all 3 in order" (`degree-progress`,
   `b54981b`..`2b8a3a9`; live as `degree-advisor` version 10 the same
   evening, at Olisa's go). The 73 unverified degree rules were
