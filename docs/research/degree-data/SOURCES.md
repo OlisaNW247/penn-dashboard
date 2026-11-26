@@ -54,9 +54,52 @@ headers, 0.6 s between calls. What it settled, which overrides the
   others (`STAT 4310`, `ACCT 1020`, `ASLD 0200`, `FNCE 2050`, `CIS 4000`
   were empty), so it narrows the prerequisite gap without closing it.
 
-Still unverified from a runner: every prose page (the handbooks, the
-College's policy pages), and `catalog.upenn.edu`, which answered runners
-with an empty 202 on 2026-11-16.
+The prose pages and `catalog.upenn.edu`, which this probe did not cover
+and which answered runners with an empty 202 on 2026-11-16, were read the
+same day by the crawl described next.
+
+## Runner crawl, 2026-11-26: the official prose pages were read from a GitHub runner
+
+A second runner script, `scripts/penn-catalog/verify-rules.mjs`, crawled
+579 official pages (2,503,844 characters) and searched them for every
+quoted fragment of the 73 REPORTED, CONFLICTING and CODE rules in
+`RULES.md` (177 fragments: 100 exact, 49 near, 28 missed). What the fetch
+log shows:
+
+- **Answered the runner directly (200, live):** `catalog.upenn.edu` (17
+  pages; it answered an empty 202 on 2026-11-16 and read fine this time,
+  with a browser User-Agent), `undergrad-inside.wharton.upenn.edu` (335
+  pages), `academics.engineering.upenn.edu` (129 pages), the Nursing BSN
+  handbook on `www.nursing.upenn.edu` (14 pages), and one page each on
+  `admissions.upenn.edu`, `provost.upenn.edu`, `ppe.sas.upenn.edu`,
+  `fisher.wharton.upenn.edu`, `web.sas.upenn.edu`, `lsm.upenn.edu` and
+  `www.seas.upenn.edu`.
+- **Answered 403 live, read from the Internet Archive:**
+  `www.college.upenn.edu` (72 pages read), `srfs.upenn.edu` (2),
+  `www.math.upenn.edu` (1), `figs.sas.upenn.edu` (1) and
+  `psychology.sas.upenn.edu` (1). The College's 38 other tries and 103
+  further queued URLs are not in the corpus (38 answered 404; 103 were
+  left in the queue by the per-site cap).
+- **Failed:** `https://www.viper.upenn.edu/academics/dual-degree-curriculum`
+  (404, live), so the VIPER page behind CD-03 was not read; 17 URLs on the
+  Engineering handbook answered 404 (16 of them `/feed/` addresses and
+  `.../course-categories/free-electives/`, which is
+  `.../free-electives-and-no-credit-courses/` today).
+- **Page counts:** Wharton 335 and Engineering 129 (the crawl queue for each ended
+  empty), the College 72, catalog 17,
+  Nursing 14, other hosts 12 (10 hosts, `srfs` counted twice).
+- **Wharton sitemap:** `https://undergrad-inside.wharton.upenn.edu/page-sitemap.xml`
+  lists 355 pages; `wp-sitemap.xml` and `sitemap_index.xml` each list 2
+  entries that point to sitemaps like it.
+- **The 2025-26 Wharton handbook PDF** (`.../wp-content/uploads/2025/06/2025-26_Handbook.pdf`,
+  94,925 characters) was read as text (the workflow installs `poppler-utils`) and searched with
+  the pages.
+
+So these hosts can be read from a runner, and every statement in this
+file that says the handbooks, the College's policy pages or
+`catalog.upenn.edu` cannot be reached from one is out of date (the note on S10
+below keeps the 2026-11-16 observation as history). The
+rules read this way carry `VERIFIED (page, 2026-11-26)` in `RULES.md`.
 
 ## Read this first: what this session could and could not reach
 
@@ -424,12 +467,15 @@ Nothing in this file is about any student. No sign-in was used anywhere.
   (the course "bubble" XML) and `{page}/index.xml`; a search found no
   confirmation either way and CourseLeaf's documented API ("CLAPI") is
   admin-gated at other schools. Test from a browser.
-- **Access:** public. **GitHub runners got `202` with 0 bytes on every
-  catalog URL** ([RUN]: `202 0B attributes-index.html`, the same for 4
-  program pages, 18 attribute pages and 18 course pages), which is a
-  bot-challenge response, not content. Reach: a browser; possibly the
-  CourseLeaf mirrors; possibly a runner with a headless browser. The PDFs
-  were not tried and may behave differently.
+- **Access:** public. **On 2026-11-16 GitHub runners got `202` with 0
+  bytes on every catalog URL** ([RUN]: `202 0B attributes-index.html`, the
+  same for 4 program pages, 18 attribute pages and 18 course pages), which
+  is a bot-challenge response, not content. **On 2026-11-26 a runner read
+  17 catalog pages live with a browser User-Agent** (the policy pages, the
+  Wharton and Nursing curriculum pages, program pages such as
+  `artificial-intelligence-bse` and `international-studies-ba`), so the
+  catalog is reachable from a runner with the right headers. The PDFs were
+  not tried.
 - **Authority:** the registrar's definitive statement of requirements per
   catalog year ("The University Registrar is the ultimate arbiter", S08).
   Prose, so weaker than S01 for machine use, but it is where footnotes
