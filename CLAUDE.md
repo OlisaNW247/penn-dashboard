@@ -1064,8 +1064,46 @@ Keep this current. It is the fastest way for a new session to know what exists.
   no course recommendations. Reached from the first row of Profile →
   classes ("degree", with "31 of 40 cu", a percent, or the status line) and
   `DashRoute.degree` (`-LHFShowDegree` in a DEBUG build); Penn only; preview
-  and demo show `SampleData.degreeSnapshot()`. Three tabs on a
-  `SmoothSegmentPicker`, **progress · what if · plan**.
+  and demo show `SampleData.degreeSnapshot()`. **Since 2026-11-27 the
+  screen is one page, "the road"** (below); until then it was three tabs on
+  a `SmoothSegmentPicker`, **progress · what if · plan**, and the bullets
+  after "The road" describe that layout and the parts that survive behind
+  it.
+  - **The road** (2026-11-27, `4e65269`; Olisa chose it from the three
+    directions in `reports/Degree mode design directions.md`: "Build the
+    road with the finish that you recommend. Make all the decisions that you
+    think are right. I don't care about violating the privacy policy in
+    order to prioritize smoothness"; green on the runner at the first
+    compile, not yet on a phone). `DegreeRoadView` under the header: "would
+    finish · N semesters to go" over the finish term in large type (from the
+    planner's summary; with no summary, the last semester holding planned
+    courses, "your plan ends", and "check with the planner ✦"; with neither,
+    "no plan yet" and "plan the rest ✦"); the earlier finish as one grape
+    line, "fall 2028 if 2 answers are yes ›" (`DegreePlanBestCase`, the
+    planner's `bestCase`, decoded since this commit), opening the advisor
+    questions; one bar per degree at Penn's own percent, the planned share
+    in cobalt and the app's "≈" line under it, each opening
+    `DegreeRequirementsPage` (the old ring with both cases, legend and block
+    cards); a what-if as an extra bar under a grape banner (the ⋯ menu's
+    "try another major" opens the what-if sheet); then the semesters as a
+    vertical road (`DegreeRoad`, Kit, pure): past folded into one stop,
+    now, registered, planned, nothing planned, the advisor's questions as a
+    stop before the first planned semester, the finish with a flag, "+
+    semester". Every state is a shape and a word. Exactly one next step sits
+    on the road: "plan the rest", "ask your advisor" or "room for n more"
+    (against a 5 cu load). A semester opens `DegreeSemesterSheet`: its
+    classes, a menu per planned course ("move to", "remove"), "+ course".
+    **The planner runs in the background** (`AppState.runDegreePlanner`):
+    "plan the rest" and "check with the planner" need no chat, and closing
+    the advisor questions after changing an answer re-plans by itself
+    (`degreeAdvisorQuestionsClosed`). The result shows under the headline
+    ("was spring 2029", "plan updated" or "nothing changed", undo, why).
+    The chat's history lives in `AppState.degreeAdvisorMessages`, shared
+    by both paths. Those automatic sends are new at the owner's word;
+    `docs/PRIVACY.md` says when degree data is sent. Gone from the screen:
+    the tabs, the degree chips, the overall rings and bar, the sideways
+    table and "full view" (`DegreePlanView` and `DegreeSemesterTable`
+    remain in the tree, unreferenced by the screen).
   - **Progress.** A student in two degrees gets a chip per degree above the
     ring (`AppState.selectDegree`, `degreeSelectedIDV1`); the degrees come
     from the student's record, so nobody is asked to pick one. A teal ring
@@ -3284,7 +3322,17 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `degree-progress` (2026-11-27, the coverage rings): 4794 tests /
+**Current on `degree-progress` (2026-11-27, the road): 4829 tests / 501
+suites, all green, `swift test --no-parallel` on the GitHub macOS runner in
+88 s, with the unsigned iOS `xcodebuild`, Deno and the extension suite green
+in the same run (manual run 46029056640 at `4e65269`), compiled at the first
+attempt.** +35 tests and +2 suites over 4794 / 499: `DegreeRoadTests` and
+`DegreeRoadStateTests`, plus new source pins in `DegreeCopyTests`; the pins
+that named the tabs, the chips and the options row were moved to the road on
+purpose (`DegreeWiringTests`, `DegreeStructureTests`, `DegreeSignInAskTests`).
+Not on a phone at the time of writing.
+
+Before it, **on `degree-progress` (2026-11-27, the coverage rings): 4794 tests /
 499 suites, all green, `swift test --no-parallel` on the GitHub macOS runner
 in 108 s, with the unsigned iOS `xcodebuild`, Deno (1170 passed) and the
 extension suite green in the same run (manual run 45935008928 at `32ac695`),

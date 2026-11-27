@@ -1221,6 +1221,14 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-27, afternoon.** Degree mode is one page, the road: the finish
+  term as the headline, the sooner finish as one line, a bar per degree,
+  the semesters as a vertical line with one next step on it, and the
+  planner running in the background ("plan the rest", re-planning after
+  advisor answers). Researched and chosen the same day
+  (`reports/Degree mode design directions.md`); green on the runner at
+  `4e65269`. Next: Olisa's look on his phone; then the stamp card's "left"
+  counts on the requirement pages, per the report.
 - **2026-11-27, night.** With the plan drawing, the rings read 84% and 73%
   under a plan that filled everything. The planner now sends per-degree
   coverage and, by the target term, the granted and best-case figures; the
