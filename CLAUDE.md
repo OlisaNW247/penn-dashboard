@@ -3284,7 +3284,16 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `degree-progress` (2026-11-27, the advisor questions): 4775 tests
+**Current on `degree-progress` (2026-11-27, the coverage rings): 4794 tests /
+499 suites, all green, `swift test --no-parallel` on the GitHub macOS runner
+in 108 s, with the unsigned iOS `xcodebuild`, Deno (1170 passed) and the
+extension suite green in the same run (manual run 45935008928 at `32ac695`),
+compiled at the first attempt.** +19 tests and +1 suite over 4775 / 498:
+`DegreePlanCoverageTests` (21) with one source pin in `DegreeCopyTests`
+rewritten on purpose (the progress view makes projections through
+`state.degreeProjection(`). Not on a phone at the time of writing.
+
+Before it, the same night, **on `degree-progress` (2026-11-27, the advisor questions): 4775 tests
 / 498 suites, all green, `swift test --no-parallel` on the GitHub macOS runner
 in 96 s, with the unsigned iOS `xcodebuild` and the extension suite green in
 the same run (manual run 45932392813 at `5b3bd0b`), compiled at the first
