@@ -243,7 +243,10 @@ struct DegreeSignInCeilingTests {
     func source() throws {
         let portal = try sourceText("PathPortal.swift")
         #expect(portal.contains("guard attemptRunning, !duoReached"))
-        #expect(portal.contains("defer { attemptRunning = false }"))
+        // The defer grew a second line with the sign-in page (2026-11-27): it
+        // still clears the flag on every way out, and now the shown page too.
+        #expect(portal.contains("defer {\n            attemptRunning = false\n"))
+        #expect(portal.contains("            endInteractiveIfShown()\n        }\n        attemptUserInitiated = userInitiated"))
         #expect(portal.contains("if inFlight == running { inFlight = nil }"))
         #expect(portal.contains("onCredentialSucceeded?()"))
         let state = try sourceText("AppState+Degree.swift")
