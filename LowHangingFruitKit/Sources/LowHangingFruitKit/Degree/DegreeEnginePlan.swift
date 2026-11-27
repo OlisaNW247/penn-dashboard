@@ -237,14 +237,21 @@ public struct DegreeEnginePlan: Codable, Sendable, Equatable {
     /// Questions for the student's advisor, at most `DegreeAdvisorNotes.maxQuestions`;
     /// empty from an older server.
     public let advisorQuestions: [DegreeAdvisorQuestionWire]
+    /// What the schedule fills, per degree; empty from an older server.
+    public let coverage: [DegreeEngineCoverage]
+    /// The finish term the student named (`YYYYTT`), only when they did.
+    public let targetTerm: String?
 
     public init(
         remainingCredits: Double, remainingCreditsWithoutOverlap: Double,
         scenarios: [DegreeEngineScenario], chosen: String, schedule: [DegreeEngineTerm],
         unfilled: [DegreeEngineUnfilled] = [], petitions: [DegreeEnginePetition] = [],
         notes: [String] = [], approvals: [String]? = nil,
-        advisorQuestions: [DegreeAdvisorQuestionWire] = []
+        advisorQuestions: [DegreeAdvisorQuestionWire] = [],
+        coverage: [DegreeEngineCoverage] = [], targetTerm: String? = nil
     ) {
+        self.targetTerm = targetTerm
+        self.coverage = coverage
         self.advisorQuestions = advisorQuestions
         self.approvals = approvals
         self.remainingCredits = remainingCredits
@@ -259,7 +266,7 @@ public struct DegreeEnginePlan: Codable, Sendable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case remainingCredits, remainingCreditsWithoutOverlap, scenarios, chosen, schedule
-        case unfilled, petitions, notes, approvals, advisorQuestions
+        case unfilled, petitions, notes, approvals, advisorQuestions, coverage, targetTerm
     }
 
     /// The schedule list is required (a plan with no schedule key must not
@@ -286,6 +293,8 @@ public struct DegreeEnginePlan: Codable, Sendable, Equatable {
         self.advisorQuestions = Array(
             lossyList(DegreeAdvisorQuestionWire.self, in: c, forKey: .advisorQuestions)
                 .prefix(DegreeAdvisorNotes.maxQuestions))
+        self.coverage = lossyList(DegreeEngineCoverage.self, in: c, forKey: .coverage)
+        self.targetTerm = lenient(String.self, in: c, forKey: .targetTerm)
     }
 }
 
@@ -423,7 +432,9 @@ extension DegreeAdvisor {
             finishTerm: finish, scenarioID: scenario.id, scenarioLabel: scenario.label,
             remainingCredits: plan.remainingCredits.isFinite ? plan.remainingCredits : nil,
             needsApproval: needsApproval, createdAt: now,
-            standIns: standIns.isEmpty ? nil : standIns, approvals: plan.approvals)
+            standIns: standIns.isEmpty ? nil : standIns, approvals: plan.approvals,
+            coverage: plan.coverage.isEmpty ? nil : plan.coverage.map { DegreePlanCoverage($0) },
+            targetTerm: plan.targetTerm.flatMap { Term(code: $0) == nil ? nil : $0 })
     }
 }
 

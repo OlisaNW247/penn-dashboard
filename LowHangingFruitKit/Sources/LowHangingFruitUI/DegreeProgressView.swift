@@ -158,6 +158,25 @@ enum DegreeProgressMath {
         return "≈ \(percentText(min(1, base + gain) * 100)) with plan"
     }
 
+    /// The line or lines under the ring when the planner sent target data:
+    /// "≈ 74% by spring 2028", then "≈ 83% if approved" only when the best
+    /// case is meaningfully higher. Without a usable target term the first
+    /// line reads "≈ 74% with plan". Empty when there is nothing to say.
+    static func ringLines(base: Double, cases: DegreeRingCases, targetTerm: String?) -> [String] {
+        guard cases.granted >= 0.005 || cases.showsBest else { return [] }
+        var lines: [String] = []
+        let granted = percentText(min(1, base + cases.granted) * 100)
+        if let targetTerm, !targetTerm.isEmpty {
+            lines.append("≈ \(granted) by \(DegreePlanMath.termLabel(targetTerm))")
+        } else {
+            lines.append("≈ \(granted) with plan")
+        }
+        if cases.showsBest {
+            lines.append("≈ \(percentText(min(1, base + cases.best) * 100)) if approved")
+        }
+        return lines
+    }
+
     /// Met and in-progress shares of a block's bar.
     static func blockShares(_ block: AuditBlock) -> (met: Double, inProgress: Double) {
         let rules = countable(block.rules)
@@ -443,14 +462,19 @@ struct DegreeProgressView: View {
         let counts = DegreeOverall.counts(audits)
         let total = counts.met + counts.inProgress + counts.open
         // One projection per degree, built once and handed down.
-        let plan = state.degreePlan
         let projections: [String: DegreeProjection] = audits.reduce(into: [:]) { out, entry in
-            out[entry.degreeID] = DegreeProjection.make(plan: plan, audit: entry.audit)
+            out[entry.degreeID] = state.degreeProjection(degreeID: entry.degreeID, audit: entry.audit)
         }
         let anyPlanned = projections.values.contains { !$0.isEmpty }
+        let anyApproved = audits.contains { entry in
+            ringFigures(
+                degreeID: entry.degreeID, audit: entry.audit,
+                base: DegreeProgressMath.ring(for: entry.audit).fraction,
+                projection: projections[entry.degreeID] ?? .empty).bestExtra > 0
+        }
         return VStack(alignment: .leading, spacing: 16) {
             overallRings(audits, projections: projections)
-            DegreeLegend(showsPlanned: anyPlanned)
+            DegreeLegend(showsPlanned: anyPlanned, showsApproved: anyApproved)
             if total > 0 {
                 overallBar(counts: counts, total: total, projections: Array(projections.values))
             }
@@ -469,6 +493,24 @@ struct DegreeProgressView: View {
         .task { await state.ensureAllDegreeAudits() }
     }
 
+    /// What one ring draws and says. With the planner's target data it is the
+    /// granted case solid and, when meaningfully higher, the best case faded
+    /// behind it, each with its own line; otherwise the single "with plan"
+    /// figure, as before. The text counts in-progress rules as done; the arc
+    /// does not.
+    private func ringFigures(
+        degreeID: String, audit: DegreeAudit, base: Double, projection: DegreeProjection
+    ) -> (planned: Double, bestExtra: Double, lines: [String]) {
+        if let cases = state.degreeRingCases(degreeID: degreeID, audit: audit, base: base) {
+            let lines = DegreeProgressMath.ringLines(
+                base: base, cases: cases, targetTerm: state.degreePlan.summary?.targetTerm)
+            return (cases.granted, cases.showsBest ? max(0, cases.best - cases.granted) : 0, lines)
+        }
+        let line = DegreeProgressMath.withPlanText(
+            base: base, gain: projection.withPlanGain(base: base))
+        return (projection.ringGain(base: base), 0, line.map { [$0] } ?? [])
+    }
+
     private func overallRings(_ audits: [DegreeLabeledAudit],
                               projections: [String: DegreeProjection]) -> some View {
         let degrees = state.degree.degrees
@@ -484,13 +526,14 @@ struct DegreeProgressView: View {
                     VStack(spacing: 6) {
                         if let match {
                             let ring = DegreeProgressMath.ring(for: match.audit)
-                            let projected = projections[match.degreeID] ?? .empty
-                            let gain = projected.ringGain(base: ring.fraction)
-                            let planLine = DegreeProgressMath.withPlanText(
-                                base: ring.fraction, gain: projected.withPlanGain(base: ring.fraction))
+                            let figures = ringFigures(
+                                degreeID: match.degreeID, audit: match.audit, base: ring.fraction,
+                                projection: projections[match.degreeID] ?? .empty)
                             DegreeRingView(fraction: ring.fraction, centre: ring.centre,
                                            caption: ring.caption, diameter: 80,
-                                           plannedFraction: gain, plannedLine: planLine)
+                                           plannedFraction: figures.planned,
+                                           plannedLine: figures.lines.joined(separator: ", "),
+                                           bestExtraFraction: figures.bestExtra)
                         } else {
                             DegreeRingView(fraction: 0, centre: "…", caption: "", diameter: 80)
                         }
@@ -501,10 +544,11 @@ struct DegreeProgressView: View {
                             .multilineTextAlignment(.center)
                         if let match {
                             let ring = DegreeProgressMath.ring(for: match.audit)
-                            let projected = projections[match.degreeID] ?? .empty
-                            if let planLine = DegreeProgressMath.withPlanText(
-                                base: ring.fraction, gain: projected.withPlanGain(base: ring.fraction)) {
-                                Text(planLine)
+                            let figures = ringFigures(
+                                degreeID: match.degreeID, audit: match.audit, base: ring.fraction,
+                                projection: projections[match.degreeID] ?? .empty)
+                            ForEach(figures.lines, id: \.self) { line in
+                                Text(line)
                                     .font(.lhfMono(10, weight: .semibold))
                                     .foregroundStyle(Color.smoothCobaltInk)
                             }
@@ -703,20 +747,22 @@ struct DegreeProgressView: View {
                            tableAudits: [DegreeLabeledAudit]? = nil) -> some View {
         let ring = DegreeProgressMath.ring(for: audit)
         // Read from the body so a course added in the table redraws the ring.
-        let projection = DegreeProjection.make(plan: state.degreePlan, audit: audit)
+        let projection = state.degreeProjection(
+            degreeID: state.selectedStudentDegree?.id ?? "", audit: audit)
         let ringBase = ring.fraction + (tag == nil ? 0 : ring.extraFraction)
-        let gain = projection.ringGain(base: ringBase)
-        // The text counts in-progress rules as done; the arc does not.
-        let planLine = DegreeProgressMath.withPlanText(
-            base: ringBase, gain: projection.withPlanGain(base: ringBase))
+        let figures = ringFigures(
+            degreeID: state.selectedStudentDegree?.id ?? "", audit: audit, base: ringBase,
+            projection: projection)
         return VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center, spacing: 16) {
                 VStack(spacing: 6) {
                     DegreeRingView(fraction: ring.fraction, centre: ring.centre, caption: ring.caption,
                                    extraFraction: tag == nil ? 0 : ring.extraFraction,
-                                   plannedFraction: gain, plannedLine: planLine)
-                    if let planLine {
-                        Text(planLine)
+                                   plannedFraction: figures.planned,
+                                   plannedLine: figures.lines.joined(separator: ", "),
+                                   bestExtraFraction: figures.bestExtra)
+                    ForEach(figures.lines, id: \.self) { line in
+                        Text(line)
                             .font(.lhfMono(10, weight: .semibold))
                             .foregroundStyle(Color.smoothCobaltInk)
                     }
@@ -743,7 +789,7 @@ struct DegreeProgressView: View {
                 }
                 Spacer(minLength: 0)
             }
-            DegreeLegend(showsPlanned: !projection.isEmpty)
+            DegreeLegend(showsPlanned: !projection.isEmpty, showsApproved: figures.bestExtra > 0)
             if let tableAudits {
                 DegreeSemesterTable(audits: tableAudits)
             } else {
@@ -815,6 +861,8 @@ struct DegreeProgressView: View {
 /// because the bars carry no other explanation and a colour alone is not one.
 struct DegreeLegend: View {
     var showsPlanned: Bool = false
+    /// Only while some ring on screen draws a best case.
+    var showsApproved: Bool = false
 
     var body: some View {
         HStack(spacing: 14) {
@@ -822,6 +870,9 @@ struct DegreeLegend: View {
             entry(Color.smoothMarigold, "in progress")
             if showsPlanned {
                 entry(Color.smoothCobalt, "planned")
+            }
+            if showsApproved {
+                entry(Color.smoothCobalt.opacity(0.35), "if approved")
             }
             entry(Color.smoothRule, "left")
             Spacer(minLength: 0)
@@ -855,22 +906,34 @@ struct DegreeRingView: View {
     /// here only for the accessibility label.
     var plannedFraction: Double = 0
     var plannedLine: String? = nil
+    /// The extra arc the best case would add beyond the planned arc, drawn in
+    /// the same cobalt at reduced opacity: possible, not yet.
+    var bestExtraFraction: Double = 0
 
     private var main: CGFloat { CGFloat(min(max(fraction, 0), 1)) }
     private var extra: CGFloat { CGFloat(min(max(extraFraction, 0), max(0, 1 - Double(main)))) }
     private var planned: CGFloat {
         CGFloat(min(max(plannedFraction, 0), max(0, 1 - Double(main) - Double(extra))))
     }
+    private var bestExtra: CGFloat {
+        CGFloat(min(max(bestExtraFraction, 0), max(0, 1 - Double(main) - Double(extra) - Double(planned))))
+    }
 
     private var ringLabel: String {
         let base = caption.isEmpty ? centre : "\(centre) \(caption)"
-        if let plannedLine { return "\(base), \(plannedLine)" }
+        if let plannedLine, !plannedLine.isEmpty { return "\(base), \(plannedLine)" }
         return base
     }
 
     var body: some View {
         ZStack {
             Circle().stroke(Color.v2RingTrack, lineWidth: 9)
+            if bestExtra > 0 {
+                Circle()
+                    .trim(from: main + extra + planned, to: main + extra + planned + bestExtra)
+                    .stroke(Color.smoothCobalt.opacity(0.35), style: StrokeStyle(lineWidth: 9, lineCap: .butt))
+                    .rotationEffect(.degrees(-90))
+            }
             if planned > 0 {
                 Circle()
                     .trim(from: main + extra, to: main + extra + planned)

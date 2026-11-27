@@ -165,7 +165,10 @@ struct DegreeCopyTests {
         let source = try uiSource("DegreeProgressView.swift")
         #expect(source.contains("\"planned\""))
         #expect(source.contains("with plan"))
-        #expect(source.contains("DegreeProjection.make(plan: state.degreePlan"))
+        // Both projections go through the one helper that also applies the
+        // planner's coverage (`AppState.degreeProjection`).
+        #expect(source.contains("state.degreeProjection("))
+        #expect(!source.contains("DegreeProjection.make(plan:"))
         #expect(!source.lowercased().contains("recommend"))
     }
 

@@ -378,8 +378,13 @@ struct DegreeSemesterTable: View {
     // MARK: Rows
 
     private func chip(code: String, label: String, muted: Bool = false) -> some View {
+        // A code never wraps or truncates ("MAT / H" on two lines in a 168pt
+        // column, 2026-11-27): the chip keeps its natural width and whatever
+        // shares its row gives way.
         Text(code)
             .font(.lhfMono(11))
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
             .foregroundStyle(muted ? Color.smoothMuted : courseAccentInk(for: code))
             .padding(.horizontal, 9)
             .padding(.vertical, 4)
@@ -456,15 +461,6 @@ struct DegreeSemesterTable: View {
                      label: "\(course.code), \(creditsWord(course.credits))\(countsWord)",
                      muted: judged && !counts && !isPick)
                     .draggable(code)
-                if let approvalTag {
-                    Text(approvalTag)
-                        .font(.lhfSans(10, weight: .semibold))
-                        .foregroundStyle(Color.smoothGrapeInk)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.smoothGrape.opacity(0.22), in: Capsule())
-                        .lineLimit(1)
-                }
                 if counts, let badge = DegreeProgressMath.gainBadge(total) {
                     Text(badge)
                         .font(.lhfMono(10, weight: .semibold))
@@ -481,6 +477,17 @@ struct DegreeSemesterTable: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("remove \(course.code)")
+            }
+            // The tag has its own line, so chip, badge and the remove button
+            // always fit the column.
+            if let approvalTag {
+                Text(approvalTag)
+                    .font(.lhfSans(10, weight: .semibold))
+                    .foregroundStyle(Color.smoothGrapeInk)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.smoothGrape.opacity(0.22), in: Capsule())
+                    .lineLimit(1)
             }
             if !engineLines.isEmpty {
                 ForEach(Array(engineLines.enumerated()), id: \.offset) { _, line in

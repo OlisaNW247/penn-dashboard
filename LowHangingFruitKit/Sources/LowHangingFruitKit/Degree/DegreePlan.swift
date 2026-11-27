@@ -161,12 +161,21 @@ public struct DegreePlanSummary: Codable, Sendable, Equatable {
     /// The server's short approval labels; nil from an older server (then
     /// `needsApproval` came from the scenario's id alone).
     public let approvals: [String]?
+    /// What the planner said its schedule fills, per degree; nil from an older
+    /// server. Dropped with the summary on a hand edit, which is right: after
+    /// an edit the planner's claim no longer describes the table.
+    public let coverage: [DegreePlanCoverage]?
+    /// The finish term (`YYYYTT`) the student named, when they did.
+    public let targetTerm: String?
 
     public init(
         finishTerm: String?, scenarioID: String, scenarioLabel: String,
         remainingCredits: Double?, needsApproval: Bool, createdAt: Date,
-        standIns: [DegreePlanStandIn]? = nil, approvals: [String]? = nil
+        standIns: [DegreePlanStandIn]? = nil, approvals: [String]? = nil,
+        coverage: [DegreePlanCoverage]? = nil, targetTerm: String? = nil
     ) {
+        self.targetTerm = targetTerm
+        self.coverage = coverage
         self.standIns = standIns
         self.approvals = approvals
         self.finishTerm = finishTerm
@@ -179,7 +188,7 @@ public struct DegreePlanSummary: Codable, Sendable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case finishTerm, scenarioID, scenarioLabel, remainingCredits, needsApproval, createdAt
-        case standIns, approvals
+        case standIns, approvals, coverage, targetTerm
     }
 
     /// Lenient: a summary with a key missing still reads, because a failed
@@ -199,6 +208,10 @@ public struct DegreePlanSummary: Codable, Sendable, Equatable {
         let rawApprovals: [SummaryLossy<String>]? =
             (try? container.decodeIfPresent([SummaryLossy<String>].self, forKey: .approvals)) ?? nil
         self.approvals = rawApprovals.map { $0.compactMap { $0.value } }
+        let rawCoverage: [SummaryLossy<DegreePlanCoverage>]? =
+            (try? container.decodeIfPresent([SummaryLossy<DegreePlanCoverage>].self, forKey: .coverage)) ?? nil
+        self.coverage = rawCoverage.map { $0.compactMap { $0.value } }
+        self.targetTerm = (try? container.decodeIfPresent(String.self, forKey: .targetTerm)) ?? nil
     }
 
     /// The one quiet line above the semester table: "plan · would finish

@@ -929,6 +929,27 @@ extension AppState {
         try? degreePlanStore.save(plan)
     }
 
+    /// The projection every ring, block bar and planned count is drawn from:
+    /// the plan laid against the audit, adjusted by what the planner said its
+    /// schedule fills for this degree, when that claim applies to the audit
+    /// being drawn (`DegreePlanCoverage.applicable`). One place, so no screen
+    /// applies the claim differently from another.
+    func degreeProjection(degreeID: String, audit: DegreeAudit) -> DegreeProjection {
+        let plain = DegreeProjection.make(plan: degreePlan, audit: audit)
+        let coverage = DegreePlanCoverage.applicable(
+            for: degreeID, audit: audit, summary: degreePlan.summary)
+        return plain.adjusted(by: coverage, audit: audit)
+    }
+
+    /// The ring's granted and best cases for one drawn audit, or nil when the
+    /// planner sent no target data that applies to it (the caller then keeps
+    /// the single "with plan" figure). `base` is the ring's done fraction.
+    func degreeRingCases(degreeID: String, audit: DegreeAudit, base: Double) -> DegreeRingCases? {
+        let coverage = DegreePlanCoverage.applicable(
+            for: degreeID, audit: audit, summary: degreePlan.summary)
+        return DegreeRingCases.make(coverage: coverage, base: base)
+    }
+
     /// Records (or, with nil, clears) the student's advisor's answer to one
     /// question and saves it with the plan, the way every other plan edit is
     /// saved. Nothing is sent: the answers travel only inside the next plan
