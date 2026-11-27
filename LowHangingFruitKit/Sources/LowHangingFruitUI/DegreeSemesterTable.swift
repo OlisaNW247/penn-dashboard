@@ -101,6 +101,10 @@ struct DegreeSemesterTable: View {
     @State private var sheetTarget: PlanSheetTarget?
     @State private var targetedTerm: String?
     @State private var showPage = false
+    @State private var showAdvisorQuestions = false
+    /// Closes the full view when the table is drawn inside it; unused by the
+    /// strip, where it would close the whole screen and is never called.
+    @Environment(\.dismiss) private var dismissPage
 
     private var isPage: Bool { layout == .page }
 
@@ -119,6 +123,9 @@ struct DegreeSemesterTable: View {
                     .foregroundStyle(Color.smoothMuted)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if let notes = plan.advisor, !notes.questions.isEmpty {
+                advisorRow(notes)
+            }
             if isPage {
                 pageTable(columns, coverage: coverage)
             } else {
@@ -129,6 +136,32 @@ struct DegreeSemesterTable: View {
                 DegreePlanAddSheet(termCode: target.termCode, audits: audits)
                     .environmentObject(state)
             }
+    }
+
+    // MARK: Advisor questions
+
+    /// One row under the summary line. The sheet is presented from the row
+    /// itself, not from the table's container, which already presents the add
+    /// sheet: every table (each tab's strip and the full view's page) is its
+    /// own presenter, and two sheets on one view are unreliable. "update plan"
+    /// hands the chat a prompt through `AppState`; from the full view that page
+    /// is closed first, because the chat is presented by the screen under it.
+    private func advisorRow(_ notes: DegreeAdvisorNotes) -> some View {
+        Button { showAdvisorQuestions = true } label: {
+            Text(DegreeAdvisorQuestionsSheet.entryText(notes))
+                .font(.lhfSans(12, weight: .semibold))
+                .foregroundStyle(Color.smoothGrapeInk)
+                .frame(minHeight: 28, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .sheet(isPresented: $showAdvisorQuestions) {
+            DegreeAdvisorQuestionsSheet(onUpdate: {
+                state.degreeAdvisorPendingPrompt = DegreeAdvisorQuestionsSheet.updatePrompt
+                if isPage { dismissPage() }
+            })
+            .environmentObject(state)
+        }
     }
 
     // MARK: Table

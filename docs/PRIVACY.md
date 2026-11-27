@@ -213,7 +213,14 @@ audit.
   reads Penn's public rules for your programs, which Smooth keeps as files
   on GitHub; the request names the program (for example the computer
   science BSE) and nothing about you. Asked for an email to your advisor, the chat drafts one
-  for you to copy; Smooth sends nothing to anyone.
+  for you to copy; Smooth sends nothing to anyone. **Your advisor's answers (since 2026-11-27):** when a plan
+  depends on something only an advisor can decide (one course counted for
+  two requirements, a placement exam, a heavier semester), the app lists the
+  questions to ask them and lets you record each answer as yes or no. The
+  questions and your answers are kept on this phone with your plan
+  (backed up with it, deleted when you disconnect Canvas). Each planning
+  message you send afterwards carries the answers you recorded, so the plan
+  can use them; like the rest of that message they are stored by nobody.
 - **Searching programs:** the search in "what if" runs on this phone, over
   Penn's public list of programs. On an iPhone with Apple Intelligence,
   when a search finds almost nothing, Apple's on-device model is asked for

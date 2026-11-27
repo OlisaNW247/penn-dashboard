@@ -117,15 +117,22 @@ public struct DegreeAdvisorRequest: Encodable, Sendable, Equatable {
     public let round: Int
     /// The audits as data for the planning engine; omitted when nil.
     public let structured: DegreeAdvisorStructured?
+    /// What the student's advisor answered, for this request alone; at most
+    /// `DegreeAdvisorNotes.maxAnswers`. Nil (so the key is omitted) when there
+    /// are none, as with `structured`.
+    public let advisorAnswers: [DegreeAdvisorAnswerEntry]?
 
     public init(
         question: String, history: [DegreeAdvisorTurn], context: String,
         terms: [DegreeAdvisorTerm], addable: [String],
         programs: [DegreeAdvisorProgram] = [],
         requirements: [DegreeAdvisorRequirement] = [], now: Date, round: Int = 1,
-        structured: DegreeAdvisorStructured? = nil
+        structured: DegreeAdvisorStructured? = nil,
+        advisorAnswers: [DegreeAdvisorAnswerEntry] = []
     ) {
         self.structured = structured
+        let capped = Array(advisorAnswers.prefix(DegreeAdvisorNotes.maxAnswers))
+        self.advisorAnswers = capped.isEmpty ? nil : capped
         self.round = min(3, max(1, round))
         self.question = question
         self.history = history
@@ -747,7 +754,8 @@ public enum DegreeAdvisor {
 
     public static func request(
         question: String, turns: [DegreeAdvisorTurn], brief: DegreeAdvisorBrief,
-        programs: [DegreeAdvisorProgram] = [], now: Date, round: Int = 1
+        programs: [DegreeAdvisorProgram] = [], now: Date, round: Int = 1,
+        advisorAnswers: [DegreeAdvisorAnswerEntry] = []
     ) -> DegreeAdvisorRequest {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         let cut = String(trimmed.prefix(maxQuestion))
@@ -763,7 +771,7 @@ public enum DegreeAdvisor {
             addable: brief.addable.keys.sorted(),
             programs: Array(programs.prefix(maxPrograms)),
             requirements: requirementList(brief), now: now, round: round,
-            structured: brief.structured)
+            structured: brief.structured, advisorAnswers: advisorAnswers)
     }
 
     /// The brief's requirements as the wire carries them: ascending by tag

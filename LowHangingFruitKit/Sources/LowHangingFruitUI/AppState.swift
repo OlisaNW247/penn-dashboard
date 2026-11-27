@@ -598,6 +598,10 @@ final class AppState: ObservableObject {
             .appendingPathComponent("degree-plan-\(UUID().uuidString)", isDirectory: true))
         : .default()
     var degreePlanLoaded = false
+    /// A message the chat should send as soon as it is open, set by the
+    /// "ask your advisor" sheet's "update plan" when it is opened from the
+    /// table. One prompt at most; the chat clears it where it takes it.
+    @Published var degreeAdvisorPendingPrompt: String?
     /// Whether the degree screen shows both degrees together (a dual-degree
     /// student's "overall" scope). Kept in `UserDefaults.lhf`
     /// (`degreeOverallScopeV1`) so the screen reopens where it was.

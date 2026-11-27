@@ -129,7 +129,8 @@ extension AppState {
         let entries = catalogue.isEmpty ? [] : degreeProgramEntries(catalogue)
         let programs = DegreeAdvisor.programs(from: entries)
         let request = DegreeAdvisor.request(question: question, turns: turns, brief: brief,
-                                            programs: programs, now: now)
+                                            programs: programs, now: now,
+                                            advisorAnswers: degreePlan.advisor?.requestAnswers ?? [])
         let first: DegreeAdvisorResponse
         do {
             first = try await sendDegreeAdvisor(client, request, onStage: onStage)
@@ -186,7 +187,8 @@ extension AppState {
         Self.writeDegreeAdvisorDiagnostics(brief: secondBrief, audits: swapped)
         #endif
         let second = DegreeAdvisor.request(question: question, turns: turns, brief: secondBrief,
-                                           programs: [], now: now)
+                                           programs: [], now: now,
+                                           advisorAnswers: degreePlan.advisor?.requestAnswers ?? [])
         do {
             let response = try await sendDegreeAdvisor(client, second, onStage: onStage)
             Self.noteDegreeAdvisorModel(response.model)
@@ -291,7 +293,8 @@ extension AppState {
             let nextQuestion = Self.degreeAdvisorContinuation(dropped: current.dropped)
             let request = DegreeAdvisor.request(
                 question: nextQuestion, turns: history, brief: nextBrief,
-                programs: [], now: now, round: round + 1)
+                programs: [], now: now, round: round + 1,
+                advisorAnswers: degreePlan.advisor?.requestAnswers ?? [])
             do {
                 let next = try await sendDegreeAdvisor(client, request, onStage: onStage)
                 Self.noteDegreeAdvisorModel(next.model)

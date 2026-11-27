@@ -234,13 +234,18 @@ public struct DegreeEnginePlan: Codable, Sendable, Equatable {
     /// none. Nil when the key is absent (an older server), which keeps the
     /// scenario-id rule in `summary(of:now:)`.
     public let approvals: [String]?
+    /// Questions for the student's advisor, at most `DegreeAdvisorNotes.maxQuestions`;
+    /// empty from an older server.
+    public let advisorQuestions: [DegreeAdvisorQuestionWire]
 
     public init(
         remainingCredits: Double, remainingCreditsWithoutOverlap: Double,
         scenarios: [DegreeEngineScenario], chosen: String, schedule: [DegreeEngineTerm],
         unfilled: [DegreeEngineUnfilled] = [], petitions: [DegreeEnginePetition] = [],
-        notes: [String] = [], approvals: [String]? = nil
+        notes: [String] = [], approvals: [String]? = nil,
+        advisorQuestions: [DegreeAdvisorQuestionWire] = []
     ) {
+        self.advisorQuestions = advisorQuestions
         self.approvals = approvals
         self.remainingCredits = remainingCredits
         self.remainingCreditsWithoutOverlap = remainingCreditsWithoutOverlap
@@ -254,7 +259,7 @@ public struct DegreeEnginePlan: Codable, Sendable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case remainingCredits, remainingCreditsWithoutOverlap, scenarios, chosen, schedule
-        case unfilled, petitions, notes, approvals
+        case unfilled, petitions, notes, approvals, advisorQuestions
     }
 
     /// The schedule list is required (a plan with no schedule key must not
@@ -276,6 +281,11 @@ public struct DegreeEnginePlan: Codable, Sendable, Equatable {
         // did not say" and "the server said none" must stay different.
         let rawApprovals: [EngineLossy<String>]? = lenient([EngineLossy<String>].self, in: c, forKey: .approvals)
         self.approvals = rawApprovals.map { $0.compactMap { $0.value } }
+        // A bad element is dropped, a bad list is none, and more than the cap
+        // is cut: the questions are an extra, never a reason to lose the plan.
+        self.advisorQuestions = Array(
+            lossyList(DegreeAdvisorQuestionWire.self, in: c, forKey: .advisorQuestions)
+                .prefix(DegreeAdvisorNotes.maxQuestions))
     }
 }
 
@@ -379,8 +389,16 @@ extension DegreeAdvisor {
             }
         }
         terms.sort { $0.termCode < $1.termCode }
+        // The advisor's notes are the student's own and outlive the table: the
+        // new questions replace the old list, the answers stay.
+        let notes: DegreeAdvisorNotes? =
+            (existing.advisor == nil && plan.advisorQuestions.isEmpty)
+            ? nil
+            : (existing.advisor ?? DegreeAdvisorNotes()).receiving(plan.advisorQuestions)
         return DegreeAdvisorOutcome(
-            plan: DegreePlan(terms: terms, summary: summary(of: plan, now: now, standIns: standIns)), applied: applied, skipped: skipped)
+            plan: DegreePlan(
+                terms: terms, summary: summary(of: plan, now: now, standIns: standIns), advisor: notes),
+            applied: applied, skipped: skipped)
     }
 
     /// The summary line's facts, from the scenario the engine chose; nil when

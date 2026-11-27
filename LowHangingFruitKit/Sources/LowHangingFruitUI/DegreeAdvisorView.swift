@@ -58,6 +58,7 @@ struct DegreeAdvisorView: View {
     @State private var waiting = false
     @State private var stage: String?
     @State private var activeAudits: [DegreeLabeledAudit]?
+    @State private var showQuestions = false
 
     nonisolated static func starters(hasSeveralDegrees: Bool, nextTermLabel: String?) -> [String] {
         let label = nextTermLabel ?? "next semester"
@@ -135,6 +136,18 @@ struct DegreeAdvisorView: View {
         messages.last(where: { !$0.changes.isEmpty })?.id
     }
 
+    private var latestPlanMessageID: UUID? {
+        messages.last(where: { $0.planLines != nil })?.id
+    }
+
+    /// Takes the table's pending "update plan" prompt, exactly once: it is
+    /// cleared before it is sent, so a second appearance finds nothing.
+    private func consumePendingPrompt() {
+        guard let prompt = state.degreeAdvisorPendingPrompt else { return }
+        state.degreeAdvisorPendingPrompt = nil
+        send(prompt)
+    }
+
     var body: some View {
         advisorContent
             .pathSignInSheet()
@@ -153,6 +166,12 @@ struct DegreeAdvisorView: View {
                     .accessibilityAddTraits(.isHeader)
                 Divider().overlay(Color.smoothRule.opacity(0.6))
                 conversation
+                    .sheet(isPresented: $showQuestions) {
+                        DegreeAdvisorQuestionsSheet(onUpdate: {
+                            send(DegreeAdvisorQuestionsSheet.updatePrompt)
+                        })
+                        .environmentObject(state)
+                    }
                 composer
             }
             .background(Color.smoothPaper.ignoresSafeArea())
@@ -168,6 +187,8 @@ struct DegreeAdvisorView: View {
         }
         .environmentObject(state)
         .lhfSheetTheme()
+        .onAppear { consumePendingPrompt() }
+        .onChange(of: state.degreeAdvisorPendingPrompt) { _, _ in consumePendingPrompt() }
         .task {
             // The model can only ask for a what-if audit ("plan toward a
             // finance concentration") from the list of programs the phone
@@ -292,6 +313,15 @@ struct DegreeAdvisorView: View {
                 }
                 if let lines = message.planLines {
                     planCard(lines)
+                    if message.id == latestPlanMessageID, let notes = state.degreePlan.advisor,
+                       !notes.questions.isEmpty {
+                        Button { showQuestions = true } label: {
+                            Text(DegreeAdvisorQuestionsSheet.entryText(notes))
+                                .font(.lhfSans(13, weight: .semibold))
+                                .foregroundStyle(Color.smoothGrapeInk)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 if !message.changes.isEmpty {
                     changesCard(message)
@@ -362,7 +392,7 @@ struct DegreeAdvisorView: View {
         .foregroundStyle(Color.smoothInk)
     }
 
-    private static func copyToPasteboard(_ text: String) {
+    static func copyToPasteboard(_ text: String) {
 #if os(iOS)
         UIPasteboard.general.string = text
 #elseif os(macOS)

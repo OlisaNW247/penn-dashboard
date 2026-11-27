@@ -233,15 +233,24 @@ public struct DegreePlan: Codable, Sendable, Equatable {
     public var terms: [PlannedTerm]
     /// Set only while the plan is exactly what the planning engine wrote.
     public var summary: DegreePlanSummary?
+    /// The questions the engine says only the student's advisor can settle, and
+    /// the answers typed back. Unlike `summary` this is the student's own
+    /// writing, so no hand edit of the table drops it (every `DegreePlanMath`
+    /// edit copies the plan and changes only `terms` and `summary`).
+    public var advisor: DegreeAdvisorNotes?
 
-    public init(terms: [PlannedTerm] = [], summary: DegreePlanSummary? = nil) {
+    public init(
+        terms: [PlannedTerm] = [], summary: DegreePlanSummary? = nil,
+        advisor: DegreeAdvisorNotes? = nil
+    ) {
         self.terms = terms
         self.summary = summary
+        self.advisor = advisor
     }
 
     public static let empty = DegreePlan()
 
-    private enum CodingKeys: String, CodingKey { case terms, summary }
+    private enum CodingKeys: String, CodingKey { case terms, summary, advisor }
 
     /// Lenient on purpose, as `DegreeSnapshot` is: a file with a key missing
     /// (or `{}`) must read as an empty plan rather than fail, because a failed
@@ -250,6 +259,8 @@ public struct DegreePlan: Codable, Sendable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.terms = try container.decodeIfPresent([PlannedTerm].self, forKey: .terms) ?? []
         self.summary = try? container.decodeIfPresent(DegreePlanSummary.self, forKey: .summary)
+        // A malformed value costs the notes and never the plan.
+        self.advisor = try? container.decodeIfPresent(DegreeAdvisorNotes.self, forKey: .advisor)
     }
 }
 

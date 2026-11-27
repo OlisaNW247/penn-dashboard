@@ -253,6 +253,17 @@ struct DegreeProgressView: View {
             Task { await state.refreshDegreeAudit(force: false) }
         }
         .onChange(of: state.degree.whatIfs.first?.goals) { _, _ in selectedWhatIf = 0 }
+        .onChange(of: state.degreeAdvisorPendingPrompt) { _, prompt in
+            // "update plan" in the advisor sheet, opened from a table: the chat
+            // takes the prompt when it appears. The short wait lets the full
+            // view, if the table was in it, finish closing, because a sheet
+            // cannot open while a cover is still going away.
+            guard prompt != nil, !showAdvisor else { return }
+            Task {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                if state.degreeAdvisorPendingPrompt != nil { showAdvisor = true }
+            }
+        }
         .task(id: tab) {
             // The options row needs the catalogue; only the what-if tab asks,
             // and `loadDegreePrograms` returns at once when it is cached.

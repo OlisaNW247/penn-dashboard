@@ -443,6 +443,7 @@ extension AppState {
         // loaded flag resets so the next sign-in starts from an empty plan.
         degreePlanStore.clear()
         degreePlan = .empty
+        degreeAdvisorPendingPrompt = nil
         degreePlanLoaded = false
         degree = .empty
         degreeStatus = .idle
@@ -926,6 +927,17 @@ extension AppState {
         degreePlan = plan
         guard !isUsingFixtureData else { return }
         try? degreePlanStore.save(plan)
+    }
+
+    /// Records (or, with nil, clears) the student's advisor's answer to one
+    /// question and saves it with the plan, the way every other plan edit is
+    /// saved. Nothing is sent: the answers travel only inside the next plan
+    /// request. A question the plan does not list is ignored.
+    func setDegreeAdvisorAnswer(_ answer: DegreeAdvisorAnswer?, for id: String) {
+        guard let notes = degreePlan.advisor, notes.questions.contains(where: { $0.id == id }) else { return }
+        var plan = degreePlan
+        plan.advisor = notes.setting(answer, for: id)
+        commitDegreePlan(plan)
     }
 
     // MARK: Plumbing
