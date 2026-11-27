@@ -252,9 +252,6 @@ struct DegreeSignInCeilingTests {
         let state = try sourceText("AppState+Degree.swift")
         #expect(state.contains("guard degreeSignInsAwaiting > 0"))
         #expect(state.contains("degreeAskSubmitted"))
-        let screen = try sourceText("DegreeProgressView.swift")
-        #expect(screen.contains("selectDegree(degree.id, userInitiated: true)"))
-        #expect(screen.contains("selectDegree(entry.id, userInitiated: true)"))
         #expect(try sourceText("DegreeWhatIfSheet.swift").contains("selectDegree(id, userInitiated: true)"))
     }
 }

@@ -97,8 +97,12 @@ audit.</p>
   passes it to a language model to write the answer and <strong>stores none of
   it</strong>: not the question, the summary or the answer; only the per-day
   request count every &quot;tree&quot; question also adds to. Nothing is sent until
-  you send a message, and the chat says so before your first one. If you
-  never open it, nothing about your degree leaves the phone. Changes the
+  you send a message, and the chat says so before your first one. Since
+  2026-11-27 it is also sent when you tap &quot;plan the rest&quot; or &quot;check with the planner&quot; on the degree screen, and when
+  you close the advisor questions after changing an answer (the planner
+  then runs again with your answers); in those cases no message is
+  typed, and what is sent is the same as for a message. If you
+  never use it, nothing about your degree leaves the phone. Changes the
   chat makes to your plan can be undone with one tap. When the chat picks a course for a requirement Penn describes only in words, our server checks that the course exists by asking Penn Labs&#x27; public course catalogue (penncoursereview.com) for that course code alone; nothing about you goes with it. Since 2026-11-16 a message also carries the audits themselves, in the form the app keeps them (the same requirements, course codes and semesters listed above, nothing more), so that a planning program on our server, not the language model, can work out the plan; to do that the server asks Penn Labs&#x27; catalogue and Penn&#x27;s public CIS elective list for course, subject and requirement-attribute codes, and nothing about you goes with them. Since 2026-11-26 the server also reads Penn&#x27;s public rules for your programs, which Smooth keeps as files on GitHub; the request names the program (for example the computer science BSE) and nothing about you. Asked for an email to your advisor, the chat drafts one for you to copy; Smooth sends nothing to anyone. <strong>Your advisor's answers (since 2026-11-27):</strong> when a plan depends on something only an advisor can decide (one course counted for two requirements, a placement exam, a heavier semester), the app lists the questions to ask them and lets you record each answer as yes or no. The questions and your answers are kept on this phone with your plan (backed up with it, deleted when you disconnect Canvas). Each planning message you send afterwards carries the answers you recorded, so the plan can use them; like the rest of that message they are stored by nobody.</li>
 <li><strong>Searching programs:</strong> the search in &quot;what if&quot; runs on this phone, over
   Penn&#x27;s public list of programs. On an iPhone with Apple Intelligence,

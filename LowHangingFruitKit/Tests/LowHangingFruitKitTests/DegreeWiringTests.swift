@@ -344,16 +344,14 @@ struct DegreeAppStateTests {
         #expect(!state.degreeOptionListings.contains { $0.code == "CSCI-BSE" })
     }
 
-    @Test("the what-if tab shows the options row from the catalogue")
-    func optionsRowSource() throws {
+    @Test("the what-if sheet opens from the screen's menu, not from a tab")
+    func whatIfFromMenu() throws {
         var url = URL(fileURLWithPath: #filePath)
         for _ in 0..<3 { url.deleteLastPathComponent() }
         let path = url.appendingPathComponent("Sources/LowHangingFruitUI/DegreeProgressView.swift")
         let source = try String(contentsOf: path, encoding: .utf8)
-        #expect(source.contains("degreeOptionListings"))
-        #expect(source.contains("DegreeOptions.heading"))
-        #expect(source.contains("runDegreeOption"))
-        #expect(source.contains("optionScores"))
+        #expect(source.contains("try another major"))
+        #expect(source.contains("DegreeWhatIfSheet()"))
     }
 
     @Test("in fixture mode the advisor answers with the demo line, no changes and no edit", .enabled(if: FeatureFlags.degreeProgress))
@@ -649,11 +647,6 @@ struct DegreeAppStateTests {
         #expect(snapshot.lastShape == ["x"])
     }
 
-    @Test("the degree screen's tabs are progress, what if, plan")
-    func tabs() {
-        #expect(DegreeTab.allCases.map(\.label) == ["progress", "what if", "plan"])
-    }
-
     @Test("in fixture mode the plan loads the sample, and adding then removing a course round-trips in memory")
     func fixturePlan() throws {
         let state = try makeState()
@@ -714,7 +707,7 @@ struct DegreeAppStateTests {
         #expect(state.degreePlanStore.load() == .empty)
     }
 
-    @Test("the three tabs host one semester table")
+    @Test("the road opens a semester sheet and the old plan view still hosts the table")
     func tableIsShared() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -723,7 +716,7 @@ struct DegreeAppStateTests {
             .appendingPathComponent("Sources/LowHangingFruitUI")
         let progress = try String(contentsOf: root.appendingPathComponent("DegreeProgressView.swift"), encoding: .utf8)
         let plan = try String(contentsOf: root.appendingPathComponent("DegreePlanView.swift"), encoding: .utf8)
-        #expect(progress.contains("DegreeSemesterTable("))
+        #expect(progress.contains("DegreeSemesterSheet(termCode:"))
         #expect(plan.contains("DegreeSemesterTable("))
     }
 

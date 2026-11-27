@@ -1,23 +1,6 @@
 import SwiftUI
 import LowHangingFruitKit
 
-/// The three parts of the degree screen. `Identifiable` and `CaseIterable` are
-/// what `SmoothSegmentPicker` asks of its option type.
-enum DegreeTab: String, CaseIterable, Identifiable {
-    case progress
-    case whatIf
-    case plan
-
-    var id: String { rawValue }
-    var label: String {
-        switch self {
-        case .progress: return "progress"
-        case .whatIf: return "what if"
-        case .plan: return "plan"
-        }
-    }
-}
-
 /// The arithmetic behind the screen, kept out of the views so a test (and the
 /// Profile row, which wants the same "31 of 40 cu") can ask it without
 /// building any SwiftUI. Every number here is a reading of Degree Works'
@@ -204,42 +187,88 @@ enum DegreeProgressMath {
     }
 }
 
-/// The pushed degree page.
+/// What one degree's bar and ring draw: Penn's own reading, and the layer the
+/// plan adds on top. With the planner's target data it is the granted case
+/// solid and, when meaningfully higher, the best case faded behind it, each
+/// with its own line; otherwise the single "with plan" figure. The text counts
+/// in-progress rules as done; the arc does not. Shared by the road's bars and
+/// the requirements page, so a bar and its ring can never disagree.
+struct DegreeDrawn {
+    var ring: DegreeProgressMath.Ring
+    var base: Double
+    var projection: DegreeProjection
+    var planned: Double
+    var bestExtra: Double
+    var lines: [String]
+}
+
+extension AppState {
+    func degreeDrawn(degreeID: String, audit: DegreeAudit) -> DegreeDrawn {
+        let ring = DegreeProgressMath.ring(for: audit)
+        // Read from the body so a course added in the table redraws the bar.
+        let projection = degreeProjection(degreeID: degreeID, audit: audit)
+        let base = ring.fraction + (audit.isWhatIf ? ring.extraFraction : 0)
+        if let cases = degreeRingCases(degreeID: degreeID, audit: audit, base: base) {
+            let lines = DegreeProgressMath.ringLines(
+                base: base, cases: cases, targetTerm: degreePlan.summary?.targetTerm)
+            return DegreeDrawn(ring: ring, base: base, projection: projection, planned: cases.granted,
+                               bestExtra: cases.showsBest ? max(0, cases.best - cases.granted) : 0,
+                               lines: lines)
+        }
+        let line = DegreeProgressMath.withPlanText(base: base, gain: projection.withPlanGain(base: base))
+        return DegreeDrawn(ring: ring, base: base, projection: projection,
+                           planned: projection.ringGain(base: base), bestExtra: 0,
+                           lines: line.map { [$0] } ?? [])
+    }
+}
+
+/// A sheet the road opens: a semester's courses, or the add sheet for one.
+enum DegreeRoadSheetTarget: Identifiable, Equatable {
+    case semester(String)
+    case add(String)
+
+    var id: String {
+        switch self {
+        case .semester(let code): return "semester:" + code
+        case .add(let code): return "add:" + code
+        }
+    }
+}
+
+/// The pushed degree page: one screen, "the road" (`DegreeRoadView`).
 ///
-/// Reads only `state.degree` and `state.degreeStatus`; the one thing it asks
-/// of the world is `refreshDegreeAudit`. Copy is the status words from
+/// Reads only `state.degree`, `state.degreeStatus` and the plan; the one thing
+/// it asks of the world is `refreshDegreeAudit`. Copy is the status words from
 /// `DegreeStatus.line` and a handful of fixed lowercase labels, never a
 /// sentence, and never a verdict: the page reports what Degree Works says
-/// and links the official audit for anything that matters.
+/// and links the official audit for anything that matters. This view owns every
+/// sheet the road opens, because a sheet cannot present over another
+/// presenter's sheet.
 struct DegreeProgressView: View {
     @EnvironmentObject var state: AppState
 
-    @State private var tab: DegreeTab = .progress
-    @State private var expanded: Set<String> = []
-    @State private var selectedWhatIf = 0
-    @State private var showSheet = false
-    @State private var advisorMessages: [DegreeAdvisorMessage] = []
+    @State private var showWhatIf = false
     @State private var showAdvisor = false
-    /// The catalogue row whose what-if is running, if any.
-    @State private var runningOption: String?
-    /// The goals each option filed in this view, by catalogue code. Not
-    /// persisted: it only says which chip's result is the one on screen, by
-    /// comparing exact goals, never titles.
-    @State private var optionGoals: [String: DegreeGoals] = [:]
+    @State private var showAdvisorQuestions = false
+    @State private var roadSheet: DegreeRoadSheetTarget?
 
     private var descriptions: [String: String] { state.degreeDescriptions }
+
+    private var hasAudit: Bool { state.degree.current != nil || !state.degreeAudits.isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
-            SmoothSegmentPicker(selection: $tab) { $0.label }
-                .padding(.horizontal, 20)
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    switch tab {
-                    case .progress: progressTab
-                    case .whatIf: whatIfTab
-                    case .plan: DegreePlanView()
+                    if hasAudit {
+                        DegreeRoadView(
+                            openChat: { showAdvisor = true },
+                            openSemester: { roadSheet = .semester($0) },
+                            openAdd: { roadSheet = .add($0) },
+                            openAdvisor: { showAdvisorQuestions = true })
+                    } else {
+                        emptyProgress
                     }
                     footer
                 }
@@ -271,54 +300,72 @@ struct DegreeProgressView: View {
             state.loadDegreePlanIfNeeded()
             Task { await state.refreshDegreeAudit(force: false) }
         }
-        .onChange(of: state.degree.whatIfs.first?.goals) { _, _ in selectedWhatIf = 0 }
+        .task { await state.ensureAllDegreeAudits() }
         .onChange(of: state.degreeAdvisorPendingPrompt) { _, prompt in
             // "update plan" in the advisor sheet, opened from a table: the chat
-            // takes the prompt when it appears. The short wait lets the full
-            // view, if the table was in it, finish closing, because a sheet
-            // cannot open while a cover is still going away.
+            // takes the prompt when it appears. The short wait lets any cover
+            // that was going away finish closing, because a sheet cannot open
+            // while one is.
             guard prompt != nil, !showAdvisor else { return }
             Task {
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 if state.degreeAdvisorPendingPrompt != nil { showAdvisor = true }
             }
         }
-        .task(id: tab) {
-            // The options row needs the catalogue; only the what-if tab asks,
-            // and `loadDegreePrograms` returns at once when it is cached.
-            if tab == .whatIf, state.degree.programs.isEmpty {
-                _ = await state.loadDegreePrograms()
-            }
-        }
-        .sheet(isPresented: $showSheet) {
+        .sheet(isPresented: $showWhatIf) {
             DegreeWhatIfSheet()
                 .environmentObject(state)
         }
-        .sheet(isPresented: $showAdvisor, onDismiss: {
-            // When the chat read a what-if, the table has to judge the courses
-            // it placed against that same audit, or they read as not counting.
-            if advisorMessages.contains(where: { $0.notice != nil }), !state.degree.whatIfs.isEmpty {
-                tab = .whatIf
-                selectedWhatIf = 0
-            }
-        }) {
-            DegreeAdvisorView(messages: $advisorMessages, audits: advisorAudits())
+        .sheet(isPresented: $showAdvisor) {
+            DegreeAdvisorView(messages: $state.degreeAdvisorMessages, audits: advisorAudits())
                 .environmentObject(state)
         }
-        // The sign-in page, unless the what-if sheet or the chat is up: those
-        // present it themselves, since a sheet cannot present over a sheet.
-        .pathSignInSheet(enabled: !showSheet && !showAdvisor)
+        .sheet(isPresented: $showAdvisorQuestions, onDismiss: {
+            // The sheet re-runs the planner itself when an answer changed.
+            state.degreeAdvisorQuestionsClosed()
+        }) {
+            DegreeAdvisorQuestionsSheet(onUpdate: {
+                state.runDegreePlanner(question: DegreeAdvisorQuestionsSheet.updatePrompt)
+            })
+            .environmentObject(state)
+        }
+        .sheet(item: $roadSheet) { target in
+            switch target {
+            case .semester(let code):
+                DegreeSemesterSheet(termCode: code)
+                    .environmentObject(state)
+            case .add(let code):
+                DegreePlanAddSheet(termCode: code, audits: state.degreeAudits)
+                    .environmentObject(state)
+            }
+        }
+        // The sign-in page, unless a sheet is up: the what-if sheet and the
+        // chat present it themselves, since a sheet cannot present over a sheet.
+        .pathSignInSheet(enabled: !showWhatIf && !showAdvisor && !showAdvisorQuestions && roadSheet == nil)
     }
 
     // MARK: Header and status
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("degree")
-                .font(.lhfSerif(32))
-                .foregroundStyle(Color.smoothInk)
-                .accessibilityAddTraits(.isHeader)
-            statusLine
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("degree")
+                    .font(.lhfSerif(32))
+                    .foregroundStyle(Color.smoothInk)
+                    .accessibilityAddTraits(.isHeader)
+                statusLine
+            }
+            Spacer(minLength: 0)
+            Menu {
+                Button("try another major") { showWhatIf = true }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Color.smoothInk)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("more")
         }
         .padding(.horizontal, 20)
         .padding(.top, 8)
@@ -348,75 +395,6 @@ struct DegreeProgressView: View {
         }
     }
 
-    // MARK: Progress
-
-    @ViewBuilder
-    private var progressTab: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            degreeChips
-            if state.degreeOverallActive {
-                overallBody
-            } else if let audit = state.degree.current {
-                auditBody(audit, tag: nil, headline: programTitle(audit), summary: nil, prefix: "c:",
-                          tableAudits: state.degreeHasSeveral ? state.degreeAudits : nil)
-            } else {
-                emptyProgress
-            }
-        }
-    }
-
-    /// One chip per degree of a student who has more than one; hidden for one.
-    @ViewBuilder
-    private var degreeChips: some View {
-        let degrees = state.degree.degrees
-        if degrees.count > 1 {
-            let selectedID = state.degree.selectedDegreeID ?? degrees.first?.id
-            let labels = DegreeGoals.chipTitles(for: degrees.map(\.goals), descriptions: descriptions)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    bothChip
-                    ForEach(Array(degrees.enumerated()), id: \.element.id) { index, degree in
-                        let isSelected = degree.id == selectedID && !state.degreeOverallActive
-                        let title = degree.goals.title(descriptions: descriptions)
-                        Button {
-                            state.setDegreeShowsOverall(false)
-                            Task { await state.selectDegree(degree.id, userInitiated: true) }
-                        } label: {
-                            Text(index < labels.count ? labels[index] : title)
-                                .font(.lhfSans(13, weight: isSelected ? .semibold : .medium))
-                                .foregroundStyle(isSelected ? Color.smoothTealInk : Color.smoothMuted)
-                                .lineLimit(1)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 7)
-                                .background(isSelected ? Color.smoothTeal.opacity(0.22) : Color.clear, in: Capsule())
-                                .overlay { Capsule().stroke(Color.smoothRule, lineWidth: isSelected ? 0 : 1) }
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(title)
-                        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-                    }
-                }
-            }
-        }
-    }
-
-    private var bothChip: some View {
-        let isSelected = state.degreeOverallActive
-        return Button { state.setDegreeShowsOverall(true) } label: {
-            Text("both")
-                .font(.lhfSans(13, weight: isSelected ? .semibold : .medium))
-                .foregroundStyle(isSelected ? Color.smoothTealInk : Color.smoothMuted)
-                .lineLimit(1)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(isSelected ? Color.smoothTeal.opacity(0.22) : Color.clear, in: Capsule())
-                .overlay { Capsule().stroke(Color.smoothRule, lineWidth: isSelected ? 0 : 1) }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("both degrees")
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-    }
-
     private var canRead: Bool {
         switch state.degreeStatus {
         case .idle, .failed, .needsPathSignIn: return true
@@ -441,409 +419,12 @@ struct DegreeProgressView: View {
         .padding(.top, 8)
     }
 
-    private func programTitle(_ audit: DegreeAudit) -> String {
-        var title = audit.goals.title(descriptions: descriptions)
-        if let label = audit.degreeLabel, !label.isEmpty, descriptions.isEmpty { title = label.lowercased() }
-        // No catalog term here. It was appended as "· catalog 202430" until
-        // Olisa saw it on his phone (2026-11-10) and called it tacky: a
-        // six-digit registrar code beside the ring tells a student nothing.
-        return title
-    }
-
-    // MARK: Both degrees
-
-    /// Each degree's own ring, Penn's rule counts added up in one bar, the
-    /// semester table, then each audit's blocks. No combined percent: Penn
-    /// publishes none. A row of every course Penn applied in both audits
-    /// (`DegreeOverall.sharedCourses`) sat under the bar until 2026-11-12, when the owner saw 27
-    /// chips of classes he already knew he had taken and asked for it to go.
-    private var overallBody: some View {
-        let audits = state.degreeAudits
-        let counts = DegreeOverall.counts(audits)
-        let total = counts.met + counts.inProgress + counts.open
-        // One projection per degree, built once and handed down.
-        let projections: [String: DegreeProjection] = audits.reduce(into: [:]) { out, entry in
-            out[entry.degreeID] = state.degreeProjection(degreeID: entry.degreeID, audit: entry.audit)
-        }
-        let anyPlanned = projections.values.contains { !$0.isEmpty }
-        let anyApproved = audits.contains { entry in
-            ringFigures(
-                degreeID: entry.degreeID, audit: entry.audit,
-                base: DegreeProgressMath.ring(for: entry.audit).fraction,
-                projection: projections[entry.degreeID] ?? .empty).bestExtra > 0
-        }
-        return VStack(alignment: .leading, spacing: 16) {
-            overallRings(audits, projections: projections)
-            DegreeLegend(showsPlanned: anyPlanned, showsApproved: anyApproved)
-            if total > 0 {
-                overallBar(counts: counts, total: total, projections: Array(projections.values))
-            }
-            DegreeSemesterTable(audits: audits)
-            ForEach(audits) { entry in
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(entry.label)
-                        .font(.lhfSans(15, weight: .semibold))
-                        .foregroundStyle(Color.smoothInk)
-                        .accessibilityAddTraits(.isHeader)
-                    blockRows(entry.audit, prefix: "o:" + entry.degreeID + ":",
-                              projection: projections[entry.degreeID] ?? .empty)
-                }
-            }
-        }
-        .task { await state.ensureAllDegreeAudits() }
-    }
-
-    /// What one ring draws and says. With the planner's target data it is the
-    /// granted case solid and, when meaningfully higher, the best case faded
-    /// behind it, each with its own line; otherwise the single "with plan"
-    /// figure, as before. The text counts in-progress rules as done; the arc
-    /// does not.
-    private func ringFigures(
-        degreeID: String, audit: DegreeAudit, base: Double, projection: DegreeProjection
-    ) -> (planned: Double, bestExtra: Double, lines: [String]) {
-        if let cases = state.degreeRingCases(degreeID: degreeID, audit: audit, base: base) {
-            let lines = DegreeProgressMath.ringLines(
-                base: base, cases: cases, targetTerm: state.degreePlan.summary?.targetTerm)
-            return (cases.granted, cases.showsBest ? max(0, cases.best - cases.granted) : 0, lines)
-        }
-        let line = DegreeProgressMath.withPlanText(
-            base: base, gain: projection.withPlanGain(base: base))
-        return (projection.ringGain(base: base), 0, line.map { [$0] } ?? [])
-    }
-
-    private func overallRings(_ audits: [DegreeLabeledAudit],
-                              projections: [String: DegreeProjection]) -> some View {
-        let degrees = state.degree.degrees
-        let titles = DegreeGoals.chipTitles(for: degrees.map(\.goals), descriptions: descriptions)
-        return HStack(alignment: .top, spacing: 16) {
-            ForEach(Array(degrees.enumerated()), id: \.element.id) { index, entry in
-                let match = audits.first { $0.degreeID == entry.id }
-                let title = index < titles.count ? titles[index] : entry.goals.title(descriptions: descriptions)
-                Button {
-                    state.setDegreeShowsOverall(false)
-                    Task { await state.selectDegree(entry.id, userInitiated: true) }
-                } label: {
-                    VStack(spacing: 6) {
-                        if let match {
-                            let ring = DegreeProgressMath.ring(for: match.audit)
-                            let figures = ringFigures(
-                                degreeID: match.degreeID, audit: match.audit, base: ring.fraction,
-                                projection: projections[match.degreeID] ?? .empty)
-                            DegreeRingView(fraction: ring.fraction, centre: ring.centre,
-                                           caption: ring.caption, diameter: 80,
-                                           plannedFraction: figures.planned,
-                                           plannedLine: figures.lines.joined(separator: ", "),
-                                           bestExtraFraction: figures.bestExtra)
-                        } else {
-                            DegreeRingView(fraction: 0, centre: "…", caption: "", diameter: 80)
-                        }
-                        Text(match?.label ?? title)
-                            .font(.lhfSans(13, weight: .medium))
-                            .foregroundStyle(Color.smoothInk)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.center)
-                        if let match {
-                            let ring = DegreeProgressMath.ring(for: match.audit)
-                            let figures = ringFigures(
-                                degreeID: match.degreeID, audit: match.audit, base: ring.fraction,
-                                projection: projections[match.degreeID] ?? .empty)
-                            ForEach(figures.lines, id: \.self) { line in
-                                Text(line)
-                                    .font(.lhfMono(10, weight: .semibold))
-                                    .foregroundStyle(Color.smoothCobaltInk)
-                            }
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    private func overallBar(counts: (met: Int, inProgress: Int, open: Int), total: Int,
-                            projections: [DegreeProjection]) -> some View {
-        let whole = Double(total)
-        let plannedShare = projections.reduce(0.0) { $0 + $1.openFill } / whole
-        let plannedCodes = Set(projections.flatMap { $0.placed })
-        let shares = (met: Double(counts.met) / whole, inProgress: Double(counts.inProgress) / whole)
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text("both degrees")
-                    .font(.lhfSans(15, weight: .semibold))
-                    .foregroundStyle(Color.smoothInk)
-                Spacer(minLength: 8)
-                Text(plannedCodes.isEmpty
-                     ? "\(counts.met) of \(total)"
-                     : "\(counts.met) of \(total) · \(plannedCodes.count) planned")
-                    .font(.lhfMono(12))
-                    .foregroundStyle(Color.smoothMuted)
-            }
-            DegreeBar(shares: shares, planned: plannedShare)
-        }
-    }
-
-    // MARK: What if
-
-    @ViewBuilder
-    private var whatIfTab: some View {
-        let list = state.degree.whatIfs
-        if list.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
-                switchButton
-                optionsRow(shown: nil)
-                DegreeSemesterTable(audits: tableAudits(replacingSelectedWith: nil))
-            }
-            .padding(.top, 8)
-        } else {
-            let index = min(selectedWhatIf, list.count - 1)
-            let target = list[index]
-            VStack(alignment: .leading, spacing: 16) {
-                switchButton
-                optionsRow(shown: target)
-                whatIfChips(list, selected: index)
-                let headline = DegreeWhatIf.headline(current: state.degree.current?.goals,
-                                                     target: target.goals, descriptions: descriptions)
-                let summary = DegreeWhatIf.summarize(current: state.degree.current, target: target)
-                auditBody(target, tag: "what if", headline: headline,
-                          summary: summaryLine(summary), prefix: "w:",
-                          tableAudits: state.degreeHasSeveral ? tableAudits(replacingSelectedWith: target) : nil)
-            }
-        }
-    }
-
-    /// The sibling programs of the student's own degree (a Wharton student's
-    /// concentrations) that they have already tried, as chips, each one tap
-    /// from its what-if. The full list lives in the search sheet now, because
-    /// seventeen chips in a sideways row was the owner's complaint; the row
-    /// keeps only what has a result to compare. Hidden until the catalogue is
-    /// loaded and something has been tried. `shown` is the what-if on screen,
-    /// so the chip whose result it is reads as selected.
-    @ViewBuilder
-    private func optionsRow(shown: DegreeAudit?) -> some View {
-        let listings: [PathProgramListing] = {
-            guard let degreeID = state.selectedStudentDegree?.id else { return [] }
-            return state.degreeOptionListings.filter {
-                state.degree.optionScores[DegreeOptions.scoreKey(degreeID: degreeID, programCode: $0.code)] != nil
-            }
-        }()
-        if !listings.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(DegreeOptions.heading(college: state.selectedStudentDegree?.college))
-                    .font(.lhfSans(13, weight: .semibold))
-                    .foregroundStyle(Color.smoothMuted)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(listings) { listing in
-                            optionChip(listing, shown: shown)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func optionChip(_ listing: PathProgramListing, shown: DegreeAudit?) -> some View {
-        let selected: Bool = {
-            guard let shown, let goals = optionGoals[listing.code] else { return false }
-            return shown.goals == goals
-        }()
-        let running = runningOption == listing.code
-        let label: String = {
-            let title = DegreeOptions.shortTitle(listing)
-            guard let degreeID = state.selectedStudentDegree?.id,
-                  let score = state.degree.optionScores[
-                    DegreeOptions.scoreKey(degreeID: degreeID, programCode: listing.code)]
-            else { return title }
-            return title + " · \(Int((score.fraction * 100).rounded()))%"
-        }()
-        return Button {
-            guard runningOption == nil else { return }
-            runningOption = listing.code
-            Task {
-                let ok = await state.runDegreeOption(listing)
-                runningOption = nil
-                if ok {
-                    optionGoals[listing.code] = state.degree.whatIfs.first?.goals
-                    selectedWhatIf = 0
-                }
-            }
-        } label: {
-            HStack(spacing: 6) {
-                if running {
-                    ProgressView().controlSize(.mini)
-                }
-                Text(label)
-                    .font(.lhfSans(13, weight: selected ? .semibold : .medium))
-                    .foregroundStyle(selected ? Color.smoothGrapeInk : Color.smoothMuted)
-                    .lineLimit(1)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(selected ? Color.smoothGrape.opacity(0.18) : Color.clear, in: Capsule())
-            .overlay { Capsule().stroke(Color.smoothRule, lineWidth: selected ? 0 : 1) }
-        }
-        .buttonStyle(.plain)
-        .disabled(runningOption != nil)
-        .accessibilityLabel(label)
-        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
-    }
-
-    private var switchButton: some View {
-        Button { showSheet = true } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 13))
-                Text("search concentrations, majors, minors")
-                    .font(.lhfSans(14))
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(Color.smoothMuted)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity)
-            .background(Color.smoothSurface.opacity(0.58), in: Capsule())
-            .overlay { Capsule().stroke(Color.smoothRule.opacity(0.72), lineWidth: 1.25) }
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("search programs")
-    }
-
-    private func whatIfChips(_ list: [DegreeAudit], selected: Int) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(Array(list.enumerated()), id: \.offset) { index, audit in
-                    let headline = DegreeWhatIf.headline(current: state.degree.current?.goals,
-                                                         target: audit.goals, descriptions: descriptions)
-                    Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { selectedWhatIf = index } } label: {
-                        Text(headline)
-                            .font(.lhfSans(13, weight: index == selected ? .semibold : .medium))
-                            .foregroundStyle(index == selected ? Color.smoothGrapeInk : Color.smoothMuted)
-                            .lineLimit(1)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 7)
-                            .background(index == selected ? Color.smoothGrape.opacity(0.18) : Color.clear, in: Capsule())
-                            .overlay { Capsule().stroke(Color.smoothRule, lineWidth: index == selected ? 0 : 1) }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(headline)
-                    .accessibilityAddTraits(index == selected ? [.isButton, .isSelected] : .isButton)
-                }
-                switchButton
-            }
-        }
-    }
-
-    private func summaryLine(_ s: DegreeWhatIfSummary) -> String {
-        "\(s.met) met · \(s.inProgress) in progress · \(s.open) open · \(s.alreadyCounting.count) of your courses count"
-    }
-
-    // MARK: Shared audit body
-
-    private func auditBody(_ audit: DegreeAudit, tag: String?, headline: String,
-                           summary: String?, prefix: String,
-                           tableAudits: [DegreeLabeledAudit]? = nil) -> some View {
-        let ring = DegreeProgressMath.ring(for: audit)
-        // Read from the body so a course added in the table redraws the ring.
-        let projection = state.degreeProjection(
-            degreeID: state.selectedStudentDegree?.id ?? "", audit: audit)
-        let ringBase = ring.fraction + (tag == nil ? 0 : ring.extraFraction)
-        let figures = ringFigures(
-            degreeID: state.selectedStudentDegree?.id ?? "", audit: audit, base: ringBase,
-            projection: projection)
-        return VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .center, spacing: 16) {
-                VStack(spacing: 6) {
-                    DegreeRingView(fraction: ring.fraction, centre: ring.centre, caption: ring.caption,
-                                   extraFraction: tag == nil ? 0 : ring.extraFraction,
-                                   plannedFraction: figures.planned,
-                                   plannedLine: figures.lines.joined(separator: ", "),
-                                   bestExtraFraction: figures.bestExtra)
-                    ForEach(figures.lines, id: \.self) { line in
-                        Text(line)
-                            .font(.lhfMono(10, weight: .semibold))
-                            .foregroundStyle(Color.smoothCobaltInk)
-                    }
-                    if let tag {
-                        Text(tag)
-                            .font(.lhfMono(10, weight: .semibold))
-                            .foregroundStyle(Color.smoothGrapeInk)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Color.smoothGrape.opacity(0.2), in: Capsule())
-                    }
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(headline)
-                        .font(.lhfSans(17, weight: .semibold))
-                        .foregroundStyle(Color.smoothInk)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if let summary {
-                        Text(summary)
-                            .font(.lhfSans(13))
-                            .foregroundStyle(Color.smoothMuted)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                Spacer(minLength: 0)
-            }
-            DegreeLegend(showsPlanned: !projection.isEmpty, showsApproved: figures.bestExtra > 0)
-            if let tableAudits {
-                DegreeSemesterTable(audits: tableAudits)
-            } else {
-                DegreeSemesterTable(audit: audit)
-            }
-            blockRows(audit, prefix: prefix, projection: projection)
-        }
-    }
-
-    /// The audit's block cards, shared by the single and the combined views.
-    private func blockRows(_ audit: DegreeAudit, prefix: String, projection: DegreeProjection) -> some View {
-        let blocks = DegreeProgressMath.orderedBlocks(audit.blocks).filter(DegreeProgressMath.isShown)
-        return VStack(alignment: .leading, spacing: 16) {
-            ForEach(blocks) { block in
-                DegreeBlockRow(block: block, isExpanded: expanded.contains(prefix + block.id), toggle: {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                        let key = prefix + block.id
-                        if expanded.contains(key) { expanded.remove(key) } else { expanded.insert(key) }
-                    }
-                }, projection: projection)
-            }
-        }
-    }
-
-    /// The audits the chat reasons about: what the current tab is drawing, so
-    /// a what-if on screen is the one the advisor plans against.
+    /// The audits the chat reasons about: the declared ones, not the drawn
+    /// ones. The chat reads its own what-ifs from its `activeAudits`, and a
+    /// stand-in drawn for the plan must not be handed to it as if the student
+    /// had declared it.
     private func advisorAudits() -> [DegreeLabeledAudit] {
-        let list = state.degree.whatIfs
-        if tab == .whatIf, !list.isEmpty {
-            let target = list[min(selectedWhatIf, list.count - 1)]
-            return tableAudits(replacingSelectedWith: target, base: state.degreeOwnAudits)
-        }
-        // The declared audits, not the drawn ones: the chat reads its own
-        // what-ifs from its `activeAudits`, and a stand-in drawn for the plan
-        // must not be handed to it as if the student had declared it.
         return state.degreeOwnAudits
-    }
-
-    /// For a dual-degree student the table plans toward both audits; a what-if
-    /// takes the place of the selected degree's own entry.
-    private func tableAudits(replacingSelectedWith whatIf: DegreeAudit?,
-                             base: [DegreeLabeledAudit]? = nil) -> [DegreeLabeledAudit] {
-        let all = base ?? state.degreeAudits
-        guard let whatIf, let selectedID = state.selectedStudentDegree?.id,
-              all.contains(where: { $0.degreeID == selectedID }) else { return all }
-        var out: [DegreeLabeledAudit] = []
-        for entry in all {
-            if entry.degreeID == selectedID {
-                out.append(DegreeLabeledAudit(degreeID: entry.degreeID, label: entry.label, audit: whatIf))
-            } else {
-                out.append(entry)
-            }
-        }
-        return out
     }
 
     private var footer: some View {
@@ -854,6 +435,67 @@ struct DegreeProgressView: View {
             .padding(.top, 8)
     }
 }
+
+/// One degree's requirement cards, pushed from its bar on the road: the ring
+/// exactly as the old overall rings drew it (Penn's number in the middle, the
+/// planned arc, the faded best case, the lines under it), the key, and the
+/// audit's blocks. Nothing here is computed that the audit did not say.
+struct DegreeRequirementsPage: View {
+    @EnvironmentObject var state: AppState
+
+    let entry: DegreeLabeledAudit
+    @State private var expanded: Set<String> = []
+
+    var body: some View {
+        let audit = entry.audit
+        let figures = state.degreeDrawn(degreeID: entry.degreeID, audit: audit)
+        let ring = figures.ring
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text(entry.label)
+                    .font(.lhfSerif(28))
+                    .foregroundStyle(Color.smoothInk)
+                    .accessibilityAddTraits(.isHeader)
+                VStack(spacing: 6) {
+                    DegreeRingView(fraction: ring.fraction, centre: ring.centre, caption: ring.caption,
+                                   extraFraction: audit.isWhatIf ? ring.extraFraction : 0,
+                                   plannedFraction: figures.planned,
+                                   plannedLine: figures.lines.joined(separator: ", "),
+                                   bestExtraFraction: figures.bestExtra)
+                    ForEach(figures.lines, id: \.self) { line in
+                        Text(line)
+                            .font(.lhfMono(10, weight: .semibold))
+                            .foregroundStyle(Color.smoothCobaltInk)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                DegreeLegend(showsPlanned: !figures.projection.isEmpty, showsApproved: figures.bestExtra > 0)
+                blockRows(audit, projection: figures.projection)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 32)
+        }
+        .background(Color.smoothPaper.ignoresSafeArea())
+        .navigationTitle("")
+#if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+#endif
+    }
+
+    private func blockRows(_ audit: DegreeAudit, projection: DegreeProjection) -> some View {
+        let blocks = DegreeProgressMath.orderedBlocks(audit.blocks).filter(DegreeProgressMath.isShown)
+        return VStack(alignment: .leading, spacing: 16) {
+            ForEach(blocks) { block in
+                DegreeBlockRow(block: block, isExpanded: expanded.contains(block.id), toggle: {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                        if expanded.contains(block.id) { expanded.remove(block.id) } else { expanded.insert(block.id) }
+                    }
+                }, projection: projection)
+            }
+        }
+    }
+}
+
 
 /// The key to the bars: teal is done, marigold is being taken now, the track
 /// is what is left. Added 2026-11-10, when the owner looked at the first real

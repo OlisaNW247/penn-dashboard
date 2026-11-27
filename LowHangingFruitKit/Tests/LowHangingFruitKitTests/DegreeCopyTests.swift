@@ -8,7 +8,7 @@ import LowHangingFruitKit
 /// status sentence read from `DegreeStatus.line` rather than written here.
 @Suite("Degree copy")
 struct DegreeCopyTests {
-    private static let files = ["DegreeProgressView.swift", "DegreeWhatIfSheet.swift", "DegreePlanView.swift", "DegreeSemesterTable.swift", "DegreeAdvisorView.swift"]
+    private static let files = ["DegreeProgressView.swift", "DegreeWhatIfSheet.swift", "DegreePlanView.swift", "DegreeSemesterTable.swift", "DegreeAdvisorView.swift", "DegreeRoadView.swift", "DegreeSemesterSheet.swift"]
 
     private func uiSource(_ filename: String) throws -> String {
         let sources = URL(fileURLWithPath: #filePath)
@@ -105,17 +105,65 @@ struct DegreeCopyTests {
         #expect(source.contains("Text(\"semesters\")"))
     }
 
-    @Test("the combined view: both chip, Penn's counts, no shared-course row, no combined percent")
+    @Test("the road: one bar per degree at Penn's own percent, no combined percent, no shared-course row")
     func combinedView() throws {
         let progress = try uiSource("DegreeProgressView.swift")
-        #expect(progress.contains("Text(\"both\")"))
-        #expect(progress.contains(".accessibilityLabel(\"both degrees\")"))
-        #expect(progress.contains("DegreeOverall.counts("))
-        #expect(!progress.contains("counts in both"))
+        let road = try uiSource("DegreeRoadView.swift")
+        #expect(road.contains("state.degreeAudits"))
+        #expect(road.contains("DegreeBar("))
+        #expect(road.contains("ring.centre"))
+        #expect(!(progress + road).contains("counts in both"))
         #expect(progress.contains("ensureAllDegreeAudits()"))
-        #expect(!progress.lowercased().contains("average"))
+        #expect(!(progress + road).lowercased().contains("average"))
         #expect(try uiSource("DegreeSemesterTable.swift").contains("DegreeContribution.planned("))
         #expect(try uiSource("DegreePlanView.swift").contains("DegreeContribution.suggestions("))
+    }
+
+    @Test("the road screen reads the road, drops the tabs and offers the menu path for every edit")
+    func roadScreen() throws {
+        let progress = try uiSource("DegreeProgressView.swift")
+        let road = try uiSource("DegreeRoadView.swift")
+        let sheet = try uiSource("DegreeSemesterSheet.swift")
+        #expect(road.contains("state.degreeRoad"))
+        #expect(road.contains("state.degreePlannerRun"))
+        #expect(road.contains("AppState.degreePlanTheRestPrompt"))
+        #expect(road.contains("DegreeRoad.soonerText("))
+        #expect(road.contains("state.addPlanTerm()"))
+        #expect(!progress.contains("SmoothSegmentPicker"))
+        #expect(!progress.contains("DegreeTab"))
+        #expect(!progress.contains("advisorMessages"))
+        #expect(progress.contains("$state.degreeAdvisorMessages"))
+        #expect(progress.contains("try another major"))
+        #expect(progress.contains("DegreeWhatIfSheet()"))
+        #expect(sheet.contains("Menu(\"move to\")"))
+        #expect(sheet.contains("Button(\"remove\""))
+        #expect(sheet.contains("DegreePlanAddSheet("))
+    }
+
+    @Test("the advisor questions sheet tells the planner when it goes away")
+    func advisorSheetClosed() throws {
+        let progress = try uiSource("DegreeProgressView.swift")
+        let start = try #require(progress.range(of: "isPresented: $showAdvisorQuestions"))
+        let window = String(progress[start.lowerBound...].prefix(500))
+        #expect(window.contains("onDismiss"))
+        #expect(window.contains("degreeAdvisorQuestionsClosed()"))
+        #expect(window.contains("runDegreePlanner(question: DegreeAdvisorQuestionsSheet.updatePrompt)"))
+    }
+
+    @Test("every road state is a shape and a word")
+    func roadStatesAreShapes() throws {
+        let road = try uiSource("DegreeRoadView.swift")
+        for piece in ["\"checkmark\"", "\"flag.fill\"", "dash: [3, 2]", "trim(from: 0, to: 0.5)", "Text(\"?\")",
+                      "DegreeRoad.stateWord(", "\"finish\""] {
+            #expect(road.contains(piece), "the road is missing \(piece)")
+        }
+    }
+
+    @Test("the chat and a background planner run never overlap")
+    func advisorWaitsForPlanner() throws {
+        let advisor = try uiSource("DegreeAdvisorView.swift")
+        #expect(advisor.contains("!state.degreePlannerIsRunning"))
+        #expect(advisor.contains("plannerStage"))
     }
 
     @Test("a fits line names the degree only when there is one to name")
@@ -167,7 +215,7 @@ struct DegreeCopyTests {
         #expect(source.contains("with plan"))
         // Both projections go through the one helper that also applies the
         // planner's coverage (`AppState.degreeProjection`).
-        #expect(source.contains("state.degreeProjection("))
+        #expect(source.contains("degreeProjection(degreeID:"))
         #expect(!source.contains("DegreeProjection.make(plan:"))
         #expect(!source.lowercased().contains("recommend"))
     }

@@ -220,6 +220,27 @@ public struct DegreeEnginePetition: Codable, Sendable, Equatable {
     }
 }
 
+/// What the planner says an earlier finish would take: the semester it would
+/// finish in and the approvals it leans on. Lenient: a missing or malformed
+/// field costs the field, and a malformed object is nil on its parent.
+public struct DegreePlanBestCase: Codable, Sendable, Equatable {
+    public let finishTerm: String?
+    public let approvals: [String]
+
+    public init(finishTerm: String?, approvals: [String]) {
+        self.finishTerm = finishTerm
+        self.approvals = approvals
+    }
+
+    private enum CodingKeys: String, CodingKey { case finishTerm, approvals }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.finishTerm = lenient(String.self, in: c, forKey: .finishTerm)
+        self.approvals = lossyList(String.self, in: c, forKey: .approvals)
+    }
+}
+
 /// The engine's whole answer to a planning question.
 public struct DegreeEnginePlan: Codable, Sendable, Equatable {
     public let remainingCredits: Double
@@ -241,6 +262,8 @@ public struct DegreeEnginePlan: Codable, Sendable, Equatable {
     public let coverage: [DegreeEngineCoverage]
     /// The finish term the student named (`YYYYTT`), only when they did.
     public let targetTerm: String?
+    /// What an earlier finish would take; nil when the server did not say.
+    public let bestCase: DegreePlanBestCase?
 
     public init(
         remainingCredits: Double, remainingCreditsWithoutOverlap: Double,
@@ -248,8 +271,10 @@ public struct DegreeEnginePlan: Codable, Sendable, Equatable {
         unfilled: [DegreeEngineUnfilled] = [], petitions: [DegreeEnginePetition] = [],
         notes: [String] = [], approvals: [String]? = nil,
         advisorQuestions: [DegreeAdvisorQuestionWire] = [],
-        coverage: [DegreeEngineCoverage] = [], targetTerm: String? = nil
+        coverage: [DegreeEngineCoverage] = [], targetTerm: String? = nil,
+        bestCase: DegreePlanBestCase? = nil
     ) {
+        self.bestCase = bestCase
         self.targetTerm = targetTerm
         self.coverage = coverage
         self.advisorQuestions = advisorQuestions
@@ -266,7 +291,7 @@ public struct DegreeEnginePlan: Codable, Sendable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case remainingCredits, remainingCreditsWithoutOverlap, scenarios, chosen, schedule
-        case unfilled, petitions, notes, approvals, advisorQuestions, coverage, targetTerm
+        case unfilled, petitions, notes, approvals, advisorQuestions, coverage, targetTerm, bestCase
     }
 
     /// The schedule list is required (a plan with no schedule key must not
@@ -295,6 +320,7 @@ public struct DegreeEnginePlan: Codable, Sendable, Equatable {
                 .prefix(DegreeAdvisorNotes.maxQuestions))
         self.coverage = lossyList(DegreeEngineCoverage.self, in: c, forKey: .coverage)
         self.targetTerm = lenient(String.self, in: c, forKey: .targetTerm)
+        self.bestCase = lenient(DegreePlanBestCase.self, in: c, forKey: .bestCase)
     }
 }
 
@@ -434,7 +460,8 @@ extension DegreeAdvisor {
             needsApproval: needsApproval, createdAt: now,
             standIns: standIns.isEmpty ? nil : standIns, approvals: plan.approvals,
             coverage: plan.coverage.isEmpty ? nil : plan.coverage.map { DegreePlanCoverage($0) },
-            targetTerm: plan.targetTerm.flatMap { Term(code: $0) == nil ? nil : $0 })
+            targetTerm: plan.targetTerm.flatMap { Term(code: $0) == nil ? nil : $0 },
+            bestCase: plan.bestCase)
     }
 }
 

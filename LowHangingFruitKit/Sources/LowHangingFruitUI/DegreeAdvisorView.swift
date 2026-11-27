@@ -128,8 +128,15 @@ struct DegreeAdvisorView: View {
         state.degreePlan.terms.first.map { DegreePlanMath.termLabel($0.termCode) }
     }
 
+    /// A background planner run (the degree screen's "plan the rest") and a
+    /// typed message never overlap: while either is in flight, sending waits.
+    private var plannerStage: String? {
+        if case .running(let stage) = state.degreePlannerRun { return stage }
+        return nil
+    }
+
     private var canSend: Bool {
-        !waiting && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !waiting && !state.degreePlannerIsRunning && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var latestChangeID: UUID? {
@@ -207,14 +214,14 @@ struct DegreeAdvisorView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    if messages.isEmpty && !waiting {
+                    if messages.isEmpty && !waiting && !state.degreePlannerIsRunning {
                         emptyState
                     }
                     ForEach(messages) { message in
                         row(message)
                             .id(message.id)
                     }
-                    if waiting {
+                    if waiting || state.degreePlannerIsRunning {
                         HStack(spacing: 8) {
                             ProgressView()
                                 .controlSize(.small)
@@ -229,7 +236,7 @@ struct DegreeAdvisorView: View {
                                 Text(DegreeStatus.waitingForDuo.line(now: Date()) ?? "")
                                     .font(.lhfSans(12, weight: .semibold))
                                     .foregroundStyle(Color.smoothInk)
-                            } else if let stage {
+                            } else if let stage = stage ?? plannerStage {
                                 Text(stage)
                                     .font(.lhfSans(12))
                                     .foregroundStyle(Color.smoothMuted)
@@ -469,14 +476,14 @@ struct DegreeAdvisorView: View {
     /// "try again" re-sends the question of the failed exchange: the failed
     /// reply goes, the student's own message stays and is not repeated.
     private func retry() {
-        guard !waiting, let last = messages.last, !last.isUser, last.canRetry,
+        guard !waiting, !state.degreePlannerIsRunning, let last = messages.last, !last.isUser, last.canRetry,
               let asked = messages.last(where: { $0.isUser }) else { return }
         send(asked.text, retrying: true)
     }
 
     private func send(_ raw: String, retrying: Bool = false) {
         let question = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !waiting, !question.isEmpty else { return }
+        guard !waiting, !state.degreePlannerIsRunning, !question.isEmpty else { return }
         if retrying, let last = messages.last, !last.isUser, last.failed { messages.removeLast() }
         let earlier: [DegreeAdvisorMessage] = retrying ? Array(messages.dropLast()) : messages
         let turns: [DegreeAdvisorTurn] = earlier.compactMap { message in

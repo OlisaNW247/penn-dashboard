@@ -197,8 +197,12 @@ audit.
   passes it to a language model to write the answer and **stores none of
   it**: not the question, the summary or the answer; only the per-day
   request count every "tree" question also adds to. Nothing is sent until
-  you send a message, and the chat says so before your first one. If you
-  never open it, nothing about your degree leaves the phone. Changes the
+  you send a message, and the chat says so before your first one. Since
+  2026-11-27 it is also sent when you tap "plan the rest" or "check with the planner" on the degree screen, and when
+  you close the advisor questions after changing an answer (the planner
+  then runs again with your answers); in those cases no message is
+  typed, and what is sent is the same as for a message. If you
+  never use it, nothing about your degree leaves the phone. Changes the
   chat makes to your plan can be undone with one tap. When the chat picks a
   course for a requirement Penn describes only in words, our server checks
   that the course exists by asking Penn Labs' public course catalogue

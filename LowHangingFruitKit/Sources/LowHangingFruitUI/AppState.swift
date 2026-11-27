@@ -602,6 +602,12 @@ final class AppState: ObservableObject {
     /// "ask your advisor" sheet's "update plan" when it is opened from the
     /// table. One prompt at most; the chat clears it where it takes it.
     @Published var degreeAdvisorPendingPrompt: String?
+    /// The planner's run as the road draws it, kept here so it goes on when the
+    /// advisor sheet or the whole degree screen is closed.
+    @Published var degreePlannerRun: DegreePlannerRun = .idle
+    /// The advisor chat's lines, owned by the state so a background run and the
+    /// chat read and write one conversation.
+    @Published var degreeAdvisorMessages: [DegreeAdvisorMessage] = []
     /// Whether the degree screen shows both degrees together (a dual-degree
     /// student's "overall" scope). Kept in `UserDefaults.lhf`
     /// (`degreeOverallScopeV1`) so the screen reopens where it was.

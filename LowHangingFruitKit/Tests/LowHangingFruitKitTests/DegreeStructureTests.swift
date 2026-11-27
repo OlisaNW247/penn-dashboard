@@ -83,7 +83,6 @@ struct DegreeStructureTests {
     @Test("the progress view switches degrees and reads Penn's credit sentence")
     func progressWiring() throws {
         let source = try uiSource("DegreeProgressView.swift")
-        #expect(source.contains("selectDegree("))
         #expect(source.contains("PathAuditDecoder.creditTotals"))
     }
 

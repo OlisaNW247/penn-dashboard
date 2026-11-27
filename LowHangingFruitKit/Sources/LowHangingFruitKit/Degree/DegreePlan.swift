@@ -167,13 +167,18 @@ public struct DegreePlanSummary: Codable, Sendable, Equatable {
     public let coverage: [DegreePlanCoverage]?
     /// The finish term (`YYYYTT`) the student named, when they did.
     public let targetTerm: String?
+    /// What an earlier finish would take, per the planner; nil from an older
+    /// server or a summary stored before this field.
+    public let bestCase: DegreePlanBestCase?
 
     public init(
         finishTerm: String?, scenarioID: String, scenarioLabel: String,
         remainingCredits: Double?, needsApproval: Bool, createdAt: Date,
         standIns: [DegreePlanStandIn]? = nil, approvals: [String]? = nil,
-        coverage: [DegreePlanCoverage]? = nil, targetTerm: String? = nil
+        coverage: [DegreePlanCoverage]? = nil, targetTerm: String? = nil,
+        bestCase: DegreePlanBestCase? = nil
     ) {
+        self.bestCase = bestCase
         self.targetTerm = targetTerm
         self.coverage = coverage
         self.standIns = standIns
@@ -188,7 +193,7 @@ public struct DegreePlanSummary: Codable, Sendable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case finishTerm, scenarioID, scenarioLabel, remainingCredits, needsApproval, createdAt
-        case standIns, approvals, coverage, targetTerm
+        case standIns, approvals, coverage, targetTerm, bestCase
     }
 
     /// Lenient: a summary with a key missing still reads, because a failed
@@ -212,6 +217,7 @@ public struct DegreePlanSummary: Codable, Sendable, Equatable {
             (try? container.decodeIfPresent([SummaryLossy<DegreePlanCoverage>].self, forKey: .coverage)) ?? nil
         self.coverage = rawCoverage.map { $0.compactMap { $0.value } }
         self.targetTerm = (try? container.decodeIfPresent(String.self, forKey: .targetTerm)) ?? nil
+        self.bestCase = (try? container.decodeIfPresent(DegreePlanBestCase.self, forKey: .bestCase)) ?? nil
     }
 
     /// The one quiet line above the semester table: "plan · would finish
