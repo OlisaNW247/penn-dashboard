@@ -275,6 +275,9 @@ struct DegreeProgressView: View {
             DegreeAdvisorView(messages: $advisorMessages, audits: advisorAudits())
                 .environmentObject(state)
         }
+        // The sign-in page, unless the what-if sheet or the chat is up: those
+        // present it themselves, since a sheet cannot present over a sheet.
+        .pathSignInSheet(enabled: !showSheet && !showAdvisor)
     }
 
     // MARK: Header and status

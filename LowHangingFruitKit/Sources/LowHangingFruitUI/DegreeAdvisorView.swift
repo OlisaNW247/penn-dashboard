@@ -136,6 +136,11 @@ struct DegreeAdvisorView: View {
     }
 
     var body: some View {
+        advisorContent
+            .pathSignInSheet()
+    }
+
+    private var advisorContent: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 Text("plan with ai")
@@ -195,7 +200,11 @@ struct DegreeAdvisorView: View {
                             // The status, not the stage closure, carries the
                             // Duo wait, so a push already waiting from a tap on
                             // the degree screen shows here too.
-                            if state.degreeStatus == .waitingForDuo {
+                            if state.degreeInteractiveSignIn {
+                                Text(DegreeStatus.finishSigningIn.line(now: Date()) ?? "")
+                                    .font(.lhfSans(12, weight: .semibold))
+                                    .foregroundStyle(Color.smoothInk)
+                            } else if state.degreeStatus == .waitingForDuo {
                                 Text(DegreeStatus.waitingForDuo.line(now: Date()) ?? "")
                                     .font(.lhfSans(12, weight: .semibold))
                                     .foregroundStyle(Color.smoothInk)

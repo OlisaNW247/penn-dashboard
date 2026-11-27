@@ -1,5 +1,8 @@
 import Foundation
 import LowHangingFruitKit
+#if canImport(WebKit)
+import WebKit
+#endif
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -37,6 +40,8 @@ enum DegreeStatus: Equatable, Sendable {
     case needsCanvasSignIn
     /// An automatic read stopped at Penn's form; a tap signs in.
     case needsPathSignIn
+    /// The sign-in page is shown to the student to finish by hand.
+    case finishSigningIn
     case failed(String)
     case read(Date)
 
@@ -53,6 +58,8 @@ enum DegreeStatus: Equatable, Sendable {
             return "sign in to canvas"
         case .needsPathSignIn:
             return "tap to sign in to path@penn"
+        case .finishSigningIn:
+            return "finish signing in"
         case let .failed(message):
             return message
         case let .read(date):
@@ -284,35 +291,89 @@ extension AppState {
         portal.onCredentialSucceeded = { [weak self] in self?.notePathCredentialSucceeded() }
         portal.onCredentialRejected = { [weak self] in self?.noteAutoLoginRejected() }
         portal.onDuoReached = { [weak self] in self?.noteDegreeDuoReached() }
+        portal.onDuoLeft = { [weak self] in self?.noteDegreeDuoLeft() }
+        portal.onInteractiveChanged = { [weak self] shown in self?.noteDegreeInteractive(shown) }
         degreeSignInsAwaiting += 1
         let result = await portal.ensureSignedIn(force: force, userInitiated: userInitiated)
         degreeSignInsAwaiting -= 1
+        degreeDuoWaiting = false
         if let from = degreeStatusBeforeDuo {
             degreeStatusBeforeDuo = nil
-            if degreeStatus == .waitingForDuo { degreeStatus = from }
+            if degreeStatus == .waitingForDuo || degreeStatus == .finishSigningIn { degreeStatus = from }
         }
+        lastPathEndedByStudent = portal.lastEndedByStudent
         lastPathSignIn = result
         lastPathFillSkip = portal.lastFillSkip
         if degreeAskActive, result != .ready, result != .throttled { degreeAskSignInFailed = true }
+        // A sheet the student closed is not a push nobody approved.
+        if portal.lastEndedByStudent, result == .needsDuo { return .timedOut }
         return result
     }
 
-    /// The portal reached Duo: the status says so live (restored after the
-    /// sign-in call returns), and the phone buzzes.
+    /// The portal handed its popup to the student (or took it back): the
+    /// degree screens present the sheet from this, and the status reads
+    /// "finish signing in" instead of the Duo line while it is up.
+    private func noteDegreeInteractive(_ shown: Bool) {
+        guard degreeSignInsAwaiting > 0 || !shown else { return }
+        if shown {
+            if degreeStatus != .finishSigningIn, degreeStatusBeforeDuo == nil {
+                degreeStatusBeforeDuo = degreeStatus
+            }
+            degreeStatus = .finishSigningIn
+        }
+        degreeInteractiveSignIn = shown
+    }
+
+    #if canImport(WebKit)
+    /// The popup's web view while the student finishes the sign-in by hand.
+    var degreeInteractiveWebView: WKWebView? { degreePortal.interactiveWebView }
+    #endif
+
+    /// The student closed the sign-in sheet.
+    func cancelDegreeInteractiveSignIn() {
+        degreePortal.cancelInteractive()
+    }
+
+    /// How long the sign-in must sit on Duo's page before the screen says a
+    /// push is waiting. Read off a phone on 2026-11-27: with a remembered
+    /// device Duo hands the sign-in back in a second or two and sends no push,
+    /// and "approve the duo push on this phone" then named something the
+    /// student could not do. The silent Canvas sign-in waits four seconds for
+    /// the same reason.
+    nonisolated static let degreeDuoLineDelay: TimeInterval = 4
+
+    /// The portal reached Duo. If it is still there a few seconds on, the
+    /// status says so (restored after the sign-in call returns) and the phone
+    /// buzzes; a remembered device is back before that and shows nothing.
     private func noteDegreeDuoReached() {
         // Only while a sign-in call is awaiting: a late Duo message after the
         // call returned would leave "approve the duo push" with nobody to
         // restore it.
-        guard degreeSignInsAwaiting > 0 else { return }
-        if degreeStatus != .waitingForDuo, degreeStatusBeforeDuo == nil {
-            degreeStatusBeforeDuo = degreeStatus
-            degreeStatus = .waitingForDuo
+        guard degreeSignInsAwaiting > 0, !degreeDuoWaiting else { return }
+        degreeDuoWaiting = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(AppState.degreeDuoLineDelay * 1_000_000_000))
+            guard let self, self.degreeDuoWaiting, self.degreeSignInsAwaiting > 0 else { return }
+            if self.degreeStatus != .waitingForDuo, self.degreeStatus != .finishSigningIn,
+               self.degreeStatusBeforeDuo == nil {
+                self.degreeStatusBeforeDuo = self.degreeStatus
+                self.degreeStatus = .waitingForDuo
+            }
+            // An attempt still on Duo buzzes, an automatic one most of all:
+            // that is the push the student did not start and must not miss.
+            #if os(iOS)
+            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+            #endif
         }
-        // Any attempt that reaches Duo buzzes, an automatic one most of all:
-        // that is the push the student did not start and must not miss.
-        #if os(iOS)
-        UINotificationFeedbackGenerator().notificationOccurred(.warning)
-        #endif
+    }
+
+    /// Duo handed the sign-in back to Penn: whatever the wait is now, it is
+    /// not a push, so the Duo line comes down.
+    private func noteDegreeDuoLeft() {
+        degreeDuoWaiting = false
+        guard degreeStatus == .waitingForDuo, let from = degreeStatusBeforeDuo else { return }
+        degreeStatusBeforeDuo = nil
+        degreeStatus = from
     }
 
     private var degreeIsForeground: Bool {

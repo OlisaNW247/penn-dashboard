@@ -255,3 +255,102 @@ struct DegreeSignInCeilingTests {
         #expect(try sourceText("DegreeWhatIfSheet.swift").contains("selectDegree(id, userInitiated: true)"))
     }
 }
+
+@Suite("Degree sign-in: the page shown to the student")
+struct DegreeInteractiveSignInTests {
+    private func go(
+        user: Bool = true, duo: TimeInterval? = nil, form: Bool = false,
+        token: Bool = false, already: Bool = false, supported: Bool = true
+    ) -> Bool {
+        PathPortal.shouldGoInteractive(
+            userInitiated: user, duoReachedFor: duo, formBlocked: form,
+            tokenArrived: token, alreadyInteractive: already, supported: supported)
+    }
+
+    @Test("the trigger rule")
+    func rule() {
+        #expect(PathPortal.interactiveAfterDuo == 6)
+        #expect(PathPortal.interactiveWait == 300)
+        // Automatic attempts never go interactive.
+        #expect(!go(user: false, duo: 30))
+        #expect(!go(user: false, form: true))
+        // Duo: not under six seconds, yes from six.
+        #expect(!go(duo: nil))
+        #expect(!go(duo: 0))
+        #expect(!go(duo: 5.9))
+        #expect(go(duo: 6))
+        #expect(go(duo: 40))
+        // A form the app may not fill.
+        #expect(go(form: true))
+        // Never once the token is in, never twice, never where nothing can show it.
+        #expect(!go(duo: 30, token: true))
+        #expect(!go(form: true, token: true))
+        #expect(!go(duo: 30, already: true))
+        #expect(!go(duo: 30, supported: false))
+        #expect(!go(form: true, supported: false))
+    }
+
+    @Test("a page that sits after duo or after the pennkey is shown too")
+    func stall() {
+        // 2026-11-27, read off a phone: Duo passed by itself and the popup sat
+        // on Penn's own page for two minutes under "approve the duo push".
+        #expect(PathPortal.interactiveAfterStall == 10)
+        func stalled(_ seconds: TimeInterval?, user: Bool = true, token: Bool = false,
+                     already: Bool = false, supported: Bool = true) -> Bool {
+            PathPortal.shouldGoInteractive(
+                userInitiated: user, duoReachedFor: nil, formBlocked: false,
+                tokenArrived: token, alreadyInteractive: already,
+                stalledFor: seconds, supported: supported)
+        }
+        #expect(!stalled(nil))
+        #expect(!stalled(9.9))
+        #expect(stalled(10))
+        #expect(!stalled(60, user: false))
+        #expect(!stalled(60, token: true))
+        #expect(!stalled(60, already: true))
+        #expect(!stalled(60, supported: false))
+        let portal = try? sourceText("PathPortal.swift")
+        for words in ["duo: left", "stalled after duo", "popup failed: "] {
+            #expect(portal?.contains(words) == true)
+        }
+        #expect(AppState.degreeDuoLineDelay == 4)
+    }
+
+    @Test("a closed sheet has its own line and can be retried")
+    func closedLine() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let failure = AppState.degreeAdvisorReadFailure(signIn: .needsDuo, skip: nil, endedByStudent: true)
+        #expect(failure == .signInNotFinished)
+        #expect(AppState.degreeAdvisorReadFailureLine(
+            failure, name: "x", now: now, timeZone: TimeZone(identifier: "UTC")!)
+                == "sign-in wasn't finished. ask again.")
+        #expect(failure.canRetry(now: now))
+        #expect(AppState.degreeAdvisorReadFailure(signIn: .needsDuo, skip: nil) == .duoNotApproved)
+    }
+
+    @Test("the status words")
+    func words() {
+        #expect(DegreeStatus.finishSigningIn.line(now: Date()) == "finish signing in")
+    }
+
+    @Test("the sheet and its presenters are wired in the source")
+    func source() throws {
+        let sheet = try sourceText("PathSignInSheet.swift")
+        #expect(sheet.contains("interactiveDismissDisabled"))
+        // Dismantling only takes the hosted view out of its container.
+        let start = try #require(sheet.range(of: "static func dismantleUIView"))
+        let dismantle = String(sheet[start.lowerBound...].prefix(260))
+        #expect(!dismantle.contains("stopLoading"))
+        #expect(!dismantle.contains(".load("))
+        #expect(dismantle.contains("hosted.removeFromSuperview()"))
+        for file in ["DegreeAdvisorView.swift", "DegreeWhatIfSheet.swift", "DegreeProgressView.swift"] {
+            #expect(try sourceText(file).contains("pathSignInSheet("))
+        }
+        #expect(sheet.contains("degreeInteractiveSignIn"))
+        #expect(try sourceText("DegreeAdvisorView.swift").contains("degreeInteractiveSignIn"))
+        let portal = try sourceText("PathPortal.swift")
+        for words in ["interactive: shown", "interactive: finished", "interactive: closed"] {
+            #expect(portal.contains(words))
+        }
+    }
+}

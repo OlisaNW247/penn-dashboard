@@ -14,6 +14,8 @@ enum DegreeAdvisorReadFailure: Equatable, Sendable {
     case noCanvasSession
     case withinBudget(until: Date)
     case needsPennKey
+    /// The student closed the sign-in page before it finished.
+    case signInNotFinished
     case other
 
     /// Words only, for the DEBUG degree log.
@@ -23,6 +25,7 @@ enum DegreeAdvisorReadFailure: Equatable, Sendable {
         case .noCanvasSession: return "no canvas session"
         case .withinBudget: return "within budget"
         case .needsPennKey: return "needs pennkey"
+        case .signInNotFinished: return "sign-in not finished"
         case .other: return "other"
         }
     }
@@ -31,7 +34,7 @@ enum DegreeAdvisorReadFailure: Equatable, Sendable {
     /// happen first, and not for a wait of more than two minutes.
     func canRetry(now: Date) -> Bool {
         switch self {
-        case .duoNotApproved, .other: return true
+        case .duoNotApproved, .other, .signInNotFinished: return true
         case .noCanvasSession, .needsPennKey: return false
         case let .withinBudget(until): return until.timeIntervalSince(now) <= 120
         }
@@ -312,6 +315,7 @@ extension AppState {
     private func fetchDegreeAdvisorWhatIf(_ entry: DegreeProgramEntry, now: Date) async -> DegreeAdvisorRead {
         lastPathSignIn = nil
         lastPathFillSkip = nil
+        lastPathEndedByStudent = false
         if entry.isSibling {
             // A what-if already kept for this option and read within the
             // staleness window is used without asking Penn. Only a switch
@@ -327,7 +331,8 @@ extension AppState {
             }
             let ok = await runDegreeEntry(entry)
             guard ok, let audit = degree.whatIfs.first else {
-                return .failed(Self.degreeAdvisorReadFailure(signIn: lastPathSignIn, skip: lastPathFillSkip))
+                return .failed(Self.degreeAdvisorReadFailure(
+                signIn: lastPathSignIn, skip: lastPathFillSkip, endedByStudent: lastPathEndedByStudent))
             }
             return .audit(audit, keptFrom: nil)
         }
@@ -340,11 +345,13 @@ extension AppState {
         guard let plan = plans.first(where: { $0.change == .addConcentration })
                 ?? plans.first(where: { $0.change == .newProgram })
         else {
-            return .failed(Self.degreeAdvisorReadFailure(signIn: lastPathSignIn, skip: lastPathFillSkip))
+            return .failed(Self.degreeAdvisorReadFailure(
+                signIn: lastPathSignIn, skip: lastPathFillSkip, endedByStudent: lastPathEndedByStudent))
         }
         await runWhatIf(plan)
         guard let audit = degree.whatIfs.first, audit.goals == plan.goals else {
-            return .failed(Self.degreeAdvisorReadFailure(signIn: lastPathSignIn, skip: lastPathFillSkip))
+            return .failed(Self.degreeAdvisorReadFailure(
+                signIn: lastPathSignIn, skip: lastPathFillSkip, endedByStudent: lastPathEndedByStudent))
         }
         return .audit(audit, keptFrom: nil)
     }
@@ -384,8 +391,9 @@ extension AppState {
 
     /// Why the chat's Penn read failed, from the last sign-in of that read.
     nonisolated static func degreeAdvisorReadFailure(
-        signIn: PathPortal.SignIn?, skip: PathPortal.FillSkip?
+        signIn: PathPortal.SignIn?, skip: PathPortal.FillSkip?, endedByStudent: Bool = false
     ) -> DegreeAdvisorReadFailure {
+        if endedByStudent { return .signInNotFinished }
         switch signIn {
         case .needsDuo?: return .duoNotApproved
         case .noCanvasSession?: return .noCanvasSession
@@ -418,6 +426,8 @@ extension AppState {
             return "path@penn sign-in can try again at \(formatter.string(from: until).lowercased())."
         case .needsPennKey:
             return "penn needs your pennkey. update it in profile, then ask again."
+        case .signInNotFinished:
+            return "sign-in wasn't finished. ask again."
         case .other:
             return "couldn't read path@penn's audit for \(name). ask again."
         }

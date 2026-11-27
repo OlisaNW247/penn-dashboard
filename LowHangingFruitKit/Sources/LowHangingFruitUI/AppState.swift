@@ -618,6 +618,12 @@ final class AppState: ObservableObject {
     var degreeAskSignInFailed = false
     /// The PennKey has been typed during this chat ask (see `signInToPath`).
     var degreeAskSubmitted = false
+    /// The last portal attempt ended because the student closed the sign-in
+    /// sheet (read by the chat's failure line).
+    var lastPathEndedByStudent = false
+    /// True while the popup is shown to the student to finish by hand; the
+    /// degree screens present `PathSignInSheet` from it.
+    @Published var degreeInteractiveSignIn = false
     /// How many `signInToPath` calls are awaiting the portal right now.
     var degreeSignInsAwaiting = 0
     /// The chat sets this for its read to hear "signing in to path@penn…".
@@ -625,6 +631,10 @@ final class AppState: ObservableObject {
     /// The status the Duo hook replaced with `.waitingForDuo`, restored once
     /// the sign-in call returns.
     var degreeStatusBeforeDuo: DegreeStatus?
+    /// The degree sign-in is on Duo's page right now. The Duo line and the
+    /// buzz wait a few seconds on this, so a remembered device (Duo hands the
+    /// sign-in straight back, no push) never shows or buzzes either.
+    var degreeDuoWaiting = false
     /// Bumped by `clearDegreeData()`. A read in flight captured the number it
     /// started under and stops writing (tokens, file, snapshot, status) once it
     /// changes, so a disconnect cannot be undone by a read that finishes after.

@@ -115,9 +115,38 @@ final class PathPortal: NSObject, WKUIDelegate {
     /// `lastFillSkip`: sitting a minute on a form nobody will fill only
     /// delays the line that tells the student what to do.
     private var stopForSkip = false
+    /// The student's own attempt met a form it may not fill; where the page can
+    /// be shown it goes interactive instead of ending (`shouldGoInteractive`).
+    private var formBlocked = false
+    /// When this attempt first reached Duo, for the interactive rule.
+    private var duoReachedAt: Date?
+    /// True while the popup is handed to the UI for the student to finish by
+    /// hand. The popup's web view is the same one the hidden path uses.
+    private(set) var isInteractive = false
+    private var interactiveShownAt: Date?
+    /// The student closed the sheet: the attempt ends at its next poll.
+    private var stopByStudent = false
+    /// The last attempt ended because the student closed the sheet.
+    private(set) var lastEndedByStudent = false
+    /// Told when the interactive state turns on or off (once per change).
+    var onInteractiveChanged: ((Bool) -> Void)?
     /// Once-per-attempt guards for the Duo log lines.
     private var loggedDuoPush = false
     private var loggedDuoTrust = false
+    private var loggedDuoLeft = false
+    /// A student's own ask is waiting on the attempt in flight, even one that
+    /// started as automatic and they joined. Such an attempt keeps the typing
+    /// rule it started with, but it may show the student the page: they are
+    /// there, and an automatic attempt that stalled would otherwise run out
+    /// its two minutes in front of them with nothing to do.
+    private var studentIsWaiting = false
+    /// Whether the popup's last finished page was on a Duo host.
+    private var popupOnDuo = false
+    /// When the popup last finished loading a page, for the stall rule.
+    private var lastPopupFinishAt: Date?
+    /// Told once per attempt when the popup leaves Duo for another host: Duo
+    /// is done with it, so "approve the duo push" no longer describes the wait.
+    var onDuoLeft: (() -> Void)?
 
     private var configuration: WKWebViewConfiguration?
     private var webView: WKWebView?
@@ -213,6 +242,47 @@ final class PathPortal: NSObject, WKUIDelegate {
         case rejectedOrOff
     }
 
+    /// Duo reached and no token this long: the page is shown to the student.
+    /// A remembered device comes back in about four seconds, so it never flashes.
+    nonisolated static let interactiveAfterDuo: TimeInterval = 6
+    /// The popup has sat this long on a page that is not Duo, after the
+    /// PennKey was typed or Duo was passed, with no token: the page is shown.
+    /// Read off a phone on 2026-11-27: Duo passed by itself in seconds (a
+    /// remembered device, so no push was ever sent) and the popup then sat on
+    /// Penn's own page for two minutes under "approve the duo push", which
+    /// named a thing the student could not do. A normal hand-off moves to the
+    /// next page well inside this.
+    nonisolated static let interactiveAfterStall: TimeInterval = 10
+    /// How long a shown page waits for the student, from when it was shown.
+    nonisolated static let interactiveWait: TimeInterval = 300
+    /// The sheet exists on iOS only; on the Mac an attempt is never interactive.
+    nonisolated static var interactiveSupported: Bool {
+        #if os(iOS)
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    /// Whether this attempt should hand its popup to the student. Never for an
+    /// automatic attempt (it ends at the form), never twice, never once the
+    /// token is in.
+    nonisolated static func shouldGoInteractive(
+        userInitiated: Bool,
+        duoReachedFor: TimeInterval?,
+        formBlocked: Bool,
+        tokenArrived: Bool,
+        alreadyInteractive: Bool,
+        stalledFor: TimeInterval? = nil,
+        supported: Bool = PathPortal.interactiveSupported
+    ) -> Bool {
+        guard supported, userInitiated, !tokenArrived, !alreadyInteractive else { return false }
+        if formBlocked { return true }
+        if let duoReachedFor, duoReachedFor >= interactiveAfterDuo { return true }
+        if let stalledFor, stalledFor >= interactiveAfterStall { return true }
+        return false
+    }
+
     /// A student's tap in the degree screen is the consent a Duo push needs;
     /// the hour after a failed submission exists to stop pushes nobody asked
     /// for. So an ask may type again inside that hour, but never within 90
@@ -234,6 +304,9 @@ final class PathPortal: NSObject, WKUIDelegate {
     /// attempt.
     func ensureSignedIn(force: Bool = false, userInitiated: Bool = false) async -> SignIn {
         if let running = inFlight {
+            // The student is now waiting on this attempt, whoever started it:
+            // it may show them the page (it still may not type as theirs).
+            if userInitiated { studentIsWaiting = true }
             let joined = await running.value
             // A student's ask that joined an AUTOMATIC attempt which stopped
             // at the form gets exactly one attempt of its own. No loop.
@@ -244,6 +317,7 @@ final class PathPortal: NSObject, WKUIDelegate {
             if inFlight == running { inFlight = nil }
             if let again = inFlight { return await again.value }
         }
+        studentIsWaiting = userInitiated
         let task = Task { @MainActor [self] in
             await self.performSignIn(force: force, userInitiated: userInitiated)
         }
@@ -265,13 +339,25 @@ final class PathPortal: NSObject, WKUIDelegate {
 
     private func performSignIn(force: Bool, userInitiated: Bool) async -> SignIn {
         attemptRunning = true
-        defer { attemptRunning = false }
+        defer {
+            attemptRunning = false
+            // Every way out of an attempt clears the interactive state once.
+            endInteractiveIfShown()
+        }
         attemptUserInitiated = userInitiated
         lastFillSkip = nil
         stopForStudent = false
         stopForSkip = false
+        formBlocked = false
+        duoReachedAt = nil
+        stopByStudent = false
+        lastEndedByStudent = false
+        interactiveShownAt = nil
         loggedDuoPush = false
         loggedDuoTrust = false
+        loggedDuoLeft = false
+        popupOnDuo = false
+        lastPopupFinishAt = nil
         // The clock-stale set is used on purpose (the old session reader
         // did the same): `load` applies the 24-hour rule and returns nothing
         // for a day-old session, but Penn's SSO may still honour it, and when
@@ -370,15 +456,52 @@ final class PathPortal: NSObject, WKUIDelegate {
                 log("sign-in stopped: nothing to type")
                 return concludeAttempt(.timedOut)
             }
-            let limit = duoReached ? Self.signInWaitAfterDuo : Self.signInWait
-            if Date().timeIntervalSince(startedAt) >= limit { break }
+            if stopByStudent {
+                log("interactive: closed")
+                lastEndedByStudent = true
+                return concludeAttempt(duoReached && !loggedDuoLeft ? .needsDuo : .timedOut)
+            }
+            // The Duo clock runs only while the popup is still ON Duo; once it
+            // has left (or never went), the stall clock runs from the last page
+            // the popup finished, and only after something was typed or Duo
+            // was passed, so a slow first load is not a stall.
+            let pollNow = Date()
+            let onDuoFor: TimeInterval? = popupOnDuo
+                ? duoReachedAt.map { pollNow.timeIntervalSince($0) } : nil
+            let stalledFor: TimeInterval? = (!popupOnDuo && (duoReached || hasSubmittedCredentials))
+                ? lastPopupFinishAt.map { pollNow.timeIntervalSince($0) } : nil
+            if popup != nil, Self.shouldGoInteractive(
+                userInitiated: attemptUserInitiated || studentIsWaiting,
+                duoReachedFor: onDuoFor,
+                formBlocked: formBlocked,
+                tokenArrived: false,
+                alreadyInteractive: isInteractive,
+                stalledFor: stalledFor
+            ) {
+                goInteractive()
+            }
+            if isInteractive, let shown = interactiveShownAt {
+                // The student is working on it: a wait of its own, from when
+                // the page was shown, in place of the 60 and 120 seconds.
+                if Date().timeIntervalSince(shown) >= Self.interactiveWait { break }
+            } else {
+                let limit = duoReached ? Self.signInWaitAfterDuo : Self.signInWait
+                if Date().timeIntervalSince(startedAt) >= limit { break }
+            }
             try? await Task.sleep(nanoseconds: Self.pollNanoseconds)
             if let state = await readiness(), state.token {
                 log("token arrived")
                 if duoReached { log("duo: approved") }
+                if isInteractive { log("interactive: finished") }
                 if hasSubmittedCredentials { onCredentialSucceeded?() }
                 return .ready
             }
+        }
+        if duoReached, loggedDuoLeft {
+            // Duo handed the popup back and the wait ran out on another page:
+            // not a push nobody approved, and it must not read as one.
+            log("stalled after duo")
+            return concludeAttempt(.timedOut)
         }
         if duoReached {
             log("duo not approved in time")
@@ -386,6 +509,34 @@ final class PathPortal: NSObject, WKUIDelegate {
         }
         log("sign-in timed out")
         return concludeAttempt(.timedOut)
+    }
+
+    private func goInteractive() {
+        guard !isInteractive else { return }
+        isInteractive = true
+        interactiveShownAt = Date()
+        log("interactive: shown")
+        onInteractiveChanged?(true)
+    }
+
+    private func endInteractiveIfShown() {
+        guard isInteractive else { return }
+        isInteractive = false
+        interactiveShownAt = nil
+        onInteractiveChanged?(false)
+    }
+
+    /// The popup's web view while the student is finishing the sign-in. It is
+    /// the very web view the hidden path uses (built from WebKit's own
+    /// configuration, so `window.opener` still works); the UI only hosts it.
+    var interactiveWebView: WKWebView? { isInteractive ? popup : nil }
+
+    /// The student closed the sheet: the attempt ends at its next poll as a
+    /// timeout would (so the failed-submission accounting is unchanged).
+    func cancelInteractive() {
+        guard isInteractive else { return }
+        stopByStudent = true
+        endInteractiveIfShown()
     }
 
     /// Every way an attempt ends without a token goes through here: it starts
@@ -487,6 +638,8 @@ final class PathPortal: NSObject, WKUIDelegate {
         needsReload = false
         lastFillSkip = nil
         attemptUserInitiated = false
+        formBlocked = false
+        endInteractiveIfShown()
     }
 
     // MARK: WKUIDelegate
@@ -528,18 +681,65 @@ final class PathPortal: NSObject, WKUIDelegate {
         guard child === popup else { return }
         let url = child.url
         log("popup at \(url?.host?.lowercased() ?? "(no host)")")
+        lastPopupFinishAt = Date()
         if PennKeyLoginForm.isDuo(url) {
             // Arriving on Duo after a submission means a push is (or will be)
             // waiting; the deadline moves out to two minutes.
+            popupOnDuo = true
             markDuoReached()
             return
         }
-        guard PennKeyLoginForm.isLoginForm(url) else { return }
+        popupOnDuo = false
+        if attemptRunning, duoReached, !loggedDuoLeft {
+            loggedDuoLeft = true
+            log("duo: left")
+            onDuoLeft?()
+        }
+        let afterSubmission = hasSubmittedCredentials || duoReached
+        let isForm = PennKeyLoginForm.isLoginForm(url)
+        guard isForm || afterSubmission else { return }
         Task { @MainActor [weak self, weak child] in
             guard let self, let child else { return }
-            await self.considerCredentialForm(child)
+            if afterSubmission { await self.describePage(child) }
+            if isForm { await self.considerCredentialForm(child) }
         }
     }
+
+    /// A navigation in the popup failed. Words only: the error's domain and
+    /// code, never its URL.
+    fileprivate func popupDidFail(_ child: WKWebView, error: Error) {
+        guard child === popup else { return }
+        let failure = error as NSError
+        log("popup failed: \(failure.domain) \(failure.code)")
+    }
+
+    /// One log line about the page the popup sits on after the PennKey was
+    /// typed or Duo was passed, so a stall there can be told apart next time:
+    /// how many forms and buttons it has, whether it is the identity
+    /// provider's hand-off form, and the letters of its title. Counts and a
+    /// page title only; no field value, no address, nothing the student typed.
+    /// DEBUG builds only, like the rest of this log.
+    private func describePage(_ child: WKWebView) async {
+        #if DEBUG
+        let described: String? = await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
+            child.evaluateJavaScript(Self.describePageScript) { value, _ in
+                continuation.resume(returning: value as? String)
+            }
+        }
+        guard child === popup, let described else { return }
+        log("page: \(described)")
+        #endif
+    }
+
+    private static let describePageScript = """
+    (function () {
+      var forms = document.forms.length;
+      var handoff = document.querySelector('input[name="SAMLResponse"]') ? 1 : 0;
+      var buttons = document.querySelectorAll('button, input[type="submit"], a[role="button"]').length;
+      var title = (document.title || '').replace(/[^A-Za-z -]/g, '').slice(0, 48);
+      return 'forms ' + forms + ' handoff ' + handoff + ' buttons ' + buttons + ' title ' + title;
+    })();
+    """
 
     /// Fills the saved PennKey into Penn's credential form, once per attempt
     /// and only inside the shared budget; and, when the form comes back after
@@ -562,6 +762,8 @@ final class PathPortal: NSObject, WKUIDelegate {
         else { return }
         let presence = PennKeyLoginForm.presence(from: detected)
         guard presence == .form || presence == .formError else { return }
+        // Once the student has the page, nothing is typed for them.
+        if isInteractive { return }
 
         if hasSubmittedCredentials {
             // The form is back after OUR fill in this attempt. The renewer's
@@ -586,7 +788,7 @@ final class PathPortal: NSObject, WKUIDelegate {
 
         guard let budget = credentialBudget?() else {
             log("credential fill skipped: budget unbound")
-            if !attemptUserInitiated { stopForStudent = true }
+            if attemptUserInitiated { blockForm() } else { stopForStudent = true }
             return
         }
         let fillNow = Date()
@@ -619,13 +821,13 @@ final class PathPortal: NSObject, WKUIDelegate {
                     failedStreak: budget.failedStreak) ?? fillNow
                 lastFillSkip = .withinBudget(until: until)
             }
-            stopForSkip = true
+            blockForm()
             log("credential fill skipped: within budget")
             return
         }
         guard let credentials = PennKeyCredentialStore.load() else {
             lastFillSkip = .noneSaved
-            if attemptUserInitiated { stopForSkip = true } else { stopForStudent = true }
+            if attemptUserInitiated { blockForm() } else { stopForStudent = true }
             log("credential fill skipped: none saved")
             return
         }
@@ -636,6 +838,12 @@ final class PathPortal: NSObject, WKUIDelegate {
             PennKeyLoginForm.fillAndSubmitScript(username: credentials.username, password: credentials.password),
             completionHandler: nil
         )
+    }
+
+    /// A student's own attempt met a form it may not fill. Where the page can
+    /// be shown it goes interactive; elsewhere it ends with the reason.
+    private func blockForm() {
+        if Self.interactiveSupported { formBlocked = true } else { stopForSkip = true }
     }
 
     fileprivate func contentProcessDied() {
@@ -695,6 +903,7 @@ final class PathPortal: NSObject, WKUIDelegate {
         guard attemptRunning, !duoReached else { return }
         log("duo reached")
         duoReached = true
+        duoReachedAt = Date()
         onDuoReached?()
     }
 
@@ -783,6 +992,18 @@ private final class PathPopupDelegate: NSObject, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         portal?.popupDidFinish(webView)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        portal?.popupDidFail(webView, error: error)
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFailProvisionalNavigation navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        portal?.popupDidFail(webView, error: error)
     }
 }
 

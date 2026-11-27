@@ -50,6 +50,11 @@ struct DegreeWhatIfSheet: View {
     @State private var runFailed = false
 
     var body: some View {
+        whatIfContent
+            .pathSignInSheet()
+    }
+
+    private var whatIfContent: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 14) {
                 Text("what if")
