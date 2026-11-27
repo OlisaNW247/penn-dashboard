@@ -3256,7 +3256,22 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `degree-progress` (2026-11-26, the degree sign-in rule): 4732
+**Current on `degree-progress` (2026-11-27, the advisor questions): 4775 tests
+/ 498 suites, all green, `swift test --no-parallel` on the GitHub macOS runner
+in 96 s, with the unsigned iOS `xcodebuild` and the extension suite green in
+the same run (manual run 45932392813 at `5b3bd0b`), compiled at the first
+attempt. Deno for the planner commit after it: 1159 passed, 0 failed, in the
+cloud container at `b31ec3f` (1140 before; `deno check --no-lock` clean on
+`degree-advisor/index.ts` and the dry run).** The day's steps, each a manual
+run with the iOS build green: `d68d1c1` (the sign-in page) 4737 / 492 with
+one red, the source pin `defer { attemptRunning = false }`, re-pinned to the
+two-line defer in `5241fa5` (run 45930299186, green); `0826943` (slot ids
+with a real degree id) 4739 / 492 (run 45931329545); `e751b85` (the what-if
+stand-in) 4749 / 493 (run 45931834155); `5b3bd0b` +26 tests and +5 suites
+(`DegreeAdvisorQuestionsTests`). Nothing from the day is on a phone at the
+time of writing.
+
+Before it, **on `degree-progress` (2026-11-26, the degree sign-in rule): 4732
 tests / 491 suites, all green, `swift test --no-parallel` on the GitHub macOS
 runner in 127 s, with the unsigned iOS `xcodebuild`, Deno (1140) and the
 extension suite green in the same run (manual run 45909720824 at `8f0b774`).**
