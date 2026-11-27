@@ -1221,6 +1221,13 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-27, night.** With the plan drawing, the rings read 84% and 73%
+  under a plan that filled everything. The planner now sends per-degree
+  coverage and, by the target term, the granted and best-case figures; the
+  phone draws a covered degree whole and the best case as a faded arc
+  beside the granted one (`1b1f06a`, `c5d5a2a`, `32ac695`; live as
+  `degree-advisor` version 13 since about 03:35 UTC, at his go). Next: a
+  rebuild, a fresh ask, and a look at both rings.
 - **2026-11-27, later.** Olisa's first drawn plan showed nothing on the
   rings and leaned on approvals nobody gave. Fixed on the phone: slot ids
   with a real degree id (`0826943`), the what-if a plan was made against

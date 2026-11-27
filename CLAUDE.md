@@ -173,7 +173,7 @@ with the backend unreachable, ask answers on-device:
 items, retrieves policy and content answers from synced course materials
 (`CourseKnowledgeCollector` → `CourseKnowledgeStore`), and on iOS 26 /
 macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
-(`OnDeviceLanguageModel`). A twelfth function, `degree-advisor`, is in the tree on `degree-progress` and **live since 2026-11-14 at about 17:49 UTC** (version 1 from `b5b0762`; **version 2 since about 18:40 UTC the same day, from `1b92d58`**, the what-if round trip, both at Olisa's go **version 5 since 2026-11-15 about 17:35 UTC, from `d2e0a49`**, the picks, at his go (versions 3 and 4 were not deployed from this session; `ask` read 24 and `sync` 31 at the same moment); **version 6 since 2026-11-15 about 18:20 UTC, from `335ec9a`**, the rounds, at his go; **version 7 since 2026-11-16, from `4083bc0`**, the deterministic planner, at his go; **version 9 since later on 2026-11-16, from `9c45e21`**, area lists, the best case and no MBA courses, at his go (version 8 was not deployed from this session; `ask` read 25 and `sync` 32 at the same moment); **version 10 since 2026-11-26 about 21:56 UTC, from `2b8a3a9`**, the corrected policy and Penn's program packs, at his go (`ask` 25 and `sync` 32 unchanged); **version 11 since 2026-11-26 about 22:49 UTC, from `7f93bcc`**, registered courses counted as load and `slotIds` on scheduled courses, at his go (`ask` 25 and `sync` 32 unchanged); **version 12 since 2026-11-27 about 03:10 UTC, from `b31ec3f`**, only a granted plan drawn, advisor questions and answers, at his go (`ask` 25 and `sync` 32 unchanged); Degree → Plan with AI); only a `degree-progress` build calls it.
+(`OnDeviceLanguageModel`). A twelfth function, `degree-advisor`, is in the tree on `degree-progress` and **live since 2026-11-14 at about 17:49 UTC** (version 1 from `b5b0762`; **version 2 since about 18:40 UTC the same day, from `1b92d58`**, the what-if round trip, both at Olisa's go **version 5 since 2026-11-15 about 17:35 UTC, from `d2e0a49`**, the picks, at his go (versions 3 and 4 were not deployed from this session; `ask` read 24 and `sync` 31 at the same moment); **version 6 since 2026-11-15 about 18:20 UTC, from `335ec9a`**, the rounds, at his go; **version 7 since 2026-11-16, from `4083bc0`**, the deterministic planner, at his go; **version 9 since later on 2026-11-16, from `9c45e21`**, area lists, the best case and no MBA courses, at his go (version 8 was not deployed from this session; `ask` read 25 and `sync` 32 at the same moment); **version 10 since 2026-11-26 about 21:56 UTC, from `2b8a3a9`**, the corrected policy and Penn's program packs, at his go (`ask` 25 and `sync` 32 unchanged); **version 11 since 2026-11-26 about 22:49 UTC, from `7f93bcc`**, registered courses counted as load and `slotIds` on scheduled courses, at his go (`ask` 25 and `sync` 32 unchanged); **version 12 since 2026-11-27 about 03:10 UTC, from `b31ec3f`**, only a granted plan drawn, advisor questions and answers, at his go (`ask` 25 and `sync` 32 unchanged); **version 13 since 2026-11-27 about 03:35 UTC, from `32ac695`**, per-degree coverage and the by-target figures, at his go (`ask` 25 and `sync` 32 unchanged); Degree → Plan with AI); only a `degree-progress` build calls it.
 Beside it (it is not counted in what follows, which is `v13`'s own count), fifteen Edge Functions are in
 `backend/supabase/functions/`, fourteen deployed and one written and
 **not deployed**, **`sweeper-wake`** (2026-11-18, `claude/sweeper-build-0a4dd0`:
@@ -1635,6 +1635,34 @@ Keep this current. It is the fastest way for a new session to know what exists.
     UTC, at his go** (it answers `OPTIONS` 200 and an unsigned POST 401); no
     question has been asked of it and none of the phone half has been on a
     phone; Known gaps.
+    **The rings follow the planner's coverage** (the same night, `1b1f06a`,
+    `c5d5a2a` server, `32ac695` phone; live as version 13 since about 03:35
+    UTC). With the slot ids resolving, his rings read "67% ≈ 84% with plan"
+    and "65% ≈ 73% with plan" under a plan that filled everything: "Still
+    not 100 percent on either", then "maybe there can be a best case and
+    worst case depending on approvals in the same ring". The with-plan
+    figure counted audit rules the projection could match to a course, and
+    rules needing several courses, credit-total rows, waived slots and
+    parent rows never match. Now `plan.coverage` gives, per degree, the open
+    slots the planner considered, how many the returned schedule fills, and
+    `complete` (every slot filled, no unfilled row for the degree, every
+    course placed). The phone keeps it on the summary
+    (`DegreePlanSummary.coverage`), and `AppState.degreeProjection` adjusts
+    what is drawn (`DegreeProjection.adjusted(by:audit:)`): complete fills
+    every open rule, so the arc, the text, the block bars and the "both
+    degrees" bar come out whole; partial takes the larger of the old
+    estimate and the planner's share. It applies only to the audit the plan
+    was made against (`DegreePlanCoverage.applicable`: the stand-in's
+    what-if, or the declared audit when there was none) and leaves with the
+    summary on a hand edit. When the student named a finish term
+    (`plan.targetTerm`), each entry also carries `filledByTarget` and
+    `bestFilledByTarget`, and the ring draws two cases by that term
+    (`DegreeRingCases`): the granted schedule solid, the extra the best case
+    would add in the same cobalt at 0.35, with a line each ("≈ 92% by spring
+    2028", "≈ 100% if approved"; `DegreeProgressMath.ringLines`) and an "if
+    approved" legend swatch only while one is drawn. Penn's number in the
+    middle never changes. Also: a course code no longer wraps inside its
+    chip; the approval tag sits under the chip row.
   - **When it reads** (changed 2026-11-12, Olisa on the first build of the
     table: "It should not need to re-read as often as it does. classes
     selected do not change every couple of minutes"). Each degree's audit
@@ -6543,6 +6571,21 @@ none is a ship line.
   still lands on the what-if tab under "switch to management, bs", which
   read as confusing in the recording and is not changed; a registered course
   neither the audit nor the catalogue can price counts as 1 cu.
+- **The coverage rings of 2026-11-27 are unseen on a phone, and the plan in
+  Olisa's table predates them.** A plan stored before version 13 has no
+  coverage and no stand-in, so his rings stay at the rule-count estimate and
+  the Wharton ring stays "undeclared" until he asks the planner again on a
+  build from `32ac695` or later. To watch for then: "≈ 100% with plan" (or
+  the two by-target lines) on both rings; the Wharton ring captioned as the
+  management what-if; the faded arc readable against the track in light and
+  dark; the single-degree tab, which draws the declared audit and so does
+  not take coverage for a degree planned against a what-if (it will read
+  lower than "both", which may look like a disagreement). Known limits: the
+  "· n planned" count on the bars still counts placed courses and chips, so
+  it can sit beside a whole bar; a degree's 46 cu floor row is matched by
+  label on the server; with a load that is not a stated fact, part of the
+  best case's by-target gain is the 6.5 load, which the ring calls "if
+  approved" (true: the load question is in the advisor list).
 - **The plan fixes and the advisor questions of 2026-11-27 are unseen on a
   phone; their server half is live (version 12, 2026-11-27) and unasked.** Phone: `slotIndex` and the
   what-if stand-in are green on the runner; the advisor sheet was compiling
