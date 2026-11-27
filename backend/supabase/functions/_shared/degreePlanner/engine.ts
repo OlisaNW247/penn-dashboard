@@ -10,6 +10,7 @@ import { buildCatalogSnapshot } from "./catalog.ts";
 import { PENN_DATA_BASE, loadPacks } from "./packData.ts";
 import { attachPack } from "./packJoin.ts";
 import { plan } from "./planner.ts";
+import { pennPolicy } from "./policy.ts";
 import { degreesFromAudits } from "./requirements.ts";
 import type { CatalogSnapshot, Degree, PlanResult, Slot, Unfilled } from "./types.ts";
 
@@ -30,6 +31,11 @@ const GENERIC_WAIVE_WORDS = new Set([
 export interface EngineIntent {
   targetTerm: string | null;
   maxLoad: number | null;
+  /** The student says they are already approved for the load they named, or
+   *  for 6.5 when they named none. Optional so older callers still compile. */
+  loadApproved?: boolean | null;
+  /** The student asked for the best case ("assume the approvals"). */
+  assumeApprovals?: boolean | null;
   allowSummer: boolean | null;
   waive: string[];
   avoid: string[];
@@ -50,6 +56,8 @@ export interface EngineInput {
   /** Where Penn's published program packs are served; null turns them off and
    *  the hand-written sharing rules decide everything. Default: PENN_DATA_BASE. */
   pennData?: { baseUrl: string } | null;
+  /** The student's recorded advisor answers, used for this call only. */
+  advisorAnswers?: { id: string; answer: "yes" | "no" }[];
 }
 
 export interface EnginePackReport {
@@ -286,7 +294,16 @@ export async function runEngine(input: EngineInput): Promise<EngineOutput> {
     history: structured.history,
     currentTerm: structured.currentTerm,
     ...(intent.targetTerm ? { targetTerm: intent.targetTerm } : {}),
-    ...(intent.maxLoad !== null ? { maxLoad: intent.maxLoad } : {}),
+    // "I am approved for 6.5" with no load named plans at the approved load
+    // (the student's own scenario), not at 5.5 with the approved case held in
+    // reserve; the wrong fix is leaving maxLoad null and letting the planner
+    // reach 6.5 only as a scenario that "needs approval".
+    ...(intent.maxLoad !== null
+      ? { maxLoad: intent.maxLoad }
+      : intent.loadApproved === true ? { maxLoad: pennPolicy.loads.approved } : {}),
+    ...(intent.loadApproved === true ? { loadApproved: true } : {}),
+    ...(intent.assumeApprovals === true ? { assumeApprovals: true } : {}),
+    ...(input.advisorAnswers && input.advisorAnswers.length > 0 ? { advisorAnswers: input.advisorAnswers } : {}),
     ...(intent.allowSummer !== null ? { allowSummer: intent.allowSummer } : {}),
     ...(waive.ids.length > 0 ? { waive: waive.ids } : {}),
     ...(intent.avoid.length > 0 ? { avoid: intent.avoid } : {}),

@@ -14,6 +14,7 @@
 // The wrong shortcut would be one model call guessing both; see types.ts.
 
 import type {
+  AdvisorQuestion,
   Approval,
   CatalogCourse,
   CatalogSnapshot,
@@ -205,6 +206,8 @@ interface Ctx {
   /** per course: eligible slot indexes, ascending */
   slotsOf: number[][];
   prefer: Set<string>;
+  /** Canonical keys of the courses the student has already taken. */
+  taken: Set<string>;
 }
 
 interface Opts {
@@ -410,7 +413,95 @@ function solve(ctx: Ctx, opts: Opts): State {
     if (!swapOnce(st)) break;
     settle(st);
   }
+  pairSequences(st);
   return st;
+}
+
+/** Where a course sits in a slot's own (Penn's) explicit option order; a
+ *  course that is no explicit option sorts after all of them, by index. */
+function optionRank(ctx: Ctx, si: number, ci: number): number {
+  const c = ctx.courses[ci];
+  let r = 0;
+  for (const e of ctx.slots[si].slot.anyOf) {
+    if (e.kind !== "courses") continue;
+    for (const raw of e.codes) {
+      const k = normalizeCode(raw);
+      if (c.key === k || c.aliases.some((a) => a.code === k)) return r;
+      r++;
+    }
+  }
+  return 1e6 + ci;
+}
+
+/**
+ * The two halves of a senior project are chosen slot by slot, so nothing made
+ * them a matching pair: a real plan came back with CIS 4100 (thesis) for
+ * "Senior Project #1" and CIS 4010 for "#2". After the greedy choice, for each
+ * linked pair of slots (the same link the scheduler uses) whose courses are
+ * not `isSequencePair`, look for a matching pair among the two slots' options,
+ * the first in the #1 slot's own option order, and move just those two slots
+ * onto it. A half the student already took counts too: if only #2 is open,
+ * #2 becomes a course that pairs with a taken one. When no matching pair
+ * exists the choice is left as it was (plan() adds a note). The wrong fix is
+ * weighting pairs inside the greedy ratio, which would bend every other
+ * requirement's choice for a naming rule that touches two slots.
+ */
+function pairSequences(st: State) {
+  const { ctx } = st;
+  const seq = ctx.policy.sequences;
+  const coverers = (si: number) => [...st.byCourse.entries()].filter(([, sl]) => sl.includes(si)).map(([ci]) => ci).sort((a, b) => a - b);
+  const detach = (ci: number, si: number) => {
+    const rest = st.byCourse.get(ci)!.filter((x) => x !== si);
+    if (rest.length) st.byCourse.set(ci, rest);
+    else st.byCourse.delete(ci);
+    st.rebuild();
+  };
+  const attach = (ci: number, si: number): boolean => {
+    const sel = selectSlots(st, ci, [si]);
+    if (!sel.added.includes(si)) return false;
+    applySelection(st, ci, { ...sel, added: [si] });
+    return true;
+  };
+  const ranked = (si: number) => ctx.slots[si].cands.slice().sort((a, b) => optionRank(ctx, si, a) - optionRank(ctx, si, b) || a - b);
+  const attempt = (moves: [number, number][], drop: [number, number][]): boolean => {
+    const snapshot = new Map([...st.byCourse].map(([k, v]) => [k, v.slice()] as [number, number[]]));
+    for (const [ci, si] of drop) detach(ci, si);
+    let ok = true;
+    for (const [ci, si] of moves) if (!attach(ci, si)) { ok = false; break; }
+    if (!ok) { st.byCourse = snapshot; st.rebuild(); }
+    return ok;
+  };
+  const takenCodes = [...ctx.taken];
+  for (const A of ctx.slots) {
+    for (const B of ctx.slots) {
+      if (!seq.immediatelyBefore(A.slot, B.slot)) continue;
+      const xs = coverers(A.idx), ys = coverers(B.idx);
+      if (xs.length !== 1 || ys.length !== 1) continue;
+      const [X, Y] = [xs[0], ys[0]];
+      if (seq.isSequencePair(ctx.courses[X].code, ctx.courses[Y].code)) continue;
+      let done = false;
+      for (const x of ranked(A.idx)) {
+        for (const y of ranked(B.idx)) {
+          if (x === y || !seq.isSequencePair(ctx.courses[x].code, ctx.courses[y].code)) continue;
+          if (attempt([[x, A.idx], [y, B.idx]], [[X, A.idx], [Y, B.idx]])) { done = true; break; }
+        }
+        if (done) break;
+      }
+    }
+  }
+  // Only the second half is open: the first is already on the audit.
+  for (const B of ctx.slots) {
+    if (!seq.isSecondHalf(B.slot)) continue;
+    if (ctx.slots.some((A) => seq.immediatelyBefore(A.slot, B.slot))) continue;
+    const ys = coverers(B.idx);
+    if (ys.length !== 1) continue;
+    const Y = ys[0];
+    if (takenCodes.some((t) => seq.isSequencePair(t, ctx.courses[Y].code))) continue;
+    for (const y of ranked(B.idx)) {
+      if (y === Y || !takenCodes.some((t) => seq.isSequencePair(t, ctx.courses[y].code))) continue;
+      if (attempt([[y, B.idx]], [[Y, B.idx]])) break;
+    }
+  }
 }
 
 /** Greed fixes a course's slots when it is picked, so a course picked late
@@ -814,6 +905,18 @@ function runSchedule(
 // plan()
 // ---------------------------------------------------------------------------
 
+function whoDecidesShort(colleges: (string | undefined)[]): string {
+  const eng = colleges.includes("EU"), wh = colleges.includes("WU");
+  return eng && wh ? "approval from Engineering and Wharton" : eng ? "approval from Engineering" : wh ? "a petition to Wharton" : "your advisor's approval";
+}
+function whoDecidesLong(colleges: (string | undefined)[]): string {
+  const eng = colleges.includes("EU"), wh = colleges.includes("WU");
+  return eng && wh
+    ? "Engineering's department and Wharton's Petitions Committee decide"
+    : eng ? "Engineering's department decides"
+    : wh ? "Wharton's Petitions Committee decides" : "your advisor decides";
+}
+
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
 export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy = pennPolicy): PlanResult {
@@ -869,6 +972,23 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
   const prefer = new Set((req.prefer ?? []).map((c) => canon(normalizeCode(c))));
   const waive = new Set(req.waive ?? []);
 
+  // ---- the student's recorded advisor answers ---------------------------
+  // Used for this request only. A later answer to the same id wins.
+  const answers = new Map<string, "yes" | "no">();
+  for (const a of req.advisorAnswers ?? []) answers.set(a.id, a.answer);
+  let loadYes: number | null = null;
+  let loadNo = false;
+  for (const [id, a] of answers) {
+    const m = /^load:(\d+(?:\.\d+)?)$/.exec(id);
+    if (!m) continue;
+    if (a === "yes") loadYes = Math.max(loadYes ?? 0, Number(m[1]));
+    else loadNo = true;
+  }
+  // A recorded "no" beats a chat statement or a yes: the advisor's word is the
+  // newest word. (A yes and a no on different loads: the no wins, which is the
+  // cautious side.)
+  if (loadNo) loadYes = null;
+
   const attrSets = new Map<string, Set<string>>();
   for (const [attr, codes] of Object.entries(catalog.attributeIndex)) {
     attrSets.set(attr.toUpperCase(), new Set(codes.map((c) => canon(normalizeCode(c)))));
@@ -878,6 +998,27 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
     if (status === "unrestricted") unrestricted.add(canon(normalizeCode(code)));
   }
   const env: Env = { canon, attrSets };
+
+  // The language requirement the best case assumes is met by Penn's placement
+  // exam, per degree. Judged over every language slot the request did not
+  // already waive, so an advisor's "yes" (which waives them below) does not
+  // make the question disappear.
+  const langAll = req.degrees.flatMap((d) => d.slots).filter((s) => s.group === "wharton.language" && s.need > EPS && !waive.has(s.id));
+  const langSubjects = new Set<string>();
+  for (const s of langAll) {
+    const match = buildMatcher(s, env, unrestricted);
+    for (const c of courses) if (match(c) >= 0) langSubjects.add(c.subject);
+  }
+  const takenSubjectSet = new Set([...taken].map((k) => parseAlias(k).subject));
+  const noLanguageHistory = langAll.length > 0 && ![...langSubjects].some((x) => takenSubjectSet.has(x));
+  const placementAnswer = (degreeId: string) => answers.get(`placement:language:${degreeId}`) ?? null;
+  const placementDegrees = noLanguageHistory ? [...new Set(langAll.map((s) => s.degreeId))] : [];
+  const placementConfirmed: string[] = [];
+  for (const d of placementDegrees) {
+    if (placementAnswer(d) !== "yes") continue;
+    placementConfirmed.push(d);
+    for (const s of langAll) if (s.degreeId === d) waive.add(s.id);
+  }
 
   // ---- slots -------------------------------------------------------------
   // Wharton counts an Engineering senior design project as the capstone for a
@@ -926,38 +1067,20 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
         slotsOf[ci].push(s.idx);
       }
     }
-    return { policy: pol, slots, courses, kindOf, slotsOf, prefer };
+    return { policy: pol, slots, courses, kindOf, slotsOf, prefer, taken };
   };
   const ctx = makeCtx(active, policy);
   const { slots, kindOf } = ctx;
 
-  // The best case: every petition pair counts as if an advisor approved it,
-  // and the language requirement is met by the placement exam when the
-  // student has taken nothing in a language subject. It is a separate
-  // solve over the same machinery, with a policy that allows the pairs.
-  const languageSlots = active.filter((s) => s.group === "wharton.language");
-  const languageSubjects = new Set<string>();
-  for (const s of languageSlots) {
-    const match = buildMatcher(s, env, unrestricted);
-    for (const c of courses) if (match(c) >= 0) languageSubjects.add(c.subject);
-  }
-  const takenSubjectSet = new Set([...taken].map((k) => parseAlias(k).subject));
-  const placesOut = languageSlots.length > 0 && ![...languageSubjects].some((x) => takenSubjectSet.has(x));
-  const bestPolicy: Policy = {
-    ...policy,
-    withinDegree: (a, b) => policy.withinDegree(a, b) || policy.petitionPairs(a, b) || policy.petitionPairs(b, a),
-  };
-  const bestCtx = makeCtx(placesOut ? active.filter((s) => s.group !== "wharton.language") : active, bestPolicy);
-
   // ---- choose ------------------------------------------------------------
-  const main = solve(ctx, { crossDegree: true, extra: new Set() });
-  const flat = solve(ctx, { crossDegree: false, extra: new Set() });
-  const bestMain = solve(bestCtx, { crossDegree: true, extra: new Set() });
-  const remainingCredits = main.totalCredits();
-  const remainingCreditsWithoutOverlap = flat.totalCredits();
-
-  // ---- petitions ---------------------------------------------------------
-  const petitions: PlanResult["petitions"] = [];
+  // First the candidate within-degree petitions, judged from the plain solve
+  // (no extras), so a question's id and its saving do not move with answers.
+  const main0 = solve(ctx, { crossDegree: true, extra: new Set() });
+  const remainingCredits = main0.totalCredits();
+  const skey = (a: Slot, b: Slot) => [a.id, b.id].sort().join("+");
+  interface Candidate { i: number; j: number; code: string; saves: number; fills: boolean; id: string; a: Slot; b: Slot }
+  const coveredOf = (st: State) => slots.reduce((n, s) => n + Math.min(s.need, st.cov[s.idx]), 0);
+  const candidates: Candidate[] = [];
   for (let i = 0; i < slots.length; i++) {
     for (let j = i + 1; j < slots.length; j++) {
       const a = slots[i].slot, b = slots[j].slot;
@@ -967,18 +1090,60 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
       if (!shared) continue;
       const alt = solve(ctx, { crossDegree: true, extra: new Set([pairKey(i, j)]) });
       const saves = remainingCredits - alt.totalCredits();
-      if (saves <= EPS) continue;
+      // A pair is worth asking about when it saves credits, or when it lets
+      // one course fill a slot the plain solve could not fill at all (two slots
+      // that each want the only listed course).
+      const fills = coveredOf(alt) > coveredOf(main0) + EPS;
+      if (saves <= EPS && !fills) continue;
       let code = "";
       for (const [ci, sl] of alt.byCourse) if (sl.includes(i) && sl.includes(j)) code = courses[ci].code;
       if (!code) continue;
-      petitions.push({
-        code,
-        slots: [`${a.degreeLabel} · ${a.label}`, `${b.degreeLabel} · ${b.label}`],
-        savesCredits: Math.round(saves * 1000) / 1000,
-      });
+      candidates.push({ i, j, code, saves: Math.max(0, Math.round(saves * 1000) / 1000), fills, id: `doubleCount:${a.degreeId}:${code}:${skey(a, b)}`.slice(0, 200), a, b });
     }
   }
-  petitions.sort((x, y) => y.savesCredits - x.savesCredits || (x.code < y.code ? -1 : x.code > y.code ? 1 : 0));
+  candidates.sort((x, y) => y.saves - x.saves || (x.code < y.code ? -1 : x.code > y.code ? 1 : 0));
+  // A "yes" grants that pair to the ordinary scenarios (the solver's own
+  // `extra` mechanism, by slot); a "no" takes it away from every scenario,
+  // best included. Slot-level, not course-level: the id names the course the
+  // plain solve used, and the wrong fix of tracking courses would need the
+  // solver to know them. Known limit: another course that could use the same
+  // slot pair is refused or granted with it.
+  const grantedKeys = new Set<string>();
+  const deniedKeys = new Set<string>();
+  const grantedExtra = new Set<string>();
+  const grantedNotes: string[] = [];
+  for (const c of candidates) {
+    const a = answers.get(c.id);
+    if (a === "yes") {
+      grantedKeys.add(skey(c.a, c.b));
+      grantedExtra.add(pairKey(c.i, c.j));
+      grantedNotes.push(`your advisor approved ${c.code} for both ${c.a.label.trim()} and ${c.b.label.trim()}`);
+    } else if (a === "no") deniedKeys.add(skey(c.a, c.b));
+  }
+  const petitions: PlanResult["petitions"] = candidates
+    .filter((c) => c.saves > EPS && !grantedKeys.has(skey(c.a, c.b)) && !deniedKeys.has(skey(c.a, c.b)))
+    .map((c) => ({ code: c.code, slots: [`${c.a.degreeLabel} · ${c.a.label}`, `${c.b.degreeLabel} · ${c.b.label}`], savesCredits: c.saves }));
+
+  // The best case: every petition pair not refused counts as if an advisor
+  // approved it, and the language requirement is met by the placement exam
+  // when the student has taken nothing in a language subject and has not been
+  // told no. A separate solve over the same machinery, with a policy that
+  // allows the pairs.
+  const bestPolicy: Policy = {
+    ...policy,
+    withinDegree: (a, b) =>
+      policy.withinDegree(a, b) ||
+      ((policy.petitionPairs(a, b) || policy.petitionPairs(b, a)) && !deniedKeys.has(skey(a, b))),
+  };
+  const dropForBest = new Set(placementDegrees.filter((d) => placementAnswer(d) !== "no" && !placementConfirmed.includes(d)));
+  const bestSlots = active.filter((s) => !(s.group === "wharton.language" && dropForBest.has(s.degreeId)));
+  const placesOut = bestSlots.length < active.length;
+  const bestCtx = makeCtx(bestSlots, bestPolicy);
+
+  const main = grantedExtra.size ? solve(ctx, { crossDegree: true, extra: grantedExtra }) : main0;
+  const flat = solve(ctx, { crossDegree: false, extra: grantedExtra });
+  const bestMain = solve(bestCtx, { crossDegree: true, extra: new Set() });
+  const remainingCreditsWithoutOverlap = flat.totalCredits();
 
   // ---- unfilled ----------------------------------------------------------
   // Never an empty label: the phone prints it in a sentence.
@@ -1019,6 +1184,16 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
 
   const seed = terms.map((t) => Math.max(0, req.registered?.[t] ?? 0));
 
+  // A load the student reports they are already approved for is a fact: no
+  // note, label or approval may call it something still to be granted. The
+  // figure is the load they named, else Penn's approved load; the wrong fix is
+  // treating "approved" as "any load", which would hide a real request for 7.
+  const approvedFigure: number | null = loadYes !== null
+    ? loadYes
+    : !loadNo && req.loadApproved === true ? (req.maxLoad ?? policy.loads.approved) : null;
+  // An advisor's "no" on a load: nothing above the standard load is planned.
+  const cap = (n: number) => (loadNo ? Math.min(n, policy.loads.standard) : n);
+  const loadIsApproved = (n: number) => approvedFigure !== null && n <= approvedFigure + EPS;
   const summerOk = req.allowSummer !== false;
   // `summerLoad` is the most one summer may hold in that scenario. The
   // ordinary scenarios use the planner's cautious default (one course per
@@ -1027,21 +1202,37 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
   const defs: { id: Scenario["id"]; label: string; maxLoad: number; summer: boolean; summerLoad: number }[] = [
     { id: "standard", label: `${fmt(policy.loads.standard)} cu a semester, no summer`, maxLoad: policy.loads.standard, summer: false, summerLoad: sl },
     { id: "summer", label: `${fmt(policy.loads.standard)} cu a semester, summers at ${fmt(policy.loads.summerPerTerm)} cu`, maxLoad: policy.loads.standard, summer: summerOk, summerLoad: sl },
-    { id: "approved", label: `${fmt(policy.loads.approved)} cu a semester, summers at ${fmt(policy.loads.summerPerTerm)} cu`, maxLoad: policy.loads.approved, summer: summerOk, summerLoad: sl },
+    { id: "approved", label: `${fmt(cap(policy.loads.approved))} cu a semester, summers at ${fmt(policy.loads.summerPerTerm)} cu`, maxLoad: cap(policy.loads.approved), summer: summerOk, summerLoad: sl },
   ];
+  // Penn's own summer limit (4 cu a summer, Engineering's Enrollment page) is a
+  // rule, not an approval, so it gets an ordinary scenario: the highest load
+  // the student may take without a NEW approval (6.5 only when they said they
+  // have it) with summers at the ceiling, no petitions, no placement exam.
+  // The wrong fix is leaving the 4 cu summer inside "best", which then looked
+  // like it depended on approvals it does not need.
+  const freeLoad = approvedFigure !== null && approvedFigure > policy.loads.standard + EPS ? approvedFigure : policy.loads.standard;
+  if (summerOk) {
+    defs.push({
+      id: "fullSummer",
+      label: `${fmt(freeLoad)} cu a semester, summers at up to ${fmt(policy.loads.summerCeiling)} cu`,
+      maxLoad: freeLoad,
+      summer: true,
+      summerLoad: policy.loads.summerCeiling,
+    });
+  }
   if (req.maxLoad !== undefined) {
     defs.push({
       id: "student",
-      label: `${fmt(req.maxLoad)} cu a semester${summerOk ? `, summers at ${fmt(policy.loads.summerPerTerm)} cu` : ", no summer"}`,
-      maxLoad: req.maxLoad,
+      label: `${fmt(cap(req.maxLoad))} cu a semester${summerOk ? `, summers at ${fmt(policy.loads.summerPerTerm)} cu` : ", no summer"}`,
+      maxLoad: cap(req.maxLoad),
       summer: summerOk,
       summerLoad: sl,
     });
   }
   defs.push({
     id: "best",
-    label: `${fmt(policy.loads.approved)} cu${summerOk ? `, summers at up to ${fmt(policy.loads.summerCeiling)} cu` : ""}, your advisor's approvals and the language placement exam`,
-    maxLoad: policy.loads.approved,
+    label: `${fmt(cap(policy.loads.approved))} cu${loadIsApproved(policy.loads.approved) ? " (already approved)" : ""}${summerOk ? `, summers at up to ${fmt(policy.loads.summerCeiling)} cu` : ""}, your advisor's approvals and the language placement exam`,
+    maxLoad: cap(policy.loads.approved),
     summer: summerOk,
     summerLoad: policy.loads.summerCeiling,
   });
@@ -1061,14 +1252,27 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
   });
 
   const byId = (id: Scenario["id"]) => runs.find((r) => r.scenario.id === id);
-  let chosenRun = byId("student")?.scenario.meetsTarget ? byId("student")! : undefined;
-  if (!chosenRun) chosenRun = (["standard", "summer", "approved"] as const).map(byId).find((r) => r?.scenario.meetsTarget);
-  // Only when nothing ordinary fits does the best case speak up; if it does
-  // not fit either, the earliest honest finish is still the answer.
-  if (!chosenRun && byId("best")?.scenario.meetsTarget) chosenRun = byId("best")!;
+  // What may be drawn as THE plan. "best" leans on approvals and a placement
+  // exam nobody granted, so it is chosen only when the student asks to see it
+  // (assumeApprovals). An ordinary scenario is eligible when its load needs no
+  // new approval: at most the standard load, a load the student reports they
+  // have, or the load they themselves asked for. The "approved" scenario at
+  // 6.5 is therefore eligible only when 6.5 is a stated fact. The wrong fix is
+  // letting best win whenever it is the only one that meets the target: that
+  // wrote a schedule resting on double counts no Penn page supports into the
+  // student's table as if it were a plan he could follow.
+  const eligible = runs.filter((r) => {
+    const id = r.scenario.id;
+    if (id === "best") return req.assumeApprovals === true;
+    if (id === "student") return true;
+    return r.scenario.maxLoad <= policy.loads.standard + EPS || loadIsApproved(r.scenario.maxLoad);
+  });
+  const order: Scenario["id"][] = ["student", "standard", "summer", "fullSummer", "approved", "best"];
+  const inOrder = order.map((id) => eligible.find((r) => r.scenario.id === id)).filter((r): r is NonNullable<typeof r> => !!r);
+  let chosenRun = inOrder.find((r) => r.scenario.meetsTarget);
   if (!chosenRun) {
-    const finished = runs.filter((r) => r.scenario.id !== "best" && r.scenario.finishTerm !== null);
-    const pool = finished.length ? finished : runs.filter((r) => r.scenario.id !== "best");
+    const finished = eligible.filter((r) => r.scenario.finishTerm !== null);
+    const pool = finished.length ? finished : eligible;
     chosenRun = pool.slice().sort((a, b) => {
       if (finished.length) {
         const fa = a.scenario.finishTerm!, fb = b.scenario.finishTerm!;
@@ -1076,7 +1280,7 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
       } else if (a.run.placed.size !== b.run.placed.size) {
         return b.run.placed.size - a.run.placed.size;
       }
-      return a.scenario.maxLoad - b.scenario.maxLoad;
+      return a.scenario.maxLoad - b.scenario.maxLoad || order.indexOf(a.scenario.id) - order.indexOf(b.scenario.id);
     })[0];
   }
   const chosen = chosenRun.scenario;
@@ -1089,12 +1293,15 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
   const label = (si: number) => `${chosenSlots[si].slot.degreeLabel} · ${chosenSlots[si].slot.label}`;
   // A course that fills two slots only a petition pair joins (judged by the
   // standing policy, not the best-case variant) needs an advisor's yes.
-  const petitionPairsOf = (it: Item): [number, number][] => {
+  // A pair the advisor granted is no longer a petition; one refused is never
+  // planned, so it cannot appear either.
+  const petitionPairsOf = (it: Item, slotList: SlotInfo[] = chosenSlots): [number, number][] => {
     const out: [number, number][] = [];
     for (let i = 0; i < it.slots.length; i++) {
       for (let j = i + 1; j < it.slots.length; j++) {
-        const a = chosenSlots[it.slots[i]].slot, b = chosenSlots[it.slots[j]].slot;
+        const a = slotList[it.slots[i]].slot, b = slotList[it.slots[j]].slot;
         if (a.degreeId !== b.degreeId || policy.withinDegree(a, b)) continue;
+        if (grantedKeys.has(skey(a, b)) || deniedKeys.has(skey(a, b))) continue;
         if (policy.petitionPairs(a, b) || policy.petitionPairs(b, a)) out.push([it.slots[i], it.slots[j]]);
       }
     }
@@ -1139,7 +1346,7 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
   const byCi = new Map(items.map((i) => [i.ci, i]));
   // What "best" leans on, named exactly, so the explanation can say it.
   const bestAssumptions = (): string[] => {
-    const out: string[] = [`${fmt(policy.loads.approved)} cu semesters, which need approval`];
+    const out: string[] = loadIsApproved(policy.loads.approved) ? [] : [`${fmt(policy.loads.approved)} cu semesters, which need approval`];
     if (chosen.summer) out.push(`summer courses, up to ${fmt(policy.loads.summerCeiling)} cu a summer${req.degrees.some((d) => d.college === "EU") ? " (Engineering's limit, 2 per session)" : ""}`);
     for (const it of items) {
       for (const [i, j] of petitionPairsOf(it)) {
@@ -1155,6 +1362,9 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
     const sl = byCi.get(a)!.slots.map((s) => chosenSlots[s].slot.label).find((l) => /#\s*1\b/.test(l)) ?? "sequence";
     const name = sl.replace(/#\s*1\b/, "").trim().toLowerCase();
     notes.push(`${byCi.get(a)!.course.code} goes in ${termLabel(terms[ta])} and ${byCi.get(b)!.course.code} in ${termLabel(terms[tb])} (${name} runs fall to spring)`);
+    if (!policy.sequences.isSequencePair(byCi.get(a)!.course.code, byCi.get(b)!.course.code)) {
+      notes.push(`check with your department that ${byCi.get(a)!.course.code} and ${byCi.get(b)!.course.code} are the two halves of one ${name || "senior project"}`);
+    }
   }
   // Within-degree double counts that rest on a template block matched only by
   // title (possibly another catalog year of the same block).
@@ -1199,8 +1409,12 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
     if (chosen.meetsTarget) {
       if (chosen.id === "best") {
         notes.push(`this fits by ${termLabel(req.targetTerm)} only in the best case, whose assumptions follow`);
-      } else if (chosen.id === "approved") notes.push(`this fits by ${termLabel(req.targetTerm)} only with ${fmt(chosen.maxLoad)} cu semesters, which need approval`);
-      else if (chosen.id === "summer" && chosen.summer) notes.push(`this fits by ${termLabel(req.targetTerm)} only with summer courses`);
+      } else if (chosen.id === "approved") {
+        notes.push(loadIsApproved(chosen.maxLoad)
+          ? `this fits by ${termLabel(req.targetTerm)} only with ${fmt(chosen.maxLoad)} cu semesters`
+          : `this fits by ${termLabel(req.targetTerm)} only with ${fmt(chosen.maxLoad)} cu semesters, which need approval`);
+      }
+      else if ((chosen.id === "summer" || chosen.id === "fullSummer") && chosen.summer) notes.push(`this fits by ${termLabel(req.targetTerm)} only with summer courses`);
     } else if (chosen.finishTerm) {
       notes.push(`this does not fit by ${termLabel(req.targetTerm)}; the earliest finish is ${termLabel(chosen.finishTerm)} at ${fmt(chosen.maxLoad)} cu a semester${chosen.summer ? " with summer courses" : ""}`);
     } else {
@@ -1220,7 +1434,8 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
   // Loads above the standard one are never automatic, whichever scenario was
   // chosen (a student's own "I can do 7" included), so the plan says who has
   // to say yes. Course approvals stay as they are.
-  if (chosen.maxLoad > policy.loads.standard + EPS) {
+  if (approvedFigure !== null) notes.push(loadYes !== null ? `your advisor approved ${fmt(approvedFigure)} cu a semester` : `you said you are approved for ${fmt(approvedFigure)} cu a semester`);
+  if (chosen.maxLoad > policy.loads.standard + EPS && !loadIsApproved(chosen.maxLoad)) {
     notes.push(chosen.maxLoad > policy.loads.approved + EPS
       ? `${fmt(chosen.maxLoad)} cu a semester is above Penn's ${fmt(policy.loads.approved)} cu limit for dual-degree students and needs special permission`
       : policy.loads.approvalNote(req.degrees.map((d) => d.college), chosen.maxLoad));
@@ -1265,6 +1480,100 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
     notes.push("nothing is left to plan");
   }
 
+  // What a scenario still depends on someone else granting, or on an
+  // assumption, built from the same facts the notes use. Empty when it depends
+  // on nothing. A 4 cu summer is Penn's own limit, not an approval, so it is
+  // not listed here.
+  const colleges = req.degrees.map((d) => d.college);
+  const approvalsFor = (sc: Scenario, run: Run, Aa: { items: Item[]; ctx: Ctx }): string[] => {
+    const out: string[] = [];
+    const add = (text: string) => {
+      const t = text.length > 80 ? `${text.slice(0, 79).trimEnd()}…` : text;
+      if (!out.includes(t) && out.length < 8) out.push(t);
+    };
+    if (sc.maxLoad > policy.loads.standard + EPS && !loadIsApproved(sc.maxLoad)) {
+      const who = sc.maxLoad > policy.loads.approved + EPS
+        ? "special permission"
+        : whoDecidesShort(colleges);
+      add(`${fmt(sc.maxLoad)} cu semesters need ${who}`);
+    }
+    for (const it of Aa.items) {
+      if (!run.placed.has(it.ci)) continue;
+      for (const [i, j] of petitionPairsOf(it, Aa.ctx.slots)) {
+        add(`${it.course.code} counted for both ${Aa.ctx.slots[i].slot.label.trim()} and ${Aa.ctx.slots[j].slot.label.trim()}`);
+      }
+    }
+    if (sc.id === "best" && placesOut) add("placing out of the language requirement by Penn's placement exam");
+    return out;
+  };
+  const approvals = approvalsFor(chosen, chosenRun.run, A);
+  const bestRun = byId("best")!;
+  const bestApprovals = approvalsFor(bestRun.scenario, bestRun.run, bestA);
+  let bestCase: PlanResult["bestCase"];
+  if (chosen.id !== "best" && bestRun.scenario.finishTerm !== null && bestApprovals.length > 0 &&
+      (chosen.finishTerm === null || bestRun.scenario.finishTerm < chosen.finishTerm)) {
+    bestCase = { finishTerm: bestRun.scenario.finishTerm, approvals: bestApprovals };
+  }
+  if (bestCase && req.targetTerm !== undefined && bestRun.scenario.meetsTarget && !chosen.meetsTarget) {
+    notes.push(`${termLabel(req.targetTerm)} is reachable only if: ${bestApprovals.join("; ")}; the schedule shown does not assume them. Say "assume the approvals" to see that plan.`);
+  }
+
+  // ---- questions for the advisor ----------------------------------------
+  // One for everything the best case leans on that nobody has granted, plus
+  // every one already answered that still applies, so the phone can show the
+  // answer and let it change. Ids are built from degree, course and slot ids
+  // only: the same audits give the same ids, with no index or randomness.
+  const clip = (t: string, n: number) => (t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t);
+  const advisorQuestions: AdvisorQuestion[] = [];
+  const ask = (q: Omit<AdvisorQuestion, "answer">) => advisorQuestions.push({ ...q, id: q.id.slice(0, 200), answer: answers.get(q.id) ?? null });
+  for (const c of candidates) {
+    ask({
+      id: c.id,
+      kind: "doubleCount",
+      question: `Can ${c.code} count toward both ${clip(c.a.label.trim(), 60)} and ${clip(c.b.label.trim(), 60)} in my ${clip(c.a.degreeLabel, 40)} degree?`,
+      detail: clip(c.saves > EPS ? `saves ${fmt(c.saves)} cu` : "lets one course fill both", 140),
+    });
+  }
+  for (const d of placementDegrees) {
+    const need = langAll.filter((s) => s.degreeId === d).reduce((n, s) => n + s.need, 0);
+    ask({
+      id: `placement:language:${d}`,
+      kind: "placement",
+      question: "Can I meet the foreign language requirement by Penn's placement exam, and how do I arrange it?",
+      detail: clip(`saves ${fmt(need)} ${langAll.some((s) => s.degreeId === d && s.unit === "courses") ? "course" + (need === 1 ? "" : "s") : "cu"}`, 140),
+    });
+  }
+  {
+    const loadId = `load:${fmt(policy.loads.approved)}`;
+    const freeFinish = runs
+      .filter((r) => ["standard", "summer", "fullSummer"].includes(r.scenario.id) && r.scenario.finishTerm !== null)
+      .map((r) => r.scenario.finishTerm!).sort()[0] ?? null;
+    const appr = byId("approved")?.scenario.finishTerm ?? null;
+    const helps = !loadIsApproved(policy.loads.approved) && !loadNo && appr !== null && (freeFinish === null || appr < freeFinish);
+    if (helps || answers.has(loadId)) {
+      ask({
+        id: loadId,
+        kind: "load",
+        question: `Can I get approval to take ${fmt(policy.loads.approved)} cu a semester, which ${whoDecidesLong(colleges)}?`,
+        detail: clip(`lets you take ${fmt(policy.loads.approved)} cu a semester`, 140),
+      });
+    }
+  }
+  advisorQuestions.length = Math.min(advisorQuestions.length, 12);
+  for (const n of grantedNotes) notes.push(n);
+  if (placementConfirmed.length) notes.push("your advisor confirmed you place out of the foreign language requirement");
+
+  // Summer terms are placed from the most recent summer listing Penn Labs
+  // published, which is a past summer; say so, because a course can run in
+  // summer 2026 and not in summer 2027.
+  {
+    const plannedSummer = schedule.find((t) => t.courses.length > 0 && seasonOf(t.term) === "summer");
+    const listed = catalog.semesters.filter((x) => /B$/.test(x)).sort().pop();
+    if (plannedSummer && listed) {
+      notes.push(`summer courses are placed from Penn's summer ${listed.slice(0, 4)} listing; check summer ${plannedSummer.term.slice(0, 4)}'s when it is published`);
+    }
+  }
+
   return {
     remainingCredits: chosenCredits,
     remainingCreditsWithoutOverlap,
@@ -1273,6 +1582,9 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
     schedule,
     unfilled,
     petitions,
+    approvals,
+    ...(bestCase ? { bestCase } : {}),
+    advisorQuestions,
     notes,
   };
 }

@@ -1247,14 +1247,18 @@ response keys and log line).
 
 With `structured`, the first model call uses a different strict schema and the
 instructions gain an INTENT section. The schema's property order is `intent`,
-`whatIf`, `targetTerm`, `maxLoad`, `allowSummer`, `waive`, `avoid`, `prefer`,
+`whatIf`, `targetTerm`, `maxLoad`, `loadApproved`, `assumeApprovals`, `allowSummer`, `waive`, `avoid`, `prefer`,
 `actions`, `planning`, `answer`. `intent` is `question`, `edit`, `plan` or
 `email`: `plan` when the student asks to build, fill, complete or check whether a
 plan or finish date works; `email` when they ask for an advisor email (the plan
 runs too); `edit` for adding, moving or removing a few courses; `question`
 otherwise. `targetTerm` is a six-digit term code or null ("by spring 2028" is
 `202810`; "on time" is the semester on the DOCUMENT's FINISH line, or null);
-`maxLoad` credit units per semester or null; `allowSummer` boolean or null;
+`maxLoad` credit units per semester or null; `loadApproved` true only when the student
+says they are already approved for the load they name (or for 6.5), else null (with no
+`maxLoad` the engine then plans at 6.5 and the load is a stated fact, never listed as an
+approval or as "needs approval"); `assumeApprovals` true only when the student asks to see the
+best case or says to assume their advisor approves, else null; `allowSummer` boolean or null;
 `waive` short requirement labels the student says are handled; `avoid` and
 `prefer` course codes. Every field is read leniently (a bad value is its neutral
 value; an unknown intent is `question`).
@@ -1278,13 +1282,15 @@ Response for `plan` and `email`: `{ "answer", "actions": [], "whatIf": null,
 "planning": false, "dropped": [], "model", "plan": PlanResult, "email"?: string }`.
 `email` is present only for intent `email` and only when the model wrote one.
 `plan` is `{ remainingCredits, remainingCreditsWithoutOverlap, scenarios:
-[{ id: "standard"|"summer"|"approved"|"student"|"best", label, maxLoad, summer,
+[{ id: "standard"|"summer"|"fullSummer"|"approved"|"student"|"best", label, maxLoad, summer,
 finishTerm: string|null, meetsTarget }], chosen, schedule: [{ term, credits,
 registeredCredits?, courses: [{ code, title, credits, countsToward: [string],
 slotIds: [string], approval:
 "automatic"|"petition"|"check", note? }] }], unfilled: [{ slotId, degreeLabel,
-label, reason }], petitions: [{ code, slots: [string], savesCredits }], notes:
-[string] }`. When `plan` is present the phone replaces its future semesters with
+label, reason }], petitions: [{ code, slots: [string], savesCredits }],
+approvals: [string], bestCase?: { finishTerm: string|null, approvals: [string] },
+advisorQuestions: [{ id, kind: "doubleCount"|"placement"|"load", question, detail,
+answer: "yes"|"no"|null }], notes: [string] }`. When `plan` is present the phone replaces its future semesters with
 `plan.schedule` and ignores `actions`. `registeredCredits` (omitted when 0) is
 what the student is already registered for in that future term (taken from
 `structured.history`; `credits` is only what the plan adds, and a term's load is
@@ -1336,8 +1342,40 @@ Penn Labs check above, and the CIS technical-elective list
 Failures leave holes, never errors; an empty catalogue yields a plan from the
 audits' explicit options with a note.
 
+`approvals` (at most 8 labels of at most 80 characters) is everything the CHOSEN
+scenario still depends on that someone else must grant or that is an assumption
+(a within-degree double count, the language placement exam, a load above 5.5 that
+is not a stated fact); empty when it depends on nothing. A 4 cu summer is Penn's
+own limit, not an approval: it is the ordinary scenario `fullSummer` (the highest
+load needing no new approval, summers at 4 cu). `best` (petitions, the placement
+exam) is computed and listed in `scenarios` but is `chosen` only when the intent
+says `assumeApprovals`; otherwise `chosen` is the first scenario meeting the target
+among those that need no new approval (order: student, standard, summer,
+fullSummer, approved if its load is a stated fact), else the earliest-finishing
+such one. When an earlier finish exists only with approvals, `bestCase` carries it
+and, when the target is reachable only that way, a note says so; the schedule shown
+never assumes them.
+
+`advisorQuestions` (at most 12, most valuable first) asks one question for each
+thing the best case leans on that nobody granted, plus every question already
+answered that still applies. `id` is deterministic for the same audits
+(`doubleCount:<degreeId>:<course>:<slotIdA>+<slotIdB>` sorted, `placement:language:<degreeId>`,
+`load:6.5`); `question` is one plain sentence ending in "?" (no ids), `detail` says what
+a yes changes, `answer` echoes the recorded answer. A request may carry a top-level
+`advisorAnswers: [{ id, answer: "yes"|"no" }]` beside `structured` (at most 40; an
+element with a bad id (1..200 characters) or an answer other than exactly `yes`/`no`
+is dropped, the request is never refused for it). Semantics: yes on a `doubleCount`
+id grants that slot pair to the ordinary scenarios (no longer an approval; a note
+says so), no refuses it in every scenario including `best`; yes on
+`placement:language:<degreeId>` waives that degree's language requirement, no stops
+the best case assuming it; yes on `load:<n>` is `loadApproved` at that load, no
+keeps every scenario at the standard load; a recorded answer beats a conflicting
+chat statement. Granting and refusing act on the slot pair, not only the named
+course. The answers are used for that request only: nothing stores them, and the
+log line carries only their count.
+
 Structured-phone log line (counts and ids only, no content, no course codes):
-`degree-advisor: round R intent I model M[+M2] ms T explain_ms E engine_ms G slots S remaining C chosen ID finish TERM packs P1/P2|none [pack_error X]`
+`degree-advisor: round R intent I model M[+M2] ms T explain_ms E engine_ms G answers N slots S remaining C chosen ID finish TERM packs P1/P2|none [pack_error X]`
 for plan and email; `degree-advisor: round R intent I model M ms T actions A picks P kept K` for the
 other intents.
 

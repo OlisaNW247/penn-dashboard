@@ -194,6 +194,17 @@ export interface PlanRequest {
   targetTerm?: string;
   /** Load the student said they will take; overrides the scenario caps. */
   maxLoad?: number;
+  /** The student reports they are already approved for `maxLoad` (or for the
+   *  policy's approved load when `maxLoad` is absent). A load up to that
+   *  figure is then a fact, never an approval still to be obtained. */
+  loadApproved?: boolean;
+  /** True only when the student asks to see the best case or says to assume
+   *  their advisor approves; otherwise the scenario that leans on approvals
+   *  nobody granted is never drawn as the plan. */
+  assumeApprovals?: boolean;
+  /** The student's recorded answers to the advisor questions, for this
+   *  request only (never stored). */
+  advisorAnswers?: { id: string; answer: "yes" | "no" }[];
   /** Whether summer terms may be used (default true). */
   allowSummer?: boolean;
   /** Slot ids the student says are already handled (e.g. the language
@@ -238,7 +249,7 @@ export interface PlannedTermOut {
 }
 
 export interface Scenario {
-  id: "standard" | "summer" | "approved" | "student" | "best";
+  id: "standard" | "summer" | "fullSummer" | "approved" | "student" | "best";
   /** "5.5 cu a semester, no summer". */
   label: string;
   maxLoad: number;
@@ -273,7 +284,29 @@ export interface PlanResult {
   /** Within-degree double counts that would save credits if an advisor
    *  approved them. */
   petitions: { code: string; slots: string[]; savesCredits: number }[];
+  /** Short plain labels (at most 8, each at most 80 characters) of everything
+   *  the CHOSEN scenario still depends on that someone else must grant or that
+   *  is an assumption. Empty when it depends on nothing. */
+  approvals: string[];
+  /** Set when an earlier finish exists only if `approvals` are granted. The
+   *  schedule shown does not assume them. */
+  bestCase?: { finishTerm: string | null; approvals: string[] };
+  /** At most 12, most valuable first: one for each thing the best case leans
+   *  on that nobody granted, plus every one already answered. */
+  advisorQuestions: AdvisorQuestion[];
   /** Plain-language notes the explanation should mention (prerequisite
    *  ordering, a rule applied, data that was missing). */
   notes: string[];
+}
+
+export interface AdvisorQuestion {
+  /** Stable across requests for the same audits, at most 200 characters. */
+  id: string;
+  kind: "doubleCount" | "placement" | "load";
+  /** One plain sentence a student can read to an advisor, ending in "?". */
+  question: string;
+  /** What a yes changes, e.g. "saves 1 cu". */
+  detail: string;
+  /** The recorded answer echoed back, null when none. */
+  answer: "yes" | "no" | null;
 }

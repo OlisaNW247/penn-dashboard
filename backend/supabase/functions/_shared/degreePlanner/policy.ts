@@ -53,6 +53,12 @@ export interface Policy {
     /** `first` must sit in the semester immediately before `second` (fall to
      *  the following spring), as the two halves of a senior project do. */
     immediatelyBefore(first: Slot, second: Slot): boolean;
+    /** Are these two courses the matching halves of one two-semester design
+     *  course? See `isSequencePair`. */
+    isSequencePair(first: string, second: string): boolean;
+    /** Is this slot the "#2" half of a sequence whose "#1" half may already
+     *  be taken (and so is not an open slot of its own)? */
+    isSecondHalf(slot: Slot): boolean;
     /** A course whose prerequisite text names another planned course comes
      *  after it. */
     prerequisiteOrdering: boolean;
@@ -79,6 +85,24 @@ const isAreaList = (s: Slot) => /^area list/i.test(s.label.trim());
 function isAreaListElectivePair(area: Slot, elective: Slot): boolean {
   return area.group.startsWith("seas.") && elective.group === "seas.core" &&
     isAreaList(area) && !isAreaList(elective) && /elective/i.test(elective.label);
+}
+
+/**
+ * The two halves of a two-semester design course carry matching numbers: the
+ * second is the first plus 10 in the same subject (CIS 4000 + CIS 4010 is the
+ * senior project, CIS 4100 + CIS 4110 the senior thesis). This is Penn's CIS
+ * numbering convention, observed on 2026-11-27 on a real plan that paired
+ * CIS 4100 with CIS 4010; it is not a rule verified on a Penn page, so the
+ * planner prefers a matching pair and, when none exists in the options, keeps
+ * the old choice and says to check with the department. The wrong fix is
+ * hard-coding the two CIS pairs: the same convention holds for other
+ * Engineering majors' design courses.
+ */
+export function isSequencePair(first: string, second: string): boolean {
+  const re = /^\s*([A-Za-z]{2,5})\s*-?\s*(\d{4})\s*$/;
+  const a = re.exec(first), b = re.exec(second);
+  if (!a || !b) return false;
+  return a[1].toUpperCase() === b[1].toUpperCase() && Number(b[2]) === Number(a[2]) + 10;
 }
 
 export const pennPolicy: Policy = {
@@ -168,6 +192,10 @@ export const pennPolicy: Policy = {
       const a = first.label.replace(/#\s*1\b/, "#N").trim().toLowerCase();
       const b = second.label.replace(/#\s*2\b/, "#N").trim().toLowerCase();
       return a === b && /#N/.test(b.toUpperCase());
+    },
+    isSequencePair,
+    isSecondHalf(slot) {
+      return /#\s*2\b/.test(slot.label);
     },
     prerequisiteOrdering: true,
   },

@@ -585,7 +585,7 @@ Deno.test("degree-advisor: structured is optional and parsed with its caps", () 
 Deno.test("degree-advisor: structured schema order and the legacy schema untouched", () => {
   const props = Object.keys((DEGREE_ADVISOR_STRUCTURED_SCHEMA.schema as any).properties);
   assert.deepEqual(props, [
-    "intent", "whatIf", "targetTerm", "maxLoad", "allowSummer", "waive", "avoid", "prefer", "actions", "planning", "answer",
+    "intent", "whatIf", "targetTerm", "maxLoad", "loadApproved", "assumeApprovals", "allowSummer", "waive", "avoid", "prefer", "actions", "planning", "answer",
   ]);
   assert.deepEqual((DEGREE_ADVISOR_STRUCTURED_SCHEMA.schema as any).required, props);
   assert.deepEqual((DEGREE_ADVISOR_STRUCTURED_SCHEMA.schema as any).properties.intent.enum, ["question", "edit", "plan", "email"]);
@@ -609,7 +609,7 @@ Deno.test("degree-advisor: readDegreeIntent is lenient about fields", () => {
   }), body);
   assert.equal(r.intent, "plan");
   assert.deepEqual(r.params, {
-    targetTerm: "202810", maxLoad: 7, allowSummer: false, waive: ["Foreign Language"], avoid: ["CIS 4710"], prefer: [],
+    targetTerm: "202810", maxLoad: 7, loadApproved: null, assumeApprovals: null, allowSummer: false, waive: ["Foreign Language"], avoid: ["CIS 4710"], prefer: [],
   });
   assert.equal(r.whatIf, null);
   assert.equal(readDegreeIntent(JSON.stringify({ intent: "bogus", maxLoad: 99, targetTerm: "x" }), body).intent, "question");
@@ -804,7 +804,7 @@ Deno.test("degree-advisor: plainPlanSummary says when nothing is left", async ()
   const empty = {
     remainingCredits: 0, remainingCreditsWithoutOverlap: 0,
     scenarios: [{ id: "standard", label: "x", maxLoad: 5.5, summer: false, finishTerm: "202630", meetsTarget: true }],
-    chosen: "standard", schedule: [], unfilled: [], petitions: [], notes: ["nothing is left to plan"],
+    chosen: "standard", schedule: [], unfilled: [], petitions: [], approvals: [], notes: ["nothing is left to plan"],
   };
   const text = plainPlanSummary(empty as never);
   assert.ok(text.startsWith("Nothing is left to plan"));

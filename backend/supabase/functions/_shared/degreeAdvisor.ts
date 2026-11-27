@@ -47,6 +47,9 @@ export interface DegreeAdvisorBody {
   round: number;
   /** Present only from a phone that sends audits; absent keeps the old path. */
   structured?: DegreeAdvisorStructured;
+  /** The student's recorded answers to the advisor questions; used for this
+   *  request only and never stored or logged beyond a count. */
+  advisorAnswers?: { id: string; answer: "yes" | "no" }[];
 }
 
 /** A requirement Penn describes in words, with no course list. `tag` is how
@@ -210,6 +213,18 @@ export function parseDegreeAdvisorBody(value: unknown): DegreeAdvisorBody | unde
     if (!structured) return undefined;
     body.structured = structured;
   }
+  // Bad elements are dropped; the request is never refused for them.
+  if (Array.isArray(b.advisorAnswers)) {
+    const answers: { id: string; answer: "yes" | "no" }[] = [];
+    for (const a of b.advisorAnswers.slice(0, 40)) {
+      if (typeof a !== "object" || a === null) continue;
+      const { id, answer } = a as Record<string, unknown>;
+      if (typeof id !== "string" || id.length < 1 || id.length > 200) continue;
+      if (answer !== "yes" && answer !== "no") continue;
+      answers.push({ id, answer });
+    }
+    if (answers.length > 0) body.advisorAnswers = answers;
+  }
   return body;
 }
 
@@ -305,6 +320,13 @@ export type DegreeIntent = "question" | "edit" | "plan" | "email";
 export interface DegreeIntentParams {
   targetTerm: string | null;
   maxLoad: number | null;
+  /** True only when the student says they are already approved for the load
+   *  they name (or for 6.5); null otherwise, never false-by-default, so "not
+   *  said" and "said no" cannot be told apart and neither is acted on. */
+  loadApproved: boolean | null;
+  /** True only when the student asks for the best case or says to assume
+   *  their advisor approves. */
+  assumeApprovals: boolean | null;
   allowSummer: boolean | null;
   waive: string[];
   avoid: string[];
@@ -314,7 +336,7 @@ export interface DegreeIntentParams {
 /** Added to the base instructions when the phone sent `structured`. */
 export const DEGREE_ADVISOR_INTENT_INSTRUCTIONS = [
   "INTENT: a deterministic planner builds whole plans from Penn's audits; you only read the request. Set `intent` to one of: \"plan\" when the student asks to build, fill, complete or check whether a plan or a finish date works; \"email\" when they ask for an email to their advisor (the plan is run for it too); \"edit\" when they ask to add, move or remove a few specific courses; \"question\" for everything else. For \"plan\" and \"email\" `actions` must be empty and your `answer` is only shown if the plan cannot be built, so write one short, neutral sentence that is true either way (for example \"I'll build that plan from your audits.\"), never a claim about the result.",
-  "PLAN PARAMETERS (only for \"plan\" and \"email\"; otherwise null or empty): `targetTerm` is the last semester the student wants to finish in, as a six-digit Penn term code (spring YYYY10, summer YYYY20, fall YYYY30): \"by spring 2028\" is \"202810\". For \"on time\" or \"graduate on time\", use the semester named on the FINISH line of the DOCUMENT converted to a term code, or null when there is no FINISH line. `maxLoad` is the credit units per semester the student says they can take (\"I can do 7\" is 7), else null. `allowSummer` is false if they rule out summer, true if they ask for it, else null. `waive` lists short labels of requirements the student says are already handled (for example \"Foreign Language Proficiency\" when they say they passed a placement exam). `avoid` and `prefer` are course codes (\"CIS 4710\") they want left out or favoured.",
+  "PLAN PARAMETERS (only for \"plan\" and \"email\"; otherwise null or empty): `targetTerm` is the last semester the student wants to finish in, as a six-digit Penn term code (spring YYYY10, summer YYYY20, fall YYYY30): \"by spring 2028\" is \"202810\". For \"on time\" or \"graduate on time\", use the semester named on the FINISH line of the DOCUMENT converted to a term code, or null when there is no FINISH line. `maxLoad` is the credit units per semester the student says they can take (\"I can do 7\" is 7), else null. `loadApproved` is true when the student says they are already approved, cleared or have permission for the load they name (or for 6.5 credit units a semester), else null; it is a fact they report, never something to infer from a large `maxLoad`. `assumeApprovals` is true only when the student asks to see the best case or tells you to assume their advisor approves (\"assume the petitions go through\", \"show me the best case\", \"if my advisor approves\"), else null. `allowSummer` is false if they rule out summer, true if they ask for it, else null. `waive` lists short labels of requirements the student says are already handled (for example \"Foreign Language Proficiency\" when they say they passed a placement exam). `avoid` and `prefer` are course codes (\"CIS 4710\") they want left out or favoured.",
 ].join("\n\n");
 
 export const DEGREE_ADVISOR_STRUCTURED_INSTRUCTIONS = `${DEGREE_ADVISOR_INSTRUCTIONS}\n\n${DEGREE_ADVISOR_INTENT_INSTRUCTIONS}`;
@@ -332,6 +354,8 @@ export const DEGREE_ADVISOR_STRUCTURED_SCHEMA = {
       whatIf: { type: ["string", "null"] },
       targetTerm: { type: ["string", "null"] },
       maxLoad: { type: ["number", "null"] },
+      loadApproved: { type: ["boolean", "null"] },
+      assumeApprovals: { type: ["boolean", "null"] },
       allowSummer: { type: ["boolean", "null"] },
       waive: { type: "array", items: { type: "string" } },
       avoid: { type: "array", items: { type: "string" } },
@@ -341,7 +365,7 @@ export const DEGREE_ADVISOR_STRUCTURED_SCHEMA = {
       answer: { type: "string" },
     },
     required: [
-      "intent", "whatIf", "targetTerm", "maxLoad", "allowSummer", "waive", "avoid", "prefer",
+      "intent", "whatIf", "targetTerm", "maxLoad", "loadApproved", "assumeApprovals", "allowSummer", "waive", "avoid", "prefer",
       "actions", "planning", "answer",
     ],
     additionalProperties: false,
@@ -351,6 +375,9 @@ export const DEGREE_ADVISOR_STRUCTURED_SCHEMA = {
 export const DEGREE_ADVISOR_EXPLAIN_INSTRUCTIONS = [
   "You are the degree planning assistant inside Smooth, a Penn student's app. A planner program has already built the student's plan from Penn's own audits; PLAN below is its result as JSON. You explain it. You do not change it and you never invent anything that is not in PLAN.",
   "ANSWER: at most 170 words, plain text, no markdown, no bullets, no list of courses (the app shows the schedule itself). Say plainly whether the target is met and under which scenario, with the numbers, for example \"at 5.5 cu a semester it finishes fall 2028; spring 2028 needs 6.5 cu with your advisor's approval and 2 cu in summer 2027\". If the plan's `chosen` scenario is \"best\", say plainly that the target works only in the best case and name each thing it relies on from `notes` (the advisor approvals by course, the language placement exam, 6.5 cu semesters, summers), for example \"spring 2028 works only if your advisor approves X and Y and you place out of the language\". If the student gave no target, say when the plan finishes and at what load. Mention the biggest savings from double counting in one clause (remainingCredits against remainingCreditsWithoutOverlap). Name what could not be planned (`unfilled`) and why. Name each petition as something to ask the advisor about. Include the planner's `notes` that matter.",
+  "APPROVALS: list exactly the entries of PLAN `approvals` as what the plan depends on, and nothing else as an approval. When `loadApproved` is true the student has told you they are already approved for that load: never call it an approval or something that needs approval, and say nothing about approving it. When `approvals` is empty say the plan depends on no approvals.",
+  "BEST CASE: when `bestCase` is not null and the student did not ask for it (`assumeApprovals` false), say plainly that the schedule shown finishes at the chosen scenario's finish, and list what the earlier finish in `bestCase` would need (its `approvals`); never present ungranted approvals as part of the schedule shown.",
+  "ADVISOR QUESTIONS: end the answer with at most three of the `advisorQuestions` whose `answer` is null, each on its own line starting \"ask your advisor:\"; never restate a question that has an answer as still open.",
   "LOAD: a term's load is registered plus planned. Each schedule term gives `registeredCredits` (already registered, not in `courses`), `plannedCredits` (what the plan adds) and `totalCredits`; never describe the planned credits alone as the term's load.",
   "WORDING: a planned course \"would count toward\" a requirement. Never say a requirement is met, satisfied or done because of a planned course, and never promise the student will graduate or finish by a date; Penn's audit and the student's advisor decide.",
   "EMAIL: set `email` to null unless the student asked for an email to their advisor (EMAIL REQUESTED says so). When asked, write under 300 words: polite, to the student's advisor, stating the goal, the plan's numbers (target, finish, load, credits remaining with and without double counting), numbered questions drawn from the petitions, the unfilled items, any scenario that needs approval (a heavier load, summer courses) and any notes. Use only \"[advisor name]\" and \"[your name]\" as placeholders and no others.",
@@ -377,6 +404,9 @@ export function compactPlanForExplain(plan: PlanResult, params: DegreeIntentPara
   return {
     target: label(params.targetTerm),
     requestedLoad: params.maxLoad,
+    // A fact the student reported, not a request: a load up to this figure is
+    // already approved and must never be described as needing approval.
+    loadApproved: params.loadApproved === true,
     summerAllowed: params.allowSummer,
     waived: params.waive,
     remainingCredits: plan.remainingCredits,
@@ -395,6 +425,14 @@ export function compactPlanForExplain(plan: PlanResult, params: DegreeIntentPara
     })),
     unfilled: plan.unfilled.map((u) => ({ degree: u.degreeLabel, requirement: u.label, reason: u.reason })),
     petitions: plan.petitions,
+    // Everything the chosen scenario still depends on someone else granting or
+    // on an assumption. The explanation lists exactly these.
+    approvals: plan.approvals,
+    assumeApprovals: params.assumeApprovals === true,
+    // An earlier finish that exists only if these are granted; the schedule
+    // shown does not assume them.
+    bestCase: plan.bestCase ?? null,
+    advisorQuestions: plan.advisorQuestions.map((q) => ({ question: q.question, detail: q.detail, answer: q.answer })),
     notes: plan.notes,
   };
 }
@@ -477,6 +515,8 @@ export function readDegreeIntent(text: string, body: DegreeAdvisorBody): DegreeI
     params: {
       targetTerm: typeof obj.targetTerm === "string" && TERM_CODE.test(obj.targetTerm) ? obj.targetTerm : null,
       maxLoad: load,
+      loadApproved: obj.loadApproved === true ? true : null,
+      assumeApprovals: obj.assumeApprovals === true ? true : null,
       allowSummer: typeof obj.allowSummer === "boolean" ? obj.allowSummer : null,
       waive: strings(obj.waive, 20, 120),
       avoid: codes(obj.avoid),

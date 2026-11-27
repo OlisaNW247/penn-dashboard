@@ -198,6 +198,7 @@ export async function handleDegreeAdvisor(req: Request): Promise<Response> {
             out = await engineHooks.run({
               structured: body.structured,
               intent: intent.params,
+              advisorAnswers: body.advisorAnswers,
               fetchImpl: fetch,
               now: new Date(),
               signal: req.signal,
@@ -254,7 +255,7 @@ export async function handleDegreeAdvisor(req: Request): Promise<Response> {
           console.log(
             `degree-advisor: round ${body.round} intent ${intent.intent} model ${completion.model}` +
               `${explainModel !== completion.model ? `+${explainModel}` : ""} ` +
-              `ms ${firstMs} explain_ms ${modelMs - firstMs} engine_ms ${engineMs} slots ${out.slots} ` +
+              `ms ${firstMs} explain_ms ${modelMs - firstMs} engine_ms ${engineMs} answers ${body.advisorAnswers?.length ?? 0} slots ${out.slots} ` +
               `remaining ${plan.remainingCredits} chosen ${plan.chosen} finish ${chosen?.finishTerm ?? "none"}` +
               ` packs ${(out.packs ?? []).map((p) => p.program).filter(Boolean).join("/") || "none"}` +
               (out.packError ? ` pack_error ${out.packError.slice(0, 60).replace(/\s+/g, "_")}` : ""),

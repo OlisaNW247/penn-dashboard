@@ -262,7 +262,11 @@ Deno.test("planner: scenario finish terms, standard vs approved", () => {
   assert.ok(std.finishTerm > appr.finishTerm, "a higher load finishes sooner");
   // 30 cu cannot fit in spring 2027 through spring 2028 even at 6.5.
   assert.equal(appr.meetsTarget, false);
-  assert.equal(r.scenarios.find((s) => s.id === r.chosen)!.finishTerm, appr.finishTerm);
+  // Changed on purpose: the "approved" 6.5 scenario needs an approval nobody
+  // gave, so it is not drawn as the plan; the chosen finish is the earliest
+  // among the scenarios that need none (standard, summer, fullSummer).
+  const free = ["standard", "summer", "fullSummer"].map(get).map((s) => s.finishTerm!).sort()[0];
+  assert.equal(r.scenarios.find((s) => s.id === r.chosen)!.finishTerm, free);
   assert.ok(r.notes.some((n) => n.includes("does not fit by spring 2028")));
   assert.equal(r.scenarios.find((s) => s.id === "student"), undefined);
 });
@@ -289,9 +293,12 @@ Deno.test("planner: a lighter plan meets the target only at a higher load", () =
   assert.equal(get("standard").meetsTarget, false);
   assert.ok(get("approved").finishTerm! <= get("summer").finishTerm!);
   const chosen = r.scenarios.find((s) => s.id === r.chosen)!;
-  if (get("summer").meetsTarget || get("approved").meetsTarget) {
+  // Changed on purpose: "approved" (6.5, nobody granted it) is never the
+  // plan; the scenario that needs no approval is, so test summer/fullSummer.
+  if (get("summer").meetsTarget || get("fullSummer").meetsTarget) {
     assert.ok(chosen.meetsTarget);
     assert.notEqual(chosen.id, "standard");
+    assert.notEqual(chosen.id, "approved");
   }
 });
 
@@ -667,9 +674,11 @@ Deno.test("planner: best is picked when the ordinary scenarios miss the target",
         cs("Technical Electives", "seas.techElective", 1, "cu", opts("MATH 3140")),
       ] },
     ],
-    targetTerm: "202710", allowSummer: false,
+    targetTerm: "202710", allowSummer: false, assumeApprovals: true,
   });
   const r = plan(req, cat);
+  // Changed on purpose: best is chosen only when the student asks for it.
+  assert.notEqual(plan({ ...req, assumeApprovals: undefined }, cat).chosen, "best");
   // ordinary: 5 + OIDD 4770 + (concentration also needs 4770: same course can't) -> 6 courses + SPAN = 7 > 5.5, 6.5
   assert.equal(r.scenarios.find((s) => s.id === "standard")!.meetsTarget, false);
   assert.equal(r.scenarios.find((s) => s.id === "approved")!.meetsTarget, false);
@@ -690,7 +699,7 @@ Deno.test("planner: best is picked when the ordinary scenarios miss the target",
   const r2 = plan({ ...req, taken: ["SPAN 0050"] }, (() => { const c = catalog(); c.courses["SPAN 0050"] = course("SPAN 0050", 1, ["WUFL"]); c.attributeIndex["WUFL"].push("SPAN 0050"); return c; })());
   assert.ok(!r2.notes.some((n) => n.includes("placement exam")));
   // When nothing meets the target, best is not chosen.
-  const none = plan({ ...req, targetTerm: "202630" }, cat);
+  const none = plan({ ...req, targetTerm: "202630", assumeApprovals: undefined }, cat);
   assert.notEqual(none.chosen, "best");
 });
 
@@ -712,8 +721,11 @@ Deno.test("planner: ordinary scenarios stay at 2 cu a summer, best reaches 4, an
   const degs: Degree[] = [{ id: "wh", label: WH, college: "WU", applied: [], slots }];
   const summers = (r: PlanResult) => r.schedule.filter((t) => t.term.endsWith("20")).map((t) => t.credits);
   // 10 summer-only cu by summer 2029: only best's 4-cu summers fit (4+4+2).
+  // Changed on purpose: a 4 cu summer is Penn's own limit, so it is the
+  // ordinary "fullSummer" scenario now and needs no approval to be chosen.
   const hard = plan(request({ degrees: degs, targetTerm: "202920" }), cat);
-  assert.equal(hard.chosen, "best");
+  assert.equal(hard.chosen, "fullSummer");
+  assert.deepEqual(hard.approvals, []);
   const bs = summers(hard);
   assert.ok(bs.length >= 3 && bs.every((c) => c <= 4 + 1e-9));
   assert.ok(bs.some((c) => c > 2), "best uses more than the cautious 2 cu");
@@ -728,15 +740,11 @@ Deno.test("planner: ordinary scenarios stay at 2 cu a summer, best reaches 4, an
   assert.ok(summers(easy).length > 2, "more than two summers are used");
   assert.ok(summers(easy).every((c) => c <= 2 + 1e-9));
   assert.ok(summers(easy).reduce((a, b) => a + b, 0) > 4, "the old 4-in-all cap is gone");
-  const note = hard.notes.find((n) => n.startsWith("best case assumes"))!;
-  // No Engineering degree in the request: the number stays, the attribution goes.
-  assert.ok(note.includes("summer courses, up to 4 cu a summer") && !note.includes("Engineering"), note);
-  const withEng = plan(
-    request({ degrees: [...degs, { id: "eu", label: CS, college: "EU", applied: [], slots: [] }], targetTerm: "202920" }),
-    cat,
-  );
-  const note2 = withEng.notes.find((n) => n.startsWith("best case assumes"))!;
-  assert.ok(note2.includes("summer courses, up to 4 cu a summer (Engineering's limit, 2 per session)"), note2);
+  // Changed on purpose: the 4 cu summer is no longer a best-case assumption
+  // (there is no "best case assumes" note when an ordinary scenario fits); it
+  // is the fullSummer scenario's own label, and it names no approval.
+  assert.equal(hard.scenarios.find((s) => s.id === "fullSummer")!.label, "5.5 cu a semester, summers at up to 4 cu");
+  assert.ok(!hard.notes.some((n) => n.startsWith("best case assumes")));
 });
 
 Deno.test("planner: a Wharton + Engineering student does not plan the capstone", () => {
