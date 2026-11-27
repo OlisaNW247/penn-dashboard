@@ -392,6 +392,27 @@ struct DegreeAdvisorTests {
         #expect(out.applied.first?.toTermLabel == DegreePlanMath.termLabel("202730"))
     }
 
+    @Test("a move into a semester that already holds eight courses goes through")
+    func moveIntoEightCourseTerm() {
+        // 2026-11-27: a planner-made spring of eight courses (several
+        // half-credit) refused every move the chat made into it.
+        let eight = (1...8).map { "CIS 10\($0)" }
+        let out = DegreeAdvisor.apply([action(.move, "STAT 1020", "202720", "202810")],
+                                      to: plan([("202720", ["STAT 1020"]), ("202810", eight)]),
+                                      brief: simpleBrief(addable: []))
+        #expect(location("STAT 1020", out.plan) == "202810")
+        #expect(out.skipped == 0)
+        #expect(DegreePlanMath.maxCoursesPerTerm >= 12)
+    }
+
+    @Test("skipped edits are said under the answer, never hidden")
+    func skippedNote() {
+        #expect(DegreeAdvisor.skippedNote(applied: 2, skipped: 0) == nil)
+        #expect(DegreeAdvisor.skippedNote(applied: 0, skipped: 1)?.hasPrefix("that change didn't go into your plan") == true)
+        #expect(DegreeAdvisor.skippedNote(applied: 0, skipped: 2)?.hasPrefix("none of those changes") == true)
+        #expect(DegreeAdvisor.skippedNote(applied: 1, skipped: 1) == "1 of 2 changes didn't go into your plan.")
+    }
+
     @Test("move to the same term, or without a target, is skipped")
     func moveSame() {
         let start = plan([("202710", ["STAT 1020"])])

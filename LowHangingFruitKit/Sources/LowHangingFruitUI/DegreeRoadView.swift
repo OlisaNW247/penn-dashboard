@@ -330,7 +330,9 @@ struct DegreeRoadView: View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(road.stops) { stop in
                 stopRow(stop)
-                if road.nextStepStopID == stop.id, let step = road.nextStep {
+                // "ask your advisor" is the advisor row itself, already grape
+                // and tappable; a callout under it only repeated the words.
+                if road.nextStepStopID == stop.id, let step = road.nextStep, step != .askAdvisor {
                     callout(step)
                 }
                 if case .term(_, _, _, _, _, let isFinish) = stop.kind, isFinish, let sooner = road.sooner {

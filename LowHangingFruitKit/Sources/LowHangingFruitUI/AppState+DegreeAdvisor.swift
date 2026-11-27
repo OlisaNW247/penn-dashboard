@@ -257,6 +257,8 @@ extension AppState {
         var currentQuestion = question
         var history = turns
         var changes: [DegreeAdvisorChange] = []
+        var skippedEdits = 0
+        var appliedEdits = 0
         var answer = response.answer
         var round = 1
         while true {
@@ -271,6 +273,8 @@ extension AppState {
                     standIns: DegreePlanStandIn.standIns(from: auditsUsed))
             } else {
                 outcome = DegreeAdvisor.apply(current.actions, to: before, brief: currentBrief)
+                skippedEdits += outcome.skipped
+                appliedEdits += outcome.applied.count
             }
             let changed = outcome.plan != before
             if changed {
@@ -307,6 +311,9 @@ extension AppState {
             }
         }
         let changedOverall = degreePlan != planBefore
+        if let note = DegreeAdvisor.skippedNote(applied: appliedEdits, skipped: skippedEdits) {
+            answer = answer.isEmpty ? note : answer + "\n\n" + note
+        }
         return DegreeAdvisorReply(answer: answer,
                                   changes: changedOverall ? changes : [],
                                   planBefore: changedOverall ? planBefore : nil,

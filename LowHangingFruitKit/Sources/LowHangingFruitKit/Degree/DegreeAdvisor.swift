@@ -916,6 +916,22 @@ public enum DegreeAdvisor {
         return nil
     }
 
+    /// The line added under the model's answer when some of its edits could
+    /// not be applied to the plan (a full semester, a course no longer where
+    /// the model thought, a term out of reach). The model writes its answer
+    /// before the phone tries the edits, so without this line an answer can
+    /// claim a move the plan never took. Nil when nothing was skipped.
+    public static func skippedNote(applied: Int, skipped: Int) -> String? {
+        guard skipped > 0 else { return nil }
+        if applied == 0 {
+            return skipped == 1
+                ? "that change didn't go into your plan. try again, or move it on the road."
+                : "none of those changes went into your plan. try again, or move them on the road."
+        }
+        let total = applied + skipped
+        return "\(skipped) of \(total) changes didn't go into your plan."
+    }
+
     // MARK: Summary
 
     /// Short lowercase lines for the chat card: adds, then moves, then

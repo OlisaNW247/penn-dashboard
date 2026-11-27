@@ -289,7 +289,12 @@ public enum DegreePlanMath {
     /// A cap on columns. Fourteen so a plan that spends summers (fall, spring and
     /// summer for several years) is not cut short.
     public static let maxTerms = 14
-    public static let maxCoursesPerTerm = 8
+    /// A cap on rows per semester, not on load: load is judged in credit
+    /// units (`DegreeTimeline.isOverLimit`). It was 8 until 2026-11-27, when a
+    /// planner-made spring of eight courses (several half-credit, 5.5 cu)
+    /// refused every move the chat made into it, silently, and the chat said
+    /// it had moved them.
+    public static let maxCoursesPerTerm = 12
 
     /// An open requirement that Penn's audit lists options for, in Penn's order.
     public struct OpenRequirement: Sendable, Equatable, Identifiable {
