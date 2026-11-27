@@ -265,7 +265,8 @@ extension AppState {
             if let enginePlan = current.plan {
                 outcome = DegreeAdvisor.applyEnginePlan(
                     enginePlan, to: before,
-                    currentTerm: currentBrief.structured?.currentTerm ?? Term(date: now).code, now: now)
+                    currentTerm: currentBrief.structured?.currentTerm ?? Term(date: now).code, now: now,
+                    standIns: DegreePlanStandIn.standIns(from: auditsUsed))
             } else {
                 outcome = DegreeAdvisor.apply(current.actions, to: before, brief: currentBrief)
             }

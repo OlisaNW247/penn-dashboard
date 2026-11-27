@@ -230,13 +230,18 @@ public struct DegreeEnginePlan: Codable, Sendable, Equatable {
     public let unfilled: [DegreeEngineUnfilled]
     public let petitions: [DegreeEnginePetition]
     public let notes: [String]
+    /// Short labels of the approvals the chosen scenario leans on; empty means
+    /// none. Nil when the key is absent (an older server), which keeps the
+    /// scenario-id rule in `summary(of:now:)`.
+    public let approvals: [String]?
 
     public init(
         remainingCredits: Double, remainingCreditsWithoutOverlap: Double,
         scenarios: [DegreeEngineScenario], chosen: String, schedule: [DegreeEngineTerm],
         unfilled: [DegreeEngineUnfilled] = [], petitions: [DegreeEnginePetition] = [],
-        notes: [String] = []
+        notes: [String] = [], approvals: [String]? = nil
     ) {
+        self.approvals = approvals
         self.remainingCredits = remainingCredits
         self.remainingCreditsWithoutOverlap = remainingCreditsWithoutOverlap
         self.scenarios = scenarios
@@ -249,7 +254,7 @@ public struct DegreeEnginePlan: Codable, Sendable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case remainingCredits, remainingCreditsWithoutOverlap, scenarios, chosen, schedule
-        case unfilled, petitions, notes
+        case unfilled, petitions, notes, approvals
     }
 
     /// The schedule list is required (a plan with no schedule key must not
@@ -267,6 +272,10 @@ public struct DegreeEnginePlan: Codable, Sendable, Equatable {
         self.unfilled = lossyList(DegreeEngineUnfilled.self, in: c, forKey: .unfilled)
         self.petitions = lossyList(DegreeEnginePetition.self, in: c, forKey: .petitions)
         self.notes = lossyList(String.self, in: c, forKey: .notes)
+        // Nil (not empty) when the key is absent or not a list: "the server
+        // did not say" and "the server said none" must stay different.
+        let rawApprovals: [EngineLossy<String>]? = lenient([EngineLossy<String>].self, in: c, forKey: .approvals)
+        self.approvals = rawApprovals.map { $0.compactMap { $0.value } }
     }
 }
 
@@ -301,7 +310,8 @@ extension DegreeAdvisor {
     /// semesters that fit under `DegreePlanMath.maxTerms` are kept (the latest
     /// ones fall off first). A schedule with no courses leaves the plan as it is.
     public static func applyEnginePlan(
-        _ plan: DegreeEnginePlan, to existing: DegreePlan, currentTerm: String, now: Date = Date()
+        _ plan: DegreeEnginePlan, to existing: DegreePlan, currentTerm: String, now: Date = Date(),
+        standIns: [DegreePlanStandIn] = []
     ) -> DegreeAdvisorOutcome {
         let total = plan.schedule.reduce(0) { $0 + $1.courses.count }
         // A schedule with no course in it changes nothing: replacing the
@@ -370,22 +380,32 @@ extension DegreeAdvisor {
         }
         terms.sort { $0.termCode < $1.termCode }
         return DegreeAdvisorOutcome(
-            plan: DegreePlan(terms: terms, summary: summary(of: plan, now: now)), applied: applied, skipped: skipped)
+            plan: DegreePlan(terms: terms, summary: summary(of: plan, now: now, standIns: standIns)), applied: applied, skipped: skipped)
     }
 
     /// The summary line's facts, from the scenario the engine chose; nil when
     /// the answer names none (an older server), so such a plan reads as before.
     /// An approval is needed by the "approved" and "best" scenarios, and by the
     /// student's own load when it is above the normal 5.5 cu.
-    static func summary(of plan: DegreeEnginePlan, now: Date) -> DegreePlanSummary? {
+    static func summary(
+        of plan: DegreeEnginePlan, now: Date, standIns: [DegreePlanStandIn] = []
+    ) -> DegreePlanSummary? {
         guard let scenario = plan.chosenScenario else { return nil }
-        let needsApproval = scenario.id == "approved" || scenario.id == "best"
-            || (scenario.id == "student" && scenario.maxLoad > 5.5)
+        // When the server lists its approvals, that list is the word: the
+        // scenario's id cannot know that a "best" plan happened to need none.
+        let needsApproval: Bool
+        if let approvals = plan.approvals {
+            needsApproval = !approvals.isEmpty
+        } else {
+            needsApproval = scenario.id == "approved" || scenario.id == "best"
+                || (scenario.id == "student" && scenario.maxLoad > 5.5)
+        }
         let finish = scenario.finishTerm.flatMap { $0.isEmpty ? nil : $0 }
         return DegreePlanSummary(
             finishTerm: finish, scenarioID: scenario.id, scenarioLabel: scenario.label,
             remainingCredits: plan.remainingCredits.isFinite ? plan.remainingCredits : nil,
-            needsApproval: needsApproval, createdAt: now)
+            needsApproval: needsApproval, createdAt: now,
+            standIns: standIns.isEmpty ? nil : standIns, approvals: plan.approvals)
     }
 }
 

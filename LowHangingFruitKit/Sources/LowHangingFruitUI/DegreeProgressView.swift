@@ -763,15 +763,19 @@ struct DegreeProgressView: View {
         let list = state.degree.whatIfs
         if tab == .whatIf, !list.isEmpty {
             let target = list[min(selectedWhatIf, list.count - 1)]
-            return tableAudits(replacingSelectedWith: target)
+            return tableAudits(replacingSelectedWith: target, base: state.degreeOwnAudits)
         }
-        return state.degreeAudits
+        // The declared audits, not the drawn ones: the chat reads its own
+        // what-ifs from its `activeAudits`, and a stand-in drawn for the plan
+        // must not be handed to it as if the student had declared it.
+        return state.degreeOwnAudits
     }
 
     /// For a dual-degree student the table plans toward both audits; a what-if
     /// takes the place of the selected degree's own entry.
-    private func tableAudits(replacingSelectedWith whatIf: DegreeAudit?) -> [DegreeLabeledAudit] {
-        let all = state.degreeAudits
+    private func tableAudits(replacingSelectedWith whatIf: DegreeAudit?,
+                             base: [DegreeLabeledAudit]? = nil) -> [DegreeLabeledAudit] {
+        let all = base ?? state.degreeAudits
         guard let whatIf, let selectedID = state.selectedStudentDegree?.id,
               all.contains(where: { $0.degreeID == selectedID }) else { return all }
         var out: [DegreeLabeledAudit] = []

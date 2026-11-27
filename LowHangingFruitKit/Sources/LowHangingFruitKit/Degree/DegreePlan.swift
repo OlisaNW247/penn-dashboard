@@ -79,6 +79,66 @@ public struct PlannedTerm: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
+/// A degree the plan was made against a what-if audit for (the student's
+/// Wharton degree is "undeclared", the plan was made against "management"). The
+/// planned courses carry slot ids from that audit's block and rule ids, which
+/// the declared audit does not have, so drawing the declared one leaves the
+/// plan's arc empty: the screen then does not show the plan the planner made.
+/// The wrong fix is remapping slot ids onto the declared audit; the ids are
+/// right, the audit drawn is the wrong one. `goals` finds the kept audit again.
+public struct DegreePlanStandIn: Codable, Sendable, Equatable {
+    /// `StudentDegree.id` of the degree the what-if stands in for.
+    public let degreeID: String
+    /// The goals of the what-if audit, the key the kept audit is found by.
+    public let goals: DegreeGoals
+    /// Display label without the what-if suffix, e.g. "management (general)".
+    public let label: String
+
+    public init(degreeID: String, goals: DegreeGoals, label: String) {
+        self.degreeID = degreeID
+        self.goals = goals
+        self.label = label
+    }
+
+    /// The stand-ins among the audits a plan was made from: every audit that
+    /// is itself a what-if, once per degree (the first wins).
+    public static func standIns(from audits: [DegreeLabeledAudit]) -> [DegreePlanStandIn] {
+        var seen = Set<String>()
+        var out: [DegreePlanStandIn] = []
+        for entry in audits where entry.audit.isWhatIf {
+            guard !seen.contains(entry.degreeID) else { continue }
+            seen.insert(entry.degreeID)
+            out.append(DegreePlanStandIn(
+                degreeID: entry.degreeID, goals: entry.audit.goals,
+                label: DegreeAdvisor.displayLabel(entry.label)))
+        }
+        return out
+    }
+
+    /// The audit and label to draw for one degree. A stand-in for the degree
+    /// whose what-if audit is still kept replaces the degree's own audit and
+    /// reads "<label> · what if"; anything else draws the own audit as before.
+    /// Age is not asked: this is drawing, not a decision to read Penn again.
+    public static func drawing(
+        degreeID: String, ownLabel: String, ownAudit: DegreeAudit,
+        standIns: [DegreePlanStandIn]?, lookup: (DegreeGoals) -> DegreeAudit?
+    ) -> DegreeLabeledAudit {
+        if let standIn = standIns?.first(where: { $0.degreeID == degreeID }),
+           let kept = lookup(standIn.goals) {
+            let name = standIn.label.isEmpty ? ownLabel : standIn.label
+            return DegreeLabeledAudit(degreeID: degreeID, label: "\(name) · what if", audit: kept)
+        }
+        return DegreeLabeledAudit(degreeID: degreeID, label: ownLabel, audit: ownAudit)
+    }
+}
+
+/// Decodes one element without throwing, so one bad stand-in or approval label
+/// costs itself and not the summary.
+private struct SummaryLossy<Value: Decodable>: Decodable {
+    let value: Value?
+    init(from decoder: Decoder) throws { value = try? Value(from: decoder) }
+}
+
 /// What the planning engine said about the plan it wrote, kept with the plan so
 /// the table can say so in one line. It describes the table exactly as the
 /// engine left it: any edit by hand drops it (`DegreePlanMath` does that), and
@@ -94,11 +154,21 @@ public struct DegreePlanSummary: Codable, Sendable, Equatable {
     /// petition, the placement exam).
     public let needsApproval: Bool
     public let createdAt: Date
+    /// The what-if audits the plan was made against, by degree. Nil from a
+    /// summary stored before this field, or when the plan used only declared
+    /// audits.
+    public let standIns: [DegreePlanStandIn]?
+    /// The server's short approval labels; nil from an older server (then
+    /// `needsApproval` came from the scenario's id alone).
+    public let approvals: [String]?
 
     public init(
         finishTerm: String?, scenarioID: String, scenarioLabel: String,
-        remainingCredits: Double?, needsApproval: Bool, createdAt: Date
+        remainingCredits: Double?, needsApproval: Bool, createdAt: Date,
+        standIns: [DegreePlanStandIn]? = nil, approvals: [String]? = nil
     ) {
+        self.standIns = standIns
+        self.approvals = approvals
         self.finishTerm = finishTerm
         self.scenarioID = scenarioID
         self.scenarioLabel = scenarioLabel
@@ -109,6 +179,7 @@ public struct DegreePlanSummary: Codable, Sendable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case finishTerm, scenarioID, scenarioLabel, remainingCredits, needsApproval, createdAt
+        case standIns, approvals
     }
 
     /// Lenient: a summary with a key missing still reads, because a failed
@@ -122,6 +193,12 @@ public struct DegreePlanSummary: Codable, Sendable, Equatable {
         self.needsApproval = (try? container.decodeIfPresent(Bool.self, forKey: .needsApproval)) ?? false
         self.createdAt = (try? container.decodeIfPresent(Date.self, forKey: .createdAt))
             ?? Date(timeIntervalSince1970: 0)
+        let rawStandIns: [SummaryLossy<DegreePlanStandIn>]? =
+            (try? container.decodeIfPresent([SummaryLossy<DegreePlanStandIn>].self, forKey: .standIns)) ?? nil
+        self.standIns = rawStandIns.map { $0.compactMap { $0.value } }
+        let rawApprovals: [SummaryLossy<String>]? =
+            (try? container.decodeIfPresent([SummaryLossy<String>].self, forKey: .approvals)) ?? nil
+        self.approvals = rawApprovals.map { $0.compactMap { $0.value } }
     }
 
     /// The one quiet line above the semester table: "plan · would finish

@@ -142,7 +142,26 @@ extension AppState {
     /// view is these side by side and nothing more. A snapshot with no list of
     /// degrees but a current audit (an old file, a fixture) is one entry,
     /// "current", with no label.
+    ///
+    /// What is DRAWN: while the plan carries an engine summary made against a
+    /// what-if for one of the degrees, that degree's entry is the kept what-if
+    /// audit, labelled "<name> · what if", because the planned courses' slot ids
+    /// belong to that audit (`DegreePlanStandIn`). Rings, the table and the add
+    /// sheet read this. The advisor's brief reads `degreeOwnAudits` instead: it
+    /// keeps its own what-ifs in the chat and must not see a stale stand-in.
     var degreeAudits: [DegreeLabeledAudit] {
+        let standIns = degreePlan.summary?.standIns
+        guard let standIns, !standIns.isEmpty else { return degreeOwnAudits }
+        let kept = degree.whatIfs + degree.shelved.values.flatMap { $0.whatIfs }
+        return degreeOwnAudits.map { entry in
+            DegreePlanStandIn.drawing(
+                degreeID: entry.degreeID, ownLabel: entry.label, ownAudit: entry.audit,
+                standIns: standIns, lookup: { goals in kept.first { $0.goals == goals } })
+        }
+    }
+
+    /// The student's declared audits, never a stand-in.
+    var degreeOwnAudits: [DegreeLabeledAudit] {
         let degrees = degree.degrees
         guard !degrees.isEmpty else {
             if let current = degree.current {
