@@ -175,6 +175,8 @@ public struct DegreeProjection: Sendable, Equatable {
         return min(room, max(0, room * withPlanShare))
     }
 
+    /// Kept for ids whose degree part is one word; a real degree id is not
+    /// (see `slotIndex`, which the projection uses).
     /// Reads one slot id from the planning engine, `degreeId|blockId|ruleId`
     /// with an optional fourth part (a course code on a rule that advises
     /// specific courses). The fourth and later parts are ignored on purpose:
@@ -184,6 +186,28 @@ public struct DegreeProjection: Sendable, Equatable {
         let parts = id.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
         guard parts.count >= 3, !parts[1].isEmpty, !parts[2].isEmpty else { return nil }
         return (parts[0], parts[1], parts[2])
+    }
+
+    /// Finds the requirement a slot id names among an audit's own keys
+    /// (`blockID|ruleID`). The id is `degreeId|blockId|ruleId[|course]`, and
+    /// **a degree id is itself several parts joined by "|"** (Penn's school,
+    /// degree, major and program codes), so the block is not the second part:
+    /// reading it that way (`resolveSlotID`, 2026-11-26) resolved nothing for a
+    /// real student, and a whole plan drew no arc, no planned count and no
+    /// gain (Olisa's phone, 2026-11-27; the fixtures had used one-word degree
+    /// ids). So every adjacent pair of parts after the first is tried against
+    /// the keys this audit actually has, first match wins. The first part is
+    /// never a block (a degree id has at least one part). A pair that happens
+    /// to sit inside the degree id cannot match unless the audit has a block
+    /// and rule with exactly those two codes.
+    public static func slotIndex(_ id: String, in keyIndex: [String: Int]) -> Int? {
+        let parts = id.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count >= 3 else { return nil }
+        for i in 1..<(parts.count - 1) {
+            if parts[i].isEmpty || parts[i + 1].isEmpty { continue }
+            if let index = keyIndex[key(blockID: parts[i], ruleID: parts[i + 1])] { return index }
+        }
+        return nil
     }
 
     // MARK: Making a projection
@@ -278,8 +302,7 @@ public struct DegreeProjection: Sendable, Equatable {
             if let ids = course.slotIds, !ids.isEmpty {
                 var targets: [Int] = []
                 for id in ids {
-                    guard let slot = Self.resolveSlotID(id),
-                          let index = layout.keyIndex[key(blockID: slot.blockID, ruleID: slot.ruleID)],
+                    guard let index = Self.slotIndex(id, in: layout.keyIndex),
                           !targets.contains(index) else { continue }
                     targets.append(index)
                 }

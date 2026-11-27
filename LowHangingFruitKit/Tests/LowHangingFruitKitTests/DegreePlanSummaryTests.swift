@@ -39,6 +39,24 @@ struct DegreePlanSummaryTests {
 
     // MARK: Slot ids
 
+    @Test("a slot id resolves when the degree id is itself several parts")
+    func slotIndexWithRealDegreeID() {
+        // Penn's degree id is school|degree|major|program; the block and rule
+        // follow it, and a course code may follow them.
+        let keys = ["RA0001|10": 0, "RA0002|7": 1]
+        #expect(DegreeProjection.slotIndex("WU|BS|WUNG|WU_BS_WUNG|RA0001|10", in: keys) == 0)
+        #expect(DegreeProjection.slotIndex("WU|BS|WUNG|WU_BS_WUNG|RA0002|7|CIS 4000", in: keys) == 1)
+        #expect(DegreeProjection.slotIndex("d1|RA0001|10", in: keys) == 0)
+        #expect(DegreeProjection.slotIndex("d1|RA0001|10|ACCT 1020", in: keys) == 0)
+        // The other degree's block, a short id, an empty part: nothing.
+        #expect(DegreeProjection.slotIndex("EU|BSE|CSCI|X|RA0009|3", in: keys) == nil)
+        #expect(DegreeProjection.slotIndex("RA0001|10", in: keys) == nil)
+        #expect(DegreeProjection.slotIndex("d1||10", in: keys) == nil)
+        #expect(DegreeProjection.slotIndex("", in: keys) == nil)
+        // The first part is never read as a block.
+        #expect(DegreeProjection.slotIndex("RA0001|10|x", in: keys) == nil)
+    }
+
     @Test("slot ids read degree, block and rule; a fourth part and anything short are handled")
     func slotParsing() {
         let plain = DegreeProjection.resolveSlotID("d1|B|r1")
@@ -63,6 +81,23 @@ struct DegreePlanSummaryTests {
         #expect(p.rule(blockID: "B", ruleID: "r1") == nil)
         #expect(p.placed == ["ZZZZ 1"])
         #expect(p.unplaced.isEmpty)
+    }
+
+    @Test("a real degree id, itself joined by bars, still lays the course on its rule")
+    func realDegreeID() {
+        // 2026-11-27, Olisa's phone: every slot id began "WU|BS|WUNG|…" or the
+        // engineering one, the block was read as "BS", nothing resolved, and
+        // a full plan drew no arc and no planned count.
+        let a = audit([rule("r1", .open, advice: ["ABCD 1000"]), rule("r2", .open)])
+        let p = DegreeProjection.make(
+            plan: plan([
+                course("ZZZZ 1", slots: ["WU|BS|WUNG|WU_BS_WUNG|B|r2"]),
+                course("ABCD 1000", slots: ["EU|BSE|CSCI|EU_BSE_CSCI|B|r1|ABCD 1000"]),
+            ]), audit: a)
+        #expect(p.rule(blockID: "B", ruleID: "r2")?.fill == 1)
+        #expect(p.rule(blockID: "B", ruleID: "r1")?.fill == 1)
+        #expect(p.placed == ["ZZZZ 1", "ABCD 1000"])
+        #expect(p.ringShare > 0)
     }
 
     @Test("one course can fill two rules when the engine says so")
