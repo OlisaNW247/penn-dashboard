@@ -1221,6 +1221,16 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-27, later.** Olisa's first drawn plan showed nothing on the
+  rings and leaned on approvals nobody gave. Fixed on the phone: slot ids
+  with a real degree id (`0826943`), the what-if a plan was made against
+  drawn in "both" (`e751b85`), and the advisor's questions with yes / no
+  answers and "update plan" (`5b3bd0b`). Fixed in the planner, **not
+  deployed** (`b31ec3f`, Deno 1159): only a granted plan is drawn, an
+  approved load is a fact, senior project halves match, a 4 cu summer is an
+  ordinary scenario, the summer listing is named, and advisor answers come
+  back as facts. Next: his go to deploy `degree-advisor`, a rebuild, and a
+  new ask (`CLAUDE.md` → Degree → "A plan nobody granted is not drawn").
 - **2026-11-27.** The degree sign-in can show Penn's page (`d68d1c1`).
   Olisa's phone said "approve the duo push" with no push; his log showed Duo
   had passed by itself and the sign-in sat on Penn's own page after it. The

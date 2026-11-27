@@ -1572,6 +1572,66 @@ Keep this current. It is the fastest way for a new session to know what exists.
     rows (+1%), which read as the list ignoring Wharton. The Wharton group is
     short for a real reason the grouping does not change: his plan already
     fills most of the Wharton requirements that list options.
+  - **A plan nobody granted is not drawn; the advisor is asked** (2026-11-27,
+    `0826943`, `e751b85`, `5b3bd0b`, `b31ec3f`; Olisa after his first drawn
+    plan: "Still visually does not reflect completion after implementing its
+    own plan. I am approved for 6.5 cu semesters. Do you think the plan
+    itself makes sense?", then "identify why the app made all the mistakes
+    you pointed out and fix them", then "the smooth app should also be
+    cognizant of the fact that you have an advisor and give you questions to
+    ask them and then give the user an easy way of inputting their advisors
+    answers back into the app"). The plan, read off his recordings: 18 cu
+    into exactly 2 + 4 + 6.5 + 5.5, CIS 4100 paired with CIS 4010, and a
+    best case resting on MATH 2400 and STAT 4310 each filling two
+    engineering requirements and on a language placement exam. Six causes,
+    six changes:
+    1. *Nothing planned was drawn.* A slot id is `degreeId|blockId|ruleId`
+       and a real degree id is itself joined by bars (Traps).
+       `DegreeProjection.slotIndex` tries each adjacent pair of parts after
+       the first against the audit's own keys.
+    2. *"both" drew the declared audit.* The plan was made against the
+       management what-if; the Wharton ring drew "undeclared", which has no
+       such block. `DegreePlanSummary.standIns` (`DegreePlanStandIn`: degree
+       id, goals, label) remembers the what-ifs a plan was made against, and
+       `AppState.degreeAudits` draws the kept what-if for such a degree,
+       labelled "<name> · what if", while the summary stands (a hand edit
+       drops it). The rings, the table and the add sheet read that list; the
+       chat's brief reads `degreeOwnAudits`.
+    3. *The table held the best case.* The choice rule fell through to
+       `best` when nothing ordinary met the target. Now `best` is chosen only
+       when the student asks (`assumeApprovals` from the intent call);
+       otherwise the first scenario that leans on nothing ungranted and meets
+       the target, else the earliest such finish. `plan.bestCase` says what
+       the earlier finish would take, `plan.approvals` what the chosen
+       schedule still leans on (the phone's "needs approval" follows it). A 4
+       cu summer is Penn's own limit and no approval, so it is its own
+       ordinary scenario, `fullSummer`.
+    4. *An approved load read as unapproved.* The intent call reads
+       `loadApproved`; an approved load is a fact with a note.
+    5. *The senior project halves were chosen apart.* Linked halves are
+       repaired to a matching pair (`policy.isSequencePair`: same subject,
+       the second number ten above the first; Penn's numbering convention,
+       not a page-verified rule) in the first half's option order; with no
+       such pair in the options the choice stands with a note.
+    6. *Summer placement went unexplained.* A note names the summer listing
+       it rests on (`catalogSemesters` reads the most recent one).
+    **The advisor.** `plan.advisorQuestions` (at most 12: a stable id, kind
+    `doubleCount | placement | load`, one sentence to ask, what a yes
+    changes, the recorded answer echoed) lists what the best case needs that
+    nobody has granted. The phone keeps them with the plan
+    (`DegreePlan.advisor`, `DegreeAdvisorNotes`, in `degree-plan.json`; they
+    survive hand edits, unlike the summary). A grape row under the plan
+    line, "ask your advisor · N" (and the same line on the chat's plan
+    card), opens `DegreeAdvisorQuestionsSheet`: yes / no per question (tap
+    the chosen one again to clear), "copy" for the open questions as a
+    numbered list, and "update plan" once an answer changed, which sends the
+    fixed message "update my plan with my advisor's answers" through the
+    chat's own send path (from the table through
+    `degreeAdvisorPendingPrompt`, consumed once). Every planning request
+    carries `advisorAnswers` at the top level; a yes makes the thing a fact
+    the ordinary scenarios use, a no removes it from every scenario and
+    keeps it listed. `docs/PRIVACY.md` → Plan with AI says what is kept and
+    sent. Not deployed and not on a phone when written; Known gaps.
   - **When it reads** (changed 2026-11-12, Olisa on the first build of the
     table: "It should not need to re-read as often as it does. classes
     selected do not change every couple of minutes"). Each degree's audit
@@ -4934,6 +4994,29 @@ itself.
 
 ## Traps that have already bitten
 
+- **An id built by joining parts with a separator breaks the day one part
+  contains the separator.** The planner's slot ids are
+  `degreeId|blockId|ruleId`, and the phone split on the bar and took parts
+  two and three. A real `StudentDegree.id` is school, degree, major and
+  program joined by the same bar ("WU|BS|WUNG|…"), so on Olisa's phone
+  (2026-11-27) nothing resolved: a whole plan sat in the table with no arc,
+  no planned count and no "+N%", and the lines under each course were the
+  server's words, which made it look half-working. Fifteen tests were green
+  over it because every fixture used a one-word degree id ("d", "d1"). The
+  tell: fit lines present, badges and arcs absent. The wrong fix is a new
+  separator on the server (plans already stored stay unreadable); the phone
+  matches against the keys the audit has (`slotIndex`). When a test fixture
+  invents an id, copy the shape of a real one.
+- **"Best case" written into the student's table read as the plan.** The
+  planner's fallthrough chose `best` whenever nothing ordinary met the
+  target, and `best` assumes every petition approved and a placement exam
+  passed. The petition pair itself (a math course also filling a technical
+  elective) came from one student's hand-made plan, not a Penn page. So the
+  first plan a real student saw leaned on three things nobody had granted,
+  and paired the two halves of a senior project from different sequences
+  because each half was chosen alone. A planner's output is what the
+  student will try to register for: draw only what is granted, list the
+  rest as questions for the advisor, and let the answers come back as facts.
 - **"Approve the duo push" with no push: Duo had already passed, and the
   status named the wrong wait.** Olisa's phone, 2026-11-27: the degree chat
   said "approve the duo push on this phone", no notification came, and he
@@ -6442,6 +6525,30 @@ none is a ship line.
   still lands on the what-if tab under "switch to management, bs", which
   read as confusing in the recording and is not changed; a registered course
   neither the audit nor the catalogue can price counts as 1 cu.
+- **The plan fixes and the advisor questions of 2026-11-27 are unseen on a
+  phone, and their server half is not deployed.** Phone: `slotIndex` and the
+  what-if stand-in are green on the runner; the advisor sheet was compiling
+  when this was written (Test baseline has the result). Until `degree-advisor`
+  is deployed from `b31ec3f` or later, the phone gets no `advisorQuestions`,
+  `approvals` or `bestCase`, so the row never shows and the old choice rule
+  still draws the best case. To watch for after both: the rings and "both"
+  bar moving for the plan already in the table; the Wharton ring captioned
+  "management (general) · what if"; a new plan finishing later than spring
+  2028 with the best case named in the answer; "ask your advisor · N" under
+  the plan line; an answer surviving a relaunch; "update plan" opening the
+  chat from the table and from the full view (the half-second wait before
+  the chat opens is a guess). Known limits: a yes or no on a double count
+  acts on the pair of requirements, so another course fitting the same two
+  is granted or refused with it; a first half of a senior project that is
+  only registered, not taken, is not paired; answers for questions the
+  server stops listing are kept and still sent; the chat's undo restores
+  the earlier plan with its earlier answers; `fullSummer` is a scenario id
+  the phone has never drawn (it shows unknown ids as a plain row); a
+  question id longer than 200 characters would be dropped by the server's
+  answer check. Still open from the plan itself: prerequisite order rests
+  on the few rules written down, because Penn Labs leaves the field empty
+  for most courses (Path@Penn's public course `details` route has
+  `prereqs_from_cim` for some and nothing reads it yet).
 - **The sign-in page of 2026-11-27 is compiled and unseen on a phone, and
   why Penn's page stalls after Duo is not known.** The build before it showed
   the new rule working as far as typing the PennKey and passing Duo (Olisa's
