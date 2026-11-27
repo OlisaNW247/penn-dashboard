@@ -1606,6 +1606,40 @@ Keep this current. It is the fastest way for a new session to know what exists.
     which of five things failed, and offers "try again" with the question
     kept. The degree log gains "duo: push sent", "duo: trust tapped",
     "duo: approved".
+  - **The sign-in page, shown when the hidden sign-in stalls** (2026-11-27,
+    `d68d1c1`; Olisa: "when it says approve duo push on the phone theres
+    nothing I can really do"; not on a phone when written). His log that
+    night: form filled, Duo reached, popup back at
+    `weblogin.pennkey.upenn.edu`, then two minutes of nothing, while the
+    renewal log showed Duo's trust cookie appear in the same fifteen seconds.
+    Duo had passed with no push (a remembered device) and the stall was on
+    Penn's own page after it; what that page holds is still unknown. So the
+    portal can hand its popup web view to a sheet, `PathSignInSheet`
+    ("finish signing in", an xmark, `.interactiveDismissDisabled()`), by the
+    pure rule `PathPortal.shouldGoInteractive`: only for a student's own
+    attempt or an automatic one their ask joined (`studentIsWaiting`), and
+    only when the popup is still on Duo 6 s after reaching it, has sat 10 s
+    on any other page after the PennKey was typed or Duo passed
+    (`interactiveAfterStall`), or shows a form the app may not fill (those
+    attempts used to end at once). While shown the attempt waits 300 s from
+    the showing, and nothing is typed for the student. A token closes the
+    sheet and the read continues; the xmark ends the attempt as a timeout
+    would, and the chat says "sign-in wasn't finished. ask again." with "try
+    again". The web view is the hidden path's own (built from the
+    configuration WebKit passed in, or `window.opener` dies); the sheet only
+    hosts it (`PathPopupHost`, whose dismantle only removes it from its
+    container). Each degree presenter attaches the sheet itself
+    (`pathSignInSheet(enabled:)` on the chat, the what-if sheet, and the
+    degree screen when neither is up), because a sheet cannot present over
+    another presenter's sheet. iOS only (`interactiveSupported`). The Duo
+    line and the buzz now wait 4 s on Duo's page (`degreeDuoLineDelay`) and
+    come down when the popup leaves Duo (`onDuoLeft`), and a wait that runs
+    out after Duo handed back is "stalled after duo", a timeout, not
+    `.needsDuo`. DEBUG log lines: "interactive: shown | finished | closed",
+    "duo: left", "stalled after duo", "popup failed: <domain> <code>", and
+    "page: forms N handoff N buttons N title <letters>" for each page the
+    popup finishes after a submission (counts and the title's letters; no
+    field value, no address).
   - **How it reads.** `PathPortal` keeps one hidden `WKWebView` on
     `https://courses.upenn.edu/` for the app run, on the Canvas login data
     store so the PennKey session and Duo trust carry over. The page opens
@@ -4900,6 +4934,22 @@ itself.
 
 ## Traps that have already bitten
 
+- **"Approve the duo push" with no push: Duo had already passed, and the
+  status named the wrong wait.** Olisa's phone, 2026-11-27: the degree chat
+  said "approve the duo push on this phone", no notification came, and he
+  had nothing to do. `scripts/read-degree-log.sh` showed "duo reached", then
+  "popup at weblogin.pennkey.upenn.edu", then the two-minute timeout logged
+  as "duo not approved in time"; the renewal log showed Duo's trust cookie
+  going from none to 29 days in the same seconds. Reaching Duo's host is not
+  a push: a remembered device is handed straight back. The portal set the
+  Duo status the moment the host appeared and never took it down, and the
+  timeout blamed Duo because `duoReached` was true. The tells: no push on
+  the phone, and a "popup at <a Penn host>" line after "duo reached". The
+  wrong fixes: rewording the line, or waiting longer. The page the sign-in
+  is stuck on has to be shown to the student (the sign-in page, under
+  Degree), the Duo line has to wait and come down when the popup leaves Duo,
+  and the log has to say what the page is. The degree log has no
+  timestamps, which is why the renewal log's were needed to see the order.
 - **A Duo push nobody asked for locks every later sign-in out for an
   hour, and the screen that caused it is not the one the student is on.**
   Read off Olisa's phone on 2026-11-26 with `scripts/read-degree-log.sh`:
@@ -6392,6 +6442,25 @@ none is a ship line.
   still lands on the what-if tab under "switch to management, bs", which
   read as confusing in the recording and is not changed; a registered course
   neither the audit nor the catalogue can price counts as 1 cu.
+- **The sign-in page of 2026-11-27 is compiled and unseen on a phone, and
+  why Penn's page stalls after Duo is not known.** The build before it showed
+  the new rule working as far as typing the PennKey and passing Duo (Olisa's
+  log, Traps), then sat on a page at `weblogin.pennkey.upenn.edu`. With a
+  live session the same hand-off page posts itself and the token arrives, so
+  the page after a fresh PennKey and Duo is something else: a notice with a
+  button, an error page, or a hand-off that fails in the popup. The next
+  read of the degree log settles it ("page: forms … handoff … buttons …
+  title …", "popup failed: …"); when it is known, automate it if it is a
+  plain continue button, and the sheet stays as the fallback. To watch for
+  on the phone: the sheet appearing about ten seconds after an ask, Penn's
+  page being readable and tappable inside it (the popup is created at zero
+  size and only laid out when hosted), the sheet closing by itself when the
+  sign-in completes, and the answer continuing. Now that Duo remembers the
+  phone, an AUTOMATIC attempt on opening Degree types the PennKey; if Penn's
+  page stalls it too, that attempt fails after its wait and counts toward
+  the two-failure ceiling unless an ask joins it and the sheet finishes it.
+  Not checked: VoiceOver in the sheet, the keyboard over Penn's form, and
+  what a rotated or split-screen iPad does.
 - **The degree sign-in rule of 2026-11-26 is compiled, reviewed and unseen
   on a phone.** To watch for: the status "tap to sign in to path@penn" on
   opening Degree (expected while Duo does not remember the phone); a tap

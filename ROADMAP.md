@@ -1221,6 +1221,15 @@ Kept so nobody rebuilds them blind.
 
 ## Done recently
 
+- **2026-11-27.** The degree sign-in can show Penn's page (`d68d1c1`).
+  Olisa's phone said "approve the duo push" with no push; his log showed Duo
+  had passed by itself and the sign-in sat on Penn's own page after it. The
+  portal now hands its popup to a sheet, "finish signing in", when a
+  student's ask is waiting and the sign-in stalls (6 s on Duo, 10 s on any
+  other page after a submission, or a form the app may not fill); the Duo
+  line waits 4 s and comes down when Duo hands back. Next: read the degree
+  log after his next ask for the "page:" line, and automate that page if it
+  is a plain continue button (`CLAUDE.md` → Known gaps).
 - **2026-11-26, night.** `v13` (the line after 3.5.0) merged into
   `degree-progress` at Olisa's ask, so his build has the App Store look
   (`78b5e7b`, 4717 / 486 green). Then the degree sign-in: his phone's log
