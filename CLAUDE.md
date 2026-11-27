@@ -173,7 +173,7 @@ with the backend unreachable, ask answers on-device:
 items, retrieves policy and content answers from synced course materials
 (`CourseKnowledgeCollector` → `CourseKnowledgeStore`), and on iOS 26 /
 macOS 26 Apple Intelligence devices rephrases via Apple's on-device model
-(`OnDeviceLanguageModel`). A twelfth function, `degree-advisor`, is in the tree on `degree-progress` and **live since 2026-11-14 at about 17:49 UTC** (version 1 from `b5b0762`; **version 2 since about 18:40 UTC the same day, from `1b92d58`**, the what-if round trip, both at Olisa's go **version 5 since 2026-11-15 about 17:35 UTC, from `d2e0a49`**, the picks, at his go (versions 3 and 4 were not deployed from this session; `ask` read 24 and `sync` 31 at the same moment); **version 6 since 2026-11-15 about 18:20 UTC, from `335ec9a`**, the rounds, at his go; **version 7 since 2026-11-16, from `4083bc0`**, the deterministic planner, at his go; **version 9 since later on 2026-11-16, from `9c45e21`**, area lists, the best case and no MBA courses, at his go (version 8 was not deployed from this session; `ask` read 25 and `sync` 32 at the same moment); **version 10 since 2026-11-26 about 21:56 UTC, from `2b8a3a9`**, the corrected policy and Penn's program packs, at his go (`ask` 25 and `sync` 32 unchanged); **version 11 since 2026-11-26 about 22:49 UTC, from `7f93bcc`**, registered courses counted as load and `slotIds` on scheduled courses, at his go (`ask` 25 and `sync` 32 unchanged)); Degree → Plan with AI); only a `degree-progress` build calls it.
+(`OnDeviceLanguageModel`). A twelfth function, `degree-advisor`, is in the tree on `degree-progress` and **live since 2026-11-14 at about 17:49 UTC** (version 1 from `b5b0762`; **version 2 since about 18:40 UTC the same day, from `1b92d58`**, the what-if round trip, both at Olisa's go **version 5 since 2026-11-15 about 17:35 UTC, from `d2e0a49`**, the picks, at his go (versions 3 and 4 were not deployed from this session; `ask` read 24 and `sync` 31 at the same moment); **version 6 since 2026-11-15 about 18:20 UTC, from `335ec9a`**, the rounds, at his go; **version 7 since 2026-11-16, from `4083bc0`**, the deterministic planner, at his go; **version 9 since later on 2026-11-16, from `9c45e21`**, area lists, the best case and no MBA courses, at his go (version 8 was not deployed from this session; `ask` read 25 and `sync` 32 at the same moment); **version 10 since 2026-11-26 about 21:56 UTC, from `2b8a3a9`**, the corrected policy and Penn's program packs, at his go (`ask` 25 and `sync` 32 unchanged); **version 11 since 2026-11-26 about 22:49 UTC, from `7f93bcc`**, registered courses counted as load and `slotIds` on scheduled courses, at his go (`ask` 25 and `sync` 32 unchanged); **version 12 since 2026-11-27 about 03:10 UTC, from `b31ec3f`**, only a granted plan drawn, advisor questions and answers, at his go (`ask` 25 and `sync` 32 unchanged); Degree → Plan with AI); only a `degree-progress` build calls it.
 Beside it (it is not counted in what follows, which is `v13`'s own count), fifteen Edge Functions are in
 `backend/supabase/functions/`, fourteen deployed and one written and
 **not deployed**, **`sweeper-wake`** (2026-11-18, `claude/sweeper-build-0a4dd0`:
@@ -1631,7 +1631,10 @@ Keep this current. It is the fastest way for a new session to know what exists.
     carries `advisorAnswers` at the top level; a yes makes the thing a fact
     the ordinary scenarios use, a no removes it from every scenario and
     keeps it listed. `docs/PRIVACY.md` → Plan with AI says what is kept and
-    sent. Not deployed and not on a phone when written; Known gaps.
+    sent. **Live as `degree-advisor` version 12 since 2026-11-27 about 03:10
+    UTC, at his go** (it answers `OPTIONS` 200 and an unsigned POST 401); no
+    question has been asked of it and none of the phone half has been on a
+    phone; Known gaps.
   - **When it reads** (changed 2026-11-12, Olisa on the first build of the
     table: "It should not need to re-read as often as it does. classes
     selected do not change every couple of minutes"). Each degree's audit
@@ -6526,12 +6529,11 @@ none is a ship line.
   read as confusing in the recording and is not changed; a registered course
   neither the audit nor the catalogue can price counts as 1 cu.
 - **The plan fixes and the advisor questions of 2026-11-27 are unseen on a
-  phone, and their server half is not deployed.** Phone: `slotIndex` and the
+  phone; their server half is live (version 12, 2026-11-27) and unasked.** Phone: `slotIndex` and the
   what-if stand-in are green on the runner; the advisor sheet was compiling
-  when this was written (Test baseline has the result). Until `degree-advisor`
-  is deployed from `b31ec3f` or later, the phone gets no `advisorQuestions`,
-  `approvals` or `bestCase`, so the row never shows and the old choice rule
-  still draws the best case. To watch for after both: the rings and "both"
+  when this was written (Test baseline has the result). A build older than
+  `5b3bd0b` ignores `advisorQuestions`, so the row needs the rebuild; the new
+  choice rule applies to every build at once. To watch for: the rings and "both"
   bar moving for the plan already in the table; the Wharton ring captioned
   "management (general) · what if"; a new plan finishing later than spring
   2028 with the best case named in the answer; "ask your advisor · N" under
