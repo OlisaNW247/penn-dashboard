@@ -294,6 +294,9 @@ export interface PlanResult {
   /** At most 12, most valuable first: one for each thing the best case leans
    *  on that nobody granted, plus every one already answered. */
   advisorQuestions: AdvisorQuestion[];
+  /** One entry per degree in request order: how many open slots the chosen
+   *  schedule covers. Counts only; the phone makes its own figure. */
+  coverage: DegreeCoverage[];
   /** Plain-language notes the explanation should mention (prerequisite
    *  ordering, a rule applied, data that was missing). */
   notes: string[];
@@ -309,4 +312,16 @@ export interface AdvisorQuestion {
   detail: string;
   /** The recorded answer echoed back, null when none. */
   answer: "yes" | "no" | null;
+}
+
+export interface DegreeCoverage {
+  /** Exactly the id the phone sent. */
+  degreeId: string;
+  /** Open requirement slots considered for this degree, unfillable ones included. */
+  slots: number;
+  /** Of those, met by a course in the returned schedule or by a stated fact. */
+  filled: number;
+  /** filled === slots, no unfilled row for this degree (the 46 cu floor row
+   *  included) and every chosen course placed in the schedule. */
+  complete: boolean;
 }

@@ -377,6 +377,7 @@ export const DEGREE_ADVISOR_EXPLAIN_INSTRUCTIONS = [
   "ANSWER: at most 170 words, plain text, no markdown, no bullets, no list of courses (the app shows the schedule itself). Say plainly whether the target is met and under which scenario, with the numbers, for example \"at 5.5 cu a semester it finishes fall 2028; spring 2028 needs 6.5 cu with your advisor's approval and 2 cu in summer 2027\". If the plan's `chosen` scenario is \"best\", say plainly that the target works only in the best case and name each thing it relies on from `notes` (the advisor approvals by course, the language placement exam, 6.5 cu semesters, summers), for example \"spring 2028 works only if your advisor approves X and Y and you place out of the language\". If the student gave no target, say when the plan finishes and at what load. Mention the biggest savings from double counting in one clause (remainingCredits against remainingCreditsWithoutOverlap). Name what could not be planned (`unfilled`) and why. Name each petition as something to ask the advisor about. Include the planner's `notes` that matter.",
   "APPROVALS: list exactly the entries of PLAN `approvals` as what the plan depends on, and nothing else as an approval. When `loadApproved` is true the student has told you they are already approved for that load: never call it an approval or something that needs approval, and say nothing about approving it. When `approvals` is empty say the plan depends on no approvals.",
   "BEST CASE: when `bestCase` is not null and the student did not ask for it (`assumeApprovals` false), say plainly that the schedule shown finishes at the chosen scenario's finish, and list what the earlier finish in `bestCase` would need (its `approvals`); never present ungranted approvals as part of the schedule shown.",
+  "COVERAGE: say a degree's requirements are all covered by the schedule only when its `complete` in `coverage` is true; otherwise say how many of its `slots` the schedule leaves open (`slots` minus `filled`).",
   "ADVISOR QUESTIONS: end the answer with at most three of the `advisorQuestions` whose `answer` is null, each on its own line starting \"ask your advisor:\"; never restate a question that has an answer as still open.",
   "LOAD: a term's load is registered plus planned. Each schedule term gives `registeredCredits` (already registered, not in `courses`), `plannedCredits` (what the plan adds) and `totalCredits`; never describe the planned credits alone as the term's load.",
   "WORDING: a planned course \"would count toward\" a requirement. Never say a requirement is met, satisfied or done because of a planned course, and never promise the student will graduate or finish by a date; Penn's audit and the student's advisor decide.",
@@ -428,6 +429,8 @@ export function compactPlanForExplain(plan: PlanResult, params: DegreeIntentPara
     // Everything the chosen scenario still depends on someone else granting or
     // on an assumption. The explanation lists exactly these.
     approvals: plan.approvals,
+    // Per degree, request order: open slots and how many the schedule covers.
+    coverage: plan.coverage,
     assumeApprovals: params.assumeApprovals === true,
     // An earlier finish that exists only if these are granted; the schedule
     // shown does not assume them.

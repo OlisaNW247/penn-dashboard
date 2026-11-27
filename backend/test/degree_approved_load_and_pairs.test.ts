@@ -310,3 +310,63 @@ Deno.test("advisorAnswers on the request: bad elements are dropped, never refuse
     question: "q", history: [], context: "c", terms: [{ code: "202730", label: "Fall 2027" }], addable: [], now: "2026-11-14T12:00:00Z", advisorAnswers: "x",
   })!.advisorAnswers, undefined);
 });
+
+// ---- coverage ---------------------------------------------------------------------
+
+Deno.test("coverage: complete when every slot is filled by a placed course", () => {
+  const f = loadFixture();
+  const r = plan(req(f.degrees), f.catalog);
+  assert.deepEqual(r.coverage, [{ degreeId: "wh", slots: 12, filled: 12, complete: true }]);
+  const ids = new Set(planned(r).flatMap((c) => c.slotIds));
+  assert.equal(ids.size, 12);
+});
+
+Deno.test("coverage: an unfilled slot makes the degree incomplete", () => {
+  const f = loadFixture();
+  f.degrees[0].slots.push(slot("wh", "wharton", "Nothing Lists This", "wharton.fundamental", attr("NOSUCHATTR")));
+  const r = plan(req(f.degrees), f.catalog);
+  const c = r.coverage[0];
+  assert.equal(c.slots, 13);
+  assert.ok(c.filled < c.slots || r.unfilled.length > 0);
+  assert.equal(c.complete, false);
+});
+
+Deno.test("coverage: waived slots count as filled by a stated fact", () => {
+  const f = loadFixture();
+  const r = plan(req(f.degrees, { waive: ["wh|b|L0", "wh|b|L1"] }), f.catalog);
+  const ids = new Set(planned(r).flatMap((c) => c.slotIds));
+  assert.equal(r.coverage[0].slots, 12);
+  assert.equal(r.coverage[0].filled, ids.size + 2);
+  assert.equal(r.coverage[0].complete, true);
+});
+
+Deno.test("coverage: the 46 cu floor row makes both degrees incomplete", () => {
+  const f = loadFixture();
+  const degs: Degree[] = [
+    { ...f.degrees[0], creditsSoFar: 10 },
+    { id: "cs", label: "computer science", college: "EU", applied: [], slots: [] },
+  ];
+  const r = plan(req(degs), f.catalog);
+  assert.ok(r.unfilled.some((u) => u.degreeLabel === "both degrees"), JSON.stringify(r.unfilled));
+  assert.deepEqual(r.coverage.map((c) => c.degreeId), ["wh", "cs"]);
+  assert.ok(r.coverage.every((c) => !c.complete));
+});
+
+Deno.test("coverage: a degree with no open slots is complete; entries keep request order", () => {
+  const f = loadFixture();
+  const degs: Degree[] = [
+    { id: "cs", label: "computer science", college: "AS", applied: [], slots: [] },
+    f.degrees[0],
+  ];
+  const r = plan(req(degs), f.catalog);
+  assert.deepEqual(r.coverage.map((c) => c.degreeId), ["cs", "wh"]);
+  assert.deepEqual(r.coverage[0], { degreeId: "cs", slots: 0, filled: 0, complete: true });
+});
+
+Deno.test("coverage: no finish term means incomplete", () => {
+  const f = summerFixture(10);
+  // Summer-only courses cannot be placed with summers ruled out.
+  const r = plan(req(f.degrees, { allowSummer: false }), f.catalog);
+  assert.equal(chosen(r).finishTerm, null);
+  assert.equal(r.coverage[0].complete, false);
+});

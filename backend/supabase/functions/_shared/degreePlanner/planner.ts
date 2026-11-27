@@ -15,6 +15,7 @@
 
 import type {
   AdvisorQuestion,
+  DegreeCoverage,
   Approval,
   CatalogCourse,
   CatalogSnapshot,
@@ -1574,7 +1575,38 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
     }
   }
 
+  // ---- coverage ----------------------------------------------------------
+  // Counts only, per degree in request order, for the chosen assignment and
+  // the schedule actually returned. A slot is filled by a course that is
+  // PLACED (a chosen course the horizon could not place fills nothing), or by
+  // a stated fact: a waive (the student's, or an advisor's yes on placement),
+  // the capstone met by senior design, or, in the best case, the placement
+  // exam it assumes. Slots a registered or in-progress course already meets
+  // are not open in the audit, so they are not counted at all. The phone
+  // turns these counts into its figure; its own rule-matching cannot reach
+  // 100 (several-course rules, credit rows, waived slots, parent rows).
+  const placedCov = A.ctx.slots.map(() => 0);
+  for (const it of items) {
+    if (!termOf.has(it.ci)) continue;
+    for (const si of it.slots) placedCov[si] += unit(A.ctx, it.ci, si);
+  }
+  const idxOf = new Map(A.ctx.slots.map((x) => [x.slot.id, x.idx] as [string, number]));
+  const placedAll = chosenRun.run.unplaced.length === 0 && chosen.finishTerm !== null;
+  const coverage: DegreeCoverage[] = req.degrees.map((d) => {
+    const open = d.slots.filter((x) => x.need > EPS);
+    let filled = 0;
+    for (const x of open) {
+      const si = idxOf.get(x.id);
+      if (waive.has(x.id) || policy.capstoneRule.satisfiedBySeniorDesign(x, req.degrees)) filled++;
+      else if (si === undefined) filled++; // the best case's assumed placement
+      else if (placedCov[si] >= x.need - EPS) filled++;
+    }
+    const rowAgainst = unfilled.some((u) => u.degreeLabel === d.label || u.degreeLabel === "both degrees");
+    return { degreeId: d.id, slots: open.length, filled, complete: filled === open.length && !rowAgainst && placedAll };
+  });
+
   return {
+    coverage,
     remainingCredits: chosenCredits,
     remainingCreditsWithoutOverlap,
     scenarios: runs.map((r) => r.scenario),

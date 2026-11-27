@@ -1289,6 +1289,7 @@ slotIds: [string], approval:
 "automatic"|"petition"|"check", note? }] }], unfilled: [{ slotId, degreeLabel,
 label, reason }], petitions: [{ code, slots: [string], savesCredits }],
 approvals: [string], bestCase?: { finishTerm: string|null, approvals: [string] },
+coverage: [{ degreeId, slots, filled, complete }],
 advisorQuestions: [{ id, kind: "doubleCount"|"placement"|"load", question, detail,
 answer: "yes"|"no"|null }], notes: [string] }`. When `plan` is present the phone replaces its future semesters with
 `plan.schedule` and ignores `actions`. `registeredCredits` (omitted when 0) is
@@ -1355,6 +1356,15 @@ fullSummer, approved if its load is a stated fact), else the earliest-finishing
 such one. When an earlier finish exists only with approvals, `bestCase` carries it
 and, when the target is reachable only that way, a note says so; the schedule shown
 never assumes them.
+
+`coverage` has one entry per degree in request order, for the chosen schedule: `slots`
+is the open requirement slots considered (unfillable ones included), `filled` how many
+are met by a course in the returned schedule or by a stated fact (a waive, an advisor
+yes on placement, the capstone met by senior design), and `complete` is true only when
+`filled === slots`, no `unfilled` row names the degree (the 46 cu floor row names both),
+and every chosen course is placed. Slots a registered or in-progress course already
+meets are not open in the audit and are not counted. Counts only; the phone derives its
+own figure.
 
 `advisorQuestions` (at most 12, most valuable first) asks one question for each
 thing the best case leans on that nobody granted, plus every question already

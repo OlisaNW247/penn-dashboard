@@ -352,7 +352,14 @@ export async function runEngine(input: EngineInput): Promise<EngineOutput> {
     seen.add(key);
     unfilled.push(u);
   }
-  result = { ...result, unfilled, notes: [...result.notes, ...extraNotes] };
+  // Requirements the audit reader could not turn into slots are not in the
+  // planner's counts, so a degree that has such a row is not complete.
+  const coverage = result.coverage.map((c) => {
+    const label = req.degrees.find((d) => d.id === c.degreeId)?.label;
+    const hit = req.unfilled.some((u) => u.degreeLabel === label || u.degreeLabel === "both degrees");
+    return hit ? { ...c, complete: false } : c;
+  });
+  result = { ...result, unfilled, coverage, notes: [...result.notes, ...extraNotes] };
   return {
     plan: result, unfilled, slots: req.degrees.reduce((n, d) => n + d.slots.length, 0), packs: packReports,
     ...(packError ? { packError } : {}),
