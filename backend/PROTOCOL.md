@@ -1364,7 +1364,14 @@ yes on placement, the capstone met by senior design), and `complete` is true onl
 `filled === slots`, no `unfilled` row names the degree (the 46 cu floor row names both),
 and every chosen course is placed. Slots a registered or in-progress course already
 meets are not open in the audit and are not counted. Counts only; the phone derives its
-own figure.
+own figure. When the request had a target term, `plan.targetTerm` echoes it and each
+entry adds `filledByTarget` (like `filled`, but a slot counts only when its course is
+placed in a term at or before the target; waived and fact-met slots count as before)
+and `bestFilledByTarget` (the same count for the best-case scenario, against the same
+`slots`; a slot the best case drops by assuming the placement exam counts as filled).
+Both are omitted without a target. `filledByTarget <= filled <= slots` and
+`filledByTarget <= bestFilledByTarget <= slots` always hold (the best figure is clamped up
+to the chosen one).
 
 `advisorQuestions` (at most 12, most valuable first) asks one question for each
 thing the best case leans on that nobody granted, plus every question already

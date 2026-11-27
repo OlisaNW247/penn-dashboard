@@ -15,6 +15,7 @@
 
 import type {
   AdvisorQuestion,
+  Degree,
   DegreeCoverage,
   Approval,
   CatalogCourse,
@@ -1585,27 +1586,46 @@ export function plan(req: PlanRequest, catalog: CatalogSnapshot, policy: Policy 
   // are not open in the audit, so they are not counted at all. The phone
   // turns these counts into its figure; its own rule-matching cannot reach
   // 100 (several-course rules, credit rows, waived slots, parent rows).
-  const placedCov = A.ctx.slots.map(() => 0);
-  for (const it of items) {
-    if (!termOf.has(it.ci)) continue;
-    for (const si of it.slots) placedCov[si] += unit(A.ctx, it.ci, si);
-  }
-  const idxOf = new Map(A.ctx.slots.map((x) => [x.slot.id, x.idx] as [string, number]));
-  const placedAll = chosenRun.run.unplaced.length === 0 && chosen.finishTerm !== null;
-  const coverage: DegreeCoverage[] = req.degrees.map((d) => {
-    const open = d.slots.filter((x) => x.need > EPS);
-    let filled = 0;
-    for (const x of open) {
-      const si = idxOf.get(x.id);
-      if (waive.has(x.id) || policy.capstoneRule.satisfiedBySeniorDesign(x, req.degrees)) filled++;
-      else if (si === undefined) filled++; // the best case's assumed placement
-      else if (placedCov[si] >= x.need - EPS) filled++;
+  // `limit` keeps only courses placed in a term <= it (the target). A slot
+  // missing from the assignment's own slot list was dropped by the best case
+  // because it assumes the placement exam; it counts as filled, so the best
+  // case is counted against the SAME slot set (the entry's denominator).
+  const filledIn = (Aa: { items: Item[]; ctx: Ctx }, run: Run, d: Degree, limit?: string): number => {
+    const cov = Aa.ctx.slots.map(() => 0);
+    for (const it of Aa.items) {
+      const t = run.placed.get(it.ci);
+      if (t === undefined || (limit !== undefined && terms[t] > limit)) continue;
+      for (const si of it.slots) cov[si] += unit(Aa.ctx, it.ci, si);
     }
+    const idx = new Map(Aa.ctx.slots.map((x) => [x.slot.id, x.idx] as [string, number]));
+    let n = 0;
+    for (const x of d.slots) {
+      if (!(x.need > EPS)) continue;
+      const si = idx.get(x.id);
+      if (waive.has(x.id) || policy.capstoneRule.satisfiedBySeniorDesign(x, req.degrees)) n++;
+      else if (si === undefined) n++;
+      else if (cov[si] >= x.need - EPS) n++;
+    }
+    return n;
+  };
+  const placedAll = chosenRun.run.unplaced.length === 0 && chosen.finishTerm !== null;
+  const bestRunForCov = chosen.id === "best" ? chosenRun : byId("best")!;
+  const bestAForCov = chosen.id === "best" ? A : bestA;
+  const coverage: DegreeCoverage[] = req.degrees.map((d) => {
+    const slotCount = d.slots.filter((x) => x.need > EPS).length;
+    const filled = filledIn(A, chosenRun.run, d);
     const rowAgainst = unfilled.some((u) => u.degreeLabel === d.label || u.degreeLabel === "both degrees");
-    return { degreeId: d.id, slots: open.length, filled, complete: filled === open.length && !rowAgainst && placedAll };
+    const out: DegreeCoverage = { degreeId: d.id, slots: slotCount, filled, complete: filled === slotCount && !rowAgainst && placedAll };
+    if (req.targetTerm !== undefined) {
+      out.filledByTarget = Math.min(filled, filledIn(A, chosenRun.run, d, req.targetTerm));
+      // Clamped up to the chosen figure so the two stay comparable.
+      out.bestFilledByTarget = Math.min(slotCount, Math.max(out.filledByTarget, filledIn(bestAForCov, bestRunForCov.run, d, req.targetTerm)));
+    }
+    return out;
   });
 
   return {
+    ...(req.targetTerm !== undefined ? { targetTerm: req.targetTerm } : {}),
     coverage,
     remainingCredits: chosenCredits,
     remainingCreditsWithoutOverlap,

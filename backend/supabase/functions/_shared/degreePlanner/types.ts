@@ -297,6 +297,8 @@ export interface PlanResult {
   /** One entry per degree in request order: how many open slots the chosen
    *  schedule covers. Counts only; the phone makes its own figure. */
   coverage: DegreeCoverage[];
+  /** Echo of the request's target term, omitted when none was given. */
+  targetTerm?: string;
   /** Plain-language notes the explanation should mention (prerequisite
    *  ordering, a rule applied, data that was missing). */
   notes: string[];
@@ -324,4 +326,11 @@ export interface DegreeCoverage {
   /** filled === slots, no unfilled row for this degree (the 46 cu floor row
    *  included) and every chosen course placed in the schedule. */
   complete: boolean;
+  /** Only with a target term. Like `filled` for the chosen schedule, but a
+   *  slot counts only when its course is placed in a term <= the target. */
+  filledByTarget?: number;
+  /** Only with a target term. The same count for the best-case scenario (the
+   *  one `bestCase` describes), against this entry's own `slots`; never below
+   *  `filledByTarget`. */
+  bestFilledByTarget?: number;
 }

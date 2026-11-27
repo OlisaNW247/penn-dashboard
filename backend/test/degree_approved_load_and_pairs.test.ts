@@ -370,3 +370,52 @@ Deno.test("coverage: no finish term means incomplete", () => {
   assert.equal(chosen(r).finishTerm, null);
   assert.equal(r.coverage[0].complete, false);
 });
+
+// ---- coverage by the target ---------------------------------------------------------
+
+Deno.test("coverage by target: absent without a target", () => {
+  const f = loadFixture();
+  const r = plan(req(f.degrees), f.catalog);
+  assert.equal(r.targetTerm, undefined);
+  assert.equal(r.coverage[0].filledByTarget, undefined);
+  assert.equal(r.coverage[0].bestFilledByTarget, undefined);
+});
+
+Deno.test("coverage by target: a late granted schedule covers less by the target than the best case", () => {
+  const f = petitionFixture();
+  const r = plan(req(f.degrees, { targetTerm: "202710", allowSummer: false }), f.catalog);
+  assert.equal(r.targetTerm, "202710");
+  assert.notEqual(r.chosen, "best");
+  for (const c of r.coverage) {
+    assert.ok(c.filledByTarget! <= c.filled && c.filled <= c.slots);
+    assert.ok(c.filledByTarget! <= c.bestFilledByTarget! && c.bestFilledByTarget! <= c.slots);
+  }
+  assert.ok(r.coverage.some((c) => c.filledByTarget! < c.filled), JSON.stringify(r.coverage));
+  assert.ok(r.coverage.some((c) => c.bestFilledByTarget! > c.filledByTarget!), JSON.stringify(r.coverage));
+});
+
+Deno.test("coverage by target: chosen best equals best", () => {
+  const f = petitionFixture();
+  const r = plan(req(f.degrees, { targetTerm: "202710", allowSummer: false, assumeApprovals: true }), f.catalog);
+  assert.equal(r.chosen, "best");
+  for (const c of r.coverage) assert.equal(c.bestFilledByTarget, c.filledByTarget);
+});
+
+Deno.test("coverage by target: advisor no on every petition and placement leaves nothing to add", () => {
+  const f = petitionFixture();
+  const r = plan(req(f.degrees, {
+    targetTerm: "202710", allowSummer: false,
+    advisorAnswers: [{ id: PID, answer: "no" }, { id: "placement:language:wh", answer: "no" }, { id: "load:6.5", answer: "no" }],
+  }), f.catalog);
+  for (const c of r.coverage) assert.equal(c.bestFilledByTarget, c.filledByTarget);
+});
+
+Deno.test("coverage by target: invariants over the load and summer fixtures", () => {
+  for (const f of [loadFixture(), summerFixture(10)]) {
+    const r = plan(req(f.degrees, { targetTerm: "202730" }), f.catalog);
+    for (const c of r.coverage) {
+      assert.ok(0 <= c.filledByTarget! && c.filledByTarget! <= c.filled && c.filled <= c.slots);
+      assert.ok(c.filledByTarget! <= c.bestFilledByTarget! && c.bestFilledByTarget! <= c.slots);
+    }
+  }
+});

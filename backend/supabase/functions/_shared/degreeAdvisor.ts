@@ -378,6 +378,7 @@ export const DEGREE_ADVISOR_EXPLAIN_INSTRUCTIONS = [
   "APPROVALS: list exactly the entries of PLAN `approvals` as what the plan depends on, and nothing else as an approval. When `loadApproved` is true the student has told you they are already approved for that load: never call it an approval or something that needs approval, and say nothing about approving it. When `approvals` is empty say the plan depends on no approvals.",
   "BEST CASE: when `bestCase` is not null and the student did not ask for it (`assumeApprovals` false), say plainly that the schedule shown finishes at the chosen scenario's finish, and list what the earlier finish in `bestCase` would need (its `approvals`); never present ungranted approvals as part of the schedule shown.",
   "COVERAGE: say a degree's requirements are all covered by the schedule only when its `complete` in `coverage` is true; otherwise say how many of its `slots` the schedule leaves open (`slots` minus `filled`).",
+  "BY THE TARGET: when the schedule finishes after the target, use `filledByTarget` and `bestFilledByTarget` against `slots` per degree to say, in plain words, what share is covered by the target as granted and what the approvals would add; never present them as two competing plans.",
   "ADVISOR QUESTIONS: end the answer with at most three of the `advisorQuestions` whose `answer` is null, each on its own line starting \"ask your advisor:\"; never restate a question that has an answer as still open.",
   "LOAD: a term's load is registered plus planned. Each schedule term gives `registeredCredits` (already registered, not in `courses`), `plannedCredits` (what the plan adds) and `totalCredits`; never describe the planned credits alone as the term's load.",
   "WORDING: a planned course \"would count toward\" a requirement. Never say a requirement is met, satisfied or done because of a planned course, and never promise the student will graduate or finish by a date; Penn's audit and the student's advisor decide.",
@@ -431,6 +432,7 @@ export function compactPlanForExplain(plan: PlanResult, params: DegreeIntentPara
     approvals: plan.approvals,
     // Per degree, request order: open slots and how many the schedule covers.
     coverage: plan.coverage,
+    planTargetTerm: plan.targetTerm ? termLabel(plan.targetTerm) : null,
     assumeApprovals: params.assumeApprovals === true,
     // An earlier finish that exists only if these are granted; the schedule
     // shown does not assume them.
