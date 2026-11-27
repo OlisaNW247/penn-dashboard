@@ -3322,7 +3322,13 @@ Plus 9 for the worker's collection run (throttle, back-offs, persistence
 on a stop, follow-up calls). `node --test` takes
 a quoted glob (`"test/*.test.js"`), not a directory, on node 22.
 
-**Current on `degree-progress` (2026-11-27, the road): 4829 tests / 501
+**Current on `degree-progress` (2026-11-27, the chat's moves): 4831 tests /
+501 suites, all green, `swift test --no-parallel` on the GitHub macOS runner
+in 99 s, with the unsigned iOS `xcodebuild`, Deno and the extension suite
+green in the same run (manual run 46047036103 at `003b9c7`).** +2 over the
+road: the eight-course move and `skippedNote` in `DegreeAdvisorTests`.
+
+Before it, **on `degree-progress` (2026-11-27, the road): 4829 tests / 501
 suites, all green, `swift test --no-parallel` on the GitHub macOS runner in
 88 s, with the unsigned iOS `xcodebuild`, Deno and the extension suite green
 in the same run (manual run 46029056640 at `4e65269`), compiled at the first
@@ -5097,6 +5103,19 @@ itself.
 
 ## Traps that have already bitten
 
+- **The chat said "I moved" and the plan never moved** (2026-11-27,
+  Olisa's phone, the road build). The function log showed the model
+  returned two moves, then one, from summer 2027 into spring 2028; the
+  road did not change. Spring 2028 already held eight courses (several
+  half-credit, 5.5 cu) and `DegreePlanMath.maxCoursesPerTerm` was 8, so
+  `moving` returned the plan unchanged and `DegreeAdvisor.apply` counted
+  the edit skipped, silently, under an answer the model had written
+  before the phone tried anything. The cap is 12 rows now (load is judged
+  in cu), and any skipped edit adds a line under the answer
+  (`DegreeAdvisor.skippedNote`). The tell: `actions N` in the function log
+  with no change card under the answer. The wrong fix is a smarter prompt:
+  the model cannot know the phone's current plan shape better than the
+  phone.
 - **An id built by joining parts with a separator breaks the day one part
   contains the separator.** The planner's slot ids are
   `degreeId|blockId|ruleId`, and the phone split on the bar and took parts
